@@ -4,6 +4,7 @@ import org.apache.commons.lang.StringUtils;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.util.HtmlUtils;
 
 import javax.servlet.http.HttpServletRequest;
 
@@ -19,7 +20,7 @@ public class IPForge {
     // no any proxy
     @RequestMapping("/noproxy")
     public static String noProxy(HttpServletRequest request) {
-        return request.getRemoteAddr();
+        return HtmlUtils.htmlEscape(request.getRemoteAddr());
     }
 
 
@@ -34,7 +35,7 @@ public class IPForge {
         // Use the TCP-level remote address which cannot be spoofed by the client.
         String remoteAddr = request.getRemoteAddr();
         if (StringUtils.isNotBlank(remoteAddr)) {
-            return remoteAddr;
+            return HtmlUtils.htmlEscape(remoteAddr);
         }
         return "";
     }
