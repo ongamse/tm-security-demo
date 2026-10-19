@@ -7,9 +7,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.util.HtmlUtils;
 
+import org.joychou.security.ssrf.SSRFChecker;
+
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.net.URL;
 import java.util.ArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -105,14 +106,24 @@ public class URLWhiteList {
             return;
         }
 
-        URL u = new URL(url);
-        String host = u.getHost();
+        // Use URI-based host parsing (not java.net.URL) to prevent parser-differential bypasses
+        String host = SecurityUtil.gethost(url);
+        if (host == null || host.isEmpty()) {
+            return;
+        }
         logger.info("host:  " + host);
 
-        // endsWith .
+        // Block requests to internal/private IP ranges
+        if (SSRFChecker.isInternalIpByUrl(url)) {
+            logger.error("Blocked SSRF attempt to internal address: " + host);
+            return;
+        }
+
+        // Validate against domain allowlist with proper dot-prefix matching
         for (String domain : domainwhitelist) {
-            if (host.endsWith("." + domain)) {
+            if (host.equals(domain) || host.endsWith("." + domain)) {
                 res.sendRedirect(url);
+                return;
             }
         }
 

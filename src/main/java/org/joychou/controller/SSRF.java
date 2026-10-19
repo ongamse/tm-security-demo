@@ -2,6 +2,7 @@ package org.joychou.controller;
 
 import cn.hutool.http.HttpUtil;
 import org.joychou.security.SecurityUtil;
+import org.joychou.security.ssrf.SSRFChecker;
 import org.joychou.security.ssrf.SSRFException;
 import org.joychou.service.HttpService;
 import org.joychou.util.HttpUtils;
@@ -118,6 +119,16 @@ public class SSRF {
      */
     @GetMapping("/openStream")
     public void openStream(@RequestParam String url, HttpServletResponse response) throws IOException {
+        // Validate URL protocol and block internal IPs before opening stream
+        if (!SecurityUtil.isHttp(url)) {
+            response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Only http and https protocols are allowed");
+            return;
+        }
+        if (SSRFChecker.isInternalIpByUrl(url)) {
+            response.sendError(HttpServletResponse.SC_FORBIDDEN, "Requests to internal network addresses are not allowed");
+            return;
+        }
+
         InputStream inputStream = null;
         OutputStream outputStream = null;
         try {

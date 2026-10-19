@@ -93,9 +93,10 @@ public class SSRFChecker {
             } while (connection.getResponseCode() != HttpURLConnection.HTTP_OK);
             connection.disconnect();
         } catch (Exception e) {
-            return true;  // 如果异常了，认为是安全的，防止是超时导致的异常而验证不成功。
+            logger.error("SSRF check exception: " + e.getMessage());
+            return false;  // Fail closed: treat exceptions as unsafe
         }
-        return true; // 默认返回true
+        return true; // URL passed all redirect checks
     }
 
 
@@ -289,12 +290,13 @@ public class SSRFChecker {
      */
     private static String url2host(String url) {
         try {
+            if (url == null || !SecurityUtil.isHttp(url)) {
+                return "";
+            }
             // use URI instead of URL
             URI u = new URI(url);
-            if (SecurityUtil.isHttp(url)) {
-                return u.getHost();
-            }
-            return "";
+            String host = u.getHost();
+            return host != null ? host : "";
         } catch (Exception e) {
             return "";
         }
