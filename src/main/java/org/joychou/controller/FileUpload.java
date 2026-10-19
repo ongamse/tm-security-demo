@@ -59,11 +59,19 @@ public class FileUpload {
         try {
             // Get the file and save it somewhere
             byte[] bytes = file.getBytes();
-            Path path = Paths.get(UPLOADED_FOLDER + file.getOriginalFilename());
+            // Sanitize filename: extract base name only, then canonicalize and validate
+            String originalFilename = file.getOriginalFilename();
+            String sanitizedFilename = Paths.get(originalFilename).getFileName().toString();
+            Path uploadDir = Paths.get(UPLOADED_FOLDER).toAbsolutePath().normalize();
+            Path path = uploadDir.resolve(sanitizedFilename).normalize();
+            if (!path.startsWith(uploadDir)) {
+                redirectAttributes.addFlashAttribute("message", "Invalid file path");
+                return "redirect:/file/status";
+            }
             Files.write(path, bytes);
 
             redirectAttributes.addFlashAttribute("message",
-                    "You successfully uploaded '" + UPLOADED_FOLDER + file.getOriginalFilename() + "'");
+                    "You successfully uploaded '" + UPLOADED_FOLDER + sanitizedFilename + "'");
 
         } catch (IOException e) {
             redirectAttributes.addFlashAttribute("message", "upload failed");
@@ -86,10 +94,16 @@ public class FileUpload {
             return "Please select a file to upload";
         }
 
-        String fileName = multifile.getOriginalFilename();
+        // Sanitize filename: extract base name only to prevent path traversal
+        String fileName = Paths.get(multifile.getOriginalFilename()).getFileName().toString();
         String Suffix = fileName.substring(fileName.lastIndexOf(".")); // 获取文件后缀名
         String mimeType = multifile.getContentType(); // 获取MIME类型
-        String filePath = UPLOADED_FOLDER + fileName;
+        Path uploadDir = Paths.get(UPLOADED_FOLDER).toAbsolutePath().normalize();
+        Path resolvedPath = uploadDir.resolve(fileName).normalize();
+        if (!resolvedPath.startsWith(uploadDir)) {
+            return "Upload failed. Invalid file path.";
+        }
+        String filePath = resolvedPath.toString();
         File excelFile = convert(multifile);
 
 
@@ -141,8 +155,7 @@ public class FileUpload {
         try {
             // Get the file and save it somewhere
             byte[] bytes = multifile.getBytes();
-            Path path = Paths.get(UPLOADED_FOLDER + multifile.getOriginalFilename());
-            Files.write(path, bytes);
+            Files.write(resolvedPath, bytes);
         } catch (IOException e) {
             logger.error(e.toString());
             deleteFile(filePath);
