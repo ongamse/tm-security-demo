@@ -279,6 +279,29 @@ public class SecurityUtil {
         return sb.toString();
     }
 
+    /**
+     * Validate that an ID is a positive integer within expected bounds.
+     *
+     * @param id the ID to validate
+     * @return true if the ID is valid, false otherwise
+     */
+    public static boolean validateId(Integer id) {
+        return id != null && id > 0 && id <= 1000000;
+    }
+
+    /**
+     * Validate that a username contains only safe characters (alphanumeric and underscore).
+     *
+     * @param username the username to validate
+     * @return true if the username is valid, false otherwise
+     */
+    public static boolean validateUsername(String username) {
+        if (username == null || username.isEmpty() || username.length() > 64) {
+            return false;
+        }
+        return username.matches("^[a-zA-Z0-9_]+$");
+    }
+
     public static void main(String[] args) {
     }
 

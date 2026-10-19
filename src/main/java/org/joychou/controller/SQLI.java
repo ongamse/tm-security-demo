@@ -95,6 +95,10 @@ public class SQLI {
     @RequestMapping("/jdbc/sec")
     public String jdbc_sqli_sec(@RequestParam("username") String username) {
 
+        if (!SecurityUtil.validateUsername(username)) {
+            return "";
+        }
+
         StringBuilder result = new StringBuilder();
         try {
             Class.forName(driver);
@@ -182,6 +186,9 @@ public class SQLI {
      */
     @GetMapping("/mybatis/vuln01")
     public List<User> mybatisVuln01(@RequestParam("username") String username) {
+        if (!SecurityUtil.validateUsername(username)) {
+            return null;
+        }
         return userMapper.findByUserNameVuln01(username);
     }
 
@@ -192,6 +199,9 @@ public class SQLI {
      */
     @GetMapping("/mybatis/vuln02")
     public List<User> mybatisVuln02(@RequestParam("username") String username) {
+        if (!SecurityUtil.validateUsername(username)) {
+            return null;
+        }
         return userMapper.findByUserNameVuln02(username);
     }
 
@@ -212,6 +222,9 @@ public class SQLI {
      */
     @GetMapping("/mybatis/sec01")
     public User mybatisSec01(@RequestParam("username") String username) {
+        if (!SecurityUtil.validateUsername(username)) {
+            return null;
+        }
         return userMapper.findByUserName(username);
     }
 
@@ -221,6 +234,9 @@ public class SQLI {
      */
     @GetMapping("/mybatis/sec02")
     public User mybatisSec02(@RequestParam("id") Integer id) {
+        if (!SecurityUtil.validateId(id)) {
+            return null;
+        }
         return userMapper.findById(id);
     }
 
