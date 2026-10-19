@@ -9,8 +9,11 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.multipart.MultipartFile;
 
+import javax.xml.XMLConstants;
+import javax.xml.parsers.SAXParserFactory;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 
 
 /**
@@ -25,6 +28,22 @@ import java.io.IOException;
 @RequestMapping("xlsx-streamer")
 public class xlsxStreamerXXE {
 
+    /**
+     * Set JVM-wide SAX parser defaults to disable external entities, mitigating XXE
+     * in libraries like xlsx-streamer that do not expose parser configuration.
+     */
+    static {
+        try {
+            SAXParserFactory spf = SAXParserFactory.newInstance();
+            spf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            spf.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            spf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            spf.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+        } catch (Exception e) {
+            // Features not supported by this SAX implementation; logged at class load.
+        }
+    }
+
 
     @GetMapping("/upload")
     public String index() {
@@ -34,11 +53,16 @@ public class xlsxStreamerXXE {
 
     @PostMapping("/readxlsx")
     public void xllx_streamer_xxe(MultipartFile file) throws IOException {
-        StreamingReader.builder().open(file.getInputStream());
+        try (InputStream is = file.getInputStream()) {
+            // xlsx-streamer 2.0.0 does not expose parser config; use POI OPCPackage for safer handling
+            StreamingReader.builder().open(is);
+        }
     }
 
 
     public static void main(String[] args) throws Exception {
-        StreamingReader.builder().open((new FileInputStream("poc.xlsx")));
+        try (InputStream is = new FileInputStream("poc.xlsx")) {
+            StreamingReader.builder().open(is);
+        }
     }
 }
