@@ -27,20 +27,25 @@ public class Cors {
     @GetMapping("/vuln/origin")
     public String vuls1(HttpServletRequest request, HttpServletResponse response) {
         String origin = request.getHeader("origin");
-        // Validate origin against the safe-domain allowlist before reflecting
-        if (origin != null && SecurityUtil.checkURL(origin) == null) {
-            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-            return "Origin is not allowed.";
+        // Only set CORS headers when origin is present and passes the safe-domain allowlist
+        if (origin != null) {
+            if (SecurityUtil.checkURL(origin) == null) {
+                response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                return "Origin is not allowed.";
+            }
+            response.setHeader("Access-Control-Allow-Origin", SecurityUtil.sanitizeHeaderValue(origin));
+            response.setHeader("Access-Control-Allow-Credentials", "true");
         }
-        response.setHeader("Access-Control-Allow-Origin", SecurityUtil.sanitizeHeaderValue(origin));
-        response.setHeader("Access-Control-Allow-Credentials", "true");  // allow cookie
         return info;
     }
 
     @GetMapping("/vuln/setHeader")
-    public String vuls2(HttpServletResponse response) {
-        // 后端设置Access-Control-Allow-Origin为*的情况下，跨域的时候前端如果设置withCredentials为true会异常
-        response.setHeader("Access-Control-Allow-Origin", "*");
+    public String vuls2(HttpServletRequest request, HttpServletResponse response) {
+        // Validate origin against the safe-domain allowlist instead of using wildcard "*"
+        String origin = request.getHeader("origin");
+        if (origin != null && SecurityUtil.checkURL(origin) != null) {
+            response.setHeader("Access-Control-Allow-Origin", SecurityUtil.sanitizeHeaderValue(origin));
+        }
         return info;
     }
 
@@ -112,13 +117,15 @@ public class Cors {
     public String seccode(HttpServletRequest request, HttpServletResponse response) {
         String origin = request.getHeader("Origin");
 
-        // 如果origin不为空并且origin不在白名单内，认定为不安全。
-        // 如果origin为空，表示是同域过来的请求或者浏览器直接发起的请求。
-        if (origin != null && SecurityUtil.checkURL(origin) == null) {
-            return "Origin is not safe.";
+        // Only set CORS headers when origin is present and passes the safe-domain allowlist.
+        // Null origin means same-origin or direct browser request — no CORS headers needed.
+        if (origin != null) {
+            if (SecurityUtil.checkURL(origin) == null) {
+                return "Origin is not safe.";
+            }
+            response.setHeader("Access-Control-Allow-Origin", SecurityUtil.sanitizeHeaderValue(origin));
+            response.setHeader("Access-Control-Allow-Credentials", "true");
         }
-        response.setHeader("Access-Control-Allow-Origin", SecurityUtil.sanitizeHeaderValue(origin));
-        response.setHeader("Access-Control-Allow-Credentials", "true");
         return LoginUtils.getUserInfo2JsonStr(request);
     }
 
