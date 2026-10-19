@@ -29,14 +29,5 @@ public class Fastjson {
     }
 
     public static void main(String[] args) {
-        // Open calc in mac
-        // Load demo payload from resource file to avoid hardcoded high-entropy string
-        java.io.InputStream is = Fastjson.class.getResourceAsStream("/demo/fastjson_payload.txt");
-        if (is == null) {
-            System.out.println("Payload file not found");
-            return;
-        }
-        String payload = new java.util.Scanner(is).useDelimiter("\\A").next();
-        JSON.parseObject(payload, Feature.SupportNonPublicField);
     }
 }
