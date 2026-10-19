@@ -35,14 +35,29 @@ public class PathTraversal {
         return getImgBase64(filepath);
     }
 
+    private static final String ALLOWED_BASE_DIR = System.getProperty("user.dir");
+
     private String getImgBase64(String imgFile) throws IOException {
 
         logger.info("Working directory: " + System.getProperty("user.dir"));
         logger.info("File path: " + imgFile);
 
+        // Reject path traversal sequences before resolving
+        if (imgFile == null || imgFile.contains("..")) {
+            return "Illegal file path.";
+        }
+
         File f = new File(imgFile);
+        String canonicalPath = f.getCanonicalPath();
+        String allowedCanonicalBase = new File(ALLOWED_BASE_DIR).getCanonicalPath();
+        if (!canonicalPath.startsWith(allowedCanonicalBase + File.separator)
+                && !canonicalPath.equals(allowedCanonicalBase)) {
+            logger.info("Blocked path traversal attempt: " + imgFile);
+            return "Illegal file path.";
+        }
+
         if (f.exists() && !f.isDirectory()) {
-            byte[] data = Files.readAllBytes(Paths.get(imgFile));
+            byte[] data = Files.readAllBytes(Paths.get(canonicalPath));
             return new String(Base64.encodeBase64(data));
         } else {
             return "File doesn't exist or is not a file.";
