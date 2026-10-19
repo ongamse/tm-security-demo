@@ -18,6 +18,8 @@ import java.util.regex.Pattern;
 public class SecurityUtil {
 
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
+    private static final Pattern JSONP_CALLBACK_PATTERN = Pattern.compile("^[a-zA-Z_$][a-zA-Z0-9_$.]*$");
+    private static final Pattern WEBSOCKET_PATH_PATTERN = Pattern.compile("^/[a-zA-Z0-9/_\\-]+$");
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
 
 
@@ -302,6 +304,46 @@ public class SecurityUtil {
             return null;
         }
 
+        return path;
+    }
+
+    /**
+     * Validate a JSONP callback parameter to prevent XSS.
+     * Only allows valid JavaScript identifiers (alphanumeric, underscore, dollar, dot).
+     *
+     * @param callback the callback function name
+     * @return the callback if valid, or null if invalid
+     */
+    public static String validateJsonpCallback(String callback) {
+        if (callback == null || callback.isEmpty()) {
+            return null;
+        }
+        if (callback.length() > 64) {
+            return null;
+        }
+        if (!JSONP_CALLBACK_PATTERN.matcher(callback).matches()) {
+            return null;
+        }
+        return callback;
+    }
+
+    /**
+     * Validate a WebSocket endpoint path against an allowlist pattern.
+     * Only allows paths starting with / followed by alphanumeric, underscore, hyphen, or slash.
+     *
+     * @param path the WebSocket endpoint path
+     * @return the path if valid, or null if invalid
+     */
+    public static String validateWebSocketPath(String path) {
+        if (path == null || path.isEmpty()) {
+            return null;
+        }
+        if (path.length() > 128) {
+            return null;
+        }
+        if (!WEBSOCKET_PATH_PATTERN.matcher(path).matches()) {
+            return null;
+        }
         return path;
     }
 

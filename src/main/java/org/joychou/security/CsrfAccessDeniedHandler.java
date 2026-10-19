@@ -24,8 +24,12 @@ public class CsrfAccessDeniedHandler implements AccessDeniedHandler {
     public void handle(HttpServletRequest request, HttpServletResponse response,
                        AccessDeniedException accessDeniedException) throws IOException {
 
-        logger.info("[-] URL: " + request.getRequestURL() + "?" + request.getQueryString() + "\t" +
-                "Referer: " + request.getHeader("referer"));
+        // Sanitize user-controlled values before logging to prevent log injection
+        String safeUrl = SecurityUtil.sanitizeCRLF(request.getRequestURL().toString());
+        String safeQuery = SecurityUtil.sanitizeCRLF(request.getQueryString());
+        String safeReferer = SecurityUtil.sanitizeCRLF(request.getHeader("referer"));
+
+        logger.info("[-] URL: {}?{}\tReferer: {}", safeUrl, safeQuery, safeReferer);
 
         response.setContentType(MediaType.TEXT_HTML_VALUE); // content-type: text/html
         response.setStatus(HttpServletResponse.SC_FORBIDDEN); // 403 forbidden
