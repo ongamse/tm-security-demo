@@ -22,6 +22,7 @@ import org.springframework.web.util.HtmlUtils;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.security.Principal;
+import java.util.regex.Pattern;
 
 
 /**
@@ -34,7 +35,21 @@ import java.security.Principal;
 @RequestMapping("/jsonp")
 public class Jsonp {
 
+    private static final Pattern SAFE_CALLBACK = Pattern.compile("^[a-zA-Z_$][a-zA-Z0-9_$.]*$");
+
     private String callback = WebConfig.getBusinessCallback();
+
+    /**
+     * Validates that a JSONP callback name contains only safe characters
+     * (valid JavaScript identifier characters: letters, digits, underscore, dollar, dot).
+     * Returns the callback if valid, or null if invalid.
+     */
+    private String validateCallback(String callback) {
+        if (callback == null || !SAFE_CALLBACK.matcher(callback).matches()) {
+            return null;
+        }
+        return callback;
+    }
 
     @Autowired
     CookieCsrfTokenRepository cookieCsrfTokenRepository;
@@ -46,7 +61,11 @@ public class Jsonp {
     @RequestMapping(value = "/vuln/referer", produces = "application/javascript")
     public String referer(HttpServletRequest request) {
         String callback = request.getParameter(this.callback);
-        return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
+        String safeCallback = validateCallback(callback);
+        if (safeCallback == null) {
+            return "Invalid callback parameter";
+        }
+        return WebUtils.json2Jsonp(safeCallback, LoginUtils.getUserInfo2JsonStr(request));
     }
 
     /**
@@ -63,7 +82,11 @@ public class Jsonp {
             return "error";
         }
         String callback = request.getParameter(this.callback);
-        return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
+        String safeCallback = validateCallback(callback);
+        if (safeCallback == null) {
+            return "Invalid callback parameter";
+        }
+        return WebUtils.json2Jsonp(safeCallback, LoginUtils.getUserInfo2JsonStr(request));
     }
 
     /**
@@ -108,7 +131,11 @@ public class Jsonp {
             return "error";
         }
         String callback = request.getParameter(this.callback);
-        return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
+        String safeCallback = validateCallback(callback);
+        if (safeCallback == null) {
+            return "Invalid callback parameter";
+        }
+        return WebUtils.json2Jsonp(safeCallback, LoginUtils.getUserInfo2JsonStr(request));
     }
 
     /**
@@ -132,7 +159,11 @@ public class Jsonp {
 
         String callback = request.getParameter("fastjsonpCallback");
         if (StringUtils.isNotBlank(callback)) {
-            JSONPObject jsonpObj = new JSONPObject(HtmlUtils.htmlEscape(callback));
+            String safeCallback = validateCallback(callback);
+            if (safeCallback == null) {
+                return "Invalid callback parameter";
+            }
+            JSONPObject jsonpObj = new JSONPObject(HtmlUtils.htmlEscape(safeCallback));
             jsonpObj.addParameter(csrfToken);
             return jsonpObj.toString();
         } else {
