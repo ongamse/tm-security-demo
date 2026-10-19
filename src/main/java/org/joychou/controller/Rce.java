@@ -42,8 +42,28 @@ public class Rce {
         Runtime run = Runtime.getRuntime();
         StringBuilder sb = new StringBuilder();
 
+        if (cmd == null || cmd.isEmpty()) {
+            return "Command must not be empty";
+        }
+
+        // Validate command against allowlist; reject shell metacharacters
+        String[] parts = cmd.trim().split("\\s+");
+        String baseCommand = parts[0];
+
+        if (!ALLOWED_COMMANDS.contains(baseCommand)) {
+            return "Command not allowed. Allowed commands: " + ALLOWED_COMMANDS;
+        }
+
+        // Reject arguments containing shell metacharacters to prevent injection
+        for (String part : parts) {
+            if (part.matches(".*[;&|`$><(){}\\[\\]!\\\\\"'\\n\\r].*")) {
+                return "Invalid characters in command arguments";
+            }
+        }
+
         try {
-            Process p = run.exec(cmd);
+            // Use exec(String[]) to avoid shell interpretation
+            Process p = run.exec(parts);
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
             String tmpStr;
