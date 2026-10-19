@@ -10,7 +10,6 @@ import org.springframework.web.util.HtmlUtils;
 
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.net.URL;
 import java.util.ArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -106,14 +105,24 @@ public class URLWhiteList {
             return;
         }
 
-        URL u = new URL(url);
-        String host = u.getHost();
+        // Use URI-based host extraction (consistent with SecurityUtil.gethost) to
+        // prevent URL parsing discrepancy bypasses
+        String host = SecurityUtil.gethost(url);
+        if (host == null || host.isEmpty()) {
+            return;
+        }
         logger.info("host:  " + host);
+
+        // Validate the URL does not resolve to an internal IP (SSRF protection)
+        if (!SecurityUtil.checkSSRFByWhitehosts(url)) {
+            return;
+        }
 
         // endsWith .
         for (String domain : domainwhitelist) {
             if (host.endsWith("." + domain)) {
                 res.sendRedirect(url);
+                return;
             }
         }
 

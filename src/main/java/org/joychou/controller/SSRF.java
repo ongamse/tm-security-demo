@@ -122,6 +122,16 @@ public class SSRF {
         InputStream inputStream = null;
         OutputStream outputStream = null;
         try {
+            // Validate URL against SSRF before opening stream
+            if (!SecurityUtil.isHttp(url)) {
+                response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Only http/https URLs are allowed");
+                return;
+            }
+            if (!SecurityUtil.checkSSRFByWhitehosts(url)) {
+                response.sendError(HttpServletResponse.SC_FORBIDDEN, "URL not in allowlist");
+                return;
+            }
+
             String downLoadImgFileName = WebUtils.getNameWithoutExtension(url) + "." + WebUtils.getFileExtension(url);
             // download
             response.setHeader("content-disposition", "attachment;fileName=" + downLoadImgFileName);

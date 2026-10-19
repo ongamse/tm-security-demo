@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
+import java.net.InetAddress;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLDecoder;
@@ -72,6 +73,16 @@ public class SecurityUtil {
                 return null;
             }
 
+            if (host == null || host.isEmpty()) {
+                return null;
+            }
+
+            // Resolve host to IP and reject private/link-local/loopback/metadata addresses
+            if (isInternalHost(host)) {
+                logger.error("[-] checkURL blocked internal IP for host: " + host);
+                return null;
+            }
+
             // 如果满足黑名单返回null
             if (blockDomains.contains(host)){
                 return null;
@@ -97,6 +108,34 @@ public class SecurityUtil {
         } catch (NullPointerException e) {
             logger.error(e.toString());
             return null;
+        }
+    }
+
+    /**
+     * Resolve host to IP and check if it is a private/loopback/link-local/metadata address.
+     * Blocks: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8,
+     *   169.254.0.0/16, 0.0.0.0/8, ::1, fe80::/10, fc00::/7
+     *
+     * @param host hostname to check
+     * @return true if the host resolves to an internal/blocked IP
+     */
+    private static boolean isInternalHost(String host) {
+        try {
+            InetAddress addr = InetAddress.getByName(host);
+            if (addr.isLoopbackAddress() || addr.isLinkLocalAddress() ||
+                    addr.isSiteLocalAddress() || addr.isAnyLocalAddress() ||
+                    addr.isMulticastAddress()) {
+                return true;
+            }
+            // IPv6 Unique Local Addresses (fc00::/7)
+            byte[] addrBytes = addr.getAddress();
+            if (addrBytes.length == 16 && (addrBytes[0] & 0xFE) == 0xFC) {
+                return true;
+            }
+            return false;
+        } catch (Exception e) {
+            // If we cannot resolve the host, treat it as blocked
+            return true;
         }
     }
 
