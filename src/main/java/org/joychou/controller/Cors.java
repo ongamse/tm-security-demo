@@ -27,7 +27,7 @@ public class Cors {
         String origin = request.getHeader("origin");
         // Validate origin against the safe domain allowlist before reflecting it
         if (origin != null && SecurityUtil.checkURL(origin) != null) {
-            response.setHeader("Access-Control-Allow-Origin", origin);
+            response.setHeader("Access-Control-Allow-Origin", SecurityUtil.sanitizeCRLF(origin));
             response.setHeader("Access-Control-Allow-Credentials", "true");
         }
         return info;
@@ -118,7 +118,7 @@ public class Cors {
             return "Origin is not safe.";
         }
         if (validatedOrigin != null) {
-            response.setHeader("Access-Control-Allow-Origin", validatedOrigin);
+            response.setHeader("Access-Control-Allow-Origin", SecurityUtil.sanitizeCRLF(validatedOrigin));
             response.setHeader("Access-Control-Allow-Credentials", "true");
         }
         return LoginUtils.getUserInfo2JsonStr(request);

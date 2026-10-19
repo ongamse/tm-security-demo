@@ -249,6 +249,19 @@ public class SecurityUtil {
         return sb.toString();
     }
 
+    /**
+     * Strip CR and LF characters from a string to prevent HTTP response splitting (CRLF injection).
+     *
+     * @param value the input string
+     * @return input with \r and \n removed, or null if input is null
+     */
+    public static String sanitizeCRLF(String value) {
+        if (value == null) {
+            return null;
+        }
+        return value.replaceAll("[\\r\\n]", "");
+    }
+
     public static void main(String[] args) {
     }
 

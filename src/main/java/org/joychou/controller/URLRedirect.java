@@ -40,7 +40,7 @@ public class URLRedirect {
     @RequestMapping("/setHeader")
     @ResponseBody
     public static void setHeader(HttpServletRequest request, HttpServletResponse response) {
-        String url = request.getParameter("url");
+        String url = SecurityUtil.sanitizeCRLF(request.getParameter("url"));
         response.setStatus(HttpServletResponse.SC_MOVED_PERMANENTLY); // 301 redirect
         response.setHeader("Location", url);
     }
