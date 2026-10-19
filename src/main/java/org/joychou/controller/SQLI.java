@@ -48,7 +48,7 @@ public class SQLI {
      *
      * <a href="http://localhost:8080/sqli/jdbc/vuln?username=joychou">http://localhost:8080/sqli/jdbc/vuln?username=joychou</a>
      */
-    @RequestMapping("/jdbc/vuln")
+    @GetMapping("/jdbc/vuln")
     public String jdbc_sqli_vul(@RequestParam("username") String username) {
 
         StringBuilder result = new StringBuilder();
@@ -92,7 +92,7 @@ public class SQLI {
      *
      * <a href="http://localhost:8080/sqli/jdbc/sec?username=joychou">http://localhost:8080/sqli/jdbc/sec?username=joychou</a>
      */
-    @RequestMapping("/jdbc/sec")
+    @GetMapping("/jdbc/sec")
     public String jdbc_sqli_sec(@RequestParam("username") String username) {
 
         StringBuilder result = new StringBuilder();
@@ -136,7 +136,7 @@ public class SQLI {
      * <p>Incorrect use of prepareStatement. PrepareStatement must use ? as a placeholder.</p>
      * <a href="http://localhost:8080/sqli/jdbc/ps/vuln?username=joychou' or 'a'='a">http://localhost:8080/sqli/jdbc/ps/vuln?username=joychou' or 'a'='a</a>
      */
-    @RequestMapping("/jdbc/ps/vuln")
+    @GetMapping("/jdbc/ps/vuln")
     public String jdbc_ps_vuln(@RequestParam("username") String username) {
 
         StringBuilder result = new StringBuilder();

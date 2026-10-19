@@ -4,6 +4,7 @@ import org.joychou.config.Constants;
 import org.joychou.security.AntObjectInputStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -31,7 +32,7 @@ public class Deserialize {
      * java -jar ysoserial.jar CommonsCollections5 "open -a Calculator" | base64 <br>
      * <a href="http://localhost:8080/deserialize/rememberMe/vuln">http://localhost:8080/deserialize/rememberMe/vuln</a>
      */
-    @RequestMapping("/rememberMe/vuln")
+    @GetMapping("/rememberMe/vuln")
     public String rememberMeVul(HttpServletRequest request)
             throws IOException, ClassNotFoundException {
 
@@ -62,7 +63,7 @@ public class Deserialize {
      * Or update commons-collections to 3.2.2 or above.Serialization support for org.apache.commons.collections.functors.InvokerTransformer is disabled for security reasons.To enable it set system property 'org.apache.commons.collections.enableUnsafeSerialization' to 'true',but you must ensure that your application does not de-serialize objects from untrusted sources.<br>
      * <a href="http://localhost:8080/deserialize/rememberMe/security">http://localhost:8080/deserialize/rememberMe/security</a>
      */
-    @RequestMapping("/rememberMe/security")
+    @GetMapping("/rememberMe/security")
     public String rememberMeBlackClassCheck(HttpServletRequest request)
             throws IOException, ClassNotFoundException {
 

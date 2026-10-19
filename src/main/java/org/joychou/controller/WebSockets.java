@@ -4,7 +4,7 @@ import org.apache.tomcat.websocket.server.WsServerContainer;
 import org.joychou.config.WebSocketsProxyEndpoint;
 import org.joychou.config.WebSocketsCmdEndpoint;
 import org.joychou.security.SecurityUtil;
-import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import javax.servlet.ServletContext;
@@ -28,7 +28,7 @@ public class WebSockets {
      * </p>
      * <p>JoyChou @ 2023年02月20日 </p>
      */
-    @RequestMapping("/websocket/cmd")
+    @PostMapping("/websocket/cmd")
     public String cmdInject(HttpServletRequest req) {
         String path = SecurityUtil.validateWebSocketPath(req.getParameter("path"));
         if (path == null) {
@@ -51,7 +51,7 @@ public class WebSockets {
         }
     }
 
-    @RequestMapping("/websocket/proxy")
+    @PostMapping("/websocket/proxy")
     public String proxyInject(HttpServletRequest req) {
         String path = SecurityUtil.validateWebSocketPath(req.getParameter("path"));
         if (path == null) {

@@ -19,7 +19,7 @@ public class Login {
 
     protected final Logger logger = LoggerFactory.getLogger(this.getClass());
 
-    @RequestMapping("/login")
+    @GetMapping("/login")
     public String login() {
         return "login";
     }

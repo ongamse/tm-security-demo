@@ -45,8 +45,7 @@ public class Cors {
     }
 
 
-    @GetMapping("*")
-    @RequestMapping("/vuln/crossOrigin")
+    @GetMapping("/vuln/crossOrigin")
     public String vuls3() {
         return info;
     }
@@ -102,7 +101,7 @@ public class Cors {
      * 不支持自定义checkOrigin，因为corsFilter优先于setCorsProcessor执行
      * 代码：org/joychou/filter/BaseCorsFilter.java
      */
-    @RequestMapping("/sec/corsFilter")
+    @GetMapping("/sec/corsFilter")
     public CsrfToken getCsrfToken_04(CsrfToken token) {
         return token;
     }
