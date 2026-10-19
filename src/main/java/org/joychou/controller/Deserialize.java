@@ -12,7 +12,6 @@ import javax.servlet.http.HttpServletRequest;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InvalidClassException;
-import java.io.ObjectInputStream;
 import java.util.Base64;
 
 import static org.springframework.web.util.WebUtils.getCookie;
@@ -45,7 +44,7 @@ public class Deserialize {
         byte[] decoded = Base64.getDecoder().decode(rememberMe);
 
         ByteArrayInputStream bytes = new ByteArrayInputStream(decoded);
-        ObjectInputStream in = new ObjectInputStream(bytes);
+        AntObjectInputStream in = new AntObjectInputStream(bytes);  // allowlist-filtered deserialization
         in.readObject();
         in.close();
 
