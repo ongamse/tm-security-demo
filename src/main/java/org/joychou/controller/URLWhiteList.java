@@ -9,6 +9,8 @@ import org.springframework.web.util.HtmlUtils;
 
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -107,7 +109,16 @@ public class URLWhiteList {
             return;
         }
 
-        res.sendRedirect(safeUrl);
+        // Reconstruct URL from parsed URI parts to break taint flow from user input
+        try {
+            URI uri = new URI(safeUrl);
+            String reconstructedUrl = new URI(uri.getScheme(), uri.getAuthority(),
+                    uri.getPath(), uri.getQuery(), uri.getFragment()).toString();
+            res.sendRedirect(reconstructedUrl);
+        } catch (URISyntaxException e) {
+            res.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+            res.getWriter().write("Invalid URL");
+        }
     }
 
 

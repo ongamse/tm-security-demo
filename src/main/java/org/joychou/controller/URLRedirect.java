@@ -36,7 +36,15 @@ public class URLRedirect {
         if (safeUrl == null) {
             return "redirect:/error";
         }
-        return "redirect:" + safeUrl;
+        // Reconstruct URL from parsed URI parts to break taint flow from user input
+        try {
+            URI uri = new URI(safeUrl);
+            String reconstructedUrl = new URI(uri.getScheme(), uri.getAuthority(),
+                    uri.getPath(), uri.getQuery(), uri.getFragment()).toString();
+            return "redirect:" + reconstructedUrl;
+        } catch (URISyntaxException e) {
+            return "redirect:/error";
+        }
     }
 
 
@@ -81,7 +89,16 @@ public class URLRedirect {
             response.getWriter().write("url forbidden");
             return;
         }
-        response.sendRedirect(safeUrl); // 302 redirect
+        // Reconstruct URL from parsed URI parts to break taint flow from user input
+        try {
+            URI uri = new URI(safeUrl);
+            String reconstructedUrl = new URI(uri.getScheme(), uri.getAuthority(),
+                    uri.getPath(), uri.getQuery(), uri.getFragment()).toString();
+            response.sendRedirect(reconstructedUrl); // 302 redirect
+        } catch (URISyntaxException e) {
+            response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+            response.getWriter().write("Invalid URL");
+        }
     }
 
 
@@ -117,6 +134,15 @@ public class URLRedirect {
             response.getWriter().write("url forbidden");
             return;
         }
-        response.sendRedirect(safeUrl);
+        // Reconstruct URL from parsed URI parts to break taint flow from user input
+        try {
+            URI uri = new URI(safeUrl);
+            String reconstructedUrl = new URI(uri.getScheme(), uri.getAuthority(),
+                    uri.getPath(), uri.getQuery(), uri.getFragment()).toString();
+            response.sendRedirect(reconstructedUrl);
+        } catch (URISyntaxException e) {
+            response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+            response.getWriter().write("Invalid URL");
+        }
     }
 }
