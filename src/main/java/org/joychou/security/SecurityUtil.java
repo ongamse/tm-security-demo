@@ -302,6 +302,20 @@ public class SecurityUtil {
         return username.matches("^[a-zA-Z0-9_]+$");
     }
 
+    /**
+     * Sanitize a value for use in an HTTP header by stripping CR and LF characters
+     * to prevent CRLF / header injection attacks.
+     *
+     * @param value the raw header value (may be null)
+     * @return the sanitized value with \r and \n removed, or empty string if null
+     */
+    public static String sanitizeHeaderValue(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.replaceAll("[\\r\\n]", "");
+    }
+
     public static void main(String[] args) {
     }
 
