@@ -11,6 +11,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.util.HtmlUtils;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletResponse;
@@ -43,7 +44,13 @@ public class SSRF {
      */
     @RequestMapping(value = "/urlConnection/vuln", method = {RequestMethod.POST, RequestMethod.GET})
     public String URLConnectionVuln(String url) {
-        return HttpUtils.URLConnection(url);
+        try {
+            String safeUrl = SecurityUtil.rebuildUrl(url);
+            return HttpUtils.URLConnection(safeUrl);
+        } catch (MalformedURLException | URISyntaxException e) {
+            logger.error("Invalid URL", e);
+            return "Request failed";
+        }
     }
 
 
@@ -56,10 +63,12 @@ public class SSRF {
         }
 
         try {
+            String safeUrl = SecurityUtil.rebuildUrl(url);
             SecurityUtil.startSSRFHook();
-            return HttpUtils.URLConnection(url);
-        } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return HttpUtils.URLConnection(safeUrl);
+        } catch (SSRFException | IOException | URISyntaxException e) {
+            logger.error("SSRF URL connection request failed", e);
+            return "Request failed";
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -74,10 +83,12 @@ public class SSRF {
     @GetMapping("/HttpURLConnection/sec")
     public String httpURLConnection(@RequestParam String url) {
         try {
+            String safeUrl = SecurityUtil.rebuildUrl(url);
             SecurityUtil.startSSRFHook();
-            return HttpUtils.HttpURLConnection(url);
-        } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return HttpUtils.HttpURLConnection(safeUrl);
+        } catch (SSRFException | IOException | URISyntaxException e) {
+            logger.error("SSRF HTTP URL connection request failed", e);
+            return "Request failed";
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -86,7 +97,13 @@ public class SSRF {
 
     @GetMapping("/HttpURLConnection/vuln")
     public String httpURLConnectionVuln(@RequestParam String url) {
-        return HttpUtils.HttpURLConnection(url);
+        try {
+            String safeUrl = SecurityUtil.rebuildUrl(url);
+            return HttpUtils.HttpURLConnection(safeUrl);
+        } catch (MalformedURLException | URISyntaxException e) {
+            logger.error("Invalid URL", e);
+            return "Request failed";
+        }
     }
 
     /**
@@ -97,10 +114,12 @@ public class SSRF {
     @GetMapping("/request/sec")
     public String request(@RequestParam String url) {
         try {
+            String safeUrl = SecurityUtil.rebuildUrl(url);
             SecurityUtil.startSSRFHook();
-            return HttpUtils.request(url);
-        } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return HtmlUtils.htmlEscape(HttpUtils.request(safeUrl));
+        } catch (SSRFException | IOException | URISyntaxException e) {
+            logger.error("SSRF request failed", e);
+            return "Request failed";
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -117,14 +136,20 @@ public class SSRF {
      */
     @GetMapping("/openStream")
     public void openStream(@RequestParam String url, HttpServletResponse response) throws IOException {
+        if (!SecurityUtil.validateSSRF(url)) {
+            response.sendError(403, "SSRF check failed");
+            return;
+        }
         InputStream inputStream = null;
         OutputStream outputStream = null;
         try {
-            String downLoadImgFileName = WebUtils.getNameWithoutExtension(url) + "." + WebUtils.getFileExtension(url);
+            String safeUrl = SecurityUtil.rebuildUrl(url);
+            String downLoadImgFileName = SecurityUtil.sanitizeHeaderValue(
+                    WebUtils.getNameWithoutExtension(safeUrl) + "." + WebUtils.getFileExtension(safeUrl));
             // download
             response.setHeader("content-disposition", "attachment;fileName=" + downLoadImgFileName);
 
-            URL u = new URL(url);
+            URL u = new URL(safeUrl);
             int length;
             byte[] bytes = new byte[1024];
             inputStream = u.openStream(); // send request
@@ -153,10 +178,12 @@ public class SSRF {
     @GetMapping("/ImageIO/sec")
     public String ImageIO(@RequestParam String url) {
         try {
+            String safeUrl = SecurityUtil.rebuildUrl(url);
             SecurityUtil.startSSRFHook();
-            HttpUtils.imageIO(url);
-        } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            HttpUtils.imageIO(safeUrl);
+        } catch (SSRFException | IOException | URISyntaxException e) {
+            logger.error("SSRF ImageIO request failed", e);
+            return "Request failed";
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -169,10 +196,12 @@ public class SSRF {
     public String okhttp(@RequestParam String url) {
 
         try {
+            String safeUrl = SecurityUtil.rebuildUrl(url);
             SecurityUtil.startSSRFHook();
-            return HttpUtils.okhttp(url);
-        } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return HttpUtils.okhttp(safeUrl);
+        } catch (SSRFException | IOException | URISyntaxException e) {
+            logger.error("SSRF OkHttp request failed", e);
+            return "Request failed";
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -188,10 +217,12 @@ public class SSRF {
     public String HttpClient(@RequestParam String url) {
 
         try {
+            String safeUrl = SecurityUtil.rebuildUrl(url);
             SecurityUtil.startSSRFHook();
-            return HttpUtils.httpClient(url);
-        } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return HttpUtils.httpClient(safeUrl);
+        } catch (SSRFException | IOException | URISyntaxException e) {
+            logger.error("SSRF HttpClient request failed", e);
+            return "Request failed";
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -208,10 +239,12 @@ public class SSRF {
     public String commonsHttpClient(@RequestParam String url) {
 
         try {
+            String safeUrl = SecurityUtil.rebuildUrl(url);
             SecurityUtil.startSSRFHook();
-            return HttpUtils.commonHttpClient(url);
-        } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return HttpUtils.commonHttpClient(safeUrl);
+        } catch (SSRFException | IOException | URISyntaxException e) {
+            logger.error("SSRF commons HttpClient request failed", e);
+            return "Request failed";
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -227,10 +260,12 @@ public class SSRF {
     public String Jsoup(@RequestParam String url) {
 
         try {
+            String safeUrl = SecurityUtil.rebuildUrl(url);
             SecurityUtil.startSSRFHook();
-            return HttpUtils.Jsoup(url);
-        } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return HttpUtils.Jsoup(safeUrl);
+        } catch (SSRFException | IOException | URISyntaxException e) {
+            logger.error("SSRF Jsoup request failed", e);
+            return "Request failed";
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -246,10 +281,12 @@ public class SSRF {
     @GetMapping("/IOUtils/sec")
     public String IOUtils(String url) {
         try {
+            String safeUrl = SecurityUtil.rebuildUrl(url);
             SecurityUtil.startSSRFHook();
-            HttpUtils.IOUtils(url);
-        } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            HttpUtils.IOUtils(safeUrl);
+        } catch (SSRFException | IOException | URISyntaxException e) {
+            logger.error("SSRF IOUtils request failed", e);
+            return "Request failed";
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -264,7 +301,13 @@ public class SSRF {
      */
     @GetMapping("/HttpSyncClients/vuln")
     public String HttpSyncClients(@RequestParam("url") String url) {
-        return HttpUtils.HttpAsyncClients(url);
+        try {
+            String safeUrl = SecurityUtil.rebuildUrl(url);
+            return HttpUtils.HttpAsyncClients(safeUrl);
+        } catch (MalformedURLException | URISyntaxException e) {
+            logger.error("Invalid URL", e);
+            return "Request failed";
+        }
     }
 
 
@@ -276,17 +319,29 @@ public class SSRF {
      */
     @GetMapping("/restTemplate/vuln1")
     public String RestTemplateUrlBanRedirects(String url){
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON_UTF8);
-        return httpService.RequestHttpBanRedirects(url, headers);
+        try {
+            String safeUrl = SecurityUtil.rebuildUrl(url);
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON_UTF8);
+            return httpService.RequestHttpBanRedirects(safeUrl, headers);
+        } catch (MalformedURLException | URISyntaxException e) {
+            logger.error("Invalid URL", e);
+            return "Request failed";
+        }
     }
 
 
     @GetMapping("/restTemplate/vuln2")
     public String RestTemplateUrl(String url){
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON_UTF8);
-        return httpService.RequestHttp(url, headers);
+        try {
+            String safeUrl = SecurityUtil.rebuildUrl(url);
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON_UTF8);
+            return httpService.RequestHttp(safeUrl, headers);
+        } catch (MalformedURLException | URISyntaxException e) {
+            logger.error("Invalid URL", e);
+            return "Request failed";
+        }
     }
 
 
@@ -297,7 +352,13 @@ public class SSRF {
      */
     @GetMapping("/hutool/vuln")
     public String hutoolHttp(String url){
-        return HttpUtil.get(url);
+        try {
+            String safeUrl = SecurityUtil.rebuildUrl(url);
+            return HttpUtil.get(safeUrl);
+        } catch (MalformedURLException | URISyntaxException e) {
+            logger.error("Invalid URL", e);
+            return "Request failed";
+        }
     }
 
 
@@ -311,7 +372,13 @@ public class SSRF {
         if (!SecurityUtil.checkSSRFWithoutRedirect(url)) {
             return "Dangerous url";
         }
-        return HttpUtil.get(url);
+        try {
+            String safeUrl = SecurityUtil.rebuildUrl(url);
+            return HttpUtil.get(safeUrl);
+        } catch (MalformedURLException | URISyntaxException e) {
+            logger.error("Invalid URL", e);
+            return "Request failed";
+        }
     }
 
 

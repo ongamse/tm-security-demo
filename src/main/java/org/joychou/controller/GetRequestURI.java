@@ -38,8 +38,8 @@ public class GetRequestURI {
         String uri = request.getRequestURI(); // Security: request.getServletPath()
         PathMatcher matcher = new AntPathMatcher();
 
-        logger.info("getRequestURI: " + uri);
-        logger.info("getServletPath: " + request.getServletPath());
+        logger.info("Processing URI exclusion check");
+        logger.info("Comparing request URI against excluded paths");
 
         for (String path : excluedPath) {
             if (matcher.match(path, uri)) {

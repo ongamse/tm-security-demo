@@ -31,7 +31,7 @@ public class Jwt {
     @GetMapping("/createToken")
     public String createToken(HttpServletResponse response, HttpServletRequest request) {
         String loginUser = request.getUserPrincipal().getName();
-        log.info("Current login user is " + loginUser);
+        log.info("Creating JWT token for authenticated user");
 
         CookieUtils.deleteCookie(response, COOKIE_NAME);
         String token = JwtUtils.generateTokenByJavaJwt(loginUser);

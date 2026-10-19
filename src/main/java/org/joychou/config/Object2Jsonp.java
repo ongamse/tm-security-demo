@@ -84,7 +84,7 @@ public class Object2Jsonp extends AbstractJsonpResponseBodyAdvice {
 
         // 校验jsonp逻辑，如果不安全，返回forbidden
         if (SecurityUtil.checkURL(refer) == null ){
-            logger.error("[-] URL: " + url + "?" + query + "\t" + "Referer: " + refer);
+            logger.error("[-] JSONP referer check failed for request");
             try{
                 // 使用response.getWriter().write后，后续写入jsonp后还会继续使用response.getWriteer()，导致报错
 //                response.setStatus(HttpServletResponse.SC_FORBIDDEN);

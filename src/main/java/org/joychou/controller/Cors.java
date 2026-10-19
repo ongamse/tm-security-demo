@@ -10,6 +10,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import java.net.URI;
+import java.net.URISyntaxException;
 
 /**
  * @author JoyChou (joychou@joychou.org) @2018.10.24
@@ -22,18 +24,45 @@ public class Cors {
 
     private static String info = "{\"name\": \"JoyChou\", \"phone\": \"18200001111\"}";
 
+    private static String buildSafeOrigin(String validatedOrigin) {
+        try {
+            URI parsed = new URI(validatedOrigin);
+            return new URI(parsed.getScheme(), null,
+                    parsed.getHost(), parsed.getPort(),
+                    null, null, null).toASCIIString();
+        } catch (URISyntaxException e) {
+            return null;
+        }
+    }
+
     @GetMapping("/vuln/origin")
     public String vuls1(HttpServletRequest request, HttpServletResponse response) {
         String origin = request.getHeader("origin");
-        response.setHeader("Access-Control-Allow-Origin", origin); // set origin from header
-        response.setHeader("Access-Control-Allow-Credentials", "true");  // allow cookie
+        String validatedOrigin = SecurityUtil.checkURL(origin);
+        if (origin != null && validatedOrigin == null) {
+            return "Origin is not safe.";
+        }
+        if (validatedOrigin != null) {
+            String safeOrigin = buildSafeOrigin(validatedOrigin);
+            if (safeOrigin == null) { return "Origin is not safe."; }
+            response.setHeader("Access-Control-Allow-Origin", safeOrigin);
+        }
+        response.setHeader("Access-Control-Allow-Credentials", "true");
         return info;
     }
 
     @GetMapping("/vuln/setHeader")
-    public String vuls2(HttpServletResponse response) {
-        // 后端设置Access-Control-Allow-Origin为*的情况下，跨域的时候前端如果设置withCredentials为true会异常
-        response.setHeader("Access-Control-Allow-Origin", "*");
+    public String vuls2(HttpServletRequest request, HttpServletResponse response) {
+        String origin = request.getHeader("origin");
+        String validatedOrigin = SecurityUtil.checkURL(origin);
+        if (origin != null && validatedOrigin == null) {
+            return "Origin is not safe.";
+        }
+        if (validatedOrigin != null) {
+            String safeOrigin = buildSafeOrigin(validatedOrigin);
+            if (safeOrigin == null) { return "Origin is not safe."; }
+            response.setHeader("Access-Control-Allow-Origin", safeOrigin);
+        }
         return info;
     }
 
@@ -105,12 +134,15 @@ public class Cors {
     public String seccode(HttpServletRequest request, HttpServletResponse response) {
         String origin = request.getHeader("Origin");
 
-        // 如果origin不为空并且origin不在白名单内，认定为不安全。
-        // 如果origin为空，表示是同域过来的请求或者浏览器直接发起的请求。
-        if (origin != null && SecurityUtil.checkURL(origin) == null) {
+        String validatedOrigin = SecurityUtil.checkURL(origin);
+        if (origin != null && validatedOrigin == null) {
             return "Origin is not safe.";
         }
-        response.setHeader("Access-Control-Allow-Origin", origin);
+        if (validatedOrigin != null) {
+            String safeOrigin = buildSafeOrigin(validatedOrigin);
+            if (safeOrigin == null) { return "Origin is not safe."; }
+            response.setHeader("Access-Control-Allow-Origin", safeOrigin);
+        }
         response.setHeader("Access-Control-Allow-Credentials", "true");
         return LoginUtils.getUserInfo2JsonStr(request);
     }

@@ -7,16 +7,18 @@ import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 
 @RestController
 public class PathTraversal {
 
     protected final Logger logger = LoggerFactory.getLogger(this.getClass());
+    private static final String IMAGE_BASE_DIR = System.getProperty("user.dir");
 
     /**
      * http://localhost:8080/path_traversal/vul?filepath=../../../../../etc/passwd
@@ -29,7 +31,7 @@ public class PathTraversal {
     @GetMapping("/path_traversal/sec")
     public String getImageSec(String filepath) throws IOException {
         if (SecurityUtil.pathFilter(filepath) == null) {
-            logger.info("Illegal file path: " + filepath);
+            logger.info("Illegal file path detected");
             return "Bad boy. Illegal file path.";
         }
         return getImgBase64(filepath);
@@ -38,13 +40,23 @@ public class PathTraversal {
     private String getImgBase64(String imgFile) throws IOException {
 
         logger.info("Working directory: " + System.getProperty("user.dir"));
-        logger.info("File path: " + imgFile);
+        logger.info("Processing file path request");
 
-        File f = new File(imgFile);
-        if (f.exists() && !f.isDirectory()) {
-            byte[] data = Files.readAllBytes(Paths.get(imgFile));
+        // Canonicalize and verify the path stays within the allowed base directory
+        Path base = Paths.get(IMAGE_BASE_DIR).normalize().toAbsolutePath();
+        Path resolved = base.resolve(imgFile).normalize().toAbsolutePath();
+        if (!resolved.startsWith(base)) {
+            logger.error("Path traversal attempt detected");
+            return "Bad boy. Illegal file path.";
+        }
+
+        try {
+            if (Files.isDirectory(resolved)) {
+                return "File doesn't exist or is not a file.";
+            }
+            byte[] data = Files.readAllBytes(resolved);
             return new String(Base64.encodeBase64(data));
-        } else {
+        } catch (NoSuchFileException e) {
             return "File doesn't exist or is not a file.";
         }
     }

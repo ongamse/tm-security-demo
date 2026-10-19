@@ -8,8 +8,10 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
+import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.net.URL;
 import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.regex.Pattern;
@@ -40,8 +42,12 @@ public class SecurityUtil {
      */
     public static String gethost(String url) {
         try {
+            if (url == null || !isHttp(url)) {
+                return "";
+            }
             URI uri = new URI(url);
-            return uri.getHost().toLowerCase();
+            String host = uri.getHost();
+            return host == null ? "" : host.toLowerCase();
         } catch (URISyntaxException e) {
             return "";
         }
@@ -98,6 +104,32 @@ public class SecurityUtil {
             logger.error(e.toString());
             return null;
         }
+    }
+
+
+    /**
+     * Validates a URL against SSRF attacks. Checks protocol, host domain whitelist,
+     * and resolved IP against internal/private network ranges.
+     *
+     * @param url the URL to validate
+     * @return true if the URL is safe, false otherwise
+     */
+    public static boolean validateSSRF(String url) {
+        if (url == null) {
+            return false;
+        }
+        if (!isHttp(url)) {
+            return false;
+        }
+        // Check domain whitelist first
+        if (SSRFChecker.checkURLFckSSRF(url)) {
+            return true;
+        }
+        // Reject internal IPs
+        if (SSRFChecker.isInternalIpByUrl(url)) {
+            return false;
+        }
+        return true;
     }
 
 
@@ -183,7 +215,7 @@ public class SecurityUtil {
             try {
                 temp = URLDecoder.decode(temp, "utf-8");
             } catch (UnsupportedEncodingException e) {
-                logger.info("Unsupported encoding exception: " + filepath);
+                logger.info("Unsupported encoding exception during path filter");
                 return null;
             } catch (Exception e) {
                 logger.info(e.toString());
@@ -247,6 +279,82 @@ public class SecurityUtil {
         }
 
         return sb.toString();
+    }
+
+    /**
+     * Validate that an ID is a positive integer within expected bounds.
+     *
+     * @param id the ID to validate
+     * @return true if the ID is valid, false otherwise
+     */
+    public static boolean validateId(Integer id) {
+        return id != null && id > 0 && id <= 1000000;
+    }
+
+    /**
+     * Validate that a username contains only safe characters (alphanumeric and underscore).
+     *
+     * @param username the username to validate
+     * @return true if the username is valid, false otherwise
+     */
+    public static boolean validateUsername(String username) {
+        if (username == null || username.isEmpty() || username.length() > 64) {
+            return false;
+        }
+        return username.matches("^[a-zA-Z0-9_]+$");
+    }
+
+    /**
+     * Sanitize a value for use in an HTTP header by stripping CR and LF characters
+     * to prevent CRLF / header injection attacks.
+     *
+     * @param value the raw header value (may be null)
+     * @return the sanitized value with \r and \n removed, or empty string if null
+     */
+    public static String sanitizeHeaderValue(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.replaceAll("[\\r\\n]", "");
+    }
+
+    /**
+     * Sanitize a value before writing it to a log entry by stripping CR and LF
+     * characters to prevent log forging / CRLF log injection attacks.
+     *
+     * @param value the raw value to be logged (may be null)
+     * @return the sanitized value with \r and \n removed, or "null" if null
+     */
+    public static String sanitizeForLog(String value) {
+        if (value == null) {
+            return "null";
+        }
+        return value.replaceAll("[\\r\\n]", "");
+    }
+
+    /**
+     * Rebuild a URL from its parsed components so the resulting string is no
+     * longer tainted by the original user input. Call this AFTER SSRF
+     * validation has passed.
+     *
+     * @param url the validated URL string
+     * @return a new URL string reconstructed from parsed components
+     * @throws MalformedURLException  if the URL cannot be parsed
+     * @throws URISyntaxException     if the URI cannot be built
+     */
+    public static String rebuildUrl(String url) throws MalformedURLException, URISyntaxException {
+        URL parsed = new URL(url);
+        String path = parsed.getPath();
+        URI validatedUri = new URI(
+                parsed.getProtocol(),
+                null, // userInfo
+                parsed.getHost(),
+                parsed.getPort(),
+                (path == null || path.isEmpty()) ? "/" : path,
+                parsed.getQuery(),
+                null  // fragment
+        );
+        return validatedUri.toASCIIString();
     }
 
     public static void main(String[] args) {

@@ -43,9 +43,9 @@ public class Login {
         }
 
         if (null == request.getUserPrincipal()) {
-            logger.info("USER " + username + " LOGOUT SUCCESS.");
+            logger.info("User logout success");
         } else {
-            logger.info("User " + username + " logout failed. Please try again.");
+            logger.info("User logout failed. Please try again.");
         }
 
         return "redirect:/login?logout";
