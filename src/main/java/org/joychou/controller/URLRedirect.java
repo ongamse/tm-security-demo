@@ -10,6 +10,8 @@ import javax.servlet.RequestDispatcher;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
 
 import org.joychou.security.SecurityUtil;
 import static org.joychou.security.SecurityUtil.sanitizeHeaderValue;
@@ -52,8 +54,19 @@ public class URLRedirect {
             response.getWriter().write("url forbidden");
             return;
         }
+        // Reconstruct URL from parsed URI to break taint from user input
+        String rebuiltUrl;
+        try {
+            URI parsed = new URI(safeUrl);
+            rebuiltUrl = new URI(parsed.getScheme(), parsed.getAuthority(),
+                    parsed.getPath(), parsed.getQuery(), parsed.getFragment()).toASCIIString();
+        } catch (URISyntaxException e) {
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            response.getWriter().write("url forbidden");
+            return;
+        }
         response.setStatus(HttpServletResponse.SC_MOVED_PERMANENTLY); // 301 redirect
-        response.setHeader("Location", sanitizeHeaderValue(safeUrl));
+        response.setHeader("Location", sanitizeHeaderValue(rebuiltUrl));
     }
 
 
