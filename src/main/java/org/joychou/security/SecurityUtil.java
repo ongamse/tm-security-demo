@@ -18,6 +18,7 @@ import java.util.regex.Pattern;
 public class SecurityUtil {
 
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
+    private static final Pattern USERNAME_PATTERN = Pattern.compile("^[a-zA-Z0-9_.-]{1,64}$");
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
 
 
@@ -247,6 +248,20 @@ public class SecurityUtil {
         }
 
         return sb.toString();
+    }
+
+    /**
+     * Validate username format to prevent IDOR.
+     * Only allows alphanumeric characters, underscores, hyphens, and dots, max 64 chars.
+     *
+     * @param username the username to validate
+     * @return true if the username matches the allowed pattern
+     */
+    public static boolean isValidUsername(String username) {
+        if (username == null) {
+            return false;
+        }
+        return USERNAME_PATTERN.matcher(username).matches();
     }
 
     public static void main(String[] args) {
