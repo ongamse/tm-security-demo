@@ -47,7 +47,7 @@ public class CommandInject {
         if (host == null || !host.matches("^[a-zA-Z0-9._:-]+$")) {
             return "Invalid host header.";
         }
-        logger.info(host);
+        logger.info(SecurityUtil.sanitizeForLog(host));
         String[] cmdList = new String[]{"curl", host};
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);

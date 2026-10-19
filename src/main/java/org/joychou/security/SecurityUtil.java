@@ -213,7 +213,7 @@ public class SecurityUtil {
             try {
                 temp = URLDecoder.decode(temp, "utf-8");
             } catch (UnsupportedEncodingException e) {
-                logger.info("Unsupported encoding exception: " + filepath);
+                logger.info("Unsupported encoding exception: " + sanitizeForLog(filepath));
                 return null;
             } catch (Exception e) {
                 logger.info(e.toString());
@@ -312,6 +312,20 @@ public class SecurityUtil {
     public static String sanitizeHeaderValue(String value) {
         if (value == null) {
             return "";
+        }
+        return value.replaceAll("[\\r\\n]", "");
+    }
+
+    /**
+     * Sanitize a value before writing it to a log entry by stripping CR and LF
+     * characters to prevent log forging / CRLF log injection attacks.
+     *
+     * @param value the raw value to be logged (may be null)
+     * @return the sanitized value with \r and \n removed, or "null" if null
+     */
+    public static String sanitizeForLog(String value) {
+        if (value == null) {
+            return "null";
         }
         return value.replaceAll("[\\r\\n]", "");
     }

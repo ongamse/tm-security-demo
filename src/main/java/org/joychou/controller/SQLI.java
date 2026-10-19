@@ -13,6 +13,8 @@ import javax.annotation.Resource;
 import java.sql.*;
 import java.util.List;
 
+import static org.joychou.security.SecurityUtil.sanitizeForLog;
+
 
 /**
  * SQL Injection
@@ -64,7 +66,7 @@ public class SQLI {
             String sql = "select * from users where username = ?";
             PreparedStatement statement = con.prepareStatement(sql);
             statement.setString(1, username);
-            logger.info(statement.toString());
+            logger.info(sanitizeForLog(statement.toString()));
             ResultSet rs = statement.executeQuery();
 
             while (rs.next()) {
@@ -72,7 +74,7 @@ public class SQLI {
                 String res_pwd = rs.getString("password");
                 String info = String.format("%s: %s\n", res_name, res_pwd);
                 result.append(info);
-                logger.info(info);
+                logger.info(sanitizeForLog(info));
             }
             rs.close();
             con.close();
@@ -112,7 +114,7 @@ public class SQLI {
             PreparedStatement st = con.prepareStatement(sql);
             st.setString(1, username);
 
-            logger.info(st.toString());  // sql after prepare statement
+            logger.info(sanitizeForLog(st.toString()));  // sql after prepare statement
             ResultSet rs = st.executeQuery();
 
             while (rs.next()) {
@@ -120,7 +122,7 @@ public class SQLI {
                 String res_pwd = rs.getString("password");
                 String info = String.format("%s: %s\n", res_name, res_pwd);
                 result.append(info);
-                logger.info(info);
+                logger.info(sanitizeForLog(info));
             }
 
             rs.close();
@@ -155,7 +157,7 @@ public class SQLI {
             PreparedStatement st = con.prepareStatement(sql);
             st.setString(1, username);
 
-            logger.info(st.toString());
+            logger.info(sanitizeForLog(st.toString()));
             ResultSet rs = st.executeQuery();
 
             while (rs.next()) {
@@ -163,7 +165,7 @@ public class SQLI {
                 String res_pwd = rs.getString("password");
                 String info = String.format("%s: %s\n", res_name, res_pwd);
                 result.append(info);
-                logger.info(info);
+                logger.info(sanitizeForLog(info));
             }
 
             rs.close();
