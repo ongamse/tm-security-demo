@@ -16,6 +16,10 @@ import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.sql.DriverManager;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
 
 
 /**
@@ -27,6 +31,11 @@ import java.sql.DriverManager;
 @RestController
 @RequestMapping("/rce")
 public class Rce {
+
+    // Allowlist of commands permitted for ProcessBuilder execution
+    private static final Set<String> ALLOWED_COMMANDS = Collections.unmodifiableSet(
+            new HashSet<>(Arrays.asList("ls", "whoami", "id", "hostname", "date", "uptime", "uname", "df", "ps"))
+    );
 
     @GetMapping("/runtime/exec")
     public String CommandExec(String cmd) {
@@ -65,9 +74,28 @@ public class Rce {
 
         StringBuilder sb = new StringBuilder();
 
+        if (cmd == null || cmd.isEmpty()) {
+            return "Command must not be empty";
+        }
+
+        // Validate command against allowlist; reject shell metacharacters
+        String[] parts = cmd.trim().split("\\s+");
+        String baseCommand = parts[0];
+
+        if (!ALLOWED_COMMANDS.contains(baseCommand)) {
+            return "Command not allowed. Allowed commands: " + ALLOWED_COMMANDS;
+        }
+
+        // Reject arguments containing shell metacharacters to prevent injection
+        for (String part : parts) {
+            if (part.matches(".*[;&|`$><(){}\\[\\]!\\\\\"'\\n\\r].*")) {
+                return "Invalid characters in command arguments";
+            }
+        }
+
         try {
-            String[] arrCmd = {"/bin/sh", "-c", cmd};
-            ProcessBuilder processBuilder = new ProcessBuilder(arrCmd);
+            // No shell wrapper — execute the command directly as an argv list
+            ProcessBuilder processBuilder = new ProcessBuilder(parts);
             Process p = processBuilder.start();
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
