@@ -19,13 +19,25 @@ public class AntObjectInputStream extends ObjectInputStream {
         super(inputStream);
     }
 
+    /** Allowlist of safe class prefixes permitted during deserialization. */
+    private static final String[] ALLOWED_CLASS_PREFIXES = {
+            "org.joychou.",
+            "java.lang.",
+            "java.util.",
+            "java.math.",
+            "[B", // byte array
+            "[C", // char array
+            "[I", // int array
+            "[J", // long array
+            "[S", // short array
+            "[D", // double array
+            "[F", // float array
+            "[Z"  // boolean array
+    };
+
     /**
-     * 只允许反序列化SerialObject class
-     *
-     * 在应用上使用黑白名单校验方案比较局限，因为只有使用自己定义的AntObjectInputStream类，进行反序列化才能进行校验。
-     * 类似fastjson通用类的反序列化就不能校验。
-     * 但是RASP是通过HOOK java/io/ObjectInputStream类的resolveClass方法，全局的检测白名单。
-     *
+     * Allowlist-based type filtering for safe deserialization.
+     * Only classes matching known-safe prefixes are permitted.
      */
     @Override
     protected Class<?> resolveClass(final ObjectStreamClass desc)
@@ -33,20 +45,16 @@ public class AntObjectInputStream extends ObjectInputStream {
     {
         String className = desc.getName();
 
-        // Deserialize class name: org.joychou.security.AntObjectInputStream$MyObject
         logger.info("Deserialize class name: " + className);
 
-        String[] denyClasses = {"java.net.InetAddress",
-                                "org.apache.commons.collections.Transformer",
-                                "org.apache.commons.collections.functors"};
-
-        for (String denyClass : denyClasses) {
-            if (className.startsWith(denyClass)) {
-                throw new InvalidClassException("Unauthorized deserialization attempt", className);
+        for (String allowed : ALLOWED_CLASS_PREFIXES) {
+            if (className.startsWith(allowed)) {
+                return super.resolveClass(desc);
             }
         }
 
-        return super.resolveClass(desc);
+        throw new InvalidClassException(
+                "Deserialization of class not allowed by allowlist", className);
     }
 
     public static void main(String args[]) throws Exception{
