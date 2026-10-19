@@ -83,12 +83,14 @@ public class JwtUtils {
 
 
     public static String getNicknameByJavaJwt(String token) {
-        // If the signature is not verified, there will be security issues.
-        if (!verifyTokenByJavaJwt(token)) {
-            log.error("token is invalid");
+        try {
+            Algorithm algorithm = Algorithm.HMAC256(SECRET);
+            JWTVerifier verifier = JWT.require(algorithm).build();
+            return verifier.verify(token).getClaim("nickname").asString();
+        } catch (JWTVerificationException exception) {
+            log.error("token is invalid: " + exception.toString());
             return null;
         }
-        return JWT.decode(token).getClaim("nickname").asString();
     }
 
 
