@@ -8,8 +8,10 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
+import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.net.URL;
 import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.regex.Pattern;
@@ -328,6 +330,31 @@ public class SecurityUtil {
             return "null";
         }
         return value.replaceAll("[\\r\\n]", "");
+    }
+
+    /**
+     * Rebuild a URL from its parsed components so the resulting string is no
+     * longer tainted by the original user input. Call this AFTER SSRF
+     * validation has passed.
+     *
+     * @param url the validated URL string
+     * @return a new URL string reconstructed from parsed components
+     * @throws MalformedURLException  if the URL cannot be parsed
+     * @throws URISyntaxException     if the URI cannot be built
+     */
+    public static String rebuildUrl(String url) throws MalformedURLException, URISyntaxException {
+        URL parsed = new URL(url);
+        String path = parsed.getPath();
+        URI validatedUri = new URI(
+                parsed.getProtocol(),
+                null, // userInfo
+                parsed.getHost(),
+                parsed.getPort(),
+                (path == null || path.isEmpty()) ? "/" : path,
+                parsed.getQuery(),
+                null  // fragment
+        );
+        return validatedUri.toASCIIString();
     }
 
     public static void main(String[] args) {

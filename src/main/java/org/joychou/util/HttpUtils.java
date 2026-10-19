@@ -26,6 +26,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLConnection;
 import java.util.concurrent.*;
@@ -40,6 +41,12 @@ public class HttpUtils {
     public static String commonHttpClient(String url) {
 
         HttpClient client = new HttpClient();
+        try {
+            url = SecurityUtil.rebuildUrl(url);
+        } catch (Exception e) {
+            logger.error("Invalid URL", e);
+            return "Request failed";
+        }
         GetMethod method = new GetMethod(url);
 
         try {
@@ -62,7 +69,8 @@ public class HttpUtils {
             return "SSRF check failed";
         }
         try {
-            return Request.Get(url).execute().returnContent().toString();
+            String safeUrl = SecurityUtil.rebuildUrl(url);
+            return Request.Get(safeUrl).execute().returnContent().toString();
         } catch (Exception e) {
             logger.error("HTTP request failed", e);
             return "Request failed";
@@ -75,9 +83,9 @@ public class HttpUtils {
         StringBuilder result = new StringBuilder();
 
         try {
-
+            String safeUrl = SecurityUtil.rebuildUrl(url);
             CloseableHttpClient client = HttpClients.createDefault();
-            HttpGet httpGet = new HttpGet(url);
+            HttpGet httpGet = new HttpGet(safeUrl);
             // set redirect enable false
             // httpGet.setConfig(RequestConfig.custom().setRedirectsEnabled(false).build());
             HttpResponse httpResponse = client.execute(httpGet); // send request
@@ -102,7 +110,8 @@ public class HttpUtils {
             return "SSRF check failed";
         }
         try {
-            URL u = new URL(url);
+            String safeUrl = SecurityUtil.rebuildUrl(url);
+            URL u = new URL(safeUrl);
             URLConnection urlConnection = u.openConnection();
             BufferedReader in = new BufferedReader(new InputStreamReader(urlConnection.getInputStream())); //send request
             String inputLine;
@@ -129,7 +138,8 @@ public class HttpUtils {
             return "SSRF check failed";
         }
         try {
-            URL u = new URL(url);
+            String safeUrl = SecurityUtil.rebuildUrl(url);
+            URL u = new URL(safeUrl);
             URLConnection urlConnection = u.openConnection();
             HttpURLConnection conn = (HttpURLConnection) urlConnection;
 //             conn.setInstanceFollowRedirects(false);
@@ -144,7 +154,7 @@ public class HttpUtils {
             }
             in.close();
             return html.toString();
-        } catch (IOException e) {
+        } catch (IOException | URISyntaxException e) {
             logger.error("HTTP URL connection failed", e);
             return "Request failed";
         }
@@ -161,13 +171,14 @@ public class HttpUtils {
             return "SSRF check failed";
         }
         try {
-            Document doc = Jsoup.connect(url)
+            String safeUrl = SecurityUtil.rebuildUrl(url);
+            Document doc = Jsoup.connect(safeUrl)
 //                    .followRedirects(false)
                     .timeout(3000)
                     .cookie("name", "joychou") // request cookies
                     .execute().parse();
             return doc.outerHtml();
-        } catch (IOException e) {
+        } catch (IOException | URISyntaxException e) {
             logger.error("Jsoup request failed", e);
             return "Request failed";
         }
@@ -182,6 +193,11 @@ public class HttpUtils {
     public static String okhttp(String url) throws IOException {
         OkHttpClient client = new OkHttpClient();
 //         client.setFollowRedirects(false);
+        try {
+            url = SecurityUtil.rebuildUrl(url);
+        } catch (URISyntaxException e) {
+            throw new IOException("Invalid URL", e);
+        }
         com.squareup.okhttp.Request ok_http = new com.squareup.okhttp.Request.Builder().url(url).build();
         return client.newCall(ok_http).execute().body().string();
     }
@@ -196,9 +212,10 @@ public class HttpUtils {
      */
     public static void imageIO(String url) {
         try {
-            URL u = new URL(url);
+            String safeUrl = SecurityUtil.rebuildUrl(url);
+            URL u = new URL(safeUrl);
             ImageIO.read(u); // send request
-        } catch (IOException e) {
+        } catch (IOException | URISyntaxException e) {
             logger.error(e.getMessage());
         }
 
@@ -213,8 +230,9 @@ public class HttpUtils {
      */
     public static void IOUtils(String url) {
         try {
-            IOUtils.toByteArray(URI.create(url));
-        } catch (IOException e) {
+            String safeUrl = SecurityUtil.rebuildUrl(url);
+            IOUtils.toByteArray(URI.create(safeUrl));
+        } catch (IOException | URISyntaxException e) {
             logger.error(e.getMessage());
         }
     }
@@ -226,8 +244,9 @@ public class HttpUtils {
         }
         CloseableHttpAsyncClient httpclient = HttpAsyncClients.createDefault();
         try {
+            String safeUrl = SecurityUtil.rebuildUrl(url);
             httpclient.start();
-            final HttpGet request = new HttpGet(url);
+            final HttpGet request = new HttpGet(safeUrl);
             Future<HttpResponse> future = httpclient.execute(request, null);
             HttpResponse response = future.get(6000, TimeUnit.MILLISECONDS);
             return EntityUtils.toString(response.getEntity());
