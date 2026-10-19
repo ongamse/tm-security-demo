@@ -40,8 +40,12 @@ public class SecurityUtil {
      */
     public static String gethost(String url) {
         try {
+            if (url == null || !isHttp(url)) {
+                return "";
+            }
             URI uri = new URI(url);
-            return uri.getHost().toLowerCase();
+            String host = uri.getHost();
+            return host == null ? "" : host.toLowerCase();
         } catch (URISyntaxException e) {
             return "";
         }
@@ -98,6 +102,32 @@ public class SecurityUtil {
             logger.error(e.toString());
             return null;
         }
+    }
+
+
+    /**
+     * Validates a URL against SSRF attacks. Checks protocol, host domain whitelist,
+     * and resolved IP against internal/private network ranges.
+     *
+     * @param url the URL to validate
+     * @return true if the URL is safe, false otherwise
+     */
+    public static boolean validateSSRF(String url) {
+        if (url == null) {
+            return false;
+        }
+        if (!isHttp(url)) {
+            return false;
+        }
+        // Check domain whitelist first
+        if (SSRFChecker.checkURLFckSSRF(url)) {
+            return true;
+        }
+        // Reject internal IPs
+        if (SSRFChecker.isInternalIpByUrl(url)) {
+            return false;
+        }
+        return true;
     }
 
 

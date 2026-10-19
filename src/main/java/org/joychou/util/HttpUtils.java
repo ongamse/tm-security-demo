@@ -17,6 +17,8 @@ import org.jsoup.nodes.Document;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.joychou.security.SecurityUtil;
+
 import javax.imageio.ImageIO;
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -55,6 +57,9 @@ public class HttpUtils {
 
 
     public static String request(String url) {
+        if (!SecurityUtil.validateSSRF(url)) {
+            return "SSRF check failed";
+        }
         try {
             return Request.Get(url).execute().returnContent().toString();
         } catch (Exception e) {
@@ -90,6 +95,9 @@ public class HttpUtils {
 
 
     public static String URLConnection(String url) {
+        if (!SecurityUtil.validateSSRF(url)) {
+            return "SSRF check failed";
+        }
         try {
             URL u = new URL(url);
             URLConnection urlConnection = u.openConnection();
@@ -114,6 +122,9 @@ public class HttpUtils {
      * UserAgent is Java/1.8.0_102.
      */
     public static String HttpURLConnection(String url) {
+        if (!SecurityUtil.validateSSRF(url)) {
+            return "SSRF check failed";
+        }
         try {
             URL u = new URL(url);
             URLConnection urlConnection = u.openConnection();
@@ -143,6 +154,9 @@ public class HttpUtils {
      * @param url http request url
      */
     public static String Jsoup(String url) {
+        if (!SecurityUtil.validateSSRF(url)) {
+            return "SSRF check failed";
+        }
         try {
             Document doc = Jsoup.connect(url)
 //                    .followRedirects(false)
@@ -203,6 +217,9 @@ public class HttpUtils {
 
 
     public static String HttpAsyncClients(String url) {
+        if (!SecurityUtil.validateSSRF(url)) {
+            return "SSRF check failed";
+        }
         CloseableHttpAsyncClient httpclient = HttpAsyncClients.createDefault();
         try {
             httpclient.start();

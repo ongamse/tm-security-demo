@@ -105,14 +105,23 @@ public class URLWhiteList {
             return;
         }
 
-        URL u = new URL(url);
-        String host = u.getHost();
+        // Use URI (not URL) to avoid host parsing inconsistencies
+        String host = SecurityUtil.gethost(url);
+        if (host.isEmpty()) {
+            return;
+        }
         logger.info("host:  " + host);
+
+        // Validate resolved IP is not internal before redirecting
+        if (!SecurityUtil.validateSSRF(url)) {
+            return;
+        }
 
         // endsWith .
         for (String domain : domainwhitelist) {
             if (host.endsWith("." + domain)) {
                 res.sendRedirect(url);
+                return;
             }
         }
 
