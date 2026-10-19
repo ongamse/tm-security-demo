@@ -262,6 +262,49 @@ public class SecurityUtil {
         return value.replaceAll("[\\r\\n]", "");
     }
 
+    /**
+     * Validate a request dispatcher forward path to prevent access to
+     * protected server resources (WEB-INF, META-INF) and path traversal.
+     *
+     * @param path the forward path to validate
+     * @return the path if safe, or null if it accesses protected resources
+     */
+    public static String checkForwardPath(String path) {
+        if (path == null || path.isEmpty()) {
+            return null;
+        }
+
+        // Decode to prevent encoding-based bypasses
+        String decoded = path;
+        try {
+            int maxIterations = 10;
+            while (decoded.contains("%") && maxIterations-- > 0) {
+                String prev = decoded;
+                decoded = URLDecoder.decode(decoded, "UTF-8");
+                if (decoded.equals(prev)) {
+                    break;
+                }
+            }
+        } catch (UnsupportedEncodingException e) {
+            return null;
+        } catch (Exception e) {
+            return null;
+        }
+
+        // Block path traversal
+        if (decoded.contains("..")) {
+            return null;
+        }
+
+        // Block access to protected server directories (case-insensitive)
+        String upper = decoded.toUpperCase();
+        if (upper.contains("/WEB-INF") || upper.contains("/META-INF")) {
+            return null;
+        }
+
+        return path;
+    }
+
     public static void main(String[] args) {
     }
 

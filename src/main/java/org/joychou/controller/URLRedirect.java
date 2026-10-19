@@ -71,7 +71,17 @@ public class URLRedirect {
     @ResponseBody
     public static void forward(HttpServletRequest request, HttpServletResponse response) {
         String url = request.getParameter("url");
-        RequestDispatcher rd = request.getRequestDispatcher(url);
+        String safePath = SecurityUtil.checkForwardPath(url);
+        if (safePath == null) {
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            try {
+                response.getWriter().write("url forbidden");
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+            return;
+        }
+        RequestDispatcher rd = request.getRequestDispatcher(safePath);
         try {
             rd.forward(request, response);
         } catch (Exception e) {
