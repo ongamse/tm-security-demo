@@ -65,6 +65,12 @@ public class SSRFChecker {
         String finalUrl = url;
         try {
             do {
+                // Only allow http/https protocols
+                if (!SecurityUtil.isHttp(finalUrl)) {
+                    logger.error("[-] SSRF check failed. Non-HTTP protocol: " + finalUrl);
+                    return false;
+                }
+
                 // 判断当前请求的URL是否是内网ip
                 if (isInternalIpByUrl(finalUrl)) {
                     logger.error("[-] SSRF check failed. Dangerous url: " + finalUrl);
@@ -93,7 +99,7 @@ public class SSRFChecker {
             } while (connection.getResponseCode() != HttpURLConnection.HTTP_OK);
             connection.disconnect();
         } catch (Exception e) {
-            return true;  // 如果异常了，认为是安全的，防止是超时导致的异常而验证不成功。
+            return false;  // Fail closed: treat exceptions as unsafe to prevent SSRF bypass
         }
         return true; // 默认返回true
     }
@@ -129,6 +135,20 @@ public class SSRFChecker {
     public static boolean isInternalIp(String strIP) {
         if (StringUtils.isEmpty(strIP)) {
             logger.error("[-] SSRF check failed. IP is empty. " + strIP);
+            return true;
+        }
+
+        try {
+            InetAddress addr = InetAddress.getByName(strIP);
+            // Check built-in Java methods for common internal/special addresses
+            if (addr.isLoopbackAddress() || addr.isSiteLocalAddress()
+                    || addr.isLinkLocalAddress() || addr.isAnyLocalAddress()
+                    || addr.isMulticastAddress()) {
+                logger.error("[-] SSRF check failed. Internal/special IP: " + strIP);
+                return true;
+            }
+        } catch (Exception e) {
+            logger.error("[-] SSRF check failed. Invalid IP: " + strIP);
             return true;
         }
 
@@ -289,12 +309,17 @@ public class SSRFChecker {
      */
     private static String url2host(String url) {
         try {
+            // Only allow http and https protocols
+            if (!SecurityUtil.isHttp(url)) {
+                return "";
+            }
             // use URI instead of URL
             URI u = new URI(url);
-            if (SecurityUtil.isHttp(url)) {
-                return u.getHost();
+            String host = u.getHost();
+            if (host == null || host.isEmpty()) {
+                return "";
             }
-            return "";
+            return host;
         } catch (Exception e) {
             return "";
         }
