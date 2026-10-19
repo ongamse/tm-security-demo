@@ -15,6 +15,7 @@ public class CookieUtils {
             cookie.setMaxAge(0);
             cookie.setPath("/");
             cookie.setSecure(true);
+            cookie.setHttpOnly(true);
             res.addCookie(cookie);
             return true;
         } catch (Exception e) {
