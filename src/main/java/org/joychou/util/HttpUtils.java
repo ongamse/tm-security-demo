@@ -179,6 +179,12 @@ public class HttpUtils {
     public static void imageIO(String url) {
         try {
             URL u = new URL(url);
+            // Only allow http/https schemes to prevent file:// path traversal
+            String protocol = u.getProtocol();
+            if (!"http".equals(protocol) && !"https".equals(protocol)) {
+                logger.error("Blocked non-HTTP protocol in imageIO: " + protocol);
+                return;
+            }
             ImageIO.read(u); // send request
         } catch (IOException e) {
             logger.error(e.getMessage());
