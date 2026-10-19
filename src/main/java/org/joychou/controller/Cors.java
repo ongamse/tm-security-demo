@@ -2,6 +2,8 @@ package org.joychou.controller;
 
 import org.joychou.security.SecurityUtil;
 import org.joychou.util.LoginUtils;
+import org.joychou.config.WebConfig;
+import java.util.ArrayList;
 import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -25,7 +27,12 @@ public class Cors {
     @GetMapping("/vuln/origin")
     public String vuls1(HttpServletRequest request, HttpServletResponse response) {
         String origin = request.getHeader("origin");
-        response.setHeader("Access-Control-Allow-Origin", origin); // set origin from header
+        // Validate origin against the safe-domain allowlist before reflecting
+        if (origin != null && SecurityUtil.checkURL(origin) == null) {
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            return "Origin is not allowed.";
+        }
+        response.setHeader("Access-Control-Allow-Origin", SecurityUtil.sanitizeHeaderValue(origin));
         response.setHeader("Access-Control-Allow-Credentials", "true");  // allow cookie
         return info;
     }
@@ -110,7 +117,7 @@ public class Cors {
         if (origin != null && SecurityUtil.checkURL(origin) == null) {
             return "Origin is not safe.";
         }
-        response.setHeader("Access-Control-Allow-Origin", origin);
+        response.setHeader("Access-Control-Allow-Origin", SecurityUtil.sanitizeHeaderValue(origin));
         response.setHeader("Access-Control-Allow-Credentials", "true");
         return LoginUtils.getUserInfo2JsonStr(request);
     }
