@@ -247,6 +247,44 @@ public class SecurityUtil {
     }
 
 
+    private static final Pattern USERNAME_PATTERN = Pattern.compile("^[a-zA-Z0-9_]+$");
+
+    /**
+     * Validate username to prevent IDOR attacks.
+     * Only allows alphanumeric characters and underscores.
+     *
+     * @param username the username to validate
+     * @return the validated username
+     * @throws IllegalArgumentException if the username is invalid
+     */
+    public static String validateUsername(String username) {
+        if (username == null || username.isEmpty()) {
+            throw new IllegalArgumentException("Username must not be null or empty");
+        }
+        if (username.length() > 64) {
+            throw new IllegalArgumentException("Username exceeds maximum length");
+        }
+        if (!USERNAME_PATTERN.matcher(username).matches()) {
+            throw new IllegalArgumentException("Username contains invalid characters");
+        }
+        return username;
+    }
+
+    /**
+     * Validate a numeric ID to prevent IDOR attacks.
+     * Ensures the ID is a positive integer.
+     *
+     * @param id the id to validate
+     * @return the validated id
+     * @throws IllegalArgumentException if the id is invalid
+     */
+    public static Integer validateId(Integer id) {
+        if (id == null || id <= 0) {
+            throw new IllegalArgumentException("ID must be a positive integer");
+        }
+        return id;
+    }
+
     /**
      * 过滤mybatis中order by不能用#的情况。
      * 严格限制用户输入只能包含<code>a-zA-Z0-9_-.</code>字符。
