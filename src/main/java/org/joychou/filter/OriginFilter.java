@@ -6,6 +6,8 @@ import javax.servlet.annotation.WebFilter;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import org.joychou.security.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -36,16 +38,27 @@ public class OriginFilter implements Filter {
         String origin = request.getHeader("Origin");
         logger.info("[+] Origin filter processing request");
 
-        // 以file协议访问html，origin为字符串的null，所以依然会走安全check逻辑
-        String validatedOrigin = (origin != null) ? SecurityUtil.checkURL(origin) : null;
-        if (origin != null && validatedOrigin == null) {
-            logger.error("[-] Origin check error. Request rejected by origin filter");
-            response.setStatus(response.SC_FORBIDDEN);
-            response.getWriter().println("Invaid cors config by joychou.");
-            return;
+        if (origin != null) {
+            String validatedOrigin = SecurityUtil.checkURL(origin);
+            if (validatedOrigin == null) {
+                logger.error("[-] Origin check error. Request rejected by origin filter");
+                response.setStatus(response.SC_FORBIDDEN);
+                response.getWriter().println("Invaid cors config by joychou.");
+                return;
+            }
+            try {
+                URI parsedOrigin = new URI(validatedOrigin);
+                String safeOrigin = new URI(parsedOrigin.getScheme(), null,
+                        parsedOrigin.getHost(), parsedOrigin.getPort(),
+                        null, null, null).toASCIIString();
+                response.setHeader("Access-Control-Allow-Origin", safeOrigin);
+            } catch (URISyntaxException e) {
+                response.setStatus(response.SC_FORBIDDEN);
+                response.getWriter().println("Invaid cors config by joychou.");
+                return;
+            }
         }
 
-        response.setHeader("Access-Control-Allow-Origin", SecurityUtil.sanitizeHeaderValue(validatedOrigin));
         response.setHeader("Access-Control-Allow-Credentials", "true");
         response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTION");
 
