@@ -9,9 +9,10 @@ import org.springframework.web.util.HtmlUtils;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
 
-import jdk.nashorn.api.scripting.ClassFilter;
-import jdk.nashorn.api.scripting.NashornScriptEngineFactory;
+import javax.script.Bindings;
+import javax.script.ScriptContext;
 import javax.script.ScriptEngine;
+import javax.script.ScriptEngineManager;
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -94,10 +95,26 @@ public class Rce {
      */
     @GetMapping("/jscmd")
     public void jsEngine(String jsurl) throws Exception{
-        // Use Nashorn with a restrictive ClassFilter to prevent arbitrary Java class instantiation
-        NashornScriptEngineFactory factory = new NashornScriptEngineFactory();
-        ClassFilter classFilter = className -> false; // Deny all Java class access from scripts
-        ScriptEngine engine = factory.getScriptEngine(classFilter);
+        // Use standard javax.script API with restricted bindings to prevent arbitrary Java class access
+        ScriptEngineManager manager = new ScriptEngineManager();
+        ScriptEngine engine = manager.getEngineByName("js");
+        if (engine == null) {
+            throw new RuntimeException("JavaScript engine not available");
+        }
+        // Remove default dangerous bindings that grant access to Java classes
+        Bindings bindings = engine.getBindings(ScriptContext.ENGINE_SCOPE);
+        bindings.remove("java");
+        bindings.remove("javax");
+        bindings.remove("javafx");
+        bindings.remove("Java");
+        bindings.remove("Packages");
+        bindings.remove("com");
+        bindings.remove("org");
+        bindings.remove("edu");
+        bindings.remove("net");
+        engine.setBindings(bindings, ScriptContext.ENGINE_SCOPE);
+        Bindings globalBindings = engine.createBindings();
+        engine.setBindings(globalBindings, ScriptContext.GLOBAL_SCOPE);
         String cmd = String.format("load(\"%s\")", jsurl);
         engine.eval(cmd);
     }
