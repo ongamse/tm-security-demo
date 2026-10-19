@@ -5,6 +5,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.RestController;
 
+import org.springframework.web.util.HtmlUtils;
+
 import javax.servlet.http.HttpServletRequest;
 
 /**
@@ -19,7 +21,7 @@ public class IPForge {
     // no any proxy
     @RequestMapping("/noproxy")
     public static String noProxy(HttpServletRequest request) {
-        return request.getRemoteAddr();
+        return HtmlUtils.htmlEscape(request.getRemoteAddr());
     }
 
 
@@ -33,11 +35,11 @@ public class IPForge {
     public static String proxy(HttpServletRequest request) {
         String ip = request.getHeader("X-Real-IP");
         if (StringUtils.isNotBlank(ip)) {
-            return ip;
+            return HtmlUtils.htmlEscape(ip);
         } else {
             String remoteAddr = request.getRemoteAddr();
             if (StringUtils.isNotBlank(remoteAddr)) {
-                return remoteAddr;
+                return HtmlUtils.htmlEscape(remoteAddr);
             }
         }
         return "";

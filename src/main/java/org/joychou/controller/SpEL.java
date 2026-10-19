@@ -8,6 +8,7 @@ import org.springframework.expression.spel.support.StandardEvaluationContext;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.util.HtmlUtils;
 
 
 /**
@@ -35,7 +36,8 @@ public class SpEL {
         }
         ExpressionParser parser = new SpelExpressionParser();
         StandardEvaluationContext context = new StandardEvaluationContext();
-        return parser.parseExpression(expression).getValue(context, String.class);
+        String result = parser.parseExpression(expression).getValue(context, String.class);
+        return HtmlUtils.htmlEscape(result != null ? result : "");
     }
 
     public static void main(String[] args) {
