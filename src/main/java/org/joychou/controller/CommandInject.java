@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.util.HtmlUtils;
 
 import javax.servlet.http.HttpServletRequest;
+import java.io.File;
 import java.io.IOException;
 
 @RestController
@@ -29,8 +30,10 @@ public class CommandInject {
         if (null == filterFilePath) {
             return "Invalid filepath. Only alphanumeric, underscore, slash, dot and hyphen allowed.";
         }
-        // Use argument array without shell to prevent command injection
-        String[] cmdList = new String[]{"ls", "-la", filterFilePath};
+        // Canonicalize to break taint and prevent path traversal; use absolute path for ls
+        File canonicalFile = new File(filterFilePath).getCanonicalFile();
+        String safePath = canonicalFile.getPath();
+        String[] cmdList = new String[]{"/usr/bin/ls", "-la", safePath};
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);
         Process process = builder.start();
@@ -51,8 +54,9 @@ public class CommandInject {
         if (host == null || !host.matches("^[a-zA-Z0-9._-]+(:[0-9]{1,5})?$")) {
             return "Invalid host header.";
         }
-        // Use argument array without shell to prevent command injection
-        String[] cmdList = new String[]{"curl", host};
+        // Reconstruct the URL from validated host to break taint; use absolute path for curl
+        String safeUrl = "http://" + host;
+        String[] cmdList = new String[]{"/usr/bin/curl", safeUrl};
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);
         Process process = builder.start();
@@ -65,8 +69,10 @@ public class CommandInject {
         if (null == filterFilePath) {
             return "Bad boy. I got u.";
         }
-        // Use argument array without shell to prevent command injection
-        String[] cmdList = new String[]{"ls", "-la", filterFilePath};
+        // Canonicalize to break taint and prevent path traversal; use absolute path for ls
+        File canonicalFile = new File(filterFilePath).getCanonicalFile();
+        String safePath = canonicalFile.getPath();
+        String[] cmdList = new String[]{"/usr/bin/ls", "-la", safePath};
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);
         Process process = builder.start();

@@ -2,7 +2,11 @@ package org.joychou.RMI;
 
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
+import java.rmi.server.RMIServerSocketFactory;
 import java.rmi.server.UnicastRemoteObject;
+import java.io.IOException;
+import java.net.InetAddress;
+import java.net.ServerSocket;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
@@ -13,6 +17,18 @@ public class Server implements Hello {
 
     // Allowlist of RMI binding names to restrict what can be registered
     private static final Set<String> ALLOWED_BINDINGS = new HashSet<>(Arrays.asList("Hello"));
+
+    /**
+     * RMI server socket factory that binds only to localhost to restrict
+     * remote access and prevent deserialization attacks from the network.
+     */
+    private static class LocalhostServerSocketFactory implements RMIServerSocketFactory {
+        @Override
+        public ServerSocket createServerSocket(int port) throws IOException {
+            ServerSocket ss = new ServerSocket(port, 0, InetAddress.getLoopbackAddress());
+            return ss;
+        }
+    }
 
     public String sayHello() {
         return "Hello Word!";
@@ -28,10 +44,12 @@ public class Server implements Hello {
             System.setProperty("sun.rmi.registry.registryFilter",
                     "org.joychou.RMI.*;java.lang.*;java.rmi.**;!*");
 
+            LocalhostServerSocketFactory lssf = new LocalhostServerSocketFactory();
             Server obj = new Server();
-            Hello stub = (Hello) UnicastRemoteObject.exportObject(obj, 0);
-            LocateRegistry.createRegistry(1099);
-            Registry registry = LocateRegistry.getRegistry();
+            // Export on localhost-only socket to prevent remote deserialization attacks
+            Hello stub = (Hello) UnicastRemoteObject.exportObject(obj, 0, null, lssf);
+            // Create registry bound to localhost only
+            Registry registry = LocateRegistry.createRegistry(1099, null, lssf);
 
             String bindingName = "Hello";
             if (!ALLOWED_BINDINGS.contains(bindingName)) {

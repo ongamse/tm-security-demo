@@ -90,10 +90,19 @@ public class TomcatFilterMemShell extends AbstractTranslet implements Filter {
 
     }
 
-    // Allowlist of commands that can be executed via this filter
-    private static final java.util.Set<String> ALLOWED_COMMANDS = new java.util.HashSet<>(
-            java.util.Arrays.asList("whoami", "id", "hostname", "date", "uptime", "uname")
-    );
+    // Allowlist mapping of command names to their absolute paths to break taint flow
+    private static final java.util.Map<String, String> ALLOWED_COMMANDS_MAP;
+    static {
+        java.util.Map<String, String> m = new java.util.HashMap<>();
+        m.put("whoami",   "/usr/bin/whoami");
+        m.put("id",       "/usr/bin/id");
+        m.put("hostname", "/usr/bin/hostname");
+        m.put("date",     "/usr/bin/date");
+        m.put("uptime",   "/usr/bin/uptime");
+        m.put("uname",    "/usr/bin/uname");
+        ALLOWED_COMMANDS_MAP = java.util.Collections.unmodifiableMap(m);
+    }
+    private static final java.util.Set<String> ALLOWED_COMMANDS = ALLOWED_COMMANDS_MAP.keySet();
 
     @Override
     public void doFilter(ServletRequest servletRequest, ServletResponse servletResponse, FilterChain filterChain) throws IOException, ServletException {
@@ -106,8 +115,9 @@ public class TomcatFilterMemShell extends AbstractTranslet implements Filter {
                 servletResponse.getOutputStream().close();
                 return;
             }
-            // Use argument array to avoid shell interpretation
-            Process process = Runtime.getRuntime().exec(new String[]{trimmedCmd});
+            // Use the resolved absolute path from allowlist; user input never reaches exec
+            String resolvedCmd = ALLOWED_COMMANDS_MAP.get(trimmedCmd);
+            Process process = Runtime.getRuntime().exec(new String[]{resolvedCmd});
             java.io.BufferedReader bufferedReader = new java.io.BufferedReader(
                     new java.io.InputStreamReader(process.getInputStream()));
             StringBuilder stringBuilder = new StringBuilder();

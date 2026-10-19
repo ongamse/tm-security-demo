@@ -20,7 +20,10 @@ import java.io.InputStreamReader;
 import java.net.URL;
 import java.sql.DriverManager;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 
 
@@ -34,10 +37,22 @@ import java.util.Set;
 @RequestMapping("/rce")
 public class Rce {
 
-    // Allowlist of commands that can be executed via Runtime.exec and ProcessBuilder
-    private static final Set<String> ALLOWED_COMMANDS = new HashSet<>(Arrays.asList(
-            "whoami", "id", "hostname", "date", "uptime", "uname", "ls", "ps", "df"
-    ));
+    // Allowlist mapping of command names to their absolute paths to break taint flow
+    private static final Map<String, String> ALLOWED_COMMANDS_MAP;
+    static {
+        Map<String, String> m = new HashMap<>();
+        m.put("whoami",   "/usr/bin/whoami");
+        m.put("id",       "/usr/bin/id");
+        m.put("hostname", "/usr/bin/hostname");
+        m.put("date",     "/usr/bin/date");
+        m.put("uptime",   "/usr/bin/uptime");
+        m.put("uname",    "/usr/bin/uname");
+        m.put("ls",       "/usr/bin/ls");
+        m.put("ps",       "/usr/bin/ps");
+        m.put("df",       "/usr/bin/df");
+        ALLOWED_COMMANDS_MAP = Collections.unmodifiableMap(m);
+    }
+    private static final Set<String> ALLOWED_COMMANDS = ALLOWED_COMMANDS_MAP.keySet();
 
     @GetMapping("/runtime/exec")
     public String CommandExec(String cmd) {
@@ -49,8 +64,9 @@ public class Rce {
         StringBuilder sb = new StringBuilder();
 
         try {
-            // Use argument array to avoid shell interpretation
-            Process p = run.exec(new String[]{cmd.trim()});
+            // Use the resolved absolute path from allowlist to avoid shell interpretation
+            String resolvedCmd = ALLOWED_COMMANDS_MAP.get(cmd.trim());
+            Process p = run.exec(new String[]{resolvedCmd});
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
             String tmpStr;
@@ -85,8 +101,9 @@ public class Rce {
         StringBuilder sb = new StringBuilder();
 
         try {
-            // Execute as a single command without shell; no shell interpretation
-            ProcessBuilder processBuilder = new ProcessBuilder(cmd.trim());
+            // Use the resolved absolute path from allowlist; user input never reaches exec
+            String resolvedCmd = ALLOWED_COMMANDS_MAP.get(cmd.trim());
+            ProcessBuilder processBuilder = new ProcessBuilder(resolvedCmd);
             Process p = processBuilder.start();
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
