@@ -22,9 +22,11 @@ public class LoginFailureHandler implements AuthenticationFailureHandler {
                                         throws ServletException, IOException {
 
         String username = request.getParameter("username");
-        // Sanitize user-controlled values before logging to prevent log injection
-        String safeUsername = SecurityUtil.sanitizeCRLF(username != null ? username.replaceAll("[^a-zA-Z0-9@._\\-]", "") : "");
-        String safeUrl = SecurityUtil.sanitizeCRLF(request.getRequestURL().toString());
+        // Sanitize user-controlled values before logging to prevent CRLF log injection
+        String safeUsername = (username != null)
+                ? username.replaceAll("[\\r\\n]", "").replaceAll("[^a-zA-Z0-9@._\\-]", "")
+                : "";
+        String safeUrl = request.getRequestURL().toString().replaceAll("[\\r\\n]", "");
 
         logger.info("Login failed. {} username: {}", safeUrl, safeUsername);
 
