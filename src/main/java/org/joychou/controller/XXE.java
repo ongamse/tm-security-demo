@@ -270,9 +270,8 @@ public class XXE {
             }
             return buf.toString();
         } catch (Exception e) {
-            e.printStackTrace();
-            logger.error(e.toString());
-            return e.toString();
+            logger.error("DocumentBuilder XML parsing failed", e);
+            return EXCEPT;
         }
     }
 
