@@ -256,6 +256,20 @@ public class SecurityUtil {
         return sb.toString();
     }
 
+    /**
+     * Sanitize a value before use in an HTTP header to prevent CRLF / header injection.
+     * Strips CR, LF, and their URL-encoded forms (%0d, %0a).
+     *
+     * @param value the raw header value
+     * @return sanitized value, or empty string if null
+     */
+    public static String sanitizeHeaderValue(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.replaceAll("(?i)%0d|%0a|\\r|\\n", "");
+    }
+
     public static void main(String[] args) {
     }
 

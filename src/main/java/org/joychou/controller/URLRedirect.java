@@ -6,12 +6,12 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseBody;
 
+import org.joychou.security.SecurityUtil;
+
 import javax.servlet.RequestDispatcher;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
-
-import org.joychou.security.SecurityUtil;
 
 /**
  * The vulnerability code and security code of Java url redirect.
@@ -40,7 +40,11 @@ public class URLRedirect {
     @RequestMapping("/setHeader")
     @ResponseBody
     public static void setHeader(HttpServletRequest request, HttpServletResponse response) {
-        String url = request.getParameter("url");
+        String url = SecurityUtil.sanitizeHeaderValue(request.getParameter("url"));
+        if (SecurityUtil.checkURL(url) == null) {
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            return;
+        }
         response.setStatus(HttpServletResponse.SC_MOVED_PERMANENTLY); // 301 redirect
         response.setHeader("Location", url);
     }
