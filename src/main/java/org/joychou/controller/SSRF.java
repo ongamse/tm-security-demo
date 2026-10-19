@@ -46,7 +46,7 @@ public class SSRF {
     @RequestMapping(value = "/urlConnection/vuln", method = {RequestMethod.POST, RequestMethod.GET})
     public String URLConnectionVuln(String url) {
         try {
-            SSRFChecker.validateURLForSSRF(url);
+            url = SSRFChecker.validateURLForSSRF(url);
         } catch (IllegalArgumentException e) {
             return "[-] SSRF check failed: " + e.getMessage();
         }
@@ -94,7 +94,7 @@ public class SSRF {
     @GetMapping("/HttpURLConnection/vuln")
     public String httpURLConnectionVuln(@RequestParam String url) {
         try {
-            SSRFChecker.validateURLForSSRF(url);
+            url = SSRFChecker.validateURLForSSRF(url);
         } catch (IllegalArgumentException e) {
             return "[-] SSRF check failed: " + e.getMessage();
         }
@@ -131,7 +131,7 @@ public class SSRF {
     public void openStream(@RequestParam String url, HttpServletResponse response) throws IOException {
         // Validate URL for SSRF before making the request
         try {
-            SSRFChecker.validateURLForSSRF(url);
+            url = SSRFChecker.validateURLForSSRF(url);
         } catch (IllegalArgumentException e) {
             response.sendError(HttpServletResponse.SC_FORBIDDEN, "SSRF check failed: " + e.getMessage());
             return;
@@ -285,7 +285,7 @@ public class SSRF {
     @GetMapping("/HttpSyncClients/vuln")
     public String HttpSyncClients(@RequestParam("url") String url) {
         try {
-            SSRFChecker.validateURLForSSRF(url);
+            url = SSRFChecker.validateURLForSSRF(url);
         } catch (IllegalArgumentException e) {
             return "[-] SSRF check failed: " + e.getMessage();
         }
@@ -302,7 +302,7 @@ public class SSRF {
     @GetMapping("/restTemplate/vuln1")
     public String RestTemplateUrlBanRedirects(String url){
         try {
-            SSRFChecker.validateURLForSSRF(url);
+            url = SSRFChecker.validateURLForSSRF(url);
         } catch (IllegalArgumentException e) {
             return "[-] SSRF check failed: " + e.getMessage();
         }
@@ -315,7 +315,7 @@ public class SSRF {
     @GetMapping("/restTemplate/vuln2")
     public String RestTemplateUrl(String url){
         try {
-            SSRFChecker.validateURLForSSRF(url);
+            url = SSRFChecker.validateURLForSSRF(url);
         } catch (IllegalArgumentException e) {
             return "[-] SSRF check failed: " + e.getMessage();
         }
@@ -333,7 +333,7 @@ public class SSRF {
     @GetMapping("/hutool/vuln")
     public String hutoolHttp(String url){
         try {
-            SSRFChecker.validateURLForSSRF(url);
+            url = SSRFChecker.validateURLForSSRF(url);
         } catch (IllegalArgumentException e) {
             return "[-] SSRF check failed: " + e.getMessage();
         }
@@ -348,7 +348,7 @@ public class SSRF {
     @GetMapping("/dnsrebind/vuln")
     public String DnsRebind(String url) {
         try {
-            SSRFChecker.validateURLForSSRF(url);
+            url = SSRFChecker.validateURLForSSRF(url);
         } catch (IllegalArgumentException e) {
             return "[-] SSRF check failed: " + e.getMessage();
         }

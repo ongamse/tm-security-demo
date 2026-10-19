@@ -42,7 +42,7 @@ public class SSRFChecker {
      * @param url the URL to validate
      * @throws IllegalArgumentException if the URL targets an internal address or is not http(s)
      */
-    public static void validateURLForSSRF(String url) {
+    public static String validateURLForSSRF(String url) {
         if (url == null || url.isEmpty()) {
             throw new IllegalArgumentException("SSRF check: URL must not be null or empty");
         }
@@ -52,6 +52,7 @@ public class SSRFChecker {
         if (isInternalIpByUrl(url)) {
             throw new IllegalArgumentException("SSRF check: URL resolves to an internal/private IP address");
         }
+        return url;
     }
 
     public static boolean checkURLFckSSRF(String url) {
