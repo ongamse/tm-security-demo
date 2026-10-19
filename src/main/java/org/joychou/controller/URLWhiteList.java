@@ -101,31 +101,14 @@ public class URLWhiteList {
 
         logger.info("url:  " + url);
 
-        if (!SecurityUtil.isHttp(url)) {
+        String safeUrl = SecurityUtil.checkURL(url);
+        if (safeUrl == null) {
+            res.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            res.getWriter().write("url forbidden");
             return;
         }
 
-        // Use URI-based host extraction (consistent with SecurityUtil.gethost) to
-        // prevent URL parsing discrepancy bypasses
-        String host = SecurityUtil.gethost(url);
-        if (host == null || host.isEmpty()) {
-            return;
-        }
-        logger.info("host:  " + host);
-
-        // Validate the URL does not resolve to an internal IP (SSRF protection)
-        if (!SecurityUtil.checkSSRFByWhitehosts(url)) {
-            return;
-        }
-
-        // endsWith .
-        for (String domain : domainwhitelist) {
-            if (host.endsWith("." + domain)) {
-                res.sendRedirect(url);
-                return;
-            }
-        }
-
+        res.sendRedirect(safeUrl);
     }
 
 
