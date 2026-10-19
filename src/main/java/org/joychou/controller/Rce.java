@@ -1,6 +1,8 @@
 package org.joychou.controller;
 
 import groovy.lang.GroovyShell;
+import org.codehaus.groovy.control.CompilerConfiguration;
+import org.codehaus.groovy.control.customizers.SecureASTCustomizer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -183,9 +185,43 @@ public class Rce {
      * @param content groovy shell
      */
     @GetMapping("groovy")
-    public void groovyshell(String content) {
-        GroovyShell groovyShell = new GroovyShell();
-        groovyShell.evaluate(content);
+    public String groovyshell(String content) {
+        if (content == null || content.isEmpty()) {
+            return "Content must not be empty";
+        }
+
+        // Reject input containing dangerous patterns before evaluation
+        if (!content.matches("[a-zA-Z0-9_ +\\-*/().,%\"'\\s]+")) {
+            return "Invalid characters in Groovy expression";
+        }
+
+        // Sandbox: restrict allowed language features via SecureASTCustomizer
+        SecureASTCustomizer secureAst = new SecureASTCustomizer();
+        secureAst.setClosuresAllowed(false);
+        secureAst.setMethodDefinitionAllowed(false);
+        secureAst.setPackageAllowed(false);
+        // Only permit safe classes — no Runtime, Process, System, ClassLoader, File, etc.
+        secureAst.setImportsWhitelist(Collections.emptyList());
+        secureAst.setStarImportsWhitelist(Collections.emptyList());
+        secureAst.setStaticImportsWhitelist(Collections.emptyList());
+        secureAst.setStaticStarImportsWhitelist(Collections.emptyList());
+        secureAst.setReceiversClassesWhiteList(Arrays.asList(
+                Math.class, Integer.class, Long.class, Double.class, Float.class,
+                String.class, Object.class
+        ));
+
+        CompilerConfiguration config = new CompilerConfiguration();
+        config.addCompilationCustomizers(secureAst);
+
+        GroovyShell groovyShell = new GroovyShell(config);
+        try {
+            Object result = groovyShell.evaluate(content);
+            return result != null ? result.toString() : "";
+        } catch (SecurityException e) {
+            return "Groovy expression rejected by security policy";
+        } catch (Exception e) {
+            return "Groovy evaluation error";
+        }
     }
 
 
