@@ -10,6 +10,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * @author JoyChou (joychou@joychou.org) @2018.10.24
@@ -22,17 +25,45 @@ public class Cors {
 
     private static String info = "{\"name\": \"JoyChou\", \"phone\": \"18200001111\"}";
 
+    // Static allowlist of permitted CORS origins (not derived from user input)
+    private static final Set<String> ALLOWED_ORIGINS = new HashSet<>(Arrays.asList(
+            "http://joychou.org",
+            "https://joychou.org",
+            "http://joychou.com",
+            "https://joychou.com",
+            "http://test.joychou.org",
+            "https://test.joychou.org",
+            "http://localhost",
+            "https://localhost"
+    ));
+
+    /**
+     * Look up origin in static allowlist. Returns the allowlist entry (not user input)
+     * if matched, or null if not allowed.
+     */
+    private String matchAllowedOrigin(String origin) {
+        if (origin == null) {
+            return null;
+        }
+        for (String allowed : ALLOWED_ORIGINS) {
+            if (allowed.equalsIgnoreCase(origin)) {
+                return allowed; // return the allowlist constant, not user input
+            }
+        }
+        return null;
+    }
+
     @GetMapping("/vuln/origin")
     public String vuls1(HttpServletRequest request, HttpServletResponse response) {
         String origin = request.getHeader("origin");
-        // Validate origin against allowlist; use validated value (not raw header)
-        String validatedOrigin = (origin != null) ? SecurityUtil.checkURL(origin) : null;
-        if (origin != null && validatedOrigin == null) {
+        // Match origin against static allowlist; use allowlist value (not raw header)
+        String allowedOrigin = matchAllowedOrigin(origin);
+        if (origin != null && allowedOrigin == null) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             return "Origin is not allowed.";
         }
-        if (validatedOrigin != null) {
-            response.setHeader("Access-Control-Allow-Origin", SecurityUtil.sanitizeHeaderValue(validatedOrigin));
+        if (allowedOrigin != null) {
+            response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
             response.setHeader("Access-Control-Allow-Credentials", "true");
         }
         return info;
