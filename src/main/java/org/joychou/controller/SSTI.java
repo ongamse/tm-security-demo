@@ -9,23 +9,42 @@ import org.springframework.web.bind.annotation.RestController;
 import org.apache.velocity.app.Velocity;
 
 import java.io.StringWriter;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/ssti")
 public class SSTI {
 
     /**
-     * SSTI of Java velocity. The latest Velocity version still has this problem.
-     * Fix method: Avoid to use Velocity.evaluate method.
-     * <p>
-     * http://localhost:8080/ssti/velocity?template=%23set($e=%22e%22);$e.getClass().forName(%22java.lang.Runtime%22).getMethod(%22getRuntime%22,null).invoke(null,null).exec(%22open%20-a%20Calculator%22)
-     * Open a calculator in MacOS.
+     * Allowlist of permitted template names mapped to safe, predefined template strings.
+     * User input selects a key from this map rather than supplying raw template code,
+     * preventing Server-Side Template Injection.
+     */
+    private static final Map<String, String> ALLOWED_TEMPLATES;
+
+    static {
+        Map<String, String> map = new HashMap<>();
+        map.put("greeting", "Hello $author from $address. Phone: $phone");
+        map.put("contact", "Contact: $author, $address, $phone");
+        ALLOWED_TEMPLATES = Collections.unmodifiableMap(map);
+    }
+
+    /**
+     * Velocity template rendering with allowlisted template names.
+     * User-supplied 'template' parameter must match a key in ALLOWED_TEMPLATES.
      *
-     * @param template exp
+     * @param template the template name (must be an allowlisted key)
      */
     @GetMapping("/velocity")
-    public void velocity(String template) {
+    public String velocity(String template) {
         Velocity.init();
+
+        String templateContent = ALLOWED_TEMPLATES.get(template);
+        if (templateContent == null) {
+            return "Invalid template name. Allowed values: " + ALLOWED_TEMPLATES.keySet();
+        }
 
         VelocityContext context = new VelocityContext();
 
@@ -34,6 +53,8 @@ public class SSTI {
         context.put("phone", "555-1337");
 
         StringWriter swOut = new StringWriter();
-        Velocity.evaluate(context, swOut, "test", template);
+        Velocity.evaluate(context, swOut, "test", templateContent);
+
+        return swOut.toString();
     }
 }
