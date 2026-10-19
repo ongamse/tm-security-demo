@@ -122,11 +122,21 @@ public class Rce {
      */
     @GetMapping("/jscmd")
     public void jsEngine(String jsurl) throws Exception{
+        if (jsurl == null || jsurl.isEmpty()) {
+            return;
+        }
+        // Validate that jsurl is a well-formed URL with an allowed scheme
+        java.net.URL parsedUrl = new java.net.URL(jsurl);
+        String scheme = parsedUrl.getProtocol();
+        if (!"http".equals(scheme) && !"https".equals(scheme)) {
+            throw new IllegalArgumentException("Only http and https URLs are allowed");
+        }
         // js nashorn javascript ecmascript
         ScriptEngine engine = new ScriptEngineManager().getEngineByName("js");
         Bindings bindings = engine.getBindings(ScriptContext.ENGINE_SCOPE);
-        String cmd = String.format("load(\"%s\")", jsurl);
-        engine.eval(cmd, bindings);
+        // Pass URL as a binding variable to prevent script injection via string interpolation
+        bindings.put("__jsurl", parsedUrl.toString());
+        engine.eval("load(__jsurl)", bindings);
     }
 
 
