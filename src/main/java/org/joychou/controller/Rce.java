@@ -15,7 +15,11 @@ import javax.script.ScriptEngineManager;
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.net.URL;
 import java.sql.DriverManager;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 
 
 /**
@@ -28,13 +32,23 @@ import java.sql.DriverManager;
 @RequestMapping("/rce")
 public class Rce {
 
+    // Allowlist of commands that can be executed via Runtime.exec and ProcessBuilder
+    private static final Set<String> ALLOWED_COMMANDS = new HashSet<>(Arrays.asList(
+            "whoami", "id", "hostname", "date", "uptime", "uname", "ls", "ps", "df"
+    ));
+
     @GetMapping("/runtime/exec")
     public String CommandExec(String cmd) {
+        if (cmd == null || !ALLOWED_COMMANDS.contains(cmd.trim())) {
+            return "Command not allowed. Allowed commands: " + ALLOWED_COMMANDS;
+        }
+
         Runtime run = Runtime.getRuntime();
         StringBuilder sb = new StringBuilder();
 
         try {
-            Process p = run.exec(cmd);
+            // Use argument array to avoid shell interpretation
+            Process p = run.exec(new String[]{cmd.trim()});
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
             String tmpStr;
@@ -62,12 +76,15 @@ public class Rce {
      */
     @GetMapping("/ProcessBuilder")
     public String processBuilder(String cmd) {
+        if (cmd == null || !ALLOWED_COMMANDS.contains(cmd.trim())) {
+            return "Command not allowed. Allowed commands: " + ALLOWED_COMMANDS;
+        }
 
         StringBuilder sb = new StringBuilder();
 
         try {
-            String[] arrCmd = {"/bin/sh", "-c", cmd};
-            ProcessBuilder processBuilder = new ProcessBuilder(arrCmd);
+            // Execute as a single command without shell; no shell interpretation
+            ProcessBuilder processBuilder = new ProcessBuilder(cmd.trim());
             Process p = processBuilder.start();
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
@@ -94,11 +111,25 @@ public class Rce {
      */
     @GetMapping("/jscmd")
     public void jsEngine(String jsurl) throws Exception{
+        // Validate jsurl is a well-formed HTTP/HTTPS URL to prevent script injection
+        if (jsurl == null || jsurl.isEmpty()) {
+            throw new IllegalArgumentException("jsurl must not be empty");
+        }
+        URL parsedUrl = new URL(jsurl);
+        String protocol = parsedUrl.getProtocol();
+        if (!"http".equals(protocol) && !"https".equals(protocol)) {
+            throw new IllegalArgumentException("Only http and https URLs are allowed");
+        }
+
         // js nashorn javascript ecmascript
         ScriptEngine engine = new ScriptEngineManager().getEngineByName("js");
         Bindings bindings = engine.getBindings(ScriptContext.ENGINE_SCOPE);
-        String cmd = String.format("load(\"%s\")", jsurl);
-        engine.eval(cmd, bindings);
+        // Disable Java class access from the script engine to prevent RCE
+        bindings.remove("java");
+        bindings.remove("javax");
+        bindings.remove("Java");
+        bindings.remove("Packages");
+        engine.eval("load('" + parsedUrl.toExternalForm().replace("'", "") + "')", bindings);
     }
 
 
@@ -133,7 +164,8 @@ public class Rce {
 
 
     public static void main(String[] args) throws Exception{
-        Runtime.getRuntime().exec("touch /tmp/x");
+        // Use argument array to avoid shell interpretation
+        Runtime.getRuntime().exec(new String[]{"touch", "/tmp/x"});
     }
 }
 
