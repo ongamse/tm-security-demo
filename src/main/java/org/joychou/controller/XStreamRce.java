@@ -3,9 +3,6 @@ package org.joychou.controller;
 import com.thoughtworks.xstream.XStream;
 import com.thoughtworks.xstream.io.xml.DomDriver;
 import com.thoughtworks.xstream.io.xml.StaxDriver;
-import com.thoughtworks.xstream.security.NoTypePermission;
-import com.thoughtworks.xstream.security.NullPermission;
-import com.thoughtworks.xstream.security.PrimitiveTypePermission;
 import org.joychou.dao.User;
 import org.joychou.util.WebUtils;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -39,10 +36,8 @@ public class XStreamRce {
             }
         });
         xstream.setMode(XStream.NO_REFERENCES);
-        // Restrict deserialization to only allowed types to prevent RCE
-        xstream.addPermission(NoTypePermission.NONE);
-        xstream.addPermission(NullPermission.NULL);
-        xstream.addPermission(PrimitiveTypePermission.PRIMITIVES);
+        // Apply default security framework and restrict deserialization to only allowed types
+        XStream.setupDefaultSecurity(xstream);
         xstream.allowTypes(new Class[]{User.class, String.class});
         xstream.fromXML(xml);
         return "xstream";

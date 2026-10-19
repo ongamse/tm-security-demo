@@ -8,10 +8,9 @@ import org.springframework.web.bind.annotation.RestController;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
 
-import javax.script.Bindings;
-import javax.script.ScriptContext;
+import jdk.nashorn.api.scripting.ClassFilter;
+import jdk.nashorn.api.scripting.NashornScriptEngineFactory;
 import javax.script.ScriptEngine;
-import javax.script.ScriptEngineManager;
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -94,11 +93,12 @@ public class Rce {
      */
     @GetMapping("/jscmd")
     public void jsEngine(String jsurl) throws Exception{
-        // js nashorn javascript ecmascript
-        ScriptEngine engine = new ScriptEngineManager().getEngineByName("js");
-        Bindings bindings = engine.getBindings(ScriptContext.ENGINE_SCOPE);
+        // Use Nashorn with a restrictive ClassFilter to prevent arbitrary Java class instantiation
+        NashornScriptEngineFactory factory = new NashornScriptEngineFactory();
+        ClassFilter classFilter = className -> false; // Deny all Java class access from scripts
+        ScriptEngine engine = factory.getScriptEngine(classFilter);
         String cmd = String.format("load(\"%s\")", jsurl);
-        engine.eval(cmd, bindings);
+        engine.eval(cmd);
     }
 
 
