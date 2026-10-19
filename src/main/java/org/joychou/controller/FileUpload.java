@@ -1,6 +1,5 @@
 package org.joychou.controller;
 
-import com.fasterxml.uuid.Generators;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Controller;
@@ -200,14 +199,11 @@ public class FileUpload {
                 logger.error("Refusing to delete file outside upload directory");
                 return;
             }
-            File delFile = target.toFile();
-            if (delFile.isFile() && delFile.exists()) {
-                if (delFile.delete()) {
-                    logger.info("[+] File deleted successfully");
-                    return;
-                }
+            if (Files.deleteIfExists(target)) {
+                logger.info("[+] File deleted successfully");
+            } else {
+                logger.info("File delete failed");
             }
-            logger.info("File delete failed");
         } catch (Exception e) {
             logger.error("Error deleting file: " + e.getMessage());
         }
@@ -226,7 +222,7 @@ public class FileUpload {
             throw new IOException("Invalid file name");
         }
         String suffix = safeName.substring(safeName.lastIndexOf("."));
-        UUID uuid = Generators.timeBasedGenerator().generate();
+        UUID uuid = UUID.randomUUID();
         Path safePath = safeResolve(UPLOADED_FOLDER, uuid + suffix);
         randomFilePath = safePath.toString();
         // 随机生成一个同后缀名的文件

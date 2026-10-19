@@ -24,8 +24,10 @@ public class CRLFInjection {
     public void crlf(HttpServletRequest request, HttpServletResponse response) {
         response.addHeader("test1", SecurityUtil.sanitizeHeaderValue(request.getParameter("test1")));
         response.setHeader("test2", SecurityUtil.sanitizeHeaderValue(request.getParameter("test2")));
-        String author = request.getParameter("test3");
+        String author = SecurityUtil.sanitizeHeaderValue(request.getParameter("test3"));
         Cookie cookie = new Cookie("test3", author);
+        cookie.setHttpOnly(true);
+        cookie.setSecure(true);
         response.addCookie(cookie);
     }
 }
