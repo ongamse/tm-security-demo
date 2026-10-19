@@ -40,9 +40,16 @@ public class PathTraversal {
         logger.info("Working directory: " + System.getProperty("user.dir"));
         logger.info("File path: " + imgFile);
 
-        File f = new File(imgFile);
+        // Canonicalize and validate the path stays within the working directory
+        java.nio.file.Path baseDir = Paths.get(System.getProperty("user.dir")).toAbsolutePath().normalize();
+        java.nio.file.Path resolvedPath = baseDir.resolve(imgFile).normalize();
+        if (!resolvedPath.startsWith(baseDir)) {
+            return "File doesn't exist or is not a file.";
+        }
+
+        File f = resolvedPath.toFile();
         if (f.exists() && !f.isDirectory()) {
-            byte[] data = Files.readAllBytes(Paths.get(imgFile));
+            byte[] data = Files.readAllBytes(resolvedPath);
             return new String(Base64.encodeBase64(data));
         } else {
             return "File doesn't exist or is not a file.";

@@ -155,7 +155,13 @@ public class FileUpload {
         try {
             // Get the file and save it somewhere
             byte[] bytes = multifile.getBytes();
-            Files.write(resolvedPath, bytes);
+            // Defense-in-depth: re-validate canonical path before writing
+            Path canonicalPath = resolvedPath.toAbsolutePath().normalize();
+            if (!canonicalPath.startsWith(uploadDir)) {
+                deleteFile(filePath);
+                return "Upload failed. Invalid file path.";
+            }
+            Files.write(canonicalPath, bytes);
         } catch (IOException e) {
             logger.error(e.toString());
             deleteFile(filePath);
@@ -185,12 +191,18 @@ public class FileUpload {
      * https://stackoverflow.com/questions/24339990/how-to-convert-a-multipart-file-to-file
      */
     private File convert(MultipartFile multiFile) throws Exception {
-        String fileName = multiFile.getOriginalFilename();
-        String suffix = fileName.substring(fileName.lastIndexOf("."));
+        // Sanitize filename: extract base name only to prevent path traversal
+        String sanitizedName = Paths.get(multiFile.getOriginalFilename()).getFileName().toString();
+        String suffix = sanitizedName.substring(sanitizedName.lastIndexOf("."));
         UUID uuid = Generators.timeBasedGenerator().generate();
         randomFilePath = UPLOADED_FOLDER + uuid + suffix;
-        // 随机生成一个同后缀名的文件
-        File convFile = new File(randomFilePath);
+        // Validate the random file path stays within the upload directory
+        Path uploadBase = Paths.get(UPLOADED_FOLDER).toAbsolutePath().normalize();
+        Path convPath = uploadBase.resolve(uuid + suffix).normalize();
+        if (!convPath.startsWith(uploadBase)) {
+            return null;
+        }
+        File convFile = convPath.toFile();
         boolean ret = convFile.createNewFile();
         if (!ret) {
             return null;
