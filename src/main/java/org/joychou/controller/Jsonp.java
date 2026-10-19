@@ -15,6 +15,7 @@ import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.view.json.MappingJackson2JsonView;
+import org.springframework.web.util.HtmlUtils;
 import org.joychou.config.WebConfig;
 import org.joychou.util.WebUtils;
 
@@ -45,6 +46,9 @@ public class Jsonp {
     @RequestMapping(value = "/vuln/referer", produces = "application/javascript")
     public String referer(HttpServletRequest request) {
         String callback = request.getParameter(this.callback);
+        if (callback != null && !callback.matches("[a-zA-Z0-9_.]+")) {
+            return "Invalid callback parameter";
+        }
         return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
     }
 
@@ -62,6 +66,9 @@ public class Jsonp {
             return "error";
         }
         String callback = request.getParameter(this.callback);
+        if (callback != null && !callback.matches("[a-zA-Z0-9_.]+")) {
+            return "Invalid callback parameter";
+        }
         return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
     }
 
@@ -107,6 +114,9 @@ public class Jsonp {
             return "error";
         }
         String callback = request.getParameter(this.callback);
+        if (callback != null && !callback.matches("[a-zA-Z0-9_.]+")) {
+            return "Invalid callback parameter";
+        }
         return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
     }
 
@@ -131,6 +141,10 @@ public class Jsonp {
 
         String callback = request.getParameter("fastjsonpCallback");
         if (StringUtils.isNotBlank(callback)) {
+            // Sanitize callback to prevent XSS: allow only alphanumeric, dot, underscore
+            if (!callback.matches("[a-zA-Z0-9_.]+")) {
+                return "Invalid callback parameter";
+            }
             JSONPObject jsonpObj = new JSONPObject(callback);
             jsonpObj.addParameter(csrfToken);
             return jsonpObj.toString();

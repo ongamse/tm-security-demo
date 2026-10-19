@@ -6,6 +6,7 @@ import org.springframework.expression.spel.standard.SpelExpressionParser;
 import org.springframework.expression.spel.support.StandardEvaluationContext;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.util.HtmlUtils;
 
 import java.util.regex.Pattern;
 
@@ -46,7 +47,7 @@ public class SpEL {
         });
         try {
             Object result = parser.parseExpression(normalized).getValue(context);
-            return result != null ? result.toString() : "null";
+            return HtmlUtils.htmlEscape(result != null ? result.toString() : "null");
         } catch (EvaluationException e) {
             return "Expression evaluation blocked: " + e.getMessage();
         }
