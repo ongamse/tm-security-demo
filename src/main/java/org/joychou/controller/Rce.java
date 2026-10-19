@@ -16,6 +16,13 @@ import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.sql.DriverManager;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
+import org.codehaus.groovy.control.CompilerConfiguration;
+import org.codehaus.groovy.control.customizers.SecureASTCustomizer;
+import org.joychou.security.SecurityUtil;
 
 
 /**
@@ -30,11 +37,21 @@ public class Rce {
 
     @GetMapping("/runtime/exec")
     public String CommandExec(String cmd) {
-        Runtime run = Runtime.getRuntime();
         StringBuilder sb = new StringBuilder();
 
+        if (cmd == null) {
+            return "Command not allowed";
+        }
+        String[] parts = cmd.split("\\s+");
+        for (String part : parts) {
+            if (SecurityUtil.cmdFilter(part) == null) {
+                return "Command not allowed";
+            }
+        }
+
         try {
-            Process p = run.exec(cmd);
+            ProcessBuilder pb = new ProcessBuilder(parts);
+            Process p = pb.start();
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
             String tmpStr;
@@ -65,9 +82,18 @@ public class Rce {
 
         StringBuilder sb = new StringBuilder();
 
+        if (cmd == null) {
+            return "Command not allowed";
+        }
+        String[] parts = cmd.split("\\s+");
+        for (String part : parts) {
+            if (SecurityUtil.cmdFilter(part) == null) {
+                return "Command not allowed";
+            }
+        }
+
         try {
-            String[] arrCmd = {"/bin/sh", "-c", cmd};
-            ProcessBuilder processBuilder = new ProcessBuilder(arrCmd);
+            ProcessBuilder processBuilder = new ProcessBuilder(parts);
             Process p = processBuilder.start();
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
@@ -92,11 +118,23 @@ public class Rce {
      *
      * @param jsurl js url
      */
+    private static final Set<String> ALLOWED_JS_HOSTS = Collections.unmodifiableSet(
+            new HashSet<>(Arrays.asList("cdn.example.com", "static.example.com")));
+
     @GetMapping("/jscmd")
     public void jsEngine(String jsurl) throws Exception{
         // js nashorn javascript ecmascript
+        if (jsurl == null || !SecurityUtil.isHttp(jsurl)) {
+            throw new IllegalArgumentException("Only http/https URLs are allowed");
+        }
+        String host = SecurityUtil.gethost(jsurl);
+        if (host == null || !ALLOWED_JS_HOSTS.contains(host)) {
+            throw new IllegalArgumentException("URL host not in allowlist");
+        }
         ScriptEngine engine = new ScriptEngineManager().getEngineByName("js");
         Bindings bindings = engine.getBindings(ScriptContext.ENGINE_SCOPE);
+        bindings.remove("java");
+        bindings.remove("javax");
         String cmd = String.format("load(\"%s\")", jsurl);
         engine.eval(cmd, bindings);
     }
@@ -126,7 +164,24 @@ public class Rce {
      */
     @GetMapping("groovy")
     public void groovyshell(String content) {
-        GroovyShell groovyShell = new GroovyShell();
+        SecureASTCustomizer secureASTCustomizer = new SecureASTCustomizer();
+        secureASTCustomizer.setReceiversBlackList(Arrays.asList(
+                "java.lang.Runtime", "java.lang.ProcessBuilder",
+                "java.lang.System", "java.lang.Class",
+                "java.lang.reflect.Method", "java.lang.reflect.Field",
+                "java.io.File", "java.io.FileInputStream",
+                "java.io.FileOutputStream", "java.net.URL",
+                "java.net.URLClassLoader", "java.net.Socket"
+        ));
+        secureASTCustomizer.setImportsBlacklist(Arrays.asList(
+                "java.lang.Runtime", "java.lang.ProcessBuilder",
+                "java.lang.System", "java.io.File",
+                "java.net.URL", "java.net.Socket"
+        ));
+        secureASTCustomizer.setIndirectImportCheckEnabled(true);
+        CompilerConfiguration config = new CompilerConfiguration();
+        config.addCompilationCustomizers(secureASTCustomizer);
+        GroovyShell groovyShell = new GroovyShell(config);
         groovyShell.evaluate(content);
     }
 

