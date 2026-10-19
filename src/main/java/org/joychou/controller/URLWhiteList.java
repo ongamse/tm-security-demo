@@ -122,7 +122,17 @@ public class URLWhiteList {
         // Validate against domain allowlist with proper dot-prefix matching
         for (String domain : domainwhitelist) {
             if (host.equals(domain) || host.endsWith("." + domain)) {
-                res.sendRedirect(url);
+                // Reconstruct URL from parsed URI to prevent open-redirect via parser differentials
+                try {
+                    java.net.URI parsedUri = new java.net.URI(url);
+                    String safeUrl = new java.net.URI(
+                        parsedUri.getScheme(), parsedUri.getAuthority(),
+                        parsedUri.getPath(), parsedUri.getQuery(), parsedUri.getFragment()
+                    ).toASCIIString();
+                    res.sendRedirect(safeUrl);
+                } catch (java.net.URISyntaxException e) {
+                    logger.error("Invalid URL syntax: " + e.getMessage());
+                }
                 return;
             }
         }
