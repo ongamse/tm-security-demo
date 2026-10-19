@@ -8,6 +8,7 @@ import org.springframework.data.web.ProjectedPayload;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.util.HtmlUtils;
 
 import javax.servlet.http.HttpServletRequest;
 
@@ -234,7 +235,7 @@ public class XXE {
             digester.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             digester.parse(new StringReader(body));  // parse xml
 
-            return "Digester xxe security code";
+            return HtmlUtils.htmlEscape("Digester xxe security code");
         } catch (Exception e) {
             logger.error(e.toString());
             return EXCEPT;

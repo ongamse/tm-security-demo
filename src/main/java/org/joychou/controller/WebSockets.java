@@ -5,6 +5,7 @@ import org.joychou.config.WebSocketsProxyEndpoint;
 import org.joychou.config.WebSocketsCmdEndpoint;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.util.HtmlUtils;
 
 import javax.servlet.ServletContext;
 import javax.servlet.http.HttpServletRequest;
@@ -40,10 +41,10 @@ public class WebSockets {
             if (wsc.findMapping(path) == null) {
                 wsc.addEndpoint(sec);
                 System.out.println("[+] Websocket: " + path + " inject success!!!");
-                return "[+] Websocket: " + path + " inject success!!!";
+                return "[+] Websocket: " + HtmlUtils.htmlEscape(path) + " inject success!!!";
             } else {
                 System.out.println("[-] Websocket: " + path + " has been injected!");
-                return "[-] Websocket: " + path + " has been injected!";
+                return "[-] Websocket: " + HtmlUtils.htmlEscape(path) + " has been injected!";
             }
         } catch (Exception e) {
             return e.toString();
@@ -63,10 +64,10 @@ public class WebSockets {
             if (wsc.findMapping(path) == null) {
                 wsc.addEndpoint(sec);
                 System.out.println("[+] Websocket: " + path + " inject success!!!");
-                return "[+] Websocket: " + path + " inject success!!!";
+                return "[+] Websocket: " + HtmlUtils.htmlEscape(path) + " inject success!!!";
             } else {
                 System.out.println("[-] Websocket: " + path + " has been injected!");
-                return "[-] Websocket: " + path + " has been injected!";
+                return "[-] Websocket: " + HtmlUtils.htmlEscape(path) + " has been injected!";
             }
         } catch (Exception e) {
             return e.toString();
