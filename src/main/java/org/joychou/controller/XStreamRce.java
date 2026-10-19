@@ -24,6 +24,10 @@ public class XStreamRce {
     public String parseXml(HttpServletRequest request) throws Exception {
         String xml = WebUtils.getRequestBody(request);
         XStream xstream = new XStream(new DomDriver());
+        xstream.addPermission(com.thoughtworks.xstream.security.NoTypePermission.NONE);
+        xstream.addPermission(com.thoughtworks.xstream.security.NullPermission.NULL);
+        xstream.addPermission(com.thoughtworks.xstream.security.PrimitiveTypePermission.PRIMITIVES);
+        xstream.allowTypes(new Class[]{org.joychou.dao.User.class});
         xstream.fromXML(xml);
         return "xstream";
     }

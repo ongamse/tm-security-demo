@@ -65,6 +65,12 @@ public class SSRFChecker {
         String finalUrl = url;
         try {
             do {
+                // Only allow http/https to prevent file://, gopher://, etc.
+                if (!SecurityUtil.isHttp(finalUrl)) {
+                    logger.error("[-] SSRF check failed. Non-HTTP protocol: " + finalUrl);
+                    return false;
+                }
+
                 // 判断当前请求的URL是否是内网ip
                 if (isInternalIpByUrl(finalUrl)) {
                     logger.error("[-] SSRF check failed. Dangerous url: " + finalUrl);
@@ -132,12 +138,42 @@ public class SSRFChecker {
             return true;
         }
 
-        ArrayList<String> blackSubnets = WebConfig.getSsrfBlockIps();
-        for (String subnet : blackSubnets) {
-            SubnetUtils utils = new SubnetUtils(subnet);
-            if (utils.getInfo().isInRange(strIP)) {
+        // Comprehensive check for private/loopback/link-local/metadata IPs.
+        // Covers IPv4: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8,
+        //   169.254.0.0/16 (incl. cloud metadata 169.254.169.254), 0.0.0.0/8
+        // Covers IPv6: ::1, fe80::/10, fec0::/10, ff::/8 (multicast)
+        try {
+            InetAddress addr = InetAddress.getByName(strIP);
+            if (addr.isLoopbackAddress() || addr.isLinkLocalAddress() ||
+                    addr.isSiteLocalAddress() || addr.isAnyLocalAddress() ||
+                    addr.isMulticastAddress()) {
                 logger.error("[-] SSRF check failed. Internal IP: " + strIP);
                 return true;
+            }
+            // IPv6 Unique Local Addresses (fc00::/7, primarily fd::/8) are not
+            // covered by isSiteLocalAddress in all JDK versions.
+            byte[] addrBytes = addr.getAddress();
+            if (addrBytes.length == 16 && (addrBytes[0] & 0xFE) == 0xFC) {
+                logger.error("[-] SSRF check failed. Internal IP: " + strIP);
+                return true;
+            }
+        } catch (Exception e) {
+            logger.error("[-] SSRF check failed. Cannot parse IP: " + strIP);
+            return true;
+        }
+
+        // Also check configured block subnets
+        ArrayList<String> blackSubnets = WebConfig.getSsrfBlockIps();
+        for (String subnet : blackSubnets) {
+            try {
+                SubnetUtils utils = new SubnetUtils(subnet);
+                utils.setInclusiveHostCount(true);
+                if (utils.getInfo().isInRange(strIP)) {
+                    logger.error("[-] SSRF check failed. Internal IP: " + strIP);
+                    return true;
+                }
+            } catch (IllegalArgumentException e) {
+                logger.error("[-] Invalid subnet config: " + subnet);
             }
         }
 
@@ -292,7 +328,11 @@ public class SSRFChecker {
             // use URI instead of URL
             URI u = new URI(url);
             if (SecurityUtil.isHttp(url)) {
-                return u.getHost();
+                String host = u.getHost();
+                if (host == null || host.isEmpty()) {
+                    return "";
+                }
+                return host;
             }
             return "";
         } catch (Exception e) {

@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
+import java.net.InetAddress;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLDecoder;
@@ -72,6 +73,16 @@ public class SecurityUtil {
                 return null;
             }
 
+            if (host == null || host.isEmpty()) {
+                return null;
+            }
+
+            // Resolve host to IP and reject private/link-local/loopback/metadata addresses
+            if (isInternalHost(host)) {
+                logger.error("[-] checkURL blocked internal IP for host: " + host);
+                return null;
+            }
+
             // 如果满足黑名单返回null
             if (blockDomains.contains(host)){
                 return null;
@@ -97,6 +108,34 @@ public class SecurityUtil {
         } catch (NullPointerException e) {
             logger.error(e.toString());
             return null;
+        }
+    }
+
+    /**
+     * Resolve host to IP and check if it is a private/loopback/link-local/metadata address.
+     * Blocks: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8,
+     *   169.254.0.0/16, 0.0.0.0/8, ::1, fe80::/10, fc00::/7
+     *
+     * @param host hostname to check
+     * @return true if the host resolves to an internal/blocked IP
+     */
+    private static boolean isInternalHost(String host) {
+        try {
+            InetAddress addr = InetAddress.getByName(host);
+            if (addr.isLoopbackAddress() || addr.isLinkLocalAddress() ||
+                    addr.isSiteLocalAddress() || addr.isAnyLocalAddress() ||
+                    addr.isMulticastAddress()) {
+                return true;
+            }
+            // IPv6 Unique Local Addresses (fc00::/7)
+            byte[] addrBytes = addr.getAddress();
+            if (addrBytes.length == 16 && (addrBytes[0] & 0xFE) == 0xFC) {
+                return true;
+            }
+            return false;
+        } catch (Exception e) {
+            // If we cannot resolve the host, treat it as blocked
+            return true;
         }
     }
 
@@ -208,6 +247,44 @@ public class SecurityUtil {
     }
 
 
+    private static final Pattern USERNAME_PATTERN = Pattern.compile("^[a-zA-Z0-9_]+$");
+
+    /**
+     * Validate username to prevent IDOR attacks.
+     * Only allows alphanumeric characters and underscores.
+     *
+     * @param username the username to validate
+     * @return the validated username
+     * @throws IllegalArgumentException if the username is invalid
+     */
+    public static String validateUsername(String username) {
+        if (username == null || username.isEmpty()) {
+            throw new IllegalArgumentException("Username must not be null or empty");
+        }
+        if (username.length() > 64) {
+            throw new IllegalArgumentException("Username exceeds maximum length");
+        }
+        if (!USERNAME_PATTERN.matcher(username).matches()) {
+            throw new IllegalArgumentException("Username contains invalid characters");
+        }
+        return username;
+    }
+
+    /**
+     * Validate a numeric ID to prevent IDOR attacks.
+     * Ensures the ID is a positive integer.
+     *
+     * @param id the id to validate
+     * @return the validated id
+     * @throws IllegalArgumentException if the id is invalid
+     */
+    public static Integer validateId(Integer id) {
+        if (id == null || id <= 0) {
+            throw new IllegalArgumentException("ID must be a positive integer");
+        }
+        return id;
+    }
+
     /**
      * 过滤mybatis中order by不能用#的情况。
      * 严格限制用户输入只能包含<code>a-zA-Z0-9_-.</code>字符。
@@ -247,6 +324,21 @@ public class SecurityUtil {
         }
 
         return sb.toString();
+    }
+
+    /**
+     * Sanitize a value before use in an HTTP response header.
+     * Strips CR (\r), LF (\n), and null (\0) characters to prevent
+     * CRLF / header injection attacks.
+     *
+     * @param value the raw header value (may be null)
+     * @return sanitized value safe for use in setHeader/addHeader, or null if input is null
+     */
+    public static String sanitizeHeaderValue(String value) {
+        if (value == null) {
+            return null;
+        }
+        return value.replaceAll("[\\r\\n\\0]", "");
     }
 
     public static void main(String[] args) {
