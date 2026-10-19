@@ -1,7 +1,6 @@
 package org.joychou.controller;
 
 import lombok.extern.slf4j.Slf4j;
-import org.joychou.security.SecurityUtil;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -58,7 +57,7 @@ public class Jdbc {
             }
             return true;
         } catch (Exception e) {
-            log.error("JDBC URL validation failed: " + SecurityUtil.sanitizeForLog(e.getMessage()));
+            log.error("JDBC URL validation failed");
             return false;
         }
     }
@@ -73,7 +72,7 @@ public class Jdbc {
         if (!isJdbcUrlSafe(jdbcUrl)) {
             return "JDBC URL validation failed";
         }
-        log.info(SecurityUtil.sanitizeForLog(jdbcUrl));
+        log.info("Connecting to PostgreSQL via JDBC");
         DriverManager.getConnection(jdbcUrl);
         return "OK";
     }
@@ -86,7 +85,7 @@ public class Jdbc {
         if (!isJdbcUrlSafe(jdbcUrl)) {
             return "JDBC URL validation failed";
         }
-        log.info(SecurityUtil.sanitizeForLog(jdbcUrl));
+        log.info("Connecting to DB2 via JDBC");
         DriverManager.getConnection(jdbcUrl);
         return "OK";
     }

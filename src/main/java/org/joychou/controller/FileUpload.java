@@ -19,7 +19,6 @@ import java.nio.file.Paths;
 import java.util.UUID;
 
 import org.joychou.security.SecurityUtil;
-import static org.joychou.security.SecurityUtil.sanitizeForLog;
 
 
 /**
@@ -143,7 +142,7 @@ public class FileUpload {
             }
         }
         if (!suffixFlag) {
-            logger.error("[-] Suffix error: " + sanitizeForLog(Suffix));
+            logger.error("[-] Suffix error: upload rejected due to disallowed file extension");
             deleteFile(filePath);
             return "Upload failed. Illeagl picture.";
         }
@@ -161,7 +160,7 @@ public class FileUpload {
         for (String blackMimeType : mimeTypeBlackList) {
             // 用contains是为了防止text/html;charset=UTF-8绕过
             if (SecurityUtil.replaceSpecialStr(mimeType).toLowerCase().contains(blackMimeType)) {
-                logger.error("[-] Mime type error: " + sanitizeForLog(mimeType));
+                logger.error("[-] Mime type error: upload rejected due to disallowed MIME type");
                 deleteFile(filePath);
                 return "Upload failed. Illeagl picture.";
             }
@@ -188,8 +187,8 @@ public class FileUpload {
             return "Upload failed";
         }
 
-        logger.info("[+] Safe file. Suffix: {}, MIME: {}", sanitizeForLog(Suffix), sanitizeForLog(mimeType));
-        logger.info("[+] Successfully uploaded {}", sanitizeForLog(filePath));
+        logger.info("[+] Safe file uploaded successfully");
+        logger.info("[+] Upload completed");
         return String.format("You successfully uploaded '%s'", filePath);
     }
 
@@ -198,17 +197,17 @@ public class FileUpload {
             Path base = Paths.get(UPLOADED_FOLDER).normalize().toAbsolutePath();
             Path target = Paths.get(filePath).normalize().toAbsolutePath();
             if (!target.startsWith(base)) {
-                logger.error("Refusing to delete file outside upload directory: " + sanitizeForLog(filePath));
+                logger.error("Refusing to delete file outside upload directory");
                 return;
             }
             File delFile = target.toFile();
             if (delFile.isFile() && delFile.exists()) {
                 if (delFile.delete()) {
-                    logger.info("[+] " + sanitizeForLog(filePath) + " delete successfully!");
+                    logger.info("[+] File deleted successfully");
                     return;
                 }
             }
-            logger.info(sanitizeForLog(filePath) + " delete failed!");
+            logger.info("File delete failed");
         } catch (Exception e) {
             logger.error("Error deleting file: " + e.getMessage());
         }

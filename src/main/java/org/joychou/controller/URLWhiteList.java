@@ -99,7 +99,7 @@ public class URLWhiteList {
     @GetMapping("/vuln/url_bypass")
     public void url_bypass(String url, HttpServletResponse res) throws IOException {
 
-        logger.info("url:  " + SecurityUtil.sanitizeForLog(url));
+        logger.info("Processing URL bypass check");
 
         if (SecurityUtil.checkURL(url) == null) {
             return;

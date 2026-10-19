@@ -1,7 +1,6 @@
 package org.joychou.security;
 
 import com.alibaba.fastjson.JSON;
-import org.joychou.security.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
@@ -27,7 +26,7 @@ public class LoginSuccessHandler implements AuthenticationSuccessHandler {
                                         HttpServletResponse response, Authentication authentication)
                                         throws ServletException, IOException {
 
-        logger.info("USER " + SecurityUtil.sanitizeForLog(authentication.getName()) + " LOGIN SUCCESS.");
+        logger.info("User login success");
 
         SavedRequest savedRequest = new HttpSessionRequestCache().getRequest(request, response);
         String originUrl = "";
@@ -38,7 +37,7 @@ public class LoginSuccessHandler implements AuthenticationSuccessHandler {
         }
 
         if (savedRequest != null) {
-            logger.info("Original url is: " + SecurityUtil.sanitizeForLog(originUrl));
+            logger.info("Redirecting to original URL after login");
         }
 
         Map<String, String> content = new HashMap<>();

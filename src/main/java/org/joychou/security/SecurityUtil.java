@@ -213,7 +213,7 @@ public class SecurityUtil {
             try {
                 temp = URLDecoder.decode(temp, "utf-8");
             } catch (UnsupportedEncodingException e) {
-                logger.info("Unsupported encoding exception: " + sanitizeForLog(filepath));
+                logger.info("Unsupported encoding exception during path filter");
                 return null;
             } catch (Exception e) {
                 logger.info(e.toString());

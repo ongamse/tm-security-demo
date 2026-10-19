@@ -1,7 +1,6 @@
 package org.joychou.controller;
 
 
-import org.joychou.security.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.util.AntPathMatcher;
@@ -39,8 +38,8 @@ public class GetRequestURI {
         String uri = request.getRequestURI(); // Security: request.getServletPath()
         PathMatcher matcher = new AntPathMatcher();
 
-        logger.info("getRequestURI: " + SecurityUtil.sanitizeForLog(uri));
-        logger.info("getServletPath: " + SecurityUtil.sanitizeForLog(request.getServletPath()));
+        logger.info("Processing URI exclusion check");
+        logger.info("Comparing request URI against excluded paths");
 
         for (String path : excluedPath) {
             if (matcher.match(path, uri)) {

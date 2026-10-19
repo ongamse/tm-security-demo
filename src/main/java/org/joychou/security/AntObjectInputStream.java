@@ -2,7 +2,6 @@ package org.joychou.security;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import java.io.*;
 
 /**
@@ -34,7 +33,7 @@ public class AntObjectInputStream extends ObjectInputStream {
         String className = desc.getName();
 
         // Deserialize class name: org.joychou.security.AntObjectInputStream$MyObject
-        logger.info("Deserialize class name: " + SecurityUtil.sanitizeForLog(className));
+        logger.info("Deserialize class resolution check in progress");
 
         // Allowlist of classes permitted for deserialization
         String[] allowedClasses = {"org.joychou.dao.User",
