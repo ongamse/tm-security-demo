@@ -41,7 +41,11 @@ public class CommandInject {
 
         String host = request.getHeader("host");
         logger.info(host);
-        String[] cmdList = new String[]{"sh", "-c", "curl " + host};
+        String filteredHost = SecurityUtil.cmdFilter(host);
+        if (null == filteredHost) {
+            return "Invalid host.";
+        }
+        String[] cmdList = new String[]{"curl", filteredHost};
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);
         Process process = builder.start();
