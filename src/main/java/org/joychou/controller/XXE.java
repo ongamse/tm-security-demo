@@ -164,6 +164,9 @@ public class XXE {
             logger.info(body);
 
             SAXParserFactory spf = SAXParserFactory.newInstance();
+            spf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            spf.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            spf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             SAXParser parser = spf.newSAXParser();
             parser.parse(new InputSource(new StringReader(body)), new DefaultHandler());  // parse xml
 
@@ -346,6 +349,9 @@ public class XXE {
             logger.info(body);
 
             SAXParserFactory spf = SAXParserFactory.newInstance();
+            spf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            spf.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            spf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             SAXParser saxParser = spf.newSAXParser();
             XMLReader xmlReader = saxParser.getXMLReader();
             xmlReader.parse(new InputSource(new StringReader(body)));
@@ -366,6 +372,9 @@ public class XXE {
             logger.info(body);
 
             SAXParserFactory spf = SAXParserFactory.newInstance();
+            spf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            spf.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            spf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             SAXParser saxParser = spf.newSAXParser();
             XMLReader xmlReader = saxParser.getXMLReader();
             xmlReader.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
