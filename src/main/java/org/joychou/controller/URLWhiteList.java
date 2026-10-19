@@ -2,6 +2,7 @@ package org.joychou.controller;
 
 
 import org.joychou.security.SecurityUtil;
+import org.joychou.security.ssrf.SSRFChecker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.*;
@@ -9,7 +10,7 @@ import org.springframework.web.util.HtmlUtils;
 
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.net.URL;
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -105,14 +106,35 @@ public class URLWhiteList {
             return;
         }
 
-        URL u = new URL(url);
-        String host = u.getHost();
+        // Use URI instead of URL to avoid URL parser bypass attacks
+        String host;
+        try {
+            URI uri = new URI(url);
+            host = uri.getHost();
+        } catch (Exception e) {
+            logger.error("Invalid URL: " + e.getMessage());
+            return;
+        }
+
+        if (host == null) {
+            return;
+        }
+        host = host.toLowerCase();
         logger.info("host:  " + host);
+
+        // Validate that URL does not resolve to internal IP
+        try {
+            SSRFChecker.validateURLForSSRF(url);
+        } catch (IllegalArgumentException e) {
+            logger.error("SSRF check failed for redirect URL: " + e.getMessage());
+            return;
+        }
 
         // endsWith .
         for (String domain : domainwhitelist) {
             if (host.endsWith("." + domain)) {
                 res.sendRedirect(url);
+                return;
             }
         }
 

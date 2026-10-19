@@ -2,6 +2,7 @@ package org.joychou.controller;
 
 import cn.hutool.http.HttpUtil;
 import org.joychou.security.SecurityUtil;
+import org.joychou.security.ssrf.SSRFChecker;
 import org.joychou.security.ssrf.SSRFException;
 import org.joychou.service.HttpService;
 import org.joychou.util.HttpUtils;
@@ -44,6 +45,11 @@ public class SSRF {
      */
     @RequestMapping(value = "/urlConnection/vuln", method = {RequestMethod.POST, RequestMethod.GET})
     public String URLConnectionVuln(String url) {
+        try {
+            SSRFChecker.validateURLForSSRF(url);
+        } catch (IllegalArgumentException e) {
+            return "[-] SSRF check failed: " + e.getMessage();
+        }
         return HttpUtils.URLConnection(url);
     }
 
@@ -87,6 +93,11 @@ public class SSRF {
 
     @GetMapping("/HttpURLConnection/vuln")
     public String httpURLConnectionVuln(@RequestParam String url) {
+        try {
+            SSRFChecker.validateURLForSSRF(url);
+        } catch (IllegalArgumentException e) {
+            return "[-] SSRF check failed: " + e.getMessage();
+        }
         return HttpUtils.HttpURLConnection(url);
     }
 
@@ -118,6 +129,14 @@ public class SSRF {
      */
     @GetMapping("/openStream")
     public void openStream(@RequestParam String url, HttpServletResponse response) throws IOException {
+        // Validate URL for SSRF before making the request
+        try {
+            SSRFChecker.validateURLForSSRF(url);
+        } catch (IllegalArgumentException e) {
+            response.sendError(HttpServletResponse.SC_FORBIDDEN, "SSRF check failed: " + e.getMessage());
+            return;
+        }
+
         InputStream inputStream = null;
         OutputStream outputStream = null;
         try {
@@ -265,6 +284,11 @@ public class SSRF {
      */
     @GetMapping("/HttpSyncClients/vuln")
     public String HttpSyncClients(@RequestParam("url") String url) {
+        try {
+            SSRFChecker.validateURLForSSRF(url);
+        } catch (IllegalArgumentException e) {
+            return "[-] SSRF check failed: " + e.getMessage();
+        }
         return HttpUtils.HttpAsyncClients(url);
     }
 
@@ -277,6 +301,11 @@ public class SSRF {
      */
     @GetMapping("/restTemplate/vuln1")
     public String RestTemplateUrlBanRedirects(String url){
+        try {
+            SSRFChecker.validateURLForSSRF(url);
+        } catch (IllegalArgumentException e) {
+            return "[-] SSRF check failed: " + e.getMessage();
+        }
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON_UTF8);
         return httpService.RequestHttpBanRedirects(url, headers);
@@ -285,6 +314,11 @@ public class SSRF {
 
     @GetMapping("/restTemplate/vuln2")
     public String RestTemplateUrl(String url){
+        try {
+            SSRFChecker.validateURLForSSRF(url);
+        } catch (IllegalArgumentException e) {
+            return "[-] SSRF check failed: " + e.getMessage();
+        }
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON_UTF8);
         return httpService.RequestHttp(url, headers);
@@ -298,6 +332,11 @@ public class SSRF {
      */
     @GetMapping("/hutool/vuln")
     public String hutoolHttp(String url){
+        try {
+            SSRFChecker.validateURLForSSRF(url);
+        } catch (IllegalArgumentException e) {
+            return "[-] SSRF check failed: " + e.getMessage();
+        }
         return HttpUtil.get(url);
     }
 
@@ -308,6 +347,11 @@ public class SSRF {
      */
     @GetMapping("/dnsrebind/vuln")
     public String DnsRebind(String url) {
+        try {
+            SSRFChecker.validateURLForSSRF(url);
+        } catch (IllegalArgumentException e) {
+            return "[-] SSRF check failed: " + e.getMessage();
+        }
         java.security.Security.setProperty("networkaddress.cache.negative.ttl" , "0");
         if (!SecurityUtil.checkSSRFWithoutRedirect(url)) {
             return "Dangerous url";
