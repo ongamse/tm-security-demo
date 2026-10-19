@@ -11,6 +11,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.net.Socket;
 import java.net.SocketImpl;
 import java.net.SocketImplFactory;
+import javax.net.ssl.SSLSocketFactory;
 
 
 /**
@@ -39,8 +40,9 @@ public class SocketHookFactory implements SocketImplFactory {
             return;
         }
 
-        Socket socket = new Socket();
+        Socket socket = null;
         try {
+            socket = (Socket) SSLSocketFactory.getDefault().createSocket();
             // get impl field in Socket class
             Field implField = Socket.class.getDeclaredField("impl");
             implField.setAccessible(true);
@@ -50,14 +52,15 @@ public class SocketHookFactory implements SocketImplFactory {
             socketConstructor = clazz.getDeclaredConstructor();
             socketConstructor.setAccessible(true);
 
-        } catch (NoSuchFieldException | IllegalAccessException | NoSuchMethodException e) {
+        } catch (IOException | NoSuchFieldException | IllegalAccessException | NoSuchMethodException e) {
             throw new SSRFException("SocketHookFactory init failed!");
-        }
-
-        try {
-            socket.close();
-        } catch (IOException ignored) {
-
+        } finally {
+            if (socket != null) {
+                try {
+                    socket.close();
+                } catch (IOException ignored) {
+                }
+            }
         }
     }
 
