@@ -141,8 +141,8 @@ public class SSRF {
         OutputStream outputStream = null;
         try {
             String downLoadImgFileName = WebUtils.getNameWithoutExtension(url) + "." + WebUtils.getFileExtension(url);
-            // download
-            response.setHeader("content-disposition", "attachment;fileName=" + downLoadImgFileName);
+            // download - sanitize header value to prevent CRLF injection
+            response.setHeader("content-disposition", "attachment;fileName=" + SecurityUtil.sanitizeHeaderValue(downLoadImgFileName));
 
             URL u = new URL(url);
             int length;
