@@ -2,12 +2,14 @@ package org.joychou.controller;
 
 import com.thoughtworks.xstream.XStream;
 import com.thoughtworks.xstream.io.xml.DomDriver;
+import com.thoughtworks.xstream.io.xml.StaxDriver;
 import org.joychou.dao.User;
 import org.joychou.util.WebUtils;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import javax.servlet.http.HttpServletRequest;
+import javax.xml.stream.XMLInputFactory;
 
 
 @RestController
@@ -23,7 +25,17 @@ public class XStreamRce {
     @PostMapping("/xstream")
     public String parseXml(HttpServletRequest request) throws Exception {
         String xml = WebUtils.getRequestBody(request);
-        XStream xstream = new XStream(new DomDriver());
+        XStream xstream = new XStream(new StaxDriver() {
+            @Override
+            protected XMLInputFactory createInputFactory() {
+                XMLInputFactory factory = super.createInputFactory();
+                factory.setProperty(XMLInputFactory.IS_SUPPORTING_EXTERNAL_ENTITIES, false);
+                factory.setProperty(XMLInputFactory.SUPPORT_DTD, false);
+                return factory;
+            }
+        });
+        XStream.setupDefaultSecurity(xstream);
+        xstream.allowTypes(new Class[]{org.joychou.dao.User.class});
         xstream.fromXML(xml);
         return "xstream";
     }

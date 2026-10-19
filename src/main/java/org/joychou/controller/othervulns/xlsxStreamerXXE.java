@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.multipart.MultipartFile;
 
+import javax.xml.XMLConstants;
 import java.io.FileInputStream;
 import java.io.IOException;
 
@@ -34,6 +35,9 @@ public class xlsxStreamerXXE {
 
     @PostMapping("/readxlsx")
     public void xllx_streamer_xxe(MultipartFile file) throws IOException {
+        // Disable external entities/DTD access to prevent XXE in xlsx-streamer's internal XML parsing
+        System.setProperty(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+        System.setProperty(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
         StreamingReader.builder().open(file.getInputStream());
     }
 
