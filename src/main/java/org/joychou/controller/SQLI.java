@@ -51,6 +51,8 @@ public class SQLI {
     @RequestMapping("/jdbc/vuln")
     public String jdbc_sqli_vul(@RequestParam("username") String username) {
 
+        SecurityUtil.validateUsername(username);
+
         StringBuilder result = new StringBuilder();
 
         try {
@@ -140,6 +142,8 @@ public class SQLI {
      */
     @RequestMapping("/jdbc/ps/vuln")
     public String jdbc_ps_vuln(@RequestParam("username") String username) {
+
+        SecurityUtil.validateUsername(username);
 
         StringBuilder result = new StringBuilder();
         try {
