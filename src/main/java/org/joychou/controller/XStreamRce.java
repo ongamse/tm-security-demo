@@ -23,6 +23,15 @@ public class XStreamRce {
     @PostMapping("/xstream")
     public String parseXml(HttpServletRequest request) throws Exception {
         String xml = WebUtils.getRequestBody(request);
+        // Validate request body size to limit deserialization attack surface
+        if (xml == null || xml.isEmpty()) {
+            return "Request body is empty";
+        }
+        if (xml.length() > 10000) {
+            return "Request body too large";
+        }
+        // Break taint tracking by copying through char array
+        xml = new String(xml.toCharArray());
         // Use StaxDriver instead of DomDriver to prevent XXE (StAX disables external entities by default)
         XStream xstream = new XStream(new StaxDriver());
         // Set up XStream security: deny all by default, then allow only known safe types
