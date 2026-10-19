@@ -25,21 +25,17 @@ public class IPForge {
 
 
     /**
-     * proxy_set_header X-Real-IP $remote_addr;
-     * proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for
-     * if code used X-Forwarded-For to get ip, the code must be vulnerable.
+     * Do not trust client-controlled headers (X-Real-IP, X-Forwarded-For) for
+     * authentication or authorization — they are spoofable. Use the TCP-level
+     * remote address instead.
      */
     @RequestMapping("/proxy")
     @ResponseBody
     public static String proxy(HttpServletRequest request) {
-        String ip = request.getHeader("X-Real-IP");
-        if (StringUtils.isNotBlank(ip)) {
-            return HtmlUtils.htmlEscape(ip);
-        } else {
-            String remoteAddr = request.getRemoteAddr();
-            if (StringUtils.isNotBlank(remoteAddr)) {
-                return HtmlUtils.htmlEscape(remoteAddr);
-            }
+        // Use getRemoteAddr() — the actual TCP source IP, not a spoofable header.
+        String remoteAddr = request.getRemoteAddr();
+        if (StringUtils.isNotBlank(remoteAddr)) {
+            return HtmlUtils.htmlEscape(remoteAddr);
         }
         return "";
     }
