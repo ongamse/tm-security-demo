@@ -2,6 +2,7 @@ package org.joychou.controller;
 
 import org.joychou.security.SecurityUtil;
 import org.joychou.util.LoginUtils;
+import org.springframework.web.util.HtmlUtils;
 import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -25,7 +26,7 @@ public class Cors {
     @GetMapping("/vuln/origin")
     public String vuls1(HttpServletRequest request, HttpServletResponse response) {
         String origin = request.getHeader("origin");
-        response.setHeader("Access-Control-Allow-Origin", origin); // set origin from header
+        response.setHeader("Access-Control-Allow-Origin", HtmlUtils.htmlEscape(origin)); // set origin from header
         response.setHeader("Access-Control-Allow-Credentials", "true");  // allow cookie
         return info;
     }

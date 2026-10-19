@@ -2,6 +2,7 @@ package org.joychou.controller;
 
 import org.apache.commons.lang.StringUtils;
 import org.springframework.stereotype.Controller;
+import org.springframework.web.util.HtmlUtils;
 import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseBody;
@@ -27,7 +28,7 @@ public class XSS {
     @RequestMapping("/reflect")
     @ResponseBody
     public static String reflect(String xss) {
-        return xss;
+        return HtmlUtils.htmlEscape(xss);
     }
 
     /**
@@ -55,7 +56,7 @@ public class XSS {
     @RequestMapping("/stored/show")
     @ResponseBody
     public String show(@CookieValue("xss") String xss) {
-        return xss;
+        return HtmlUtils.htmlEscape(xss);
     }
 
     /**
@@ -65,7 +66,7 @@ public class XSS {
     @RequestMapping("/safe")
     @ResponseBody
     public static String safe(String xss) {
-        return encode(xss);
+        return HtmlUtils.htmlEscape(xss);
     }
 
     private static String encode(String origin) {
