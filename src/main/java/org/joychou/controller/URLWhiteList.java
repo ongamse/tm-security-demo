@@ -100,25 +100,12 @@ public class URLWhiteList {
 
         logger.info("url:  " + url);
 
-        if (!SecurityUtil.isHttp(url)) {
+        if (SecurityUtil.checkURL(url) == null) {
             return;
         }
 
-        // Use URI-based parsing to prevent host parsing inconsistencies
-        String host = SecurityUtil.gethost(url);
-        if (host.isEmpty()) {
-            return;
-        }
-        logger.info("host:  " + host);
-
-        // endsWith . — require dot prefix to prevent bypassjoychou.org
-        for (String domain : domainwhitelist) {
-            if (host.endsWith("." + domain) || host.equals(domain)) {
-                res.sendRedirect(url);
-                return;
-            }
-        }
-
+        logger.info("host:  " + SecurityUtil.gethost(url));
+        res.sendRedirect(url);
     }
 
 

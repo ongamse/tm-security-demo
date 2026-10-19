@@ -30,6 +30,9 @@ public class URLRedirect {
      */
     @GetMapping("/redirect")
     public String redirect(@RequestParam("url") String url) {
+        if (SecurityUtil.checkURL(url) == null) {
+            return "redirect:/";
+        }
         return "redirect:" + url;
     }
 
@@ -57,6 +60,10 @@ public class URLRedirect {
     @ResponseBody
     public static void sendRedirect(HttpServletRequest request, HttpServletResponse response) throws IOException {
         String url = request.getParameter("url");
+        if (SecurityUtil.checkURL(url) == null) {
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            return;
+        }
         response.sendRedirect(url); // 302 redirect
     }
 
