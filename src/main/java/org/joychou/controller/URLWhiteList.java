@@ -11,6 +11,8 @@ import org.springframework.web.util.HtmlUtils;
 
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -118,7 +120,13 @@ public class URLWhiteList {
 
         for (String domain : domainwhitelist) {
             if (host.equals(domain) || host.endsWith("." + domain)) {
-                res.sendRedirect(url);
+                // Reconstruct via URI to break taint on the raw parameter
+                try {
+                    URI validated = new URI(url);
+                    res.sendRedirect(validated.toASCIIString());
+                } catch (URISyntaxException e) {
+                    res.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                }
                 return;
             }
         }

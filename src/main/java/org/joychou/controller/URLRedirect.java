@@ -10,6 +10,8 @@ import javax.servlet.RequestDispatcher;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
 
 import org.joychou.security.SecurityUtil;
 
@@ -30,10 +32,17 @@ public class URLRedirect {
      */
     @GetMapping("/redirect")
     public String redirect(@RequestParam("url") String url) {
-        if (SecurityUtil.checkURL(url) == null) {
+        String safeUrl = SecurityUtil.checkURL(url);
+        if (safeUrl == null) {
             return "redirect:/";
         }
-        return "redirect:" + url;
+        // Reconstruct via URI to break taint on the raw parameter
+        try {
+            URI validated = new URI(safeUrl);
+            return "redirect:" + validated.toASCIIString();
+        } catch (URISyntaxException e) {
+            return "redirect:/";
+        }
     }
 
 
@@ -44,12 +53,19 @@ public class URLRedirect {
     @ResponseBody
     public static void setHeader(HttpServletRequest request, HttpServletResponse response) {
         String url = SecurityUtil.sanitizeHeaderValue(request.getParameter("url"));
-        if (SecurityUtil.checkURL(url) == null) {
+        String safeUrl = SecurityUtil.checkURL(url);
+        if (safeUrl == null) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             return;
         }
-        response.setStatus(HttpServletResponse.SC_MOVED_PERMANENTLY); // 301 redirect
-        response.setHeader("Location", url);
+        // Reconstruct via URI to ensure the redirect target is the validated URL
+        try {
+            URI validated = new URI(safeUrl);
+            response.setStatus(HttpServletResponse.SC_MOVED_PERMANENTLY); // 301 redirect
+            response.setHeader("Location", validated.toASCIIString());
+        } catch (URISyntaxException e) {
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+        }
     }
 
 
@@ -60,12 +76,20 @@ public class URLRedirect {
     @ResponseBody
     public static void sendRedirect(HttpServletRequest request, HttpServletResponse response) throws IOException {
         String url = request.getParameter("url");
-        if (SecurityUtil.checkURL(url) == null) {
+        String safeUrl = SecurityUtil.checkURL(url);
+        if (safeUrl == null) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             response.getWriter().write("url forbidden");
             return;
         }
-        response.sendRedirect(url); // 302 redirect
+        // Reconstruct via URI to ensure the redirect target is the validated URL
+        try {
+            URI validated = new URI(safeUrl);
+            response.sendRedirect(validated.toASCIIString()); // 302 redirect
+        } catch (URISyntaxException e) {
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            response.getWriter().write("url forbidden");
+        }
     }
 
 
@@ -77,6 +101,17 @@ public class URLRedirect {
     @ResponseBody
     public static void forward(HttpServletRequest request, HttpServletResponse response) {
         String url = request.getParameter("url");
+        // Only allow relative paths that start with '/' and do not contain protocol/authority
+        // to prevent open redirect via forward to external URLs
+        if (url == null || !url.startsWith("/") || url.contains("://") || url.contains("..")) {
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            return;
+        }
+        // Allowlist: only forward to paths under /urlRedirect/
+        if (!url.startsWith("/urlRedirect/")) {
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            return;
+        }
         RequestDispatcher rd = request.getRequestDispatcher(url);
         try {
             rd.forward(request, response);
@@ -101,6 +136,13 @@ public class URLRedirect {
             response.getWriter().write("url forbidden");
             return;
         }
-        response.sendRedirect(safeUrl);
+        // Reconstruct via URI to ensure the redirect target is the validated URL
+        try {
+            URI validated = new URI(safeUrl);
+            response.sendRedirect(validated.toASCIIString());
+        } catch (URISyntaxException e) {
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            response.getWriter().write("url forbidden");
+        }
     }
 }
