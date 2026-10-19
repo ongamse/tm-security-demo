@@ -46,6 +46,7 @@ public class SSRF {
      */
     @RequestMapping(value = "/urlConnection/vuln", method = {RequestMethod.POST, RequestMethod.GET})
     public String URLConnectionVuln(String url) {
+        SSRFChecker.validateUrlNotInternal(url);
         return HttpUtils.URLConnection(url);
     }
 
@@ -58,6 +59,7 @@ public class SSRF {
             return "[-] SSRF check failed";
         }
 
+        SSRFChecker.validateUrlNotInternal(url);
         try {
             SecurityUtil.startSSRFHook();
             return HttpUtils.URLConnection(url);
@@ -76,6 +78,7 @@ public class SSRF {
      */
     @GetMapping("/HttpURLConnection/sec")
     public String httpURLConnection(@RequestParam String url) {
+        SSRFChecker.validateUrlNotInternal(url);
         try {
             SecurityUtil.startSSRFHook();
             return HttpUtils.HttpURLConnection(url);
@@ -89,6 +92,7 @@ public class SSRF {
 
     @GetMapping("/HttpURLConnection/vuln")
     public String httpURLConnectionVuln(@RequestParam String url) {
+        SSRFChecker.validateUrlNotInternal(url);
         return HttpUtils.HttpURLConnection(url);
     }
 
@@ -99,6 +103,7 @@ public class SSRF {
      */
     @GetMapping("/request/sec")
     public String request(@RequestParam String url) {
+        SSRFChecker.validateUrlNotInternal(url);
         try {
             SecurityUtil.startSSRFHook();
             return HtmlUtils.htmlEscape(HttpUtils.request(url));
@@ -157,6 +162,7 @@ public class SSRF {
      */
     @GetMapping("/ImageIO/sec")
     public String ImageIO(@RequestParam String url) {
+        SSRFChecker.validateUrlNotInternal(url);
         try {
             SecurityUtil.startSSRFHook();
             HttpUtils.imageIO(url);
@@ -173,6 +179,7 @@ public class SSRF {
     @GetMapping("/okhttp/sec")
     public String okhttp(@RequestParam String url) {
 
+        SSRFChecker.validateUrlNotInternal(url);
         try {
             SecurityUtil.startSSRFHook();
             return HttpUtils.okhttp(url);
@@ -192,6 +199,7 @@ public class SSRF {
     @GetMapping("/httpclient/sec")
     public String HttpClient(@RequestParam String url) {
 
+        SSRFChecker.validateUrlNotInternal(url);
         try {
             SecurityUtil.startSSRFHook();
             return HttpUtils.httpClient(url);
@@ -212,6 +220,7 @@ public class SSRF {
     @GetMapping("/commonsHttpClient/sec")
     public String commonsHttpClient(@RequestParam String url) {
 
+        SSRFChecker.validateUrlNotInternal(url);
         try {
             SecurityUtil.startSSRFHook();
             return HttpUtils.commonHttpClient(url);
@@ -231,6 +240,7 @@ public class SSRF {
     @GetMapping("/Jsoup/sec")
     public String Jsoup(@RequestParam String url) {
 
+        SSRFChecker.validateUrlNotInternal(url);
         try {
             SecurityUtil.startSSRFHook();
             return HttpUtils.Jsoup(url);
@@ -250,6 +260,7 @@ public class SSRF {
      */
     @GetMapping("/IOUtils/sec")
     public String IOUtils(String url) {
+        SSRFChecker.validateUrlNotInternal(url);
         try {
             SecurityUtil.startSSRFHook();
             HttpUtils.IOUtils(url);
@@ -269,6 +280,7 @@ public class SSRF {
      */
     @GetMapping("/HttpSyncClients/vuln")
     public String HttpSyncClients(@RequestParam("url") String url) {
+        SSRFChecker.validateUrlNotInternal(url);
         return HttpUtils.HttpAsyncClients(url);
     }
 
@@ -281,6 +293,7 @@ public class SSRF {
      */
     @GetMapping("/restTemplate/vuln1")
     public String RestTemplateUrlBanRedirects(String url){
+        SSRFChecker.validateUrlNotInternal(url);
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON_UTF8);
         return httpService.RequestHttpBanRedirects(url, headers);
@@ -289,6 +302,7 @@ public class SSRF {
 
     @GetMapping("/restTemplate/vuln2")
     public String RestTemplateUrl(String url){
+        SSRFChecker.validateUrlNotInternal(url);
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON_UTF8);
         return httpService.RequestHttp(url, headers);
@@ -302,6 +316,7 @@ public class SSRF {
      */
     @GetMapping("/hutool/vuln")
     public String hutoolHttp(String url){
+        SSRFChecker.validateUrlNotInternal(url);
         return HttpUtil.get(url);
     }
 
