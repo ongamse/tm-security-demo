@@ -9,6 +9,8 @@ services:
         links:
             - j_mysql
         read_only: true
+        security_opt:
+            - no-new-privileges:true
         tmpfs:
             - /tmp
 
@@ -17,6 +19,8 @@ services:
         ports:
             - "3306:3306"
         read_only: true
+        security_opt:
+            - no-new-privileges:true
         tmpfs:
             - /tmp
             - /var/run/mysqld
