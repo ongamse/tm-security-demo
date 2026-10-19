@@ -2,6 +2,7 @@ package org.joychou.controller;
 
 import cn.hutool.http.HttpUtil;
 import org.joychou.security.SecurityUtil;
+import org.joychou.security.ssrf.SSRFChecker;
 import org.joychou.security.ssrf.SSRFException;
 import org.joychou.service.HttpService;
 import org.joychou.util.HttpUtils;
@@ -11,11 +12,13 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.util.HtmlUtils;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletResponse;
 import java.io.*;
 import java.net.*;
+import java.util.regex.Pattern;
 
 
 /**
@@ -29,6 +32,7 @@ import java.net.*;
 public class SSRF {
 
     private static final Logger logger = LoggerFactory.getLogger(SSRF.class);
+    private static final Pattern SAFE_FILENAME_PATTERN = Pattern.compile("[^a-zA-Z0-9._-]");
 
     @Resource
     private HttpService httpService;
@@ -43,6 +47,11 @@ public class SSRF {
      */
     @RequestMapping(value = "/urlConnection/vuln", method = {RequestMethod.POST, RequestMethod.GET})
     public String URLConnectionVuln(String url) {
+        try {
+            url = SSRFChecker.validateURLForSSRF(url);
+        } catch (IllegalArgumentException e) {
+            return "[-] SSRF check failed: " + e.getMessage();
+        }
         return HttpUtils.URLConnection(url);
     }
 
@@ -86,6 +95,11 @@ public class SSRF {
 
     @GetMapping("/HttpURLConnection/vuln")
     public String httpURLConnectionVuln(@RequestParam String url) {
+        try {
+            url = SSRFChecker.validateURLForSSRF(url);
+        } catch (IllegalArgumentException e) {
+            return "[-] SSRF check failed: " + e.getMessage();
+        }
         return HttpUtils.HttpURLConnection(url);
     }
 
@@ -98,9 +112,9 @@ public class SSRF {
     public String request(@RequestParam String url) {
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.request(url);
+            return HtmlUtils.htmlEscape(HttpUtils.request(url));
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return HtmlUtils.htmlEscape(e.getMessage());
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -117,11 +131,27 @@ public class SSRF {
      */
     @GetMapping("/openStream")
     public void openStream(@RequestParam String url, HttpServletResponse response) throws IOException {
+        // Validate URL for SSRF before making the request
+        try {
+            url = SSRFChecker.validateURLForSSRF(url);
+        } catch (IllegalArgumentException e) {
+            response.sendError(HttpServletResponse.SC_FORBIDDEN, "SSRF check failed: " + e.getMessage());
+            return;
+        }
+
         InputStream inputStream = null;
         OutputStream outputStream = null;
         try {
-            String downLoadImgFileName = WebUtils.getNameWithoutExtension(url) + "." + WebUtils.getFileExtension(url);
-            // download
+            String rawName = WebUtils.getNameWithoutExtension(url);
+            String rawExt = WebUtils.getFileExtension(url);
+            // Sanitize filename parts: strip any character that is not alphanumeric, dot, hyphen, or underscore
+            String safeName = SAFE_FILENAME_PATTERN.matcher(rawName).replaceAll("");
+            String safeExt = SAFE_FILENAME_PATTERN.matcher(rawExt).replaceAll("");
+            if (safeName.isEmpty()) {
+                safeName = "download";
+            }
+            String downLoadImgFileName = safeName + "." + safeExt;
+            // download - reconstructed safe filename breaks taint from user-supplied URL
             response.setHeader("content-disposition", "attachment;fileName=" + downLoadImgFileName);
 
             URL u = new URL(url);
@@ -264,6 +294,11 @@ public class SSRF {
      */
     @GetMapping("/HttpSyncClients/vuln")
     public String HttpSyncClients(@RequestParam("url") String url) {
+        try {
+            url = SSRFChecker.validateURLForSSRF(url);
+        } catch (IllegalArgumentException e) {
+            return "[-] SSRF check failed: " + e.getMessage();
+        }
         return HttpUtils.HttpAsyncClients(url);
     }
 
@@ -276,6 +311,11 @@ public class SSRF {
      */
     @GetMapping("/restTemplate/vuln1")
     public String RestTemplateUrlBanRedirects(String url){
+        try {
+            url = SSRFChecker.validateURLForSSRF(url);
+        } catch (IllegalArgumentException e) {
+            return "[-] SSRF check failed: " + e.getMessage();
+        }
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON_UTF8);
         return httpService.RequestHttpBanRedirects(url, headers);
@@ -284,6 +324,11 @@ public class SSRF {
 
     @GetMapping("/restTemplate/vuln2")
     public String RestTemplateUrl(String url){
+        try {
+            url = SSRFChecker.validateURLForSSRF(url);
+        } catch (IllegalArgumentException e) {
+            return "[-] SSRF check failed: " + e.getMessage();
+        }
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON_UTF8);
         return httpService.RequestHttp(url, headers);
@@ -297,6 +342,11 @@ public class SSRF {
      */
     @GetMapping("/hutool/vuln")
     public String hutoolHttp(String url){
+        try {
+            url = SSRFChecker.validateURLForSSRF(url);
+        } catch (IllegalArgumentException e) {
+            return "[-] SSRF check failed: " + e.getMessage();
+        }
         return HttpUtil.get(url);
     }
 
@@ -307,6 +357,11 @@ public class SSRF {
      */
     @GetMapping("/dnsrebind/vuln")
     public String DnsRebind(String url) {
+        try {
+            url = SSRFChecker.validateURLForSSRF(url);
+        } catch (IllegalArgumentException e) {
+            return "[-] SSRF check failed: " + e.getMessage();
+        }
         java.security.Security.setProperty("networkaddress.cache.negative.ttl" , "0");
         if (!SecurityUtil.checkSSRFWithoutRedirect(url)) {
             return "Dangerous url";

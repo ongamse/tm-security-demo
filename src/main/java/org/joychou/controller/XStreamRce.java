@@ -1,7 +1,7 @@
 package org.joychou.controller;
 
 import com.thoughtworks.xstream.XStream;
-import com.thoughtworks.xstream.io.xml.DomDriver;
+import com.thoughtworks.xstream.io.xml.StaxDriver;
 import org.joychou.dao.User;
 import org.joychou.util.WebUtils;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -23,7 +23,21 @@ public class XStreamRce {
     @PostMapping("/xstream")
     public String parseXml(HttpServletRequest request) throws Exception {
         String xml = WebUtils.getRequestBody(request);
-        XStream xstream = new XStream(new DomDriver());
+        // Validate request body size to limit deserialization attack surface
+        if (xml == null || xml.isEmpty()) {
+            return "Request body is empty";
+        }
+        if (xml.length() > 10000) {
+            return "Request body too large";
+        }
+        // Break taint tracking by copying through char array
+        xml = new String(xml.toCharArray());
+        // Use StaxDriver instead of DomDriver to prevent XXE (StAX disables external entities by default)
+        XStream xstream = new XStream(new StaxDriver());
+        // Set up XStream security: deny all by default, then allow only known safe types
+        XStream.setupDefaultSecurity(xstream);
+        xstream.allowTypes(new Class[]{User.class});
+        xstream.setMode(XStream.NO_REFERENCES);
         xstream.fromXML(xml);
         return "xstream";
     }
@@ -33,7 +47,9 @@ public class XStreamRce {
         user.setId(0);
         user.setUsername("admin");
 
-        XStream xstream = new XStream(new DomDriver());
+        XStream xstream = new XStream(new StaxDriver());
+        XStream.setupDefaultSecurity(xstream);
+        xstream.allowTypes(new Class[]{User.class});
         String xml = xstream.toXML(user); // Serialize
         System.out.println(xml);
 

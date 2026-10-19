@@ -6,6 +6,8 @@ import javax.servlet.annotation.WebFilter;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.util.Arrays;
+import java.util.List;
 import org.joychou.security.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,6 +20,28 @@ import org.slf4j.LoggerFactory;
  */
 @WebFilter(filterName = "OriginFilter", urlPatterns = "/cors/sec/originFilter")
 public class OriginFilter implements Filter {
+
+    private static final List<String> ALLOWED_ORIGINS = Arrays.asList(
+            "http://test.joychou.me",
+            "https://joychou.org"
+    );
+
+    /**
+     * Match a request origin against the hardcoded ALLOWED_ORIGINS list.
+     * Returns the matched entry from the list (not the user-supplied value)
+     * to break taint flow from request header to response header.
+     */
+    private static String matchAllowedOrigin(String origin) {
+        if (origin == null) {
+            return null;
+        }
+        for (String allowed : ALLOWED_ORIGINS) {
+            if (allowed.equalsIgnoreCase(origin)) {
+                return allowed;
+            }
+        }
+        return null;
+    }
 
     @Override
     public void init(FilterConfig filterConfig) throws ServletException {
@@ -36,18 +60,26 @@ public class OriginFilter implements Filter {
         String origin = request.getHeader("Origin");
         logger.info("[+] Origin: " + origin + "\tCurrent url:" + request.getRequestURL());
 
-        // 以file协议访问html，origin为字符串的null，所以依然会走安全check逻辑
-        if (origin != null && SecurityUtil.checkURL(origin) == null) {
-            logger.error("[-] Origin check error. " + "Origin: " + origin +
-                    "\tCurrent url:" + request.getRequestURL());
-            response.setStatus(response.SC_FORBIDDEN);
-            response.getWriter().println("Invaid cors config by joychou.");
-            return;
+        // Only set CORS headers when origin is present and passes the safe-domain allowlist.
+        // Null origin means same-origin or direct browser request — no CORS headers needed.
+        if (origin != null) {
+            if (SecurityUtil.checkURL(origin) == null) {
+                logger.error("[-] Origin check error. " + "Origin: " + origin +
+                        "\tCurrent url:" + request.getRequestURL());
+                response.setStatus(response.SC_FORBIDDEN);
+                response.getWriter().println("Invaid cors config by joychou.");
+                return;
+            }
+            String allowedOrigin = matchAllowedOrigin(origin);
+            if (allowedOrigin == null) {
+                response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                response.getWriter().println("Origin is not allowed.");
+                return;
+            }
+            response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
+            response.setHeader("Access-Control-Allow-Credentials", "true");
+            response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTION");
         }
-
-        response.setHeader("Access-Control-Allow-Origin", origin);
-        response.setHeader("Access-Control-Allow-Credentials", "true");
-        response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTION");
 
         filterChain.doFilter(req, res);
     }

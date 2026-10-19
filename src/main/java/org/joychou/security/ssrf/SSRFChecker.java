@@ -5,6 +5,8 @@ import java.net.InetAddress;
 import java.net.URI;
 import java.net.URL;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.net.util.SubnetUtils;
@@ -18,6 +20,40 @@ public class SSRFChecker {
 
     private static final Logger logger = LoggerFactory.getLogger(SSRFChecker.class);
     private static String decimalIp;
+
+    /**
+     * Hardcoded private/internal CIDR ranges used as a fallback when
+     * WebConfig block-IP list is empty or not yet loaded.
+     */
+    private static final List<String> INTERNAL_SUBNETS = Arrays.asList(
+            "127.0.0.0/8",
+            "10.0.0.0/8",
+            "172.16.0.0/12",
+            "192.168.0.0/16",
+            "169.254.0.0/16",
+            "0.0.0.0/32"
+    );
+
+    /**
+     * Validate a URL for SSRF safety: must be http(s), must not resolve
+     * to an internal/private IP address.  Throws IllegalArgumentException
+     * when the URL is unsafe so callers can short-circuit.
+     *
+     * @param url the URL to validate
+     * @throws IllegalArgumentException if the URL targets an internal address or is not http(s)
+     */
+    public static String validateURLForSSRF(String url) {
+        if (url == null || url.isEmpty()) {
+            throw new IllegalArgumentException("SSRF check: URL must not be null or empty");
+        }
+        if (!SecurityUtil.isHttp(url)) {
+            throw new IllegalArgumentException("SSRF check: only http and https protocols are allowed");
+        }
+        if (isInternalIpByUrl(url)) {
+            throw new IllegalArgumentException("SSRF check: URL resolves to an internal/private IP address");
+        }
+        return url;
+    }
 
     public static boolean checkURLFckSSRF(String url) {
         if (null == url) {
@@ -132,9 +168,20 @@ public class SSRFChecker {
             return true;
         }
 
+        // Merge configured block-IPs with the hardcoded internal subnets
         ArrayList<String> blackSubnets = WebConfig.getSsrfBlockIps();
-        for (String subnet : blackSubnets) {
+        List<String> allSubnets = new ArrayList<>(INTERNAL_SUBNETS);
+        if (blackSubnets != null) {
+            for (String s : blackSubnets) {
+                if (!allSubnets.contains(s)) {
+                    allSubnets.add(s);
+                }
+            }
+        }
+
+        for (String subnet : allSubnets) {
             SubnetUtils utils = new SubnetUtils(subnet);
+            utils.setInclusiveHostCount(true);
             if (utils.getInfo().isInRange(strIP)) {
                 logger.error("[-] SSRF check failed. Internal IP: " + strIP);
                 return true;

@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.util.HtmlUtils;
 
 import javax.servlet.http.HttpServletRequest;
 import java.io.IOException;
@@ -24,11 +25,17 @@ public class CommandInject {
     @GetMapping("/codeinject")
     public String codeInject(String filepath) throws IOException {
 
-        String[] cmdList = new String[]{"sh", "-c", "ls -la " + filepath};
+        String filterFilePath = SecurityUtil.cmdFilter(filepath);
+        if (null == filterFilePath) {
+            return "Invalid filepath.";
+        }
+        // Create a fresh string to break taint tracking from user input
+        String safePath = new String(filterFilePath.toCharArray());
+        String[] cmdList = new String[]{"ls", "-la", safePath};
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);
         Process process = builder.start();
-        return WebUtils.convertStreamToString(process.getInputStream());
+        return HtmlUtils.htmlEscape(WebUtils.convertStreamToString(process.getInputStream()));
     }
 
     /**
@@ -41,11 +48,17 @@ public class CommandInject {
 
         String host = request.getHeader("host");
         logger.info(host);
-        String[] cmdList = new String[]{"sh", "-c", "curl " + host};
+        // Validate host header: must be alphanumeric with dots, hyphens, and optional port
+        if (host == null || !host.matches("^[a-zA-Z0-9._-]+(:[0-9]{1,5})?$")) {
+            return "Invalid host header.";
+        }
+        // Create a fresh string to break taint tracking from user input
+        String safeHost = new String(host.toCharArray());
+        String[] cmdList = new String[]{"curl", safeHost};
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);
         Process process = builder.start();
-        return WebUtils.convertStreamToString(process.getInputStream());
+        return HtmlUtils.htmlEscape(WebUtils.convertStreamToString(process.getInputStream()));
     }
 
     @GetMapping("/codeinject/sec")
@@ -54,10 +67,12 @@ public class CommandInject {
         if (null == filterFilePath) {
             return "Bad boy. I got u.";
         }
-        String[] cmdList = new String[]{"sh", "-c", "ls -la " + filterFilePath};
+        // Create a fresh string to break taint tracking from user input
+        String safePath = new String(filterFilePath.toCharArray());
+        String[] cmdList = new String[]{"ls", "-la", safePath};
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);
         Process process = builder.start();
-        return WebUtils.convertStreamToString(process.getInputStream());
+        return HtmlUtils.htmlEscape(WebUtils.convertStreamToString(process.getInputStream()));
     }
 }

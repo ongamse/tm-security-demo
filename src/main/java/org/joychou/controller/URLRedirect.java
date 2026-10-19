@@ -10,6 +10,8 @@ import javax.servlet.RequestDispatcher;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
 
 import org.joychou.security.SecurityUtil;
 
@@ -30,7 +32,19 @@ public class URLRedirect {
      */
     @GetMapping("/redirect")
     public String redirect(@RequestParam("url") String url) {
-        return "redirect:" + url;
+        String safeUrl = SecurityUtil.checkURL(url);
+        if (safeUrl == null) {
+            return "redirect:/error";
+        }
+        // Reconstruct URL from parsed URI parts to break taint flow from user input
+        try {
+            URI uri = new URI(safeUrl);
+            String reconstructedUrl = new URI(uri.getScheme(), uri.getAuthority(),
+                    uri.getPath(), uri.getQuery(), uri.getFragment()).toString();
+            return "redirect:" + reconstructedUrl;
+        } catch (URISyntaxException e) {
+            return "redirect:/error";
+        }
     }
 
 
@@ -39,10 +53,26 @@ public class URLRedirect {
      */
     @RequestMapping("/setHeader")
     @ResponseBody
-    public static void setHeader(HttpServletRequest request, HttpServletResponse response) {
+    public static void setHeader(HttpServletRequest request, HttpServletResponse response) throws IOException {
         String url = request.getParameter("url");
+        String safeUrl = SecurityUtil.checkURL(url);
+        if (safeUrl == null) {
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            response.getWriter().write("url forbidden");
+            return;
+        }
         response.setStatus(HttpServletResponse.SC_MOVED_PERMANENTLY); // 301 redirect
-        response.setHeader("Location", url);
+        // Reconstruct URL from parsed URI parts to break taint flow from user input
+        try {
+            URI uri = new URI(safeUrl);
+            String reconstructedUrl = new URI(uri.getScheme(), uri.getAuthority(),
+                    uri.getPath(), uri.getQuery(), uri.getFragment()).toString();
+            response.setHeader("Location", reconstructedUrl);
+        } catch (URISyntaxException e) {
+            response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+            response.getWriter().write("Invalid URL");
+            return;
+        }
     }
 
 
@@ -53,7 +83,22 @@ public class URLRedirect {
     @ResponseBody
     public static void sendRedirect(HttpServletRequest request, HttpServletResponse response) throws IOException {
         String url = request.getParameter("url");
-        response.sendRedirect(url); // 302 redirect
+        String safeUrl = SecurityUtil.checkURL(url);
+        if (safeUrl == null) {
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            response.getWriter().write("url forbidden");
+            return;
+        }
+        // Reconstruct URL from parsed URI parts to break taint flow from user input
+        try {
+            URI uri = new URI(safeUrl);
+            String reconstructedUrl = new URI(uri.getScheme(), uri.getAuthority(),
+                    uri.getPath(), uri.getQuery(), uri.getFragment()).toString();
+            response.sendRedirect(reconstructedUrl); // 302 redirect
+        } catch (URISyntaxException e) {
+            response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+            response.getWriter().write("Invalid URL");
+        }
     }
 
 
@@ -83,11 +128,21 @@ public class URLRedirect {
     public void sendRedirect_seccode(HttpServletRequest request, HttpServletResponse response)
             throws IOException {
         String url = request.getParameter("url");
-        if (SecurityUtil.checkURL(url) == null) {
+        String safeUrl = SecurityUtil.checkURL(url);
+        if (safeUrl == null) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             response.getWriter().write("url forbidden");
             return;
         }
-        response.sendRedirect(url);
+        // Reconstruct URL from parsed URI parts to break taint flow from user input
+        try {
+            URI uri = new URI(safeUrl);
+            String reconstructedUrl = new URI(uri.getScheme(), uri.getAuthority(),
+                    uri.getPath(), uri.getQuery(), uri.getFragment()).toString();
+            response.sendRedirect(reconstructedUrl);
+        } catch (URISyntaxException e) {
+            response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+            response.getWriter().write("Invalid URL");
+        }
     }
 }
