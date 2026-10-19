@@ -40,6 +40,10 @@ public class SSTI {
      */
     @GetMapping("/velocity")
     public String velocity(String template) {
+        if (template == null || !template.matches("^[a-zA-Z_]+$")) {
+            return "Invalid template name.";
+        }
+
         Velocity.init();
 
         VelocityContext context = new VelocityContext();

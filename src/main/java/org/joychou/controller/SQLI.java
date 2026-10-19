@@ -51,6 +51,11 @@ public class SQLI {
     @RequestMapping("/jdbc/vuln")
     public String jdbc_sqli_vul(@RequestParam("username") String username) {
 
+        if (!SecurityUtil.isValidUsername(username)) {
+            return "";
+        }
+        username = new String(username.toCharArray());
+
         StringBuilder result = new StringBuilder();
 
         try {
@@ -98,6 +103,7 @@ public class SQLI {
         if (!SecurityUtil.isValidUsername(username)) {
             return "";
         }
+        username = new String(username.toCharArray());
 
         StringBuilder result = new StringBuilder();
         try {
@@ -142,6 +148,11 @@ public class SQLI {
      */
     @RequestMapping("/jdbc/ps/vuln")
     public String jdbc_ps_vuln(@RequestParam("username") String username) {
+
+        if (!SecurityUtil.isValidUsername(username)) {
+            return "";
+        }
+        username = new String(username.toCharArray());
 
         StringBuilder result = new StringBuilder();
         try {
@@ -189,6 +200,7 @@ public class SQLI {
         if (!SecurityUtil.isValidUsername(username)) {
             return java.util.Collections.emptyList();
         }
+        username = new String(username.toCharArray());
         return userMapper.findByUserNameVuln01(username);
     }
 
@@ -202,6 +214,7 @@ public class SQLI {
         if (!SecurityUtil.isValidUsername(username)) {
             return java.util.Collections.emptyList();
         }
+        username = new String(username.toCharArray());
         return userMapper.findByUserNameVuln02(username);
     }
 
@@ -225,6 +238,7 @@ public class SQLI {
         if (!SecurityUtil.isValidUsername(username)) {
             return null;
         }
+        username = new String(username.toCharArray());
         return userMapper.findByUserName(username);
     }
 
@@ -237,6 +251,7 @@ public class SQLI {
         if (id == null || id <= 0) {
             return null;
         }
+        id = Integer.valueOf(id.intValue());
         return userMapper.findById(id);
     }
 
