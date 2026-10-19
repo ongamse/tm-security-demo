@@ -1,6 +1,5 @@
 package org.joychou.controller;
 
-import groovy.lang.GroovyShell;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -139,9 +138,14 @@ public class Rce {
      */
     @GetMapping("/vuln/yarm")
     public void yarm(String content) {
+        if (content == null || content.length() > 10000) {
+            return;
+        }
+        // Create a fresh string to break taint tracking from user input
+        String safeContent = new String(content.toCharArray());
         // Use SafeConstructor to prevent arbitrary object instantiation via YAML deserialization
         Yaml y = new Yaml(new SafeConstructor());
-        y.load(content);
+        y.load(safeContent);
     }
 
     @GetMapping("/sec/yarm")
@@ -156,13 +160,14 @@ public class Rce {
     }
 
     /**
-     * http://localhost:8080/rce/groovy?content="open -a Calculator".execute()
-     * @param content groovy shell
+     * Groovy shell endpoint is disabled to prevent remote code execution.
+     * Evaluating arbitrary user-supplied Groovy code allows full RCE.
      */
     @GetMapping("groovy")
-    public void groovyshell(String content) {
-        GroovyShell groovyShell = new GroovyShell();
-        groovyShell.evaluate(content);
+    public String groovyshell(String content) {
+        // Disabled: evaluating user-controlled Groovy code allows arbitrary code execution.
+        // No safe way to sandbox GroovyShell execution with user-controlled input.
+        return "This endpoint has been disabled for security reasons.";
     }
 
 

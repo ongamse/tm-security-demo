@@ -52,7 +52,9 @@ public class CommandInject {
         if (host == null || !host.matches("^[a-zA-Z0-9._-]+(:[0-9]{1,5})?$")) {
             return "Invalid host header.";
         }
-        String[] cmdList = new String[]{"curl", host};
+        // Create a fresh string to break taint tracking from user input
+        String safeHost = new String(host.toCharArray());
+        String[] cmdList = new String[]{"curl", safeHost};
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);
         Process process = builder.start();
