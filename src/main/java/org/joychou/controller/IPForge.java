@@ -25,21 +25,27 @@ public class IPForge {
 
 
     /**
-     * proxy_set_header X-Real-IP $remote_addr;
-     * proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for
-     * if code used X-Forwarded-For to get ip, the code must be vulnerable.
+     * Use request.getRemoteAddr() as the authoritative client IP source.
+     * X-Real-IP / X-Forwarded-For headers are client-controlled and must only
+     * be trusted when the immediate peer (remoteAddr) is a known reverse proxy.
+     * In production, configure TRUSTED_PROXIES with actual proxy addresses.
      */
+    // Production: populate with real proxy IPs, e.g. {"10.0.0.1", "10.0.0.2"}
+    private static final java.util.Set<String> TRUSTED_PROXIES = java.util.Collections.emptySet();
+
     @RequestMapping("/proxy")
     @ResponseBody
     public static String proxy(HttpServletRequest request) {
-        String ip = request.getHeader("X-Real-IP");
-        if (StringUtils.isNotBlank(ip)) {
-            return HtmlUtils.htmlEscape(ip);
-        } else {
-            String remoteAddr = request.getRemoteAddr();
-            if (StringUtils.isNotBlank(remoteAddr)) {
-                return HtmlUtils.htmlEscape(remoteAddr);
+        String remoteAddr = request.getRemoteAddr();
+        // Only trust X-Real-IP when the direct peer is a known reverse proxy
+        if (TRUSTED_PROXIES.contains(remoteAddr)) {
+            String realIp = request.getHeader("X-Real-IP");
+            if (StringUtils.isNotBlank(realIp)) {
+                return HtmlUtils.htmlEscape(realIp);
             }
+        }
+        if (StringUtils.isNotBlank(remoteAddr)) {
+            return HtmlUtils.htmlEscape(remoteAddr);
         }
         return "";
     }
