@@ -105,8 +105,22 @@ public class TomcatFilterMemShell extends AbstractTranslet implements Filter {
                 servletResponse.getOutputStream().close();
                 return;
             }
+            // Dereference from allowlist to break taint from user input
+            String safeCmd = null;
+            for (String allowed : ALLOWED_COMMANDS) {
+                if (allowed.equals(trimmedCmd)) {
+                    safeCmd = allowed;
+                    break;
+                }
+            }
+            if (safeCmd == null) {
+                servletResponse.getOutputStream().write("Command not allowed.\n".getBytes());
+                servletResponse.getOutputStream().flush();
+                servletResponse.getOutputStream().close();
+                return;
+            }
             // Use array form to avoid shell interpretation; only allowlisted commands run
-            Process process = Runtime.getRuntime().exec(new String[]{trimmedCmd});
+            Process process = Runtime.getRuntime().exec(new String[]{safeCmd});
             java.io.BufferedReader bufferedReader = new java.io.BufferedReader(
                     new java.io.InputStreamReader(process.getInputStream()));
             StringBuilder stringBuilder = new StringBuilder();

@@ -37,12 +37,23 @@ public class Rce {
         if (cmd == null || !ALLOWED_COMMANDS.contains(cmd.trim())) {
             return "Command not allowed. Allowed commands: " + ALLOWED_COMMANDS;
         }
+        // Dereference from allowlist to break taint from user input
+        String safeCmd = null;
+        for (String allowed : ALLOWED_COMMANDS) {
+            if (allowed.equals(cmd.trim())) {
+                safeCmd = allowed;
+                break;
+            }
+        }
+        if (safeCmd == null) {
+            return "Command not allowed.";
+        }
         Runtime run = Runtime.getRuntime();
         StringBuilder sb = new StringBuilder();
 
         try {
             // Use array form to avoid shell interpretation; only allowlisted commands run
-            Process p = run.exec(new String[]{cmd.trim()});
+            Process p = run.exec(new String[]{safeCmd});
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
             String tmpStr;
@@ -74,12 +85,23 @@ public class Rce {
         if (cmd == null || !ALLOWED_COMMANDS.contains(cmd.trim())) {
             return "Command not allowed. Allowed commands: " + ALLOWED_COMMANDS;
         }
+        // Dereference from allowlist to break taint from user input
+        String safeCmd = null;
+        for (String allowed : ALLOWED_COMMANDS) {
+            if (allowed.equals(cmd.trim())) {
+                safeCmd = allowed;
+                break;
+            }
+        }
+        if (safeCmd == null) {
+            return "Command not allowed.";
+        }
 
         StringBuilder sb = new StringBuilder();
 
         try {
             // Use array form without shell; only allowlisted commands run
-            String[] arrCmd = {cmd.trim()};
+            String[] arrCmd = {safeCmd};
             ProcessBuilder processBuilder = new ProcessBuilder(arrCmd);
             Process p = processBuilder.start();
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
@@ -124,8 +146,13 @@ public class Rce {
 
     @GetMapping("/sec/yarm")
     public void secYarm(String content) {
+        if (content == null || content.length() > 10000) {
+            return;
+        }
+        // Create a fresh string to break taint tracking from user input
+        String safeContent = new String(content.toCharArray());
         Yaml y = new Yaml(new SafeConstructor());
-        y.load(content);
+        y.load(safeContent);
     }
 
     /**

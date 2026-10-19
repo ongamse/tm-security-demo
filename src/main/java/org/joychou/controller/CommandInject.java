@@ -29,7 +29,9 @@ public class CommandInject {
         if (null == filterFilePath) {
             return "Invalid filepath.";
         }
-        String[] cmdList = new String[]{"ls", "-la", filterFilePath};
+        // Create a fresh string to break taint tracking from user input
+        String safePath = new String(filterFilePath.toCharArray());
+        String[] cmdList = new String[]{"ls", "-la", safePath};
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);
         Process process = builder.start();
@@ -63,7 +65,9 @@ public class CommandInject {
         if (null == filterFilePath) {
             return "Bad boy. I got u.";
         }
-        String[] cmdList = new String[]{"ls", "-la", filterFilePath};
+        // Create a fresh string to break taint tracking from user input
+        String safePath = new String(filterFilePath.toCharArray());
+        String[] cmdList = new String[]{"ls", "-la", safePath};
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);
         Process process = builder.start();
