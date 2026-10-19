@@ -45,10 +45,16 @@ public class URLRedirect {
      */
     @RequestMapping("/setHeader")
     @ResponseBody
-    public static void setHeader(HttpServletRequest request, HttpServletResponse response) {
-        String url = SecurityUtil.sanitizeCRLF(request.getParameter("url"));
+    public static void setHeader(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        String url = request.getParameter("url");
+        String safeUrl = SecurityUtil.checkURL(url);
+        if (safeUrl == null) {
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            response.getWriter().write("url forbidden");
+            return;
+        }
         response.setStatus(HttpServletResponse.SC_MOVED_PERMANENTLY); // 301 redirect
-        response.setHeader("Location", url);
+        response.setHeader("Location", SecurityUtil.sanitizeCRLF(safeUrl));
     }
 
 
