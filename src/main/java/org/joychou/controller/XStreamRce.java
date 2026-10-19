@@ -28,6 +28,7 @@ public class XStreamRce {
         // Set up XStream security: deny all by default, then allow only known safe types
         XStream.setupDefaultSecurity(xstream);
         xstream.allowTypes(new Class[]{User.class});
+        xstream.setMode(XStream.NO_REFERENCES);
         xstream.fromXML(xml);
         return "xstream";
     }

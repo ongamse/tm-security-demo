@@ -57,6 +57,8 @@ public class XXE {
             xmlReader.setFeature("http://xml.org/sax/features/external-general-entities", false);
             xmlReader.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             xmlReader.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+            xmlReader.setProperty(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+            xmlReader.setProperty(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
             xmlReader.parse(new InputSource(new StringReader(body)));  // parse xml
             return "xmlReader xxe vuln code";
         } catch (Exception e) {
@@ -78,6 +80,8 @@ public class XXE {
             xmlReader.setFeature("http://xml.org/sax/features/external-general-entities", false);
             xmlReader.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             xmlReader.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+            xmlReader.setProperty(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+            xmlReader.setProperty(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
             //fix code end
             xmlReader.parse(new InputSource(new StringReader(body)));  // parse xml
 
@@ -101,6 +105,9 @@ public class XXE {
             builder.setFeature("http://xml.org/sax/features/external-general-entities", false);
             builder.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             builder.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+            builder.setExpandEntities(false);
+            builder.setProperty(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+            builder.setProperty(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
             // org.jdom2.Document document
             builder.build(new InputSource(new StringReader(body)));  // cause xxe
             return "SAXBuilder xxe vuln code";
@@ -121,6 +128,9 @@ public class XXE {
             builder.setFeature("http://xml.org/sax/features/external-general-entities", false);
             builder.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             builder.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+            builder.setExpandEntities(false);
+            builder.setProperty(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+            builder.setProperty(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
             // org.jdom2.Document document
             builder.build(new InputSource(new StringReader(body)));
 
@@ -143,6 +153,8 @@ public class XXE {
             reader.setFeature("http://xml.org/sax/features/external-general-entities", false);
             reader.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             reader.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+            reader.setProperty(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+            reader.setProperty(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
             // org.dom4j.Document document
             reader.read(new InputSource(new StringReader(body))); // cause xxe
 
@@ -165,6 +177,8 @@ public class XXE {
             reader.setFeature("http://xml.org/sax/features/external-general-entities", false);
             reader.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             reader.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+            reader.setProperty(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+            reader.setProperty(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
             // org.dom4j.Document document
             reader.read(new InputSource(new StringReader(body)));
         } catch (Exception e) {
@@ -186,6 +200,8 @@ public class XXE {
             spf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             spf.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
             SAXParser parser = spf.newSAXParser();
+            parser.setProperty(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+            parser.setProperty(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
             parser.parse(new InputSource(new StringReader(body)), new DefaultHandler());  // parse xml
 
             return "SAXParser xxe vuln code";
@@ -208,6 +224,8 @@ public class XXE {
             spf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             spf.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
             SAXParser parser = spf.newSAXParser();
+            parser.setProperty(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+            parser.setProperty(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
             parser.parse(new InputSource(new StringReader(body)), new DefaultHandler());  // parse xml
         } catch (Exception e) {
             logger.error(e.toString());
@@ -228,6 +246,8 @@ public class XXE {
             digester.setFeature("http://xml.org/sax/features/external-general-entities", false);
             digester.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             digester.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+            digester.setProperty(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+            digester.setProperty(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
             digester.parse(new StringReader(body));  // parse xml
         } catch (Exception e) {
             logger.error(e.toString());
@@ -247,6 +267,8 @@ public class XXE {
             digester.setFeature("http://xml.org/sax/features/external-general-entities", false);
             digester.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             digester.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+            digester.setProperty(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+            digester.setProperty(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
             digester.parse(new StringReader(body));  // parse xml
 
             return "Digester xxe security code";
@@ -268,6 +290,8 @@ public class XXE {
             dbf.setFeature("http://xml.org/sax/features/external-general-entities", false);
             dbf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             dbf.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+            dbf.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+            dbf.setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
             DocumentBuilder db = dbf.newDocumentBuilder();
             InputSource is = new InputSource(request.getInputStream());
             Document document = db.parse(is);  // parse xml
@@ -302,6 +326,8 @@ public class XXE {
             dbf.setFeature("http://xml.org/sax/features/external-general-entities", false);
             dbf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             dbf.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+            dbf.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+            dbf.setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
             DocumentBuilder db = dbf.newDocumentBuilder();
             StringReader sr = new StringReader(body);
             InputSource is = new InputSource(sr);
@@ -328,6 +354,8 @@ public class XXE {
             dbf.setFeature("http://xml.org/sax/features/external-general-entities", false);
             dbf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             dbf.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+            dbf.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+            dbf.setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
             DocumentBuilder db = dbf.newDocumentBuilder();
             StringReader sr = new StringReader(body);
             InputSource is = new InputSource(sr);
@@ -358,6 +386,8 @@ public class XXE {
             dbf.setFeature("http://xml.org/sax/features/external-general-entities", false);
             dbf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             dbf.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+            dbf.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+            dbf.setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
 
             DocumentBuilder db = dbf.newDocumentBuilder();
             StringReader sr = new StringReader(body);
@@ -388,6 +418,8 @@ public class XXE {
             spf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             spf.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
             SAXParser saxParser = spf.newSAXParser();
+            saxParser.setProperty(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+            saxParser.setProperty(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
             XMLReader xmlReader = saxParser.getXMLReader();
             xmlReader.parse(new InputSource(new StringReader(body)));
 
@@ -413,6 +445,8 @@ public class XXE {
             xmlReader.setFeature("http://xml.org/sax/features/external-general-entities", false);
             xmlReader.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             xmlReader.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+            xmlReader.setProperty(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+            xmlReader.setProperty(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
             xmlReader.parse(new InputSource(new StringReader(body)));
 
         } catch (Exception e) {
