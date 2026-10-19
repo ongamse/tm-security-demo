@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
 
@@ -42,16 +43,21 @@ public class xlsxStreamerXXE {
 
     @PostMapping("/readxlsx")
     public void xllx_streamer_xxe(MultipartFile file) throws Exception {
-        OPCPackage pkg = OPCPackage.open(file.getInputStream());
-        validateNoXXE(pkg);
-        StreamingReader.builder().open(pkg);
+        try (OPCPackage pkg = OPCPackage.open(file.getInputStream())) {
+            validateNoXXE(pkg);
+        }
+        try (InputStream safeStream = file.getInputStream()) {
+            StreamingReader.builder().open(safeStream);
+        }
     }
 
 
     public static void main(String[] args) throws Exception {
-        OPCPackage pkg = OPCPackage.open(new FileInputStream("poc.xlsx"));
-        validateNoXXE(pkg);
-        StreamingReader.builder().open(pkg);
+        File xlsxFile = new File("poc.xlsx");
+        try (OPCPackage pkg = OPCPackage.open(new FileInputStream(xlsxFile))) {
+            validateNoXXE(pkg);
+        }
+        StreamingReader.builder().open(xlsxFile);
     }
 
     /**
