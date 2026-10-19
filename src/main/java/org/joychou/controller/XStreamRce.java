@@ -24,6 +24,9 @@ public class XStreamRce {
     public String parseXml(HttpServletRequest request) throws Exception {
         String xml = WebUtils.getRequestBody(request);
         XStream xstream = new XStream(new DomDriver());
+        // Set up XStream security: deny all by default, then allow only known safe types
+        XStream.setupDefaultSecurity(xstream);
+        xstream.allowTypes(new Class[]{User.class});
         xstream.fromXML(xml);
         return "xstream";
     }
@@ -34,6 +37,8 @@ public class XStreamRce {
         user.setUsername("admin");
 
         XStream xstream = new XStream(new DomDriver());
+        XStream.setupDefaultSecurity(xstream);
+        xstream.allowTypes(new Class[]{User.class});
         String xml = xstream.toXML(user); // Serialize
         System.out.println(xml);
 
