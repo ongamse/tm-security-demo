@@ -11,12 +11,14 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 
 @RestController
 public class PathTraversal {
 
     protected final Logger logger = LoggerFactory.getLogger(this.getClass());
+    private static final String IMAGE_BASE_DIR = System.getProperty("user.dir");
 
     /**
      * http://localhost:8080/path_traversal/vul?filepath=../../../../../etc/passwd
@@ -40,9 +42,17 @@ public class PathTraversal {
         logger.info("Working directory: " + System.getProperty("user.dir"));
         logger.info("File path: " + imgFile);
 
-        File f = new File(imgFile);
+        // Canonicalize and verify the path stays within the allowed base directory
+        Path base = Paths.get(IMAGE_BASE_DIR).normalize().toAbsolutePath();
+        Path resolved = base.resolve(imgFile).normalize().toAbsolutePath();
+        if (!resolved.startsWith(base)) {
+            logger.error("Path traversal attempt: " + imgFile);
+            return "Bad boy. Illegal file path.";
+        }
+
+        File f = resolved.toFile();
         if (f.exists() && !f.isDirectory()) {
-            byte[] data = Files.readAllBytes(Paths.get(imgFile));
+            byte[] data = Files.readAllBytes(resolved);
             return new String(Base64.encodeBase64(data));
         } else {
             return "File doesn't exist or is not a file.";
