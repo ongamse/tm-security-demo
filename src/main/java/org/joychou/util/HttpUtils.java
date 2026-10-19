@@ -189,6 +189,12 @@ public class HttpUtils {
         url = SSRFChecker.validateURLForSSRF(url);
         try {
             URL u = new URL(url);
+            // Validate URL path to prevent path traversal
+            String path = u.getPath();
+            if (path != null && (path.contains("..") || path.contains("\\"))) {
+                logger.error("Path traversal attempt blocked: " + path);
+                return;
+            }
             ImageIO.read(u); // send request
         } catch (IOException e) {
             logger.error(e.getMessage());
