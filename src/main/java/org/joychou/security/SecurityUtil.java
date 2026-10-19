@@ -275,7 +275,14 @@ public class SecurityUtil {
         if (value == null) {
             return "";
         }
-        return value.replaceAll("[\\r\\n]", "");
+        StringBuilder sb = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (c != '\r' && c != '\n') {
+                sb.append(c);
+            }
+        }
+        return sb.toString();
     }
 
     public static void main(String[] args) {

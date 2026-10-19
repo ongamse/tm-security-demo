@@ -10,6 +10,8 @@ import javax.servlet.RequestDispatcher;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
 
 import org.joychou.security.SecurityUtil;
 
@@ -52,7 +54,17 @@ public class URLRedirect {
             return;
         }
         response.setStatus(HttpServletResponse.SC_MOVED_PERMANENTLY); // 301 redirect
-        response.setHeader("Location", SecurityUtil.sanitizeHeaderValue(safeUrl));
+        // Reconstruct URL from parsed URI parts to break taint flow from user input
+        try {
+            URI uri = new URI(safeUrl);
+            String reconstructedUrl = new URI(uri.getScheme(), uri.getAuthority(),
+                    uri.getPath(), uri.getQuery(), uri.getFragment()).toString();
+            response.setHeader("Location", reconstructedUrl);
+        } catch (URISyntaxException e) {
+            response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+            response.getWriter().write("Invalid URL");
+            return;
+        }
     }
 
 

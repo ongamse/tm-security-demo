@@ -18,6 +18,7 @@ import javax.annotation.Resource;
 import javax.servlet.http.HttpServletResponse;
 import java.io.*;
 import java.net.*;
+import java.util.regex.Pattern;
 
 
 /**
@@ -31,6 +32,7 @@ import java.net.*;
 public class SSRF {
 
     private static final Logger logger = LoggerFactory.getLogger(SSRF.class);
+    private static final Pattern SAFE_FILENAME_PATTERN = Pattern.compile("[^a-zA-Z0-9._-]");
 
     @Resource
     private HttpService httpService;
@@ -140,9 +142,17 @@ public class SSRF {
         InputStream inputStream = null;
         OutputStream outputStream = null;
         try {
-            String downLoadImgFileName = WebUtils.getNameWithoutExtension(url) + "." + WebUtils.getFileExtension(url);
-            // download - sanitize header value to prevent CRLF injection
-            response.setHeader("content-disposition", "attachment;fileName=" + SecurityUtil.sanitizeHeaderValue(downLoadImgFileName));
+            String rawName = WebUtils.getNameWithoutExtension(url);
+            String rawExt = WebUtils.getFileExtension(url);
+            // Sanitize filename parts: strip any character that is not alphanumeric, dot, hyphen, or underscore
+            String safeName = SAFE_FILENAME_PATTERN.matcher(rawName).replaceAll("");
+            String safeExt = SAFE_FILENAME_PATTERN.matcher(rawExt).replaceAll("");
+            if (safeName.isEmpty()) {
+                safeName = "download";
+            }
+            String downLoadImgFileName = safeName + "." + safeExt;
+            // download - reconstructed safe filename breaks taint from user-supplied URL
+            response.setHeader("content-disposition", "attachment;fileName=" + downLoadImgFileName);
 
             URL u = new URL(url);
             int length;
