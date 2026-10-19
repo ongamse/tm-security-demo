@@ -65,6 +65,11 @@ public class SSRFChecker {
         String finalUrl = url;
         try {
             do {
+                // Validate protocol is http/https and not targeting internal IP
+                if (!SecurityUtil.isHttp(finalUrl)) {
+                    logger.error("[-] SSRF check failed. Non-HTTP protocol: " + finalUrl);
+                    return false;
+                }
                 // 判断当前请求的URL是否是内网ip
                 if (isInternalIpByUrl(finalUrl)) {
                     logger.error("[-] SSRF check failed. Dangerous url: " + finalUrl);
@@ -282,6 +287,25 @@ public class SSRFChecker {
             }
         }
         return true;
+    }
+
+    /**
+     * Validate that a URL uses http/https and does not target an internal/private IP.
+     * Resolves the hostname to an IP and checks against the configured block list.
+     *
+     * @param url the URL to validate
+     * @throws IllegalArgumentException if the URL is null, non-HTTP, or targets an internal IP
+     */
+    public static void validateUrlNotInternal(String url) {
+        if (url == null) {
+            throw new IllegalArgumentException("URL must not be null");
+        }
+        if (!SecurityUtil.isHttp(url)) {
+            throw new IllegalArgumentException("URL must use http or https protocol");
+        }
+        if (isInternalIpByUrl(url)) {
+            throw new IllegalArgumentException("URL targets an internal/private IP address");
+        }
     }
 
     /**

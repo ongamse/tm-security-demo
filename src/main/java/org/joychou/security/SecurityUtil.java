@@ -33,15 +33,20 @@ public class SecurityUtil {
 
 
     /**
-     * Get http url host.
+     * Get http url host. Only allows http/https protocols to prevent
+     * SSRF via non-HTTP schemes (file://, gopher://, etc.).
      *
      * @param url url
-     * @return host
+     * @return host, or empty string if URL is invalid or uses a non-HTTP protocol
      */
     public static String gethost(String url) {
         try {
+            if (url == null || !isHttp(url)) {
+                return "";
+            }
             URI uri = new URI(url);
-            return uri.getHost().toLowerCase();
+            String host = uri.getHost();
+            return host != null ? host.toLowerCase() : "";
         } catch (URISyntaxException e) {
             return "";
         }

@@ -14,6 +14,7 @@ import org.apache.http.impl.nio.client.HttpAsyncClients;
 import org.apache.http.util.EntityUtils;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
+import org.joychou.security.ssrf.SSRFChecker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -37,6 +38,7 @@ public class HttpUtils {
 
     public static String commonHttpClient(String url) {
 
+        SSRFChecker.validateUrlNotInternal(url);
         HttpClient client = new HttpClient();
         GetMethod method = new GetMethod(url);
 
@@ -56,6 +58,7 @@ public class HttpUtils {
 
     public static String request(String url) {
         try {
+            SSRFChecker.validateUrlNotInternal(url);
             return Request.Get(url).execute().returnContent().toString();
         } catch (Exception e) {
             return e.getMessage();
@@ -69,6 +72,7 @@ public class HttpUtils {
 
         try {
 
+            SSRFChecker.validateUrlNotInternal(url);
             CloseableHttpClient client = HttpClients.createDefault();
             HttpGet httpGet = new HttpGet(url);
             // set redirect enable false
@@ -91,6 +95,7 @@ public class HttpUtils {
 
     public static String URLConnection(String url) {
         try {
+            SSRFChecker.validateUrlNotInternal(url);
             URL u = new URL(url);
             URLConnection urlConnection = u.openConnection();
             BufferedReader in = new BufferedReader(new InputStreamReader(urlConnection.getInputStream())); //send request
@@ -115,6 +120,7 @@ public class HttpUtils {
      */
     public static String HttpURLConnection(String url) {
         try {
+            SSRFChecker.validateUrlNotInternal(url);
             URL u = new URL(url);
             URLConnection urlConnection = u.openConnection();
             HttpURLConnection conn = (HttpURLConnection) urlConnection;
@@ -144,6 +150,7 @@ public class HttpUtils {
      */
     public static String Jsoup(String url) {
         try {
+            SSRFChecker.validateUrlNotInternal(url);
             Document doc = Jsoup.connect(url)
 //                    .followRedirects(false)
                     .timeout(3000)
@@ -162,6 +169,7 @@ public class HttpUtils {
      * UserAgent is <code>okhttp/2.5.0</code>.
      */
     public static String okhttp(String url) throws IOException {
+        SSRFChecker.validateUrlNotInternal(url);
         OkHttpClient client = new OkHttpClient();
 //         client.setFollowRedirects(false);
         com.squareup.okhttp.Request ok_http = new com.squareup.okhttp.Request.Builder().url(url).build();
@@ -178,6 +186,7 @@ public class HttpUtils {
      */
     public static void imageIO(String url) {
         try {
+            SSRFChecker.validateUrlNotInternal(url);
             URL u = new URL(url);
             // Validate scheme to prevent local file access via file:// protocol
             String protocol = u.getProtocol();
@@ -207,6 +216,7 @@ public class HttpUtils {
      */
     public static void IOUtils(String url) {
         try {
+            SSRFChecker.validateUrlNotInternal(url);
             IOUtils.toByteArray(URI.create(url));
         } catch (IOException e) {
             logger.error(e.getMessage());
@@ -215,6 +225,7 @@ public class HttpUtils {
 
 
     public static String HttpAsyncClients(String url) {
+        SSRFChecker.validateUrlNotInternal(url);
         CloseableHttpAsyncClient httpclient = HttpAsyncClients.createDefault();
         try {
             httpclient.start();
