@@ -10,6 +10,8 @@ import javax.servlet.RequestDispatcher;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
 
 import org.joychou.security.SecurityUtil;
 
@@ -33,7 +35,20 @@ public class URLRedirect {
         if (SecurityUtil.checkURL(url) == null) {
             return "redirect:/";
         }
-        return "redirect:" + url;
+        try {
+            URI parsed = new URI(url);
+            String host = parsed.getHost();
+            if (host == null || host.isEmpty()) {
+                return "redirect:/";
+            }
+            String scheme = parsed.getScheme();
+            String path = parsed.getPath() != null ? parsed.getPath() : "/";
+            String query = parsed.getQuery();
+            URI safeUri = new URI(scheme, host, path, query, null);
+            return "redirect:" + safeUri.toASCIIString();
+        } catch (URISyntaxException e) {
+            return "redirect:/";
+        }
     }
 
 
