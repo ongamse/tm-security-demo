@@ -27,10 +27,14 @@ public class ClaimController {
     }
 
     /**
-     * IDOR: any caller can read any claim by changing the id. No ownership check.
+     * Fixed: only the owner can read a claim.
      */
     @GetMapping("/{id}")
-    public Map<String, Object> get(@PathVariable Long id) {
-        return CLAIMS.get(id);
+    public org.springframework.http.ResponseEntity<Map<String, Object>> get(@PathVariable Long id, java.security.Principal caller) {
+        Map<String, Object> c = CLAIMS.get(id);
+        if (c == null || caller == null || !caller.getName().equals(c.get("owner"))) {
+            return org.springframework.http.ResponseEntity.notFound().build();
+        }
+        return org.springframework.http.ResponseEntity.ok(c);
     }
 }
