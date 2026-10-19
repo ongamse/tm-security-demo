@@ -18,6 +18,8 @@ import java.util.regex.Pattern;
 public class SecurityUtil {
 
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
+    private static final Pattern JSONP_CALLBACK_PATTERN = Pattern.compile("^[a-zA-Z_$][a-zA-Z0-9_$.]*$");
+    private static final Pattern WEBSOCKET_PATH_PATTERN = Pattern.compile("^/[a-zA-Z0-9/_\\-]+$");
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
 
 
@@ -247,6 +249,102 @@ public class SecurityUtil {
         }
 
         return sb.toString();
+    }
+
+    /**
+     * Strip CR and LF characters from a string to prevent HTTP response splitting (CRLF injection).
+     *
+     * @param value the input string
+     * @return input with \r and \n removed, or null if input is null
+     */
+    public static String sanitizeCRLF(String value) {
+        if (value == null) {
+            return null;
+        }
+        return value.replaceAll("[\\r\\n]", "");
+    }
+
+    /**
+     * Validate a request dispatcher forward path to prevent access to
+     * protected server resources (WEB-INF, META-INF) and path traversal.
+     *
+     * @param path the forward path to validate
+     * @return the path if safe, or null if it accesses protected resources
+     */
+    public static String checkForwardPath(String path) {
+        if (path == null || path.isEmpty()) {
+            return null;
+        }
+
+        // Decode to prevent encoding-based bypasses
+        String decoded = path;
+        try {
+            int maxIterations = 10;
+            while (decoded.contains("%") && maxIterations-- > 0) {
+                String prev = decoded;
+                decoded = URLDecoder.decode(decoded, "UTF-8");
+                if (decoded.equals(prev)) {
+                    break;
+                }
+            }
+        } catch (UnsupportedEncodingException e) {
+            return null;
+        } catch (Exception e) {
+            return null;
+        }
+
+        // Block path traversal
+        if (decoded.contains("..")) {
+            return null;
+        }
+
+        // Block access to protected server directories (case-insensitive)
+        String upper = decoded.toUpperCase();
+        if (upper.contains("/WEB-INF") || upper.contains("/META-INF")) {
+            return null;
+        }
+
+        return path;
+    }
+
+    /**
+     * Validate a JSONP callback parameter to prevent XSS.
+     * Only allows valid JavaScript identifiers (alphanumeric, underscore, dollar, dot).
+     *
+     * @param callback the callback function name
+     * @return the callback if valid, or null if invalid
+     */
+    public static String validateJsonpCallback(String callback) {
+        if (callback == null || callback.isEmpty()) {
+            return null;
+        }
+        if (callback.length() > 64) {
+            return null;
+        }
+        if (!JSONP_CALLBACK_PATTERN.matcher(callback).matches()) {
+            return null;
+        }
+        return callback;
+    }
+
+    /**
+     * Validate a WebSocket endpoint path against an allowlist pattern.
+     * Only allows paths starting with / followed by alphanumeric, underscore, hyphen, or slash.
+     *
+     * @param path the WebSocket endpoint path
+     * @return the path if valid, or null if invalid
+     */
+    public static String validateWebSocketPath(String path) {
+        if (path == null || path.isEmpty()) {
+            return null;
+        }
+        if (path.length() > 128) {
+            return null;
+        }
+        if (!WEBSOCKET_PATH_PATTERN.matcher(path).matches()) {
+            return null;
+        }
+        return path;
     }
 
     public static void main(String[] args) {

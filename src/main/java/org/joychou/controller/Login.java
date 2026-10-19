@@ -19,7 +19,7 @@ public class Login {
 
     protected final Logger logger = LoggerFactory.getLogger(this.getClass());
 
-    @RequestMapping("/login")
+    @GetMapping("/login")
     public String login() {
         return "login";
     }
@@ -39,6 +39,8 @@ public class Login {
             Cookie cookie = new Cookie(key, null);
             cookie.setMaxAge(0);
             cookie.setPath("/");
+            cookie.setSecure(true);
+            cookie.setHttpOnly(true);
             response.addCookie(cookie);
         }
 

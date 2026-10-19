@@ -48,7 +48,7 @@ public class SQLI {
      *
      * <a href="http://localhost:8080/sqli/jdbc/vuln?username=joychou">http://localhost:8080/sqli/jdbc/vuln?username=joychou</a>
      */
-    @RequestMapping("/jdbc/vuln")
+    @GetMapping("/jdbc/vuln")
     public String jdbc_sqli_vul(@RequestParam("username") String username) {
 
         StringBuilder result = new StringBuilder();
@@ -60,11 +60,12 @@ public class SQLI {
             if (!con.isClosed())
                 System.out.println("Connect to database successfully.");
 
-            // sqli vuln code
-            Statement statement = con.createStatement();
-            String sql = "select * from users where username = '" + username + "'";
-            logger.info(sql);
-            ResultSet rs = statement.executeQuery(sql);
+            // fix: use parameterized query to prevent SQL injection
+            String sql = "select * from users where username = ?";
+            PreparedStatement st = con.prepareStatement(sql);
+            st.setString(1, username);
+            logger.info(st.toString());
+            ResultSet rs = st.executeQuery();
 
             while (rs.next()) {
                 String res_name = rs.getString("username");
@@ -91,7 +92,7 @@ public class SQLI {
      *
      * <a href="http://localhost:8080/sqli/jdbc/sec?username=joychou">http://localhost:8080/sqli/jdbc/sec?username=joychou</a>
      */
-    @RequestMapping("/jdbc/sec")
+    @GetMapping("/jdbc/sec")
     public String jdbc_sqli_sec(@RequestParam("username") String username) {
 
         StringBuilder result = new StringBuilder();
@@ -135,7 +136,7 @@ public class SQLI {
      * <p>Incorrect use of prepareStatement. PrepareStatement must use ? as a placeholder.</p>
      * <a href="http://localhost:8080/sqli/jdbc/ps/vuln?username=joychou' or 'a'='a">http://localhost:8080/sqli/jdbc/ps/vuln?username=joychou' or 'a'='a</a>
      */
-    @RequestMapping("/jdbc/ps/vuln")
+    @GetMapping("/jdbc/ps/vuln")
     public String jdbc_ps_vuln(@RequestParam("username") String username) {
 
         StringBuilder result = new StringBuilder();
@@ -146,8 +147,9 @@ public class SQLI {
             if (!con.isClosed())
                 System.out.println("Connecting to Database successfully.");
 
-            String sql = "select * from users where username = '" + username + "'";
+            String sql = "select * from users where username = ?";
             PreparedStatement st = con.prepareStatement(sql);
+            st.setString(1, username);
 
             logger.info(st.toString());
             ResultSet rs = st.executeQuery();

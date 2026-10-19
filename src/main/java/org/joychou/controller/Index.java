@@ -5,6 +5,7 @@ import com.alibaba.fastjson.JSON;
 import org.apache.catalina.util.ServerInfo;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseBody;
 
@@ -21,7 +22,7 @@ import java.util.Map;
 @Controller
 public class Index {
 
-    @RequestMapping("/appInfo")
+    @GetMapping("/appInfo")
     @ResponseBody
     public static String appInfo(HttpServletRequest request) {
         String username = request.getUserPrincipal().getName();
@@ -38,12 +39,12 @@ public class Index {
         return JSON.toJSONString(m);
     }
 
-    @RequestMapping("/")
+    @GetMapping("/")
     public String redirect() {
         return "redirect:/index";
     }
 
-    @RequestMapping("/index")
+    @GetMapping("/index")
     public static String index(Model model, HttpServletRequest request) {
         String username = request.getUserPrincipal().getName();
         model.addAttribute("user", username);

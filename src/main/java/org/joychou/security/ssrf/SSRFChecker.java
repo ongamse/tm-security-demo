@@ -65,6 +65,12 @@ public class SSRFChecker {
         String finalUrl = url;
         try {
             do {
+                // Validate URL against domain allowlist before making any connection
+                if (!checkURLFckSSRF(finalUrl)) {
+                    logger.error("[-] SSRF check failed. URL not in safe domain allowlist: " + finalUrl);
+                    return false;
+                }
+
                 // 判断当前请求的URL是否是内网ip
                 if (isInternalIpByUrl(finalUrl)) {
                     logger.error("[-] SSRF check failed. Dangerous url: " + finalUrl);
@@ -93,7 +99,8 @@ public class SSRFChecker {
             } while (connection.getResponseCode() != HttpURLConnection.HTTP_OK);
             connection.disconnect();
         } catch (Exception e) {
-            return true;  // 如果异常了，认为是安全的，防止是超时导致的异常而验证不成功。
+            logger.error("[-] SSRF check exception, treating as unsafe: " + e.getMessage());
+            return false;  // Fail closed: exceptions should be treated as unsafe
         }
         return true; // 默认返回true
     }

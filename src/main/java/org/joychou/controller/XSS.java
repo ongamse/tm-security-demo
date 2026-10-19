@@ -3,6 +3,8 @@ package org.joychou.controller;
 import org.apache.commons.lang.StringUtils;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.CookieValue;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseBody;
 
@@ -24,7 +26,7 @@ public class XSS {
      *
      * @param xss unescape string
      */
-    @RequestMapping("/reflect")
+    @GetMapping("/reflect")
     @ResponseBody
     public static String reflect(String xss) {
         return xss;
@@ -37,10 +39,12 @@ public class XSS {
      *
      * @param xss unescape string
      */
-    @RequestMapping("/stored/store")
+    @PostMapping("/stored/store")
     @ResponseBody
     public String store(String xss, HttpServletResponse response) {
         Cookie cookie = new Cookie("xss", xss);
+        cookie.setSecure(true);
+        cookie.setHttpOnly(true);
         response.addCookie(cookie);
         return "Set param into cookie";
     }
@@ -52,7 +56,7 @@ public class XSS {
      *
      * @param xss unescape string
      */
-    @RequestMapping("/stored/show")
+    @GetMapping("/stored/show")
     @ResponseBody
     public String show(@CookieValue("xss") String xss) {
         return xss;
@@ -62,7 +66,7 @@ public class XSS {
      * safe Code.
      * http://localhost:8080/xss/safe
      */
-    @RequestMapping("/safe")
+    @GetMapping("/safe")
     @ResponseBody
     public static String safe(String xss) {
         return encode(xss);

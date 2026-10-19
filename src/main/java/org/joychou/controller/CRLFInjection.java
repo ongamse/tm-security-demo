@@ -1,8 +1,11 @@
 package org.joychou.controller;
 
 import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseBody;
+
+import org.joychou.security.SecurityUtil;
 
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
@@ -17,13 +20,15 @@ import javax.servlet.http.HttpServletResponse;
 @RequestMapping("/crlf")
 public class CRLFInjection {
 
-    @RequestMapping("/safecode")
+    @GetMapping("/safecode")
     @ResponseBody
     public void crlf(HttpServletRequest request, HttpServletResponse response) {
-        response.addHeader("test1", request.getParameter("test1"));
-        response.setHeader("test2", request.getParameter("test2"));
-        String author = request.getParameter("test3");
+        response.addHeader("test1", SecurityUtil.sanitizeCRLF(request.getParameter("test1")));
+        response.setHeader("test2", SecurityUtil.sanitizeCRLF(request.getParameter("test2")));
+        String author = SecurityUtil.sanitizeCRLF(request.getParameter("test3"));
         Cookie cookie = new Cookie("test3", author);
+        cookie.setSecure(true);
+        cookie.setHttpOnly(true);
         response.addCookie(cookie);
     }
 }

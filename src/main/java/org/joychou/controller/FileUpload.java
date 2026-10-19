@@ -59,11 +59,19 @@ public class FileUpload {
         try {
             // Get the file and save it somewhere
             byte[] bytes = file.getBytes();
-            Path path = Paths.get(UPLOADED_FOLDER + file.getOriginalFilename());
+            // Sanitize filename: extract base name only, then canonicalize and validate
+            String originalFilename = file.getOriginalFilename();
+            String sanitizedFilename = Paths.get(originalFilename).getFileName().toString();
+            Path uploadDir = Paths.get(UPLOADED_FOLDER).toAbsolutePath().normalize();
+            Path path = uploadDir.resolve(sanitizedFilename).normalize();
+            if (!path.startsWith(uploadDir)) {
+                redirectAttributes.addFlashAttribute("message", "Invalid file path");
+                return "redirect:/file/status";
+            }
             Files.write(path, bytes);
 
             redirectAttributes.addFlashAttribute("message",
-                    "You successfully uploaded '" + UPLOADED_FOLDER + file.getOriginalFilename() + "'");
+                    "You successfully uploaded '" + UPLOADED_FOLDER + sanitizedFilename + "'");
 
         } catch (IOException e) {
             redirectAttributes.addFlashAttribute("message", "upload failed");
@@ -86,10 +94,16 @@ public class FileUpload {
             return "Please select a file to upload";
         }
 
-        String fileName = multifile.getOriginalFilename();
+        // Sanitize filename: extract base name only to prevent path traversal
+        String fileName = Paths.get(multifile.getOriginalFilename()).getFileName().toString();
         String Suffix = fileName.substring(fileName.lastIndexOf(".")); // 获取文件后缀名
         String mimeType = multifile.getContentType(); // 获取MIME类型
-        String filePath = UPLOADED_FOLDER + fileName;
+        Path uploadDir = Paths.get(UPLOADED_FOLDER).toAbsolutePath().normalize();
+        Path resolvedPath = uploadDir.resolve(fileName).normalize();
+        if (!resolvedPath.startsWith(uploadDir)) {
+            return "Upload failed. Invalid file path.";
+        }
+        String filePath = resolvedPath.toString();
         File excelFile = convert(multifile);
 
 
@@ -141,8 +155,13 @@ public class FileUpload {
         try {
             // Get the file and save it somewhere
             byte[] bytes = multifile.getBytes();
-            Path path = Paths.get(UPLOADED_FOLDER + multifile.getOriginalFilename());
-            Files.write(path, bytes);
+            // Defense-in-depth: re-validate canonical path before writing
+            Path canonicalPath = resolvedPath.toAbsolutePath().normalize();
+            if (!canonicalPath.startsWith(uploadDir)) {
+                deleteFile(filePath);
+                return "Upload failed. Invalid file path.";
+            }
+            Files.write(canonicalPath, bytes);
         } catch (IOException e) {
             logger.error(e.toString());
             deleteFile(filePath);
@@ -172,12 +191,18 @@ public class FileUpload {
      * https://stackoverflow.com/questions/24339990/how-to-convert-a-multipart-file-to-file
      */
     private File convert(MultipartFile multiFile) throws Exception {
-        String fileName = multiFile.getOriginalFilename();
-        String suffix = fileName.substring(fileName.lastIndexOf("."));
+        // Sanitize filename: extract base name only to prevent path traversal
+        String sanitizedName = Paths.get(multiFile.getOriginalFilename()).getFileName().toString();
+        String suffix = sanitizedName.substring(sanitizedName.lastIndexOf("."));
         UUID uuid = Generators.timeBasedGenerator().generate();
         randomFilePath = UPLOADED_FOLDER + uuid + suffix;
-        // 随机生成一个同后缀名的文件
-        File convFile = new File(randomFilePath);
+        // Validate the random file path stays within the upload directory
+        Path uploadBase = Paths.get(UPLOADED_FOLDER).toAbsolutePath().normalize();
+        Path convPath = uploadBase.resolve(uuid + suffix).normalize();
+        if (!convPath.startsWith(uploadBase)) {
+            return null;
+        }
+        File convFile = convPath.toFile();
         boolean ret = convFile.createNewFile();
         if (!ret) {
             return null;

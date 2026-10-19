@@ -1,6 +1,8 @@
 package org.joychou.controller;
 
 import groovy.lang.GroovyShell;
+import org.codehaus.groovy.control.CompilerConfiguration;
+import org.codehaus.groovy.control.customizers.SecureASTCustomizer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -16,6 +18,10 @@ import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.sql.DriverManager;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
 
 
 /**
@@ -28,13 +34,38 @@ import java.sql.DriverManager;
 @RequestMapping("/rce")
 public class Rce {
 
+    // Allowlist of commands permitted for ProcessBuilder execution
+    private static final Set<String> ALLOWED_COMMANDS = Collections.unmodifiableSet(
+            new HashSet<>(Arrays.asList("ls", "whoami", "id", "hostname", "date", "uptime", "uname", "df", "ps"))
+    );
+
     @GetMapping("/runtime/exec")
     public String CommandExec(String cmd) {
         Runtime run = Runtime.getRuntime();
         StringBuilder sb = new StringBuilder();
 
+        if (cmd == null || cmd.isEmpty()) {
+            return "Command must not be empty";
+        }
+
+        // Validate command against allowlist; reject shell metacharacters
+        String[] parts = cmd.trim().split("\\s+");
+        String baseCommand = parts[0];
+
+        if (!ALLOWED_COMMANDS.contains(baseCommand)) {
+            return "Command not allowed. Allowed commands: " + ALLOWED_COMMANDS;
+        }
+
+        // Reject arguments containing shell metacharacters to prevent injection
+        for (String part : parts) {
+            if (part.matches(".*[;&|`$><(){}\\[\\]!\\\\\"'\\n\\r].*")) {
+                return "Invalid characters in command arguments";
+            }
+        }
+
         try {
-            Process p = run.exec(cmd);
+            // Use exec(String[]) to avoid shell interpretation
+            Process p = run.exec(parts);
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
             String tmpStr;
@@ -65,9 +96,28 @@ public class Rce {
 
         StringBuilder sb = new StringBuilder();
 
+        if (cmd == null || cmd.isEmpty()) {
+            return "Command must not be empty";
+        }
+
+        // Validate command against allowlist; reject shell metacharacters
+        String[] parts = cmd.trim().split("\\s+");
+        String baseCommand = parts[0];
+
+        if (!ALLOWED_COMMANDS.contains(baseCommand)) {
+            return "Command not allowed. Allowed commands: " + ALLOWED_COMMANDS;
+        }
+
+        // Reject arguments containing shell metacharacters to prevent injection
+        for (String part : parts) {
+            if (part.matches(".*[;&|`$><(){}\\[\\]!\\\\\"'\\n\\r].*")) {
+                return "Invalid characters in command arguments";
+            }
+        }
+
         try {
-            String[] arrCmd = {"/bin/sh", "-c", cmd};
-            ProcessBuilder processBuilder = new ProcessBuilder(arrCmd);
+            // No shell wrapper — execute the command directly as an argv list
+            ProcessBuilder processBuilder = new ProcessBuilder(parts);
             Process p = processBuilder.start();
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
@@ -94,11 +144,21 @@ public class Rce {
      */
     @GetMapping("/jscmd")
     public void jsEngine(String jsurl) throws Exception{
+        if (jsurl == null || jsurl.isEmpty()) {
+            return;
+        }
+        // Validate that jsurl is a well-formed URL with an allowed scheme
+        java.net.URL parsedUrl = new java.net.URL(jsurl);
+        String scheme = parsedUrl.getProtocol();
+        if (!"http".equals(scheme) && !"https".equals(scheme)) {
+            throw new IllegalArgumentException("Only http and https URLs are allowed");
+        }
         // js nashorn javascript ecmascript
         ScriptEngine engine = new ScriptEngineManager().getEngineByName("js");
         Bindings bindings = engine.getBindings(ScriptContext.ENGINE_SCOPE);
-        String cmd = String.format("load(\"%s\")", jsurl);
-        engine.eval(cmd, bindings);
+        // Pass URL as a binding variable to prevent script injection via string interpolation
+        bindings.put("__jsurl", parsedUrl.toString());
+        engine.eval("load(__jsurl)", bindings);
     }
 
 
@@ -110,7 +170,7 @@ public class Rce {
      */
     @GetMapping("/vuln/yarm")
     public void yarm(String content) {
-        Yaml y = new Yaml();
+        Yaml y = new Yaml(new SafeConstructor());
         y.load(content);
     }
 
@@ -125,9 +185,43 @@ public class Rce {
      * @param content groovy shell
      */
     @GetMapping("groovy")
-    public void groovyshell(String content) {
-        GroovyShell groovyShell = new GroovyShell();
-        groovyShell.evaluate(content);
+    public String groovyshell(String content) {
+        if (content == null || content.isEmpty()) {
+            return "Content must not be empty";
+        }
+
+        // Reject input containing dangerous patterns before evaluation
+        if (!content.matches("[a-zA-Z0-9_ +\\-*/().,%\"'\\s]+")) {
+            return "Invalid characters in Groovy expression";
+        }
+
+        // Sandbox: restrict allowed language features via SecureASTCustomizer
+        SecureASTCustomizer secureAst = new SecureASTCustomizer();
+        secureAst.setClosuresAllowed(false);
+        secureAst.setMethodDefinitionAllowed(false);
+        secureAst.setPackageAllowed(false);
+        // Only permit safe classes — no Runtime, Process, System, ClassLoader, File, etc.
+        secureAst.setImportsWhitelist(Collections.emptyList());
+        secureAst.setStarImportsWhitelist(Collections.emptyList());
+        secureAst.setStaticImportsWhitelist(Collections.emptyList());
+        secureAst.setStaticStarImportsWhitelist(Collections.emptyList());
+        secureAst.setReceiversClassesWhiteList(Arrays.asList(
+                Math.class, Integer.class, Long.class, Double.class, Float.class,
+                String.class, Object.class
+        ));
+
+        CompilerConfiguration config = new CompilerConfiguration();
+        config.addCompilationCustomizers(secureAst);
+
+        GroovyShell groovyShell = new GroovyShell(config);
+        try {
+            Object result = groovyShell.evaluate(content);
+            return result != null ? result.toString() : "";
+        } catch (SecurityException e) {
+            return "Groovy expression rejected by security policy";
+        } catch (Exception e) {
+            return "Groovy evaluation error";
+        }
     }
 
 

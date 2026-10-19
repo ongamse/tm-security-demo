@@ -1,6 +1,7 @@
 package org.joychou.controller;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -17,7 +18,7 @@ public class Jdbc {
     /**
      * <a href="https://github.com/JoyChou93/java-sec-code/wiki/CVE-2022-21724">CVE-2022-21724</a>
      */
-    @RequestMapping("/postgresql")
+    @PostMapping("/postgresql")
     public void postgresql(String jdbcUrlBase64) throws Exception{
         byte[] b = java.util.Base64.getDecoder().decode(jdbcUrlBase64);
         String jdbcUrl = new String(b);
@@ -25,7 +26,7 @@ public class Jdbc {
         DriverManager.getConnection(jdbcUrl);
     }
 
-    @RequestMapping("/db2")
+    @PostMapping("/db2")
     public void db2(String jdbcUrlBase64) throws Exception{
         Class.forName("com.ibm.db2.jcc.DB2Driver");
         byte[] b = java.util.Base64.getDecoder().decode(jdbcUrlBase64);

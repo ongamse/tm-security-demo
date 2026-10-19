@@ -3,7 +3,8 @@ package org.joychou.controller;
 import org.apache.tomcat.websocket.server.WsServerContainer;
 import org.joychou.config.WebSocketsProxyEndpoint;
 import org.joychou.config.WebSocketsCmdEndpoint;
-import org.springframework.web.bind.annotation.RequestMapping;
+import org.joychou.security.SecurityUtil;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import javax.servlet.ServletContext;
@@ -27,11 +28,11 @@ public class WebSockets {
      * </p>
      * <p>JoyChou @ 2023年02月20日 </p>
      */
-    @RequestMapping("/websocket/cmd")
+    @PostMapping("/websocket/cmd")
     public String cmdInject(HttpServletRequest req) {
-        String path = req.getParameter("path");
+        String path = SecurityUtil.validateWebSocketPath(req.getParameter("path"));
         if (path == null) {
-            return "path is null";
+            return "Invalid path. Only alphanumeric, underscore, hyphen, and slash characters are allowed.";
         }
         ServletContext sc = req.getServletContext();
         try {
@@ -50,11 +51,11 @@ public class WebSockets {
         }
     }
 
-    @RequestMapping("/websocket/proxy")
+    @PostMapping("/websocket/proxy")
     public String proxyInject(HttpServletRequest req) {
-        String path = req.getParameter("path");
+        String path = SecurityUtil.validateWebSocketPath(req.getParameter("path"));
         if (path == null) {
-            return "path is null";
+            return "Invalid path. Only alphanumeric, underscore, hyphen, and slash characters are allowed.";
         }
         ServletContext sc = req.getServletContext();
         try {

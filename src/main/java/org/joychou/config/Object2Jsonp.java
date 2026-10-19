@@ -64,6 +64,8 @@ public class Object2Jsonp extends AbstractJsonpResponseBodyAdvice {
         for (String callback: this.callbacks) {
             reqCallback = req.getParameter(callback);
             if(StringUtils.isNotBlank(reqCallback)) {
+                // Validate callback to prevent XSS via JSONP callback injection
+                reqCallback = SecurityUtil.validateJsonpCallback(reqCallback);
                 break;
             }
         }
@@ -84,7 +86,11 @@ public class Object2Jsonp extends AbstractJsonpResponseBodyAdvice {
 
         // 校验jsonp逻辑，如果不安全，返回forbidden
         if (SecurityUtil.checkURL(refer) == null ){
-            logger.error("[-] URL: " + url + "?" + query + "\t" + "Referer: " + refer);
+            // Sanitize user-controlled values before logging to prevent log injection
+            String safeUrl = SecurityUtil.sanitizeCRLF(url);
+            String safeQuery = SecurityUtil.sanitizeCRLF(query);
+            String safeRefer = SecurityUtil.sanitizeCRLF(refer);
+            logger.error("[-] URL: {}?{}\tReferer: {}", safeUrl, safeQuery, safeRefer);
             try{
                 // 使用response.getWriter().write后，后续写入jsonp后还会继续使用response.getWriteer()，导致报错
 //                response.setStatus(HttpServletResponse.SC_FORBIDDEN);

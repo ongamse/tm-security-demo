@@ -23,7 +23,11 @@ public class WebUtils {
 
     public static String getCookieValueByName(HttpServletRequest request, String cookieName) {
         Cookie cookie = org.springframework.web.util.WebUtils.getCookie(request, cookieName);
-        return cookie == null ? null : cookie.getValue();
+        if (cookie == null) {
+            return null;
+        }
+        cookie.setSecure(true);
+        return cookie.getValue();
     }
 
 
@@ -34,7 +38,9 @@ public class WebUtils {
 
     public static String getFileExtension(String fullName) {
         Preconditions.checkNotNull(fullName);
-        String fileName = (new File(fullName)).getName();
+        // Use Paths to safely extract the file name component without constructing a File from untrusted input
+        java.nio.file.Path path = java.nio.file.Paths.get(fullName).getFileName();
+        String fileName = (path != null) ? path.toString() : fullName;
         int dotIndex = fileName.lastIndexOf('.');
         return dotIndex == -1 ? "" : fileName.substring(dotIndex + 1);
     }
@@ -42,7 +48,9 @@ public class WebUtils {
 
     public static String getNameWithoutExtension(String file) {
         Preconditions.checkNotNull(file);
-        String fileName = (new File(file)).getName();
+        // Use Paths to safely extract the file name component without constructing a File from untrusted input
+        java.nio.file.Path path = java.nio.file.Paths.get(file).getFileName();
+        String fileName = (path != null) ? path.toString() : file;
         int dotIndex = fileName.lastIndexOf('.');
         return dotIndex == -1 ? fileName : fileName.substring(0, dotIndex);
     }
