@@ -1,7 +1,7 @@
 package org.joychou.controller.othervulns;
 
-import com.monitorjbl.xlsx.StreamingReader;
-import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.openxml4j.opc.OPCPackage;
+import org.apache.poi.xssf.eventusermodel.XSSFReader;
 
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -9,8 +9,14 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.multipart.MultipartFile;
 
+import javax.xml.parsers.SAXParserFactory;
 import java.io.FileInputStream;
-import java.io.IOException;
+import java.io.InputStream;
+import java.util.Iterator;
+
+import org.xml.sax.InputSource;
+import org.xml.sax.XMLReader;
+import org.xml.sax.helpers.DefaultHandler;
 
 
 /**
@@ -33,12 +39,56 @@ public class xlsxStreamerXXE {
 
 
     @PostMapping("/readxlsx")
-    public void xllx_streamer_xxe(MultipartFile file) throws IOException {
-        StreamingReader.builder().open(file.getInputStream());
+    public void xllx_streamer_xxe(MultipartFile file) throws Exception {
+        // Use OPCPackage + XSSFReader with an XXE-safe SAXParserFactory
+        SAXParserFactory spf = SAXParserFactory.newInstance();
+        spf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+        spf.setFeature("http://xml.org/sax/features/external-general-entities", false);
+        spf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+        spf.setFeature("http://javax.xml.XMLConstants/feature/secure-processing", true);
+        spf.setNamespaceAware(true);
+
+        OPCPackage pkg = OPCPackage.open(file.getInputStream());
+        try {
+            XSSFReader reader = new XSSFReader(pkg);
+            XMLReader xmlReader = spf.newSAXParser().getXMLReader();
+            xmlReader.setContentHandler(new DefaultHandler());
+
+            Iterator<InputStream> sheets = reader.getSheetsData();
+            while (sheets.hasNext()) {
+                try (InputStream sheet = sheets.next()) {
+                    xmlReader.parse(new InputSource(sheet));
+                }
+            }
+        } finally {
+            pkg.close();
+        }
     }
 
 
     public static void main(String[] args) throws Exception {
-        StreamingReader.builder().open((new FileInputStream("poc.xlsx")));
+        // Use OPCPackage + XSSFReader with an XXE-safe SAXParserFactory
+        SAXParserFactory spf = SAXParserFactory.newInstance();
+        spf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+        spf.setFeature("http://xml.org/sax/features/external-general-entities", false);
+        spf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+        spf.setFeature("http://javax.xml.XMLConstants/feature/secure-processing", true);
+        spf.setNamespaceAware(true);
+
+        OPCPackage pkg = OPCPackage.open(new FileInputStream("poc.xlsx"));
+        try {
+            XSSFReader reader = new XSSFReader(pkg);
+            XMLReader xmlReader = spf.newSAXParser().getXMLReader();
+            xmlReader.setContentHandler(new DefaultHandler());
+
+            Iterator<InputStream> sheets = reader.getSheetsData();
+            while (sheets.hasNext()) {
+                try (InputStream sheet = sheets.next()) {
+                    xmlReader.parse(new InputSource(sheet));
+                }
+            }
+        } finally {
+            pkg.close();
+        }
     }
 }

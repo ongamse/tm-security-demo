@@ -18,6 +18,7 @@ import java.util.regex.Pattern;
 public class SecurityUtil {
 
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
+    private static final Pattern USERNAME_PATTERN = Pattern.compile("^[a-zA-Z0-9_.-]{1,64}$");
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
 
 
@@ -40,8 +41,15 @@ public class SecurityUtil {
      */
     public static String gethost(String url) {
         try {
+            if (url == null || !isHttp(url)) {
+                return "";
+            }
             URI uri = new URI(url);
-            return uri.getHost().toLowerCase();
+            String host = uri.getHost();
+            if (host == null) {
+                return "";
+            }
+            return host.toLowerCase();
         } catch (URISyntaxException e) {
             return "";
         }
@@ -247,6 +255,49 @@ public class SecurityUtil {
         }
 
         return sb.toString();
+    }
+
+    /**
+     * Validate username parameter to prevent IDOR.
+     * Only allows alphanumeric characters, underscores, dots, and hyphens (1-64 chars).
+     *
+     * @param username the username to validate
+     * @return the username if valid
+     * @throws IllegalArgumentException if invalid
+     */
+    public static String validateUsername(String username) {
+        if (username == null || !USERNAME_PATTERN.matcher(username).matches()) {
+            throw new IllegalArgumentException("Invalid username parameter");
+        }
+        return username;
+    }
+
+    /**
+     * Validate a numeric ID parameter to prevent IDOR.
+     *
+     * @param id the id to validate
+     * @return the id if valid (positive integer)
+     * @throws IllegalArgumentException if invalid
+     */
+    public static Integer validateId(Integer id) {
+        if (id == null || id <= 0) {
+            throw new IllegalArgumentException("Invalid id parameter");
+        }
+        return id;
+    }
+
+    /**
+     * Sanitize a value for use in an HTTP header by stripping CR and LF characters
+     * to prevent CRLF (header) injection.
+     *
+     * @param value the header value to sanitize
+     * @return sanitized value with CR/LF removed, or null if input is null
+     */
+    public static String sanitizeHeaderValue(String value) {
+        if (value == null) {
+            return null;
+        }
+        return value.replaceAll("[\\r\\n]", "");
     }
 
     public static void main(String[] args) {

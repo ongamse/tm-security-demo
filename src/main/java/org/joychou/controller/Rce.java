@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.util.HtmlUtils;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
 
@@ -53,7 +54,7 @@ public class Rce {
         } catch (Exception e) {
             return e.toString();
         }
-        return sb.toString();
+        return HtmlUtils.htmlEscape(sb.toString());
     }
 
 
@@ -77,10 +78,10 @@ public class Rce {
                 sb.append(tmpStr);
             }
         } catch (Exception e) {
-            return e.toString();
+            return HtmlUtils.htmlEscape(e.toString());
         }
 
-        return sb.toString();
+        return HtmlUtils.htmlEscape(sb.toString());
     }
 
 
@@ -94,11 +95,28 @@ public class Rce {
      */
     @GetMapping("/jscmd")
     public void jsEngine(String jsurl) throws Exception{
-        // js nashorn javascript ecmascript
-        ScriptEngine engine = new ScriptEngineManager().getEngineByName("js");
+        // Use standard javax.script API with restricted bindings to prevent arbitrary Java class access
+        ScriptEngineManager manager = new ScriptEngineManager();
+        ScriptEngine engine = manager.getEngineByName("js");
+        if (engine == null) {
+            throw new RuntimeException("JavaScript engine not available");
+        }
+        // Remove default dangerous bindings that grant access to Java classes
         Bindings bindings = engine.getBindings(ScriptContext.ENGINE_SCOPE);
+        bindings.remove("java");
+        bindings.remove("javax");
+        bindings.remove("javafx");
+        bindings.remove("Java");
+        bindings.remove("Packages");
+        bindings.remove("com");
+        bindings.remove("org");
+        bindings.remove("edu");
+        bindings.remove("net");
+        engine.setBindings(bindings, ScriptContext.ENGINE_SCOPE);
+        Bindings globalBindings = engine.createBindings();
+        engine.setBindings(globalBindings, ScriptContext.GLOBAL_SCOPE);
         String cmd = String.format("load(\"%s\")", jsurl);
-        engine.eval(cmd, bindings);
+        engine.eval(cmd);
     }
 
 

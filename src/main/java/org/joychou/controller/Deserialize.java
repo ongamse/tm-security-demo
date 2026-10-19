@@ -1,7 +1,8 @@
 package org.joychou.controller;
 
+import org.apache.commons.io.serialization.ValidatingObjectInputStream;
 import org.joychou.config.Constants;
-import org.joychou.security.AntObjectInputStream;
+import org.joychou.dao.User;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -12,7 +13,6 @@ import javax.servlet.http.HttpServletRequest;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InvalidClassException;
-import java.io.ObjectInputStream;
 import java.util.Base64;
 
 import static org.springframework.web.util.WebUtils.getCookie;
@@ -45,7 +45,10 @@ public class Deserialize {
         byte[] decoded = Base64.getDecoder().decode(rememberMe);
 
         ByteArrayInputStream bytes = new ByteArrayInputStream(decoded);
-        ObjectInputStream in = new ObjectInputStream(bytes);
+        // Use ValidatingObjectInputStream with an allowlist to prevent unsafe deserialization
+        ValidatingObjectInputStream in = new ValidatingObjectInputStream(bytes);
+        in.accept(User.class, java.lang.String.class, java.lang.Number.class,
+                java.lang.Integer.class, java.lang.Long.class);
         in.readObject();
         in.close();
 
@@ -72,7 +75,10 @@ public class Deserialize {
         ByteArrayInputStream bytes = new ByteArrayInputStream(decoded);
 
         try {
-            AntObjectInputStream in = new AntObjectInputStream(bytes);  // throw InvalidClassException
+            // Use ValidatingObjectInputStream with an allowlist instead of blacklist-based AntObjectInputStream
+            ValidatingObjectInputStream in = new ValidatingObjectInputStream(bytes);
+            in.accept(User.class, java.lang.String.class, java.lang.Number.class,
+                    java.lang.Integer.class, java.lang.Long.class);
             in.readObject();
             in.close();
         } catch (InvalidClassException e) {
