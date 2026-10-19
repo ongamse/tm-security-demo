@@ -41,6 +41,7 @@ public class Deserialize {
             return "No rememberMe cookie. Right?";
         }
 
+        cookie.setSecure(true);
         String rememberMe = cookie.getValue();
         byte[] decoded = Base64.getDecoder().decode(rememberMe);
 
@@ -72,6 +73,7 @@ public class Deserialize {
         if (null == cookie) {
             return "No rememberMe cookie. Right?";
         }
+        cookie.setSecure(true);
         String rememberMe = cookie.getValue();
         byte[] decoded = Base64.getDecoder().decode(rememberMe);
 

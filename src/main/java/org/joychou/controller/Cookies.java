@@ -50,6 +50,7 @@ public class Cookies {
             for (Cookie cookie : cookies) {
                 // key code. Equals can also be equalsIgnoreCase.
                 if (NICK.equals(cookie.getName())) {
+                    cookie.setSecure(true);
                     nick = cookie.getValue();
                 }
             }
@@ -65,6 +66,7 @@ public class Cookies {
         if (cookies != null) {
             for (Cookie cookie : cookies) {
                 if (cookie.getName().equalsIgnoreCase(NICK)) {  // key code
+                    cookie.setSecure(true);
                     nick = cookie.getValue();
                 }
             }

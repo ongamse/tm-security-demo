@@ -23,7 +23,11 @@ public class WebUtils {
 
     public static String getCookieValueByName(HttpServletRequest request, String cookieName) {
         Cookie cookie = org.springframework.web.util.WebUtils.getCookie(request, cookieName);
-        return cookie == null ? null : cookie.getValue();
+        if (cookie == null) {
+            return null;
+        }
+        cookie.setSecure(true);
+        return cookie.getValue();
     }
 
 
