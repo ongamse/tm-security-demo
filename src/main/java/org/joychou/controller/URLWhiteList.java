@@ -7,8 +7,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.util.HtmlUtils;
 
-import org.joychou.security.ssrf.SSRFChecker;
-
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -102,30 +100,13 @@ public class URLWhiteList {
 
         logger.info("url:  " + url);
 
-        if (!SecurityUtil.isHttp(url)) {
+        String safeUrl = SecurityUtil.checkURL(url);
+        if (safeUrl == null) {
+            res.setStatus(HttpServletResponse.SC_FORBIDDEN);
             return;
         }
 
-        // Block internal IPs to prevent SSRF
-        if (SSRFChecker.isInternalIpByUrl(url)) {
-            logger.error("Blocked internal IP redirect for url: " + url);
-            return;
-        }
-
-        // Use URI-based host extraction (avoids URL parsing bypass)
-        String host = SecurityUtil.gethost(url);
-        if (host == null || host.isEmpty()) {
-            return;
-        }
-        logger.info("host:  " + host);
-
-        // endsWith .
-        for (String domain : domainwhitelist) {
-            if (host.endsWith("." + domain)) {
-                res.sendRedirect(url);
-                return;
-            }
-        }
+        res.sendRedirect(safeUrl);
 
     }
 
