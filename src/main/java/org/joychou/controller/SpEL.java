@@ -1,13 +1,14 @@
 package org.joychou.controller;
 
-import org.springframework.expression.EvaluationContext;
 import org.springframework.expression.ExpressionParser;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
-import org.springframework.expression.spel.support.SimpleEvaluationContext;
+import org.springframework.expression.spel.support.StandardEvaluationContext;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.util.HtmlUtils;
+
+import java.util.regex.Pattern;
 
 
 /**
@@ -18,6 +19,8 @@ import org.springframework.web.util.HtmlUtils;
 @RestController
 public class SpEL {
 
+    private static final Pattern SAFE_SPEL_PATTERN = Pattern.compile("^[a-zA-Z0-9_.+\\-*/() '\"]+$");
+
     /**
      * SpEL to RCE
      * http://localhost:8080/spel/vul/?expression=xxx.
@@ -26,9 +29,16 @@ public class SpEL {
      */
     @GetMapping("/spel/vuln")
     public String rce(String expression) {
+        if (expression == null || expression.contains("T(") || expression.contains("new ")
+                || expression.contains("#") || expression.contains("getClass")
+                || expression.contains("Runtime") || expression.contains("exec")
+                || expression.contains("ProcessBuilder") || expression.contains("forName")
+                || expression.contains("invoke") || expression.contains("getMethod")
+                || !SAFE_SPEL_PATTERN.matcher(expression).matches()) {
+            return "Expression rejected: potentially dangerous SpEL expression";
+        }
         ExpressionParser parser = new SpelExpressionParser();
-        // Use SimpleEvaluationContext to prevent access to Java types and arbitrary method calls
-        EvaluationContext context = SimpleEvaluationContext.forReadOnlyDataBinding().build();
+        StandardEvaluationContext context = new StandardEvaluationContext();
         return HtmlUtils.htmlEscape(parser.parseExpression(expression).getValue(context).toString());
     }
 
