@@ -35,14 +35,30 @@ public class PathTraversal {
         return getImgBase64(filepath);
     }
 
+    // Base directory for serving images
+    private static final String IMAGE_BASE_DIR = System.getProperty("user.dir");
+
     private String getImgBase64(String imgFile) throws IOException {
 
         logger.info("Working directory: " + System.getProperty("user.dir"));
         logger.info("File path: " + imgFile);
 
-        File f = new File(imgFile);
+        // Reject absolute paths and traversal sequences before resolving
+        if (imgFile == null || imgFile.isEmpty() || imgFile.startsWith("/") || imgFile.contains("..")) {
+            logger.error("Path traversal attempt blocked: " + imgFile);
+            return "Bad boy. Illegal file path.";
+        }
+        // Canonicalize and verify the resolved path stays within the base directory
+        java.nio.file.Path basePath = Paths.get(IMAGE_BASE_DIR).toAbsolutePath().normalize();
+        java.nio.file.Path resolvedPath = basePath.resolve(imgFile).toAbsolutePath().normalize();
+        if (!resolvedPath.startsWith(basePath)) {
+            logger.error("Path traversal attempt blocked: " + imgFile);
+            return "Bad boy. Illegal file path.";
+        }
+
+        File f = resolvedPath.toFile();
         if (f.exists() && !f.isDirectory()) {
-            byte[] data = Files.readAllBytes(Paths.get(imgFile));
+            byte[] data = Files.readAllBytes(resolvedPath);
             return new String(Base64.encodeBase64(data));
         } else {
             return "File doesn't exist or is not a file.";

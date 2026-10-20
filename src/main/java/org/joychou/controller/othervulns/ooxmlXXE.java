@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseBody;
+import org.springframework.web.util.HtmlUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
@@ -70,6 +71,6 @@ public class ooxmlXXE {
             }
         }
 
-        return sbResult.toString();
+        return HtmlUtils.htmlEscape(sbResult.toString());
     }
 }

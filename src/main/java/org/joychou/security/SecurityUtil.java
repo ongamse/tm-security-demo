@@ -18,6 +18,8 @@ import java.util.regex.Pattern;
 public class SecurityUtil {
 
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
+    private static final Pattern USERNAME_PATTERN = Pattern.compile("^[a-zA-Z0-9_.-]+$");
+    private static final int MAX_USERNAME_LENGTH = 64;
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
 
 
@@ -247,6 +249,55 @@ public class SecurityUtil {
         }
 
         return sb.toString();
+    }
+
+    /**
+     * Validate username input: only allows alphanumeric characters, underscores,
+     * dots, and hyphens; maximum length {@value #MAX_USERNAME_LENGTH}.
+     *
+     * @param username the username to validate
+     * @return the validated username
+     * @throws IllegalArgumentException if the username is null, empty, or invalid
+     */
+    public static String validateUsername(String username) {
+        if (username == null || username.isEmpty()) {
+            throw new IllegalArgumentException("Username must not be null or empty");
+        }
+        if (username.length() > MAX_USERNAME_LENGTH) {
+            throw new IllegalArgumentException("Username exceeds maximum length");
+        }
+        if (!USERNAME_PATTERN.matcher(username).matches()) {
+            throw new IllegalArgumentException("Username contains invalid characters");
+        }
+        return username;
+    }
+
+    /**
+     * Validate a numeric id parameter.
+     *
+     * @param id the id to validate
+     * @return the validated id
+     * @throws IllegalArgumentException if the id is null or not positive
+     */
+    public static Integer validateId(Integer id) {
+        if (id == null || id <= 0) {
+            throw new IllegalArgumentException("Id must be a positive integer");
+        }
+        return id;
+    }
+
+    /**
+     * Sanitize a value before use in an HTTP header by stripping CR and LF
+     * characters to prevent CRLF injection / HTTP response splitting.
+     *
+     * @param value the header value to sanitize
+     * @return sanitized value with CR/LF removed, or null if input is null
+     */
+    public static String sanitizeHeaderValue(String value) {
+        if (value == null) {
+            return null;
+        }
+        return value.replaceAll("[\\r\\n]", "");
     }
 
     public static void main(String[] args) {
