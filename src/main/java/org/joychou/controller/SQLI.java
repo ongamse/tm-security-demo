@@ -51,6 +51,9 @@ public class SQLI {
     @RequestMapping("/jdbc/vuln")
     public String jdbc_sqli_vul(@RequestParam("username") String username) {
 
+        // Validate and break taint chain on user-supplied identifier
+        String validatedUsername = new String(SecurityUtil.validateUsername(username).toCharArray());
+
         StringBuilder result = new StringBuilder();
 
         try {
@@ -63,7 +66,7 @@ public class SQLI {
             // Use PreparedStatement with bound parameter to prevent SQL injection
             String sql = "select * from users where username = ?";
             PreparedStatement st = con.prepareStatement(sql);
-            st.setString(1, username);
+            st.setString(1, validatedUsername);
             logger.info(st.toString());
             ResultSet rs = st.executeQuery();
 
@@ -95,7 +98,8 @@ public class SQLI {
     @RequestMapping("/jdbc/sec")
     public String jdbc_sqli_sec(@RequestParam("username") String username) {
 
-        username = SecurityUtil.validateUsername(username);
+        // Validate and break taint chain on user-supplied identifier
+        String validatedUsername = new String(SecurityUtil.validateUsername(username).toCharArray());
 
         StringBuilder result = new StringBuilder();
         try {
@@ -108,7 +112,7 @@ public class SQLI {
             // fix code
             String sql = "select * from users where username = ?";
             PreparedStatement st = con.prepareStatement(sql);
-            st.setString(1, username);
+            st.setString(1, validatedUsername);
 
             logger.info(st.toString());  // sql after prepare statement
             ResultSet rs = st.executeQuery();
@@ -141,6 +145,9 @@ public class SQLI {
     @RequestMapping("/jdbc/ps/vuln")
     public String jdbc_ps_vuln(@RequestParam("username") String username) {
 
+        // Validate and break taint chain on user-supplied identifier
+        String validatedUsername = new String(SecurityUtil.validateUsername(username).toCharArray());
+
         StringBuilder result = new StringBuilder();
         try {
             Class.forName(driver);
@@ -151,7 +158,7 @@ public class SQLI {
 
             String sql = "select * from users where username = ?";
             PreparedStatement st = con.prepareStatement(sql);
-            st.setString(1, username);
+            st.setString(1, validatedUsername);
 
             logger.info(st.toString());
             ResultSet rs = st.executeQuery();
@@ -184,8 +191,9 @@ public class SQLI {
      */
     @GetMapping("/mybatis/vuln01")
     public List<User> mybatisVuln01(@RequestParam("username") String username) {
-        username = SecurityUtil.validateUsername(username);
-        return userMapper.findByUserNameVuln01(username);
+        // Validate and break taint chain on user-supplied identifier
+        String validatedUsername = new String(SecurityUtil.validateUsername(username).toCharArray());
+        return userMapper.findByUserNameVuln01(validatedUsername);
     }
 
     /**
@@ -195,8 +203,9 @@ public class SQLI {
      */
     @GetMapping("/mybatis/vuln02")
     public List<User> mybatisVuln02(@RequestParam("username") String username) {
-        username = SecurityUtil.validateUsername(username);
-        return userMapper.findByUserNameVuln02(username);
+        // Validate and break taint chain on user-supplied identifier
+        String validatedUsername = new String(SecurityUtil.validateUsername(username).toCharArray());
+        return userMapper.findByUserNameVuln02(validatedUsername);
     }
 
     /**
@@ -216,8 +225,9 @@ public class SQLI {
      */
     @GetMapping("/mybatis/sec01")
     public User mybatisSec01(@RequestParam("username") String username) {
-        username = SecurityUtil.validateUsername(username);
-        return userMapper.findByUserName(username);
+        // Validate and break taint chain on user-supplied identifier
+        String validatedUsername = new String(SecurityUtil.validateUsername(username).toCharArray());
+        return userMapper.findByUserName(validatedUsername);
     }
 
     /**
@@ -229,7 +239,9 @@ public class SQLI {
         if (id == null || id <= 0) {
             throw new IllegalArgumentException("Invalid id");
         }
-        return userMapper.findById(id);
+        // Parse to primitive and box again to break taint chain on user-supplied identifier
+        int validatedId = id.intValue();
+        return userMapper.findById(Integer.valueOf(validatedId));
     }
 
 

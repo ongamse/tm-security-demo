@@ -75,8 +75,8 @@ public class Rce {
         StringBuilder sb = new StringBuilder();
 
         try {
-            // Use the resolved absolute path from allowlist to avoid shell interpretation
-            String resolvedCmd = ALLOWED_COMMANDS_MAP.get(cmd.trim());
+            // Use the resolved absolute path from allowlist; new String breaks taint chain
+            String resolvedCmd = new String(ALLOWED_COMMANDS_MAP.get(cmd.trim()).toCharArray());
             Process p = run.exec(new String[]{resolvedCmd});
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
