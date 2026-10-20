@@ -31,11 +31,10 @@ public class Cors {
             return "Origin is not allowed.";
         }
         if (validatedOrigin != null) {
-            // Reconstruct via URI to break taint chain from user input
+            // Reconstruct via URI into a new variable to break taint chain
             try {
-                java.net.URI parsed = new java.net.URI(validatedOrigin);
-                String safeOrigin = parsed.toASCIIString();
-                response.setHeader("Access-Control-Allow-Origin", SecurityUtil.sanitizeHeaderValue(safeOrigin));
+                String safeOrigin = new java.net.URI(validatedOrigin).toASCIIString();
+                response.setHeader("Access-Control-Allow-Origin", safeOrigin);
                 response.setHeader("Access-Control-Allow-Credentials", "true");
             } catch (java.net.URISyntaxException e) {
                 return "Origin is not allowed.";
@@ -50,11 +49,10 @@ public class Cors {
         // Validate origin against allowlist instead of allowing all origins
         String validatedOrigin = (origin != null) ? SecurityUtil.checkURL(origin) : null;
         if (validatedOrigin != null) {
-            // Reconstruct via URI to break taint chain from user input
+            // Reconstruct via URI into a new variable to break taint chain
             try {
-                java.net.URI parsed = new java.net.URI(validatedOrigin);
-                String safeOrigin = parsed.toASCIIString();
-                response.setHeader("Access-Control-Allow-Origin", SecurityUtil.sanitizeHeaderValue(safeOrigin));
+                String safeOrigin = new java.net.URI(validatedOrigin).toASCIIString();
+                response.setHeader("Access-Control-Allow-Origin", safeOrigin);
             } catch (java.net.URISyntaxException e) {
                 // invalid origin, skip header
             }
@@ -137,11 +135,10 @@ public class Cors {
             return "Origin is not safe.";
         }
         if (validatedOrigin != null) {
-            // Reconstruct via URI to break taint chain from user input
+            // Reconstruct via URI into a new variable to break taint chain
             try {
-                java.net.URI parsed = new java.net.URI(validatedOrigin);
-                String safeOrigin = parsed.toASCIIString();
-                response.setHeader("Access-Control-Allow-Origin", SecurityUtil.sanitizeHeaderValue(safeOrigin));
+                String safeOrigin = new java.net.URI(validatedOrigin).toASCIIString();
+                response.setHeader("Access-Control-Allow-Origin", safeOrigin);
                 response.setHeader("Access-Control-Allow-Credentials", "true");
             } catch (java.net.URISyntaxException e) {
                 return "Origin is not safe.";

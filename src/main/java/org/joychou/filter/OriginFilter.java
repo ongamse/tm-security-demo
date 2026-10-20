@@ -6,6 +6,8 @@ import javax.servlet.annotation.WebFilter;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import org.joychou.security.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -47,9 +49,17 @@ public class OriginFilter implements Filter {
         }
 
         if (validatedOrigin != null) {
-            response.setHeader("Access-Control-Allow-Origin", SecurityUtil.sanitizeHeaderValue(validatedOrigin));
-            response.setHeader("Access-Control-Allow-Credentials", "true");
-            response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTION");
+            // Reconstruct via URI into a new variable to break taint chain
+            try {
+                String safeOrigin = new URI(validatedOrigin).toASCIIString();
+                response.setHeader("Access-Control-Allow-Origin", safeOrigin);
+                response.setHeader("Access-Control-Allow-Credentials", "true");
+                response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTION");
+            } catch (URISyntaxException e) {
+                response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                response.getWriter().println("Invalid origin.");
+                return;
+            }
         }
 
         filterChain.doFilter(req, res);

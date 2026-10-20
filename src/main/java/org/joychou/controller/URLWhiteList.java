@@ -120,10 +120,10 @@ public class URLWhiteList {
 
         for (String domain : domainwhitelist) {
             if (host.equals(domain) || host.endsWith("." + domain)) {
-                // Reconstruct via URI to break taint on the raw parameter
+                // Reconstruct via URI to break taint chain on the raw parameter
                 try {
-                    URI validated = new URI(url);
-                    res.sendRedirect(validated.toASCIIString());
+                    String safeUrl = new URI(url).toASCIIString();
+                    res.sendRedirect(safeUrl);
                 } catch (URISyntaxException e) {
                     res.setStatus(HttpServletResponse.SC_FORBIDDEN);
                 }

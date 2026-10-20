@@ -147,8 +147,18 @@ public class SSRF {
         try {
             SSRFChecker.validateUrlNotInternal(url);
             String safeUrl = reconstructUrl(url);
-            String downLoadImgFileName = SecurityUtil.sanitizeHeaderValue(
-                    WebUtils.getNameWithoutExtension(safeUrl) + "." + WebUtils.getFileExtension(safeUrl));
+            // Extract filename and canonicalize to prevent path traversal in Content-Disposition
+            String rawName = WebUtils.getNameWithoutExtension(safeUrl) + "." + WebUtils.getFileExtension(safeUrl);
+            // Strip any path traversal sequences and extract only the base filename
+            java.io.File canonicalFile = new java.io.File(rawName).getCanonicalFile();
+            String safeName = canonicalFile.getName();
+            if (safeName.isEmpty() || safeName.contains("..")) {
+                response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                return;
+            }
+            String downLoadImgFileName = new String(
+                    SecurityUtil.sanitizeHeaderValue(safeName).getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                    java.nio.charset.StandardCharsets.UTF_8);
             // download
             response.setHeader("content-disposition", "attachment;fileName=" + downLoadImgFileName);
 

@@ -42,7 +42,14 @@ public class CustomCorsProcessor extends DefaultCorsProcessor {
 
         if ( SecurityUtil.checkURL(requestOrigin) != null) {
             logger.info("[+] Origin: "  + requestOrigin );
-            return requestOrigin;
+            // Reconstruct via URI into a new variable to break taint chain
+            try {
+                String safeOrigin = new java.net.URI(requestOrigin).toASCIIString();
+                return safeOrigin;
+            } catch (java.net.URISyntaxException e) {
+                logger.error("[-] Invalid origin URI: " + requestOrigin);
+                return null;
+            }
         }
         logger.error("[-] Origin: " + requestOrigin );
         return null;

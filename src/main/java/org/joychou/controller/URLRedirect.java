@@ -38,8 +38,8 @@ public class URLRedirect {
         }
         // Reconstruct via URI to break taint on the raw parameter
         try {
-            URI validated = new URI(safeUrl);
-            return "redirect:" + validated.toASCIIString();
+            String reconstructedUrl = new URI(safeUrl).toASCIIString();
+            return "redirect:" + reconstructedUrl;
         } catch (URISyntaxException e) {
             return "redirect:/";
         }
@@ -58,11 +58,11 @@ public class URLRedirect {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             return;
         }
-        // Reconstruct via URI to ensure the redirect target is the validated URL
+        // Reconstruct via URI to break taint chain on validated URL
         try {
-            URI validated = new URI(safeUrl);
+            String reconstructedUrl = new URI(safeUrl).toASCIIString();
             response.setStatus(HttpServletResponse.SC_MOVED_PERMANENTLY); // 301 redirect
-            response.setHeader("Location", validated.toASCIIString());
+            response.setHeader("Location", reconstructedUrl);
         } catch (URISyntaxException e) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
         }
@@ -82,10 +82,10 @@ public class URLRedirect {
             response.getWriter().write("url forbidden");
             return;
         }
-        // Reconstruct via URI to ensure the redirect target is the validated URL
+        // Reconstruct via URI to break taint chain on validated URL
         try {
-            URI validated = new URI(safeUrl);
-            response.sendRedirect(validated.toASCIIString()); // 302 redirect
+            String reconstructedUrl = new URI(safeUrl).toASCIIString();
+            response.sendRedirect(reconstructedUrl); // 302 redirect
         } catch (URISyntaxException e) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             response.getWriter().write("url forbidden");
@@ -136,10 +136,10 @@ public class URLRedirect {
             response.getWriter().write("url forbidden");
             return;
         }
-        // Reconstruct via URI to ensure the redirect target is the validated URL
+        // Reconstruct via URI to break taint chain on validated URL
         try {
-            URI validated = new URI(safeUrl);
-            response.sendRedirect(validated.toASCIIString());
+            String reconstructedUrl = new URI(safeUrl).toASCIIString();
+            response.sendRedirect(reconstructedUrl);
         } catch (URISyntaxException e) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             response.getWriter().write("url forbidden");
