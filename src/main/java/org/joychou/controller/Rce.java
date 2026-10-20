@@ -2,6 +2,8 @@ package org.joychou.controller;
 
 import groovy.lang.GroovyShell;
 import lombok.extern.slf4j.Slf4j;
+import org.codehaus.groovy.control.CompilerConfiguration;
+import org.codehaus.groovy.control.customizers.SecureASTCustomizer;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -16,6 +18,10 @@ import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.sql.DriverManager;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
 
 
 /**
@@ -28,13 +34,37 @@ import java.sql.DriverManager;
 @RequestMapping("/rce")
 public class Rce {
 
+    private static final Set<String> ALLOWED_COMMANDS = Collections.unmodifiableSet(
+            new HashSet<>(Arrays.asList("ls", "whoami", "date", "uptime", "hostname", "id", "uname", "pwd"))
+    );
+
+    /**
+     * Validates that the command is in the allowlist.
+     * Returns the canonical command name or null if rejected.
+     */
+    private static String validateCommand(String cmd) {
+        if (cmd == null || cmd.trim().isEmpty()) {
+            return null;
+        }
+        String trimmed = cmd.trim();
+        if (!ALLOWED_COMMANDS.contains(trimmed)) {
+            return null;
+        }
+        return trimmed;
+    }
+
     @GetMapping("/runtime/exec")
     public String CommandExec(String cmd) {
+        String safeCmd = validateCommand(cmd);
+        if (safeCmd == null) {
+            return "Command not allowed. Permitted commands: " + ALLOWED_COMMANDS;
+        }
         Runtime run = Runtime.getRuntime();
         StringBuilder sb = new StringBuilder();
 
         try {
-            Process p = run.exec(cmd);
+            // Use array form to avoid shell interpretation
+            Process p = run.exec(new String[]{safeCmd});
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
             String tmpStr;
@@ -62,12 +92,16 @@ public class Rce {
      */
     @GetMapping("/ProcessBuilder")
     public String processBuilder(String cmd) {
+        String safeCmd = validateCommand(cmd);
+        if (safeCmd == null) {
+            return "Command not allowed. Permitted commands: " + ALLOWED_COMMANDS;
+        }
 
         StringBuilder sb = new StringBuilder();
 
         try {
-            String[] arrCmd = {"/bin/sh", "-c", cmd};
-            ProcessBuilder processBuilder = new ProcessBuilder(arrCmd);
+            // Use argument array without shell to prevent injection
+            ProcessBuilder processBuilder = new ProcessBuilder(safeCmd);
             Process p = processBuilder.start();
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
@@ -126,7 +160,25 @@ public class Rce {
      */
     @GetMapping("groovy")
     public void groovyshell(String content) {
-        GroovyShell groovyShell = new GroovyShell();
+        // Use SecureASTCustomizer to restrict dangerous operations
+        SecureASTCustomizer secureASTCustomizer = new SecureASTCustomizer();
+        secureASTCustomizer.setDisallowedImports(Arrays.asList(
+                "java.lang.Runtime", "java.lang.ProcessBuilder",
+                "java.io.File", "java.lang.System",
+                "java.lang.reflect.*"
+        ));
+        secureASTCustomizer.setIndirectImportCheckEnabled(true);
+        secureASTCustomizer.setDisallowedReceiversClasses(Arrays.asList(
+                (Class) Runtime.class, (Class) ProcessBuilder.class,
+                (Class) System.class, (Class) Class.class
+        ));
+        // Disallow method execution on Runtime, Process, etc.
+        secureASTCustomizer.setReceiversClassesAreAllowed(false);
+
+        CompilerConfiguration config = new CompilerConfiguration();
+        config.addCompilationCustomizers(secureASTCustomizer);
+
+        GroovyShell groovyShell = new GroovyShell(config);
         groovyShell.evaluate(content);
     }
 
