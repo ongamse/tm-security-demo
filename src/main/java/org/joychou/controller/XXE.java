@@ -30,6 +30,7 @@ import org.xml.sax.helpers.DefaultHandler;
 import org.apache.commons.digester3.Digester;
 import org.jdom2.input.SAXBuilder;
 import org.joychou.util.WebUtils;
+import org.springframework.web.util.HtmlUtils;
 import org.xmlbeam.annotation.XBRead;
 
 /**
@@ -234,7 +235,7 @@ public class XXE {
             digester.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             digester.parse(new StringReader(body));  // parse xml
 
-            return "Digester xxe security code";
+            return HtmlUtils.htmlEscape("Digester xxe security code");
         } catch (Exception e) {
             logger.error(e.toString());
             return EXCEPT;
