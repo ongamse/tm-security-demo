@@ -17,6 +17,7 @@ import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.view.json.MappingJackson2JsonView;
 import org.joychou.config.WebConfig;
 import org.joychou.util.WebUtils;
+import org.springframework.web.util.HtmlUtils;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
@@ -45,7 +46,7 @@ public class Jsonp {
     @RequestMapping(value = "/vuln/referer", produces = "application/javascript")
     public String referer(HttpServletRequest request) {
         String callback = request.getParameter(this.callback);
-        return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
+        return HtmlUtils.htmlEscape(WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request)));
     }
 
     /**
@@ -62,7 +63,7 @@ public class Jsonp {
             return "error";
         }
         String callback = request.getParameter(this.callback);
-        return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
+        return HtmlUtils.htmlEscape(WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request)));
     }
 
     /**
@@ -107,7 +108,7 @@ public class Jsonp {
             return "error";
         }
         String callback = request.getParameter(this.callback);
-        return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
+        return HtmlUtils.htmlEscape(WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request)));
     }
 
     /**
@@ -133,9 +134,9 @@ public class Jsonp {
         if (StringUtils.isNotBlank(callback)) {
             JSONPObject jsonpObj = new JSONPObject(callback);
             jsonpObj.addParameter(csrfToken);
-            return jsonpObj.toString();
+            return HtmlUtils.htmlEscape(jsonpObj.toString());
         } else {
-            return csrfToken.toString();
+            return HtmlUtils.htmlEscape(csrfToken.toString());
         }
     }
 

@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import org.springframework.web.util.HtmlUtils;
 import java.util.Iterator;
 
 
@@ -70,6 +71,6 @@ public class ooxmlXXE {
             }
         }
 
-        return sbResult.toString();
+        return HtmlUtils.htmlEscape(sbResult.toString());
     }
 }

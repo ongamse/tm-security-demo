@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import javax.servlet.http.HttpServletRequest;
 import java.io.IOException;
+import org.springframework.web.util.HtmlUtils;
 
 @RestController
 public class CommandInject {
@@ -31,7 +32,7 @@ public class CommandInject {
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);
         Process process = builder.start();
-        return WebUtils.convertStreamToString(process.getInputStream());
+        return HtmlUtils.htmlEscape(WebUtils.convertStreamToString(process.getInputStream()));
     }
 
     /**
@@ -51,7 +52,7 @@ public class CommandInject {
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);
         Process process = builder.start();
-        return WebUtils.convertStreamToString(process.getInputStream());
+        return HtmlUtils.htmlEscape(WebUtils.convertStreamToString(process.getInputStream()));
     }
 
     @GetMapping("/codeinject/sec")
