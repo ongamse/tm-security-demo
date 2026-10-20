@@ -35,6 +35,24 @@ public class FileUpload {
     private final Logger logger = LoggerFactory.getLogger(this.getClass());
     private static String randomFilePath = "";
 
+    /**
+     * Sanitize uploaded file name to prevent path traversal.
+     * Strips directory components and rejects names with traversal sequences.
+     */
+    private String sanitizeFileName(String originalFilename) {
+        if (originalFilename == null || originalFilename.isEmpty()) {
+            return null;
+        }
+        // Extract just the file name, stripping any directory components
+        String fileName = Paths.get(originalFilename).getFileName().toString();
+        // Reject if it contains traversal sequences, path separators, or is empty
+        if (fileName.isEmpty() || fileName.contains("..") || fileName.contains("/")
+                || fileName.contains("\\") || fileName.contains("\0")) {
+            return null;
+        }
+        return fileName;
+    }
+
     // uplaod any file
     @GetMapping("/any")
     public String index() {
@@ -58,12 +76,22 @@ public class FileUpload {
 
         try {
             // Get the file and save it somewhere
+            String safeName = sanitizeFileName(file.getOriginalFilename());
+            if (safeName == null) {
+                redirectAttributes.addFlashAttribute("message", "Invalid file name");
+                return "redirect:/file/status";
+            }
             byte[] bytes = file.getBytes();
-            Path path = Paths.get(UPLOADED_FOLDER + file.getOriginalFilename());
+            Path path = Paths.get(UPLOADED_FOLDER, safeName).toAbsolutePath().normalize();
+            // Ensure resolved path is still within the upload folder
+            if (!path.startsWith(Paths.get(UPLOADED_FOLDER).toAbsolutePath().normalize())) {
+                redirectAttributes.addFlashAttribute("message", "Invalid file path");
+                return "redirect:/file/status";
+            }
             Files.write(path, bytes);
 
             redirectAttributes.addFlashAttribute("message",
-                    "You successfully uploaded '" + UPLOADED_FOLDER + file.getOriginalFilename() + "'");
+                    "You successfully uploaded '" + path.toString() + "'");
 
         } catch (IOException e) {
             redirectAttributes.addFlashAttribute("message", "upload failed");
@@ -86,10 +114,14 @@ public class FileUpload {
             return "Please select a file to upload";
         }
 
-        String fileName = multifile.getOriginalFilename();
-        String Suffix = fileName.substring(fileName.lastIndexOf(".")); // 获取文件后缀名
+        String rawFileName = multifile.getOriginalFilename();
+        String safeName = sanitizeFileName(rawFileName);
+        if (safeName == null) {
+            return "Upload failed. Invalid file name.";
+        }
+        String Suffix = safeName.substring(safeName.lastIndexOf(".")); // 获取文件后缀名
         String mimeType = multifile.getContentType(); // 获取MIME类型
-        String filePath = UPLOADED_FOLDER + fileName;
+        String filePath = Paths.get(UPLOADED_FOLDER, safeName).toAbsolutePath().normalize().toString();
         File excelFile = convert(multifile);
 
 
@@ -141,7 +173,11 @@ public class FileUpload {
         try {
             // Get the file and save it somewhere
             byte[] bytes = multifile.getBytes();
-            Path path = Paths.get(UPLOADED_FOLDER + multifile.getOriginalFilename());
+            Path path = Paths.get(UPLOADED_FOLDER, safeName).toAbsolutePath().normalize();
+            if (!path.startsWith(Paths.get(UPLOADED_FOLDER).toAbsolutePath().normalize())) {
+                deleteFile(filePath);
+                return "Upload failed. Invalid file path.";
+            }
             Files.write(path, bytes);
         } catch (IOException e) {
             logger.error(e.toString());
@@ -155,7 +191,13 @@ public class FileUpload {
     }
 
     private void deleteFile(String filePath) {
-        File delFile = new File(filePath);
+        Path resolvedPath = Paths.get(filePath).toAbsolutePath().normalize();
+        Path uploadBase = Paths.get(UPLOADED_FOLDER).toAbsolutePath().normalize();
+        if (!resolvedPath.startsWith(uploadBase)) {
+            logger.error("Attempted to delete file outside upload folder: " + filePath);
+            return;
+        }
+        File delFile = resolvedPath.toFile();
         if(delFile.isFile() && delFile.exists()) {
             if (delFile.delete()) {
                 logger.info("[+] " + filePath + " delete successfully!");
@@ -172,12 +214,21 @@ public class FileUpload {
      * https://stackoverflow.com/questions/24339990/how-to-convert-a-multipart-file-to-file
      */
     private File convert(MultipartFile multiFile) throws Exception {
-        String fileName = multiFile.getOriginalFilename();
-        String suffix = fileName.substring(fileName.lastIndexOf("."));
+        String rawName = multiFile.getOriginalFilename();
+        String safeName = sanitizeFileName(rawName);
+        if (safeName == null || !safeName.contains(".")) {
+            throw new IllegalArgumentException("Invalid file name");
+        }
+        String suffix = safeName.substring(safeName.lastIndexOf("."));
         UUID uuid = Generators.timeBasedGenerator().generate();
-        randomFilePath = UPLOADED_FOLDER + uuid + suffix;
+        Path convPath = Paths.get(UPLOADED_FOLDER, uuid + suffix).toAbsolutePath().normalize();
+        Path uploadBase = Paths.get(UPLOADED_FOLDER).toAbsolutePath().normalize();
+        if (!convPath.startsWith(uploadBase)) {
+            throw new IllegalArgumentException("Invalid file path");
+        }
+        randomFilePath = convPath.toString();
         // 随机生成一个同后缀名的文件
-        File convFile = new File(randomFilePath);
+        File convFile = convPath.toFile();
         boolean ret = convFile.createNewFile();
         if (!ret) {
             return null;
@@ -192,6 +243,11 @@ public class FileUpload {
      * Check if the file is a picture.
      */
     private static boolean isImage(File file) throws IOException {
+        Path resolvedPath = file.toPath().toAbsolutePath().normalize();
+        Path uploadBase = Paths.get(UPLOADED_FOLDER).toAbsolutePath().normalize();
+        if (!resolvedPath.startsWith(uploadBase)) {
+            throw new IOException("File path outside upload folder");
+        }
         BufferedImage bi = ImageIO.read(file);
         return bi != null;
     }
