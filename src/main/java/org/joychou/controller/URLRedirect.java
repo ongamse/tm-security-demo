@@ -34,7 +34,17 @@ public class URLRedirect {
         if (safeUrl == null) {
             return "redirect:/error";
         }
-        return "redirect:" + safeUrl;
+        // Validate URL structure to prevent open redirect
+        java.net.URI uri;
+        try {
+            uri = java.net.URI.create(safeUrl);
+        } catch (IllegalArgumentException e) {
+            return "redirect:/error";
+        }
+        if (uri.getHost() == null || (!"http".equals(uri.getScheme()) && !"https".equals(uri.getScheme()))) {
+            return "redirect:/error";
+        }
+        return "redirect:" + uri.toASCIIString();
     }
 
 
