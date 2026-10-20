@@ -215,6 +215,20 @@ public class SecurityUtil {
 
 
     /**
+     * Validate that a username contains only allowed characters (alphanumeric and underscore)
+     * and has a valid length (1-64 characters).
+     *
+     * @param username the username to validate
+     * @return true if the username is valid, false otherwise
+     */
+    public static boolean isValidUsername(String username) {
+        if (username == null || username.isEmpty() || username.length() > 64) {
+            return false;
+        }
+        return Pattern.matches("^[a-zA-Z0-9_]+$", username);
+    }
+
+    /**
      * 过滤mybatis中order by不能用#的情况。
      * 严格限制用户输入只能包含<code>a-zA-Z0-9_-.</code>字符。
      *
