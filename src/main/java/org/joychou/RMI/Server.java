@@ -15,6 +15,12 @@ public class Server implements Hello {
     public static void main(String args[]) {
 
         try {
+            // Restrict deserialization to prevent RCE via RMI registry
+            System.setProperty("sun.rmi.registry.registryFilter",
+                    "java.lang.*;java.rmi.**;org.joychou.RMI.**;!*");
+            // Restrict remote class loading
+            System.setProperty("java.rmi.server.useCodebaseOnly", "true");
+
             Server obj = new Server();
             Hello stub = (Hello) UnicastRemoteObject.exportObject(obj, 0);
             LocateRegistry.createRegistry(1099);

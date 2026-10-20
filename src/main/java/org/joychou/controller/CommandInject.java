@@ -9,6 +9,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 import javax.servlet.http.HttpServletRequest;
 import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
 
 @RestController
 public class CommandInject {
@@ -23,8 +25,11 @@ public class CommandInject {
      */
     @GetMapping("/codeinject")
     public String codeInject(String filepath) throws IOException {
-
-        String[] cmdList = new String[]{"sh", "-c", "ls -la " + filepath};
+        String filterFilePath = SecurityUtil.cmdFilter(filepath);
+        if (null == filterFilePath) {
+            return "Invalid filepath. Only alphanumeric characters, underscores, dots, hyphens, and slashes are allowed.";
+        }
+        String[] cmdList = new String[]{"ls", "-la", filterFilePath};
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);
         Process process = builder.start();
@@ -41,7 +46,20 @@ public class CommandInject {
 
         String host = request.getHeader("host");
         logger.info(host);
-        String[] cmdList = new String[]{"sh", "-c", "curl " + host};
+        // Validate host header to prevent command injection
+        if (host == null || SecurityUtil.cmdFilter(host) == null) {
+            return "Invalid host header.";
+        }
+        // Validate it parses as a proper hostname
+        try {
+            URI uri = new URI("http://" + host);
+            if (uri.getHost() == null) {
+                return "Invalid host header.";
+            }
+        } catch (URISyntaxException e) {
+            return "Invalid host header.";
+        }
+        String[] cmdList = new String[]{"curl", host};
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);
         Process process = builder.start();
@@ -54,7 +72,7 @@ public class CommandInject {
         if (null == filterFilePath) {
             return "Bad boy. I got u.";
         }
-        String[] cmdList = new String[]{"sh", "-c", "ls -la " + filterFilePath};
+        String[] cmdList = new String[]{"ls", "-la", filterFilePath};
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);
         Process process = builder.start();

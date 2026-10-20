@@ -16,6 +16,10 @@ import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.sql.DriverManager;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
+import org.joychou.security.SecurityUtil;
 
 
 /**
@@ -28,13 +32,21 @@ import java.sql.DriverManager;
 @RequestMapping("/rce")
 public class Rce {
 
+    private static final Set<String> ALLOWED_COMMANDS = new HashSet<>(Arrays.asList(
+            "whoami", "id", "hostname", "date", "uptime", "uname", "df", "ls"
+    ));
+
     @GetMapping("/runtime/exec")
     public String CommandExec(String cmd) {
+        if (cmd == null || !ALLOWED_COMMANDS.contains(cmd.trim())) {
+            return "Command not allowed. Allowed commands: " + ALLOWED_COMMANDS;
+        }
         Runtime run = Runtime.getRuntime();
         StringBuilder sb = new StringBuilder();
 
         try {
-            Process p = run.exec(cmd);
+            String[] cmdArray = new String[]{cmd.trim()};
+            Process p = run.exec(cmdArray);
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
             String tmpStr;
@@ -62,12 +74,14 @@ public class Rce {
      */
     @GetMapping("/ProcessBuilder")
     public String processBuilder(String cmd) {
+        if (cmd == null || !ALLOWED_COMMANDS.contains(cmd.trim())) {
+            return "Command not allowed. Allowed commands: " + ALLOWED_COMMANDS;
+        }
 
         StringBuilder sb = new StringBuilder();
 
         try {
-            String[] arrCmd = {"/bin/sh", "-c", cmd};
-            ProcessBuilder processBuilder = new ProcessBuilder(arrCmd);
+            ProcessBuilder processBuilder = new ProcessBuilder(cmd.trim());
             Process p = processBuilder.start();
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
@@ -95,7 +109,16 @@ public class Rce {
     @GetMapping("/jscmd")
     public void jsEngine(String jsurl) throws Exception{
         // js nashorn javascript ecmascript
-        ScriptEngine engine = new ScriptEngineManager().getEngineByName("js");
+        // Validate jsurl against allowlisted safe domains before loading
+        if (jsurl == null || SecurityUtil.checkURL(jsurl) == null) {
+            throw new IllegalArgumentException("URL not allowed. Must be an HTTP(S) URL on an allowed domain.");
+        }
+        jdk.nashorn.api.scripting.NashornScriptEngineFactory factory =
+                new jdk.nashorn.api.scripting.NashornScriptEngineFactory();
+        // ClassFilter that blocks all Java class access from JS, preventing RCE
+        ScriptEngine engine = factory.getScriptEngine(
+                (String className) -> false
+        );
         Bindings bindings = engine.getBindings(ScriptContext.ENGINE_SCOPE);
         String cmd = String.format("load(\"%s\")", jsurl);
         engine.eval(cmd, bindings);
