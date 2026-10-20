@@ -2,6 +2,7 @@ package org.joychou.controller;
 
 
 import org.joychou.security.SecurityUtil;
+import org.joychou.security.ssrf.SSRFChecker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.*;
@@ -102,6 +103,12 @@ public class URLWhiteList {
         logger.info("url:  " + url);
 
         if (!SecurityUtil.isHttp(url)) {
+            return;
+        }
+
+        // Block URLs targeting internal/private IPs
+        if (SSRFChecker.isInternalIpByUrl(url)) {
+            logger.error("[-] url_bypass: blocked internal IP for url: " + url);
             return;
         }
 

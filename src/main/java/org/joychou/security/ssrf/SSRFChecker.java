@@ -132,17 +132,73 @@ public class SSRFChecker {
             return true;
         }
 
-        ArrayList<String> blackSubnets = WebConfig.getSsrfBlockIps();
-        for (String subnet : blackSubnets) {
-            SubnetUtils utils = new SubnetUtils(subnet);
-            if (utils.getInfo().isInRange(strIP)) {
+        // Use InetAddress to check loopback, link-local, site-local, and any-local addresses.
+        // Covers IPv4 and IPv6 ranges including:
+        // 127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16,
+        // 0.0.0.0, ::1, fe80::/10, fd00::/8, fc00::/7
+        try {
+            InetAddress addr = InetAddress.getByName(strIP);
+            if (addr.isLoopbackAddress() || addr.isLinkLocalAddress()
+                    || addr.isSiteLocalAddress() || addr.isAnyLocalAddress()) {
                 logger.error("[-] SSRF check failed. Internal IP: " + strIP);
                 return true;
+            }
+        } catch (Exception e) {
+            logger.error("[-] SSRF check: unable to parse IP: " + strIP);
+            return true;
+        }
+
+        // Additional check against configured block list (IPv4 subnets only)
+        if (!strIP.contains(":")) {
+            ArrayList<String> blackSubnets = WebConfig.getSsrfBlockIps();
+            for (String subnet : blackSubnets) {
+                try {
+                    SubnetUtils utils = new SubnetUtils(subnet);
+                    if (utils.getInfo().isInRange(strIP)) {
+                        logger.error("[-] SSRF check failed. Blocked IP: " + strIP);
+                        return true;
+                    }
+                } catch (Exception e) {
+                    logger.error("[-] SSRF check: invalid subnet config: " + subnet);
+                }
             }
         }
 
         return false;
 
+    }
+
+
+    /**
+     * Validate that a URL is safe for server-side requests (SSRF protection).
+     * Checks that the scheme is http/https, resolves the host to an IP,
+     * and validates the IP is not in any internal/private/link-local range.
+     *
+     * @param url the URL to validate
+     * @throws SSRFException if the URL targets an internal or unsafe destination
+     */
+    public static void validateUrlForSSRF(String url) {
+        if (url == null || url.trim().isEmpty()) {
+            throw new SSRFException("URL is null or empty");
+        }
+
+        if (!SecurityUtil.isHttp(url)) {
+            throw new SSRFException("Only http and https schemes are allowed");
+        }
+
+        String host = url2host(url);
+        if (host == null || host.isEmpty()) {
+            throw new SSRFException("Unable to extract host from URL");
+        }
+
+        String ip = host2ip(host);
+        if (ip == null || ip.isEmpty()) {
+            throw new SSRFException("Unable to resolve host: " + host);
+        }
+
+        if (isInternalIp(ip)) {
+            throw new SSRFException("URL resolves to internal/private IP");
+        }
     }
 
 

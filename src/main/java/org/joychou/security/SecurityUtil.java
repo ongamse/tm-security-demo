@@ -67,12 +67,18 @@ public class SecurityUtil {
         try {
             String host = gethost(url);
 
-            // 必须http/https
+            // Must be http/https
             if (!isHttp(url)) {
                 return null;
             }
 
-            // 如果满足黑名单返回null
+            // Block internal IPs (SSRF protection)
+            if (SSRFChecker.isInternalIpByUrl(url)) {
+                logger.error("[-] checkURL: blocked internal IP for url: " + url);
+                return null;
+            }
+
+            // Block domains on the deny list
             if (blockDomains.contains(host)){
                 return null;
             }
@@ -82,12 +88,12 @@ public class SecurityUtil {
                 }
             }
 
-            // 支持多级域名
+            // Allow multi-level domains
             if (safeDomains.contains(host)){
                 return url;
             }
 
-            // 支持一级域名
+            // Allow first-level domains
             for(String safedomain: safeDomains) {
                 if(host.endsWith("." + safedomain)) {
                     return url;
