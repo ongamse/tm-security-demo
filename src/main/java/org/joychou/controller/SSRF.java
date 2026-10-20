@@ -2,6 +2,7 @@ package org.joychou.controller;
 
 import cn.hutool.http.HttpUtil;
 import org.joychou.security.SecurityUtil;
+import org.joychou.security.ssrf.SSRFChecker;
 import org.joychou.security.ssrf.SSRFException;
 import org.joychou.service.HttpService;
 import org.joychou.util.HttpUtils;
@@ -11,6 +12,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.util.HtmlUtils;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletResponse;
@@ -59,7 +61,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.URLConnection(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return "Request blocked or failed";
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -77,7 +79,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.HttpURLConnection(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return "Request blocked or failed";
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -98,9 +100,9 @@ public class SSRF {
     public String request(@RequestParam String url) {
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.request(url);
+            return HtmlUtils.htmlEscape(HttpUtils.request(url));
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return "Request blocked or failed";
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -120,7 +122,11 @@ public class SSRF {
         InputStream inputStream = null;
         OutputStream outputStream = null;
         try {
-            String downLoadImgFileName = WebUtils.getNameWithoutExtension(url) + "." + WebUtils.getFileExtension(url);
+            // Validate URL is not targeting internal/private IPs
+            SSRFChecker.validateUrlForSSRF(url);
+
+            String downLoadImgFileName = SecurityUtil.stripCRLF(
+                    WebUtils.getNameWithoutExtension(url) + "." + WebUtils.getFileExtension(url));
             // download
             response.setHeader("content-disposition", "attachment;fileName=" + downLoadImgFileName);
 
@@ -134,7 +140,7 @@ public class SSRF {
             }
 
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("SSRF openStream error");
         } finally {
             if (inputStream != null) {
                 inputStream.close();
@@ -156,7 +162,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             HttpUtils.imageIO(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return "Request blocked or failed";
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -172,7 +178,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.okhttp(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return "Request blocked or failed";
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -191,7 +197,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.httpClient(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return "Request blocked or failed";
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -211,7 +217,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.commonHttpClient(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return "Request blocked or failed";
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -230,7 +236,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.Jsoup(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return "Request blocked or failed";
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -249,7 +255,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             HttpUtils.IOUtils(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return "Request blocked or failed";
         } finally {
             SecurityUtil.stopSSRFHook();
         }

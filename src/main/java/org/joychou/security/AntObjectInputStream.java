@@ -34,7 +34,7 @@ public class AntObjectInputStream extends ObjectInputStream {
         String className = desc.getName();
 
         // Deserialize class name: org.joychou.security.AntObjectInputStream$MyObject
-        logger.info("Deserialize class name: " + className);
+        logger.info("Deserialize class name: {}", SecurityUtil.sanitizeLogInput(className));
 
         String[] denyClasses = {"java.net.InetAddress",
                                 "org.apache.commons.collections.Transformer",

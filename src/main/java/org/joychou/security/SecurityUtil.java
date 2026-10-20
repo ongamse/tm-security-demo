@@ -18,6 +18,7 @@ import java.util.regex.Pattern;
 public class SecurityUtil {
 
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
+    private static final Pattern USERNAME_PATTERN = Pattern.compile("^[a-zA-Z0-9_.-]{1,64}$");
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
 
 
@@ -67,12 +68,18 @@ public class SecurityUtil {
         try {
             String host = gethost(url);
 
-            // 必须http/https
+            // Must be http/https
             if (!isHttp(url)) {
                 return null;
             }
 
-            // 如果满足黑名单返回null
+            // Block internal IPs (SSRF protection)
+            if (SSRFChecker.isInternalIpByUrl(url)) {
+                logger.error("[-] checkURL: blocked internal IP for url: {}", sanitizeLogInput(url));
+                return null;
+            }
+
+            // Block domains on the deny list
             if (blockDomains.contains(host)){
                 return null;
             }
@@ -82,12 +89,12 @@ public class SecurityUtil {
                 }
             }
 
-            // 支持多级域名
+            // Allow multi-level domains
             if (safeDomains.contains(host)){
                 return url;
             }
 
-            // 支持一级域名
+            // Allow first-level domains
             for(String safedomain: safeDomains) {
                 if(host.endsWith("." + safedomain)) {
                     return url;
@@ -95,7 +102,7 @@ public class SecurityUtil {
             }
             return null;
         } catch (NullPointerException e) {
-            logger.error(e.toString());
+            logger.error("checkURL error: {}", sanitizeLogInput(e.getMessage()));
             return null;
         }
     }
@@ -183,10 +190,10 @@ public class SecurityUtil {
             try {
                 temp = URLDecoder.decode(temp, "utf-8");
             } catch (UnsupportedEncodingException e) {
-                logger.info("Unsupported encoding exception: " + filepath);
+                logger.info("Unsupported encoding exception: {}", sanitizeLogInput(filepath));
                 return null;
             } catch (Exception e) {
-                logger.info(e.toString());
+                logger.info("URL decode exception: {}", sanitizeLogInput(e.getMessage()));
                 return null;
             }
         }
@@ -207,6 +214,21 @@ public class SecurityUtil {
         return input;
     }
 
+
+    /**
+     * Validate username input to prevent IDOR and injection.
+     * Only allows alphanumeric characters, underscores, dots, and hyphens (1-64 chars).
+     *
+     * @param username the username to validate
+     * @return the validated username
+     * @throws IllegalArgumentException if the username is null or does not match the allowed pattern
+     */
+    public static String validateUsername(String username) {
+        if (username == null || !USERNAME_PATTERN.matcher(username).matches()) {
+            throw new IllegalArgumentException("Invalid username format");
+        }
+        return username;
+    }
 
     /**
      * 过滤mybatis中order by不能用#的情况。
@@ -247,6 +269,33 @@ public class SecurityUtil {
         }
 
         return sb.toString();
+    }
+
+    /**
+     * Strip CR and LF characters from a string to prevent HTTP header injection (CRLF injection).
+     *
+     * @param value the input string
+     * @return the sanitized string with \r and \n removed, or null if input is null
+     */
+    public static String stripCRLF(String value) {
+        if (value == null) {
+            return null;
+        }
+        return value.replaceAll("[\\r\\n]", "");
+    }
+
+    /**
+     * Sanitize user-controlled data before including in log messages.
+     * Strips \r, \n, and \t to prevent log forging / injection.
+     *
+     * @param input the user-controlled input
+     * @return sanitized string safe for logging, or null if input is null
+     */
+    public static String sanitizeLogInput(String input) {
+        if (input == null) {
+            return null;
+        }
+        return input.replaceAll("[\\r\\n\\t]", "_");
     }
 
     public static void main(String[] args) {
