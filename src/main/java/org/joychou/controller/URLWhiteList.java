@@ -100,25 +100,12 @@ public class URLWhiteList {
 
         logger.info("url:  " + url);
 
-        if (!SecurityUtil.isHttp(url)) {
+        if (SecurityUtil.checkURL(url) == null) {
+            res.setStatus(HttpServletResponse.SC_FORBIDDEN);
             return;
         }
 
-        // Use URI-based gethost to prevent URL parsing bypass attacks
-        String host = SecurityUtil.gethost(url);
-        if (host == null || host.isEmpty()) {
-            return;
-        }
-        logger.info("host:  " + host);
-
-        // Exact subdomain match using dot prefix
-        for (String domain : domainwhitelist) {
-            if (host.endsWith("." + domain) || host.equals(domain)) {
-                res.sendRedirect(url);
-                return;
-            }
-        }
-
+        res.sendRedirect(url);
     }
 
 
