@@ -59,11 +59,21 @@ public class FileUpload {
         try {
             // Get the file and save it somewhere
             byte[] bytes = file.getBytes();
-            Path path = Paths.get(UPLOADED_FOLDER + file.getOriginalFilename());
+            String sanitizedName = sanitizeFilename(file.getOriginalFilename());
+            if (sanitizedName == null) {
+                redirectAttributes.addFlashAttribute("message", "Invalid file name");
+                return "redirect:/file/status";
+            }
+            Path basePath = Paths.get(UPLOADED_FOLDER).normalize();
+            Path path = basePath.resolve(sanitizedName).normalize();
+            if (!path.startsWith(basePath)) {
+                redirectAttributes.addFlashAttribute("message", "Invalid file path");
+                return "redirect:/file/status";
+            }
             Files.write(path, bytes);
 
             redirectAttributes.addFlashAttribute("message",
-                    "You successfully uploaded '" + UPLOADED_FOLDER + file.getOriginalFilename() + "'");
+                    "You successfully uploaded '" + path.toString() + "'");
 
         } catch (IOException e) {
             redirectAttributes.addFlashAttribute("message", "upload failed");
@@ -86,10 +96,20 @@ public class FileUpload {
             return "Please select a file to upload";
         }
 
-        String fileName = multifile.getOriginalFilename();
+        String originalName = multifile.getOriginalFilename();
+        String sanitizedName = sanitizeFilename(originalName);
+        if (sanitizedName == null) {
+            return "Upload failed. Invalid file name.";
+        }
+        String fileName = sanitizedName;
         String Suffix = fileName.substring(fileName.lastIndexOf(".")); // 获取文件后缀名
         String mimeType = multifile.getContentType(); // 获取MIME类型
-        String filePath = UPLOADED_FOLDER + fileName;
+        Path basePath = Paths.get(UPLOADED_FOLDER).normalize();
+        Path resolvedPath = basePath.resolve(fileName).normalize();
+        if (!resolvedPath.startsWith(basePath)) {
+            return "Upload failed. Invalid file path.";
+        }
+        String filePath = resolvedPath.toString();
         File excelFile = convert(multifile);
 
 
@@ -141,8 +161,7 @@ public class FileUpload {
         try {
             // Get the file and save it somewhere
             byte[] bytes = multifile.getBytes();
-            Path path = Paths.get(UPLOADED_FOLDER + multifile.getOriginalFilename());
-            Files.write(path, bytes);
+            Files.write(resolvedPath, bytes);
         } catch (IOException e) {
             logger.error(e.toString());
             deleteFile(filePath);
@@ -155,7 +174,13 @@ public class FileUpload {
     }
 
     private void deleteFile(String filePath) {
-        File delFile = new File(filePath);
+        Path basePath = Paths.get(UPLOADED_FOLDER).normalize();
+        Path targetPath = Paths.get(filePath).normalize();
+        if (!targetPath.startsWith(basePath)) {
+            logger.error("Refusing to delete file outside upload directory: " + filePath);
+            return;
+        }
+        File delFile = targetPath.toFile();
         if(delFile.isFile() && delFile.exists()) {
             if (delFile.delete()) {
                 logger.info("[+] " + filePath + " delete successfully!");
@@ -172,12 +197,21 @@ public class FileUpload {
      * https://stackoverflow.com/questions/24339990/how-to-convert-a-multipart-file-to-file
      */
     private File convert(MultipartFile multiFile) throws Exception {
-        String fileName = multiFile.getOriginalFilename();
-        String suffix = fileName.substring(fileName.lastIndexOf("."));
+        String originalName = multiFile.getOriginalFilename();
+        String safeName = sanitizeFilename(originalName);
+        if (safeName == null) {
+            return null;
+        }
+        String suffix = safeName.substring(safeName.lastIndexOf("."));
         UUID uuid = Generators.timeBasedGenerator().generate();
-        randomFilePath = UPLOADED_FOLDER + uuid + suffix;
+        Path basePath = Paths.get(UPLOADED_FOLDER).normalize();
+        Path convPath = basePath.resolve(uuid + suffix).normalize();
+        if (!convPath.startsWith(basePath)) {
+            return null;
+        }
+        randomFilePath = convPath.toString();
         // 随机生成一个同后缀名的文件
-        File convFile = new File(randomFilePath);
+        File convFile = convPath.toFile();
         boolean ret = convFile.createNewFile();
         if (!ret) {
             return null;
@@ -186,6 +220,25 @@ public class FileUpload {
         fos.write(multiFile.getBytes());
         fos.close();
         return convFile;
+    }
+
+    /**
+     * Sanitize an uploaded filename by stripping directory components
+     * and rejecting traversal sequences.
+     *
+     * @return the bare filename, or null if the name is invalid
+     */
+    private static String sanitizeFilename(String originalFilename) {
+        if (originalFilename == null || originalFilename.isEmpty()) {
+            return null;
+        }
+        // Strip any directory separators — keep only the final component
+        String name = Paths.get(originalFilename).getFileName().toString();
+        // Reject names containing traversal sequences or that are empty after stripping
+        if (name.isEmpty() || name.contains("..") || name.equals(".")) {
+            return null;
+        }
+        return name;
     }
 
     /**
