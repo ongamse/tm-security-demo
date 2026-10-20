@@ -133,20 +133,24 @@ public class SecurityUtil {
 
 
     /**
-     * 不能使用白名单的情况下建议使用该方案。前提是禁用重定向并且TTL默认不为0。
+     * Validate that a URL is safe from SSRF: scheme must be http/https,
+     * resolved IP must not be a private/reserved address.
      *
-     * 存在问题：
-     *  1、TTL为0会被绕过
-     *  2、使用重定向可绕过
+     * @param url The url that needs to check.
+     * @return Safe url returns true. Dangerous url returns false.
+     */
+    public static boolean isUrlSafe(String url) {
+        return SSRFChecker.isUrlSafe(url);
+    }
+
+    /**
+     * Check SSRF without following redirects. Validates scheme and IP.
      *
      * @param url The url that needs to check.
      * @return Safe url returns true. Dangerous url returns false.
      */
     public static boolean checkSSRFWithoutRedirect(String url) {
-        if(url == null) {
-            return false;
-        }
-        return !SSRFChecker.isInternalIpByUrl(url);
+        return SSRFChecker.isUrlSafe(url);
     }
 
     /**
@@ -247,6 +251,20 @@ public class SecurityUtil {
         }
 
         return sb.toString();
+    }
+
+    /**
+     * Sanitize a value before placing it into an HTTP response header.
+     * Strips CR (\r) and LF (\n) characters to prevent CRLF / header injection.
+     *
+     * @param value the raw header value
+     * @return sanitized value with CR/LF removed, or empty string if value is null
+     */
+    public static String sanitizeHeaderValue(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.replaceAll("[\\r\\n]", "");
     }
 
     public static void main(String[] args) {

@@ -93,9 +93,10 @@ public class SSRFChecker {
             } while (connection.getResponseCode() != HttpURLConnection.HTTP_OK);
             connection.disconnect();
         } catch (Exception e) {
-            return true;  // 如果异常了，认为是安全的，防止是超时导致的异常而验证不成功。
+            logger.error("[-] SSRF check exception, treating as unsafe: " + e.getMessage());
+            return false;  // Fail closed: exceptions treated as unsafe
         }
-        return true; // 默认返回true
+        return true; // All redirect checks passed
     }
 
 
@@ -129,6 +130,19 @@ public class SSRFChecker {
     public static boolean isInternalIp(String strIP) {
         if (StringUtils.isEmpty(strIP)) {
             logger.error("[-] SSRF check failed. IP is empty. " + strIP);
+            return true;
+        }
+
+        // Built-in private/reserved IP check using InetAddress (covers IPv4 and IPv6)
+        try {
+            InetAddress addr = InetAddress.getByName(strIP);
+            if (addr.isLoopbackAddress() || addr.isLinkLocalAddress()
+                    || addr.isSiteLocalAddress() || addr.isAnyLocalAddress()) {
+                logger.error("[-] SSRF check failed. Internal IP: " + strIP);
+                return true;
+            }
+        } catch (Exception e) {
+            logger.error("[-] SSRF check failed. Cannot parse IP: " + strIP);
             return true;
         }
 
@@ -281,6 +295,33 @@ public class SSRFChecker {
                 return false;
             }
         }
+        return true;
+    }
+
+    /**
+     * Validate that a URL is safe from SSRF: scheme must be http/https,
+     * resolved IP must not be a private/reserved address.
+     *
+     * @param url the URL to validate
+     * @return true if the URL is safe, false otherwise
+     */
+    public static boolean isUrlSafe(String url) {
+        if (url == null) {
+            return false;
+        }
+
+        // Must be http or https
+        if (!SecurityUtil.isHttp(url)) {
+            logger.error("[-] SSRF check failed. Non-HTTP scheme: " + url);
+            return false;
+        }
+
+        // Resolve hostname and check for internal IP
+        if (isInternalIpByUrl(url)) {
+            logger.error("[-] SSRF check failed. Internal IP for url: " + url);
+            return false;
+        }
+
         return true;
     }
 

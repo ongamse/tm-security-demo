@@ -2,9 +2,12 @@ package org.joychou.controller;
 
 import groovy.lang.GroovyShell;
 import lombok.extern.slf4j.Slf4j;
+import org.codehaus.groovy.control.CompilerConfiguration;
+import org.codehaus.groovy.control.customizers.SecureASTCustomizer;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.util.HtmlUtils;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
 
@@ -16,6 +19,10 @@ import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.sql.DriverManager;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
 
 
 /**
@@ -28,13 +35,37 @@ import java.sql.DriverManager;
 @RequestMapping("/rce")
 public class Rce {
 
+    private static final Set<String> ALLOWED_COMMANDS = Collections.unmodifiableSet(
+            new HashSet<>(Arrays.asList("ls", "whoami", "date", "uptime", "hostname", "id", "uname", "pwd"))
+    );
+
+    /**
+     * Validates that the command is in the allowlist.
+     * Returns the canonical command name or null if rejected.
+     */
+    private static String validateCommand(String cmd) {
+        if (cmd == null || cmd.trim().isEmpty()) {
+            return null;
+        }
+        String trimmed = cmd.trim();
+        if (!ALLOWED_COMMANDS.contains(trimmed)) {
+            return null;
+        }
+        return trimmed;
+    }
+
     @GetMapping("/runtime/exec")
     public String CommandExec(String cmd) {
+        String safeCmd = validateCommand(cmd);
+        if (safeCmd == null) {
+            return "Command not allowed. Permitted commands: " + ALLOWED_COMMANDS;
+        }
         Runtime run = Runtime.getRuntime();
         StringBuilder sb = new StringBuilder();
 
         try {
-            Process p = run.exec(cmd);
+            // Use array form to avoid shell interpretation
+            Process p = run.exec(new String[]{safeCmd});
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
             String tmpStr;
@@ -51,9 +82,9 @@ public class Rce {
             inBr.close();
             in.close();
         } catch (Exception e) {
-            return e.toString();
+            return HtmlUtils.htmlEscape(e.toString());
         }
-        return sb.toString();
+        return HtmlUtils.htmlEscape(sb.toString());
     }
 
 
@@ -62,12 +93,16 @@ public class Rce {
      */
     @GetMapping("/ProcessBuilder")
     public String processBuilder(String cmd) {
+        String safeCmd = validateCommand(cmd);
+        if (safeCmd == null) {
+            return "Command not allowed. Permitted commands: " + ALLOWED_COMMANDS;
+        }
 
         StringBuilder sb = new StringBuilder();
 
         try {
-            String[] arrCmd = {"/bin/sh", "-c", cmd};
-            ProcessBuilder processBuilder = new ProcessBuilder(arrCmd);
+            // Use argument array without shell to prevent injection
+            ProcessBuilder processBuilder = new ProcessBuilder(safeCmd);
             Process p = processBuilder.start();
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
@@ -77,10 +112,10 @@ public class Rce {
                 sb.append(tmpStr);
             }
         } catch (Exception e) {
-            return e.toString();
+            return HtmlUtils.htmlEscape(e.toString());
         }
 
-        return sb.toString();
+        return HtmlUtils.htmlEscape(sb.toString());
     }
 
 
@@ -110,7 +145,7 @@ public class Rce {
      */
     @GetMapping("/vuln/yarm")
     public void yarm(String content) {
-        Yaml y = new Yaml();
+        Yaml y = new Yaml(new SafeConstructor());
         y.load(content);
     }
 
@@ -126,7 +161,22 @@ public class Rce {
      */
     @GetMapping("groovy")
     public void groovyshell(String content) {
-        GroovyShell groovyShell = new GroovyShell();
+        SecureASTCustomizer secureASTCustomizer = new SecureASTCustomizer();
+        secureASTCustomizer.setImportsBlacklist(Arrays.asList(
+                "java.lang.Runtime", "java.lang.ProcessBuilder",
+                "java.io.File", "java.lang.System",
+                "java.lang.reflect.*"
+        ));
+        secureASTCustomizer.setIndirectImportCheckEnabled(true);
+        secureASTCustomizer.setReceiversBlackList(Arrays.asList(
+                "java.lang.Runtime", "java.lang.ProcessBuilder",
+                "java.lang.System", "java.lang.Class"
+        ));
+
+        CompilerConfiguration config = new CompilerConfiguration();
+        config.addCompilationCustomizers(secureASTCustomizer);
+
+        GroovyShell groovyShell = new GroovyShell(config);
         groovyShell.evaluate(content);
     }
 

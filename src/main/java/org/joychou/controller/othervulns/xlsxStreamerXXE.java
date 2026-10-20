@@ -1,6 +1,7 @@
 package org.joychou.controller.othervulns;
 
 import com.monitorjbl.xlsx.StreamingReader;
+import org.apache.poi.openxml4j.opc.OPCPackage;
 import org.apache.poi.ss.usermodel.Workbook;
 
 import org.springframework.stereotype.Controller;
@@ -11,16 +12,11 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 
-/**
- * Desc:  xlsx-streamer xxe vuln code
- * Usage: xl/workbook.xml
- * Ref:   https://www.itread01.com/hkpcyyp.html
- * Fix:   update xlsx-streamer to 2.1.0 or above
- *
- * @author JoyChou @2019-09-05
- */
 @Controller
 @RequestMapping("xlsx-streamer")
 public class xlsxStreamerXXE {
@@ -31,9 +27,29 @@ public class xlsxStreamerXXE {
         return "xxe_upload"; // return xxe_upload.html page
     }
 
+    private void validateNoXXE(InputStream is) throws IOException {
+        ZipInputStream zis = new ZipInputStream(is);
+        ZipEntry entry;
+        byte[] buf = new byte[4096];
+        while ((entry = zis.getNextEntry()) != null) {
+            if (entry.getName().endsWith(".xml") || entry.getName().endsWith(".rels")) {
+                StringBuilder sb = new StringBuilder();
+                int len;
+                while ((len = zis.read(buf)) > 0) {
+                    sb.append(new String(buf, 0, len, "UTF-8"));
+                }
+                String content = sb.toString();
+                if (content.contains("<!DOCTYPE") || content.contains("<!ENTITY")
+                        || content.contains("SYSTEM") || content.contains("PUBLIC")) {
+                    throw new IOException("Rejected: XML content contains potentially dangerous DTD/entity declarations");
+                }
+            }
+        }
+    }
 
     @PostMapping("/readxlsx")
     public void xllx_streamer_xxe(MultipartFile file) throws IOException {
+        validateNoXXE(file.getInputStream());
         StreamingReader.builder().open(file.getInputStream());
     }
 
