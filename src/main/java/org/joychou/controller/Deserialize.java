@@ -48,7 +48,7 @@ public class Deserialize {
         try {
             in.readObject();
         } catch (InvalidClassException e) {
-            logger.info("Deserialization blocked by allowlist: " + e.classname());
+            logger.info("Deserialization blocked by allowlist: " + e.classname);
             return "Deserialization blocked";
         } finally {
             in.close();
