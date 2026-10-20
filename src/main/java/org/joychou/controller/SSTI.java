@@ -32,8 +32,11 @@ public class SSTI {
         context.put("author", "Elliot A.");
         context.put("address", "217 E Broadway");
         context.put("phone", "555-1337");
+        // Place user input into the context as data, not as template source code,
+        // to prevent Server-Side Template Injection (SSTI).
+        context.put("userInput", template);
 
         StringWriter swOut = new StringWriter();
-        Velocity.evaluate(context, swOut, "test", template);
+        Velocity.evaluate(context, swOut, "test", "$userInput");
     }
 }
