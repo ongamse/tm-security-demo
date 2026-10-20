@@ -18,6 +18,7 @@ import java.nio.file.Paths;
 public class PathTraversal {
 
     protected final Logger logger = LoggerFactory.getLogger(this.getClass());
+    private static String sanitizeLog(String s) { return SecurityUtil.sanitizeLogInput(s); }
 
     // Base directory for serving images; all paths are resolved relative to this.
     private static final String IMAGE_BASE_DIR = System.getProperty("user.dir");
@@ -45,7 +46,7 @@ public class PathTraversal {
     public String getImage(String filepath) throws IOException {
         String safePath = validatePath(filepath);
         if (safePath == null) {
-            logger.info("Illegal file path: " + filepath);
+            logger.info("Illegal file path: {}", sanitizeLog(filepath));
             return "Bad boy. Illegal file path.";
         }
         return getImgBase64(safePath);
@@ -54,12 +55,12 @@ public class PathTraversal {
     @GetMapping("/path_traversal/sec")
     public String getImageSec(String filepath) throws IOException {
         if (SecurityUtil.pathFilter(filepath) == null) {
-            logger.info("Illegal file path: " + filepath);
+            logger.info("Illegal file path: {}", sanitizeLog(filepath));
             return "Bad boy. Illegal file path.";
         }
         String safePath = validatePath(filepath);
         if (safePath == null) {
-            logger.info("Illegal file path: " + filepath);
+            logger.info("Illegal file path: {}", sanitizeLog(filepath));
             return "Bad boy. Illegal file path.";
         }
         return getImgBase64(safePath);
@@ -67,8 +68,8 @@ public class PathTraversal {
 
     private String getImgBase64(String imgFile) throws IOException {
 
-        logger.info("Working directory: " + System.getProperty("user.dir"));
-        logger.info("File path: " + imgFile);
+        logger.info("Working directory: {}", System.getProperty("user.dir"));
+        logger.info("File path: {}", sanitizeLog(imgFile));
 
         // imgFile is already validated/resolved by validatePath
         File f = new File(imgFile);

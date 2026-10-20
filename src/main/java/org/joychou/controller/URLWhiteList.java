@@ -98,7 +98,7 @@ public class URLWhiteList {
     @GetMapping("/vuln/url_bypass")
     public void url_bypass(String url, HttpServletResponse res) throws IOException {
 
-        logger.info("url:  " + url);
+        logger.info("url:  {}", SecurityUtil.sanitizeLogInput(url));
 
         if (SecurityUtil.checkURL(url) == null) {
             res.setStatus(HttpServletResponse.SC_FORBIDDEN);

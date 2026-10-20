@@ -26,6 +26,8 @@ public class CRLFInjection {
         response.setHeader("test2", SecurityUtil.stripCRLF(request.getParameter("test2")));
         String author = SecurityUtil.stripCRLF(request.getParameter("test3"));
         Cookie cookie = new Cookie("test3", author);
+        cookie.setSecure(true);
+        cookie.setHttpOnly(true);
         response.addCookie(cookie);
     }
 }

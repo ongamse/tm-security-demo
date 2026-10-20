@@ -1,6 +1,7 @@
 package org.joychou.security.ssrf;
 
 
+import org.joychou.security.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -86,7 +87,7 @@ public class SocketHookImpl extends SocketImpl implements SocketOptions {
         try {
             createImpl.invoke(socketImpl, stream);
         } catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException ex) {
-            logger.error(ex.toString());
+            logger.error("SocketHook error: {}", SecurityUtil.sanitizeLogInput(ex.getMessage()));
         }
 
     }
@@ -94,11 +95,11 @@ public class SocketHookImpl extends SocketImpl implements SocketOptions {
 
     @Override
     protected void connect(String host, int port) {
-        logger.info("host: " + host + "\tport: " + port);
+        logger.info("host: {}\tport: {}", SecurityUtil.sanitizeLogInput(host), port);
         try {
             connectHostImpl.invoke(socketImpl, host, port);
         } catch (IllegalAccessException | InvocationTargetException | IllegalArgumentException ex) {
-            logger.error(ex.toString());
+            logger.error("SocketHook error: {}", SecurityUtil.sanitizeLogInput(ex.getMessage()));
         }
 
     }
@@ -107,7 +108,7 @@ public class SocketHookImpl extends SocketImpl implements SocketOptions {
     @Override
     protected void connect(InetAddress address, int port) {
 
-        logger.info("InetAddress: " + address.toString());
+        logger.info("InetAddress: {}", SecurityUtil.sanitizeLogInput(address.toString()));
 
         try {
             if (SSRFChecker.isInternalIp(address.getHostAddress())) {
@@ -115,7 +116,7 @@ public class SocketHookImpl extends SocketImpl implements SocketOptions {
             }
             connectInetAddressImpl.invoke(socketImpl, address, port);
         } catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException ex) {
-            logger.error(ex.toString());
+            logger.error("SocketHook error: {}", SecurityUtil.sanitizeLogInput(ex.getMessage()));
         }
     }
 
@@ -127,7 +128,7 @@ public class SocketHookImpl extends SocketImpl implements SocketOptions {
 
         String ip = addr.getAddress().getHostAddress();
         String host = addr.getHostName();
-        logger.info(String.format("[+] SocketAddress address's Hostname: %s IP: %s", host, ip));
+        logger.info("[+] SocketAddress address's Hostname: {} IP: {}", SecurityUtil.sanitizeLogInput(host), SecurityUtil.sanitizeLogInput(ip));
 
         try {
             if (SSRFChecker.isInternalIp(ip)) {
@@ -136,7 +137,7 @@ public class SocketHookImpl extends SocketImpl implements SocketOptions {
             connectSocketAddressImpl.invoke(socketImpl, address, timeout);
         } catch (IllegalAccessException | IllegalArgumentException |
                 InvocationTargetException ex) {
-            logger.error(ex.toString());
+            logger.error("SocketHook error: {}", SecurityUtil.sanitizeLogInput(ex.getMessage()));
         }
 
     }
@@ -146,7 +147,7 @@ public class SocketHookImpl extends SocketImpl implements SocketOptions {
         try {
             bindImpl.invoke(socketImpl, host, port);
         } catch (IllegalAccessException | InvocationTargetException | IllegalArgumentException ex) {
-            logger.error(ex.toString());
+            logger.error("SocketHook error: {}", SecurityUtil.sanitizeLogInput(ex.getMessage()));
         }
     }
 
@@ -156,7 +157,7 @@ public class SocketHookImpl extends SocketImpl implements SocketOptions {
         try {
             listenImpl.invoke(socketImpl, backlog);
         } catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException ex) {
-            logger.error(ex.toString());
+            logger.error("SocketHook error: {}", SecurityUtil.sanitizeLogInput(ex.getMessage()));
         }
     }
 
@@ -166,7 +167,7 @@ public class SocketHookImpl extends SocketImpl implements SocketOptions {
         try {
             acceptImpl.invoke(socketImpl, s);
         } catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException ex) {
-            logger.error(ex.toString());
+            logger.error("SocketHook error: {}", SecurityUtil.sanitizeLogInput(ex.getMessage()));
         }
     }
 
@@ -178,7 +179,7 @@ public class SocketHookImpl extends SocketImpl implements SocketOptions {
             inStream = (InputStream) getInputStreamImpl.invoke(socketImpl);
         } catch (ClassCastException | InvocationTargetException |
                 IllegalArgumentException | IllegalAccessException ex) {
-            logger.error(ex.toString());
+            logger.error("SocketHook error: {}", SecurityUtil.sanitizeLogInput(ex.getMessage()));
         }
 
         return inStream;
@@ -192,7 +193,7 @@ public class SocketHookImpl extends SocketImpl implements SocketOptions {
             outStream = (OutputStream) getOutputStreamImpl.invoke(socketImpl);
         } catch (ClassCastException | IllegalArgumentException |
                 IllegalAccessException | InvocationTargetException ex) {
-            logger.error(ex.toString());
+            logger.error("SocketHook error: {}", SecurityUtil.sanitizeLogInput(ex.getMessage()));
         }
 
         return outStream;
@@ -206,7 +207,7 @@ public class SocketHookImpl extends SocketImpl implements SocketOptions {
         try {
             result = (Integer) availableImpl.invoke(socketImpl);
         } catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException ex) {
-            logger.error(ex.toString());
+            logger.error("SocketHook error: {}", SecurityUtil.sanitizeLogInput(ex.getMessage()));
         }
 
         return result;
@@ -217,7 +218,7 @@ public class SocketHookImpl extends SocketImpl implements SocketOptions {
         try {
             closeImpl.invoke(socketImpl);
         } catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException ex) {
-            logger.error(ex.toString());
+            logger.error("SocketHook error: {}", SecurityUtil.sanitizeLogInput(ex.getMessage()));
         }
     }
 
@@ -226,7 +227,7 @@ public class SocketHookImpl extends SocketImpl implements SocketOptions {
         try {
             shutdownInputImpl.invoke(socketImpl);
         } catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException ex) {
-            logger.error(ex.toString());
+            logger.error("SocketHook error: {}", SecurityUtil.sanitizeLogInput(ex.getMessage()));
         }
 
     }
@@ -236,7 +237,7 @@ public class SocketHookImpl extends SocketImpl implements SocketOptions {
         try {
             shutdownOutputImpl.invoke(socketImpl);
         } catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException ex) {
-            logger.error(ex.toString());
+            logger.error("SocketHook error: {}", SecurityUtil.sanitizeLogInput(ex.getMessage()));
         }
 
     }
@@ -246,7 +247,7 @@ public class SocketHookImpl extends SocketImpl implements SocketOptions {
         try {
             sendUrgentDataImpl.invoke(socketImpl, data);
         } catch (IllegalAccessException | InvocationTargetException | IllegalArgumentException ex) {
-            logger.error(ex.toString());
+            logger.error("SocketHook error: {}", SecurityUtil.sanitizeLogInput(ex.getMessage()));
         }
     }
 

@@ -24,7 +24,7 @@ public class Fastjson {
             JSONObject ob = JSON.parseObject(params);
             return HtmlUtils.htmlEscape(ob.get("name").toString());
         } catch (Exception e) {
-            return e.toString();
+            return "Invalid JSON input";
         }
     }
 

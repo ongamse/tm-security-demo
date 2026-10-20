@@ -34,13 +34,12 @@ public class OriginFilter implements Filter {
         HttpServletResponse response = (HttpServletResponse) res;
 
         String origin = request.getHeader("Origin");
-        logger.info("[+] Origin: " + origin + "\tCurrent url:" + request.getRequestURL());
+        logger.info("[+] Origin: {}\tCurrent url:{}", SecurityUtil.sanitizeLogInput(origin), SecurityUtil.sanitizeLogInput(request.getRequestURL().toString()));
 
         // Validate origin against allowlist; use the validated return value
         String safeOrigin = (origin != null) ? SecurityUtil.checkURL(origin) : null;
         if (origin != null && safeOrigin == null) {
-            logger.error("[-] Origin check error. " + "Origin: " + origin +
-                    "\tCurrent url:" + request.getRequestURL());
+            logger.error("[-] Origin check error. Origin: {}\tCurrent url:{}", SecurityUtil.sanitizeLogInput(origin), SecurityUtil.sanitizeLogInput(request.getRequestURL().toString()));
             response.setStatus(response.SC_FORBIDDEN);
             response.getWriter().println("Invaid cors config by joychou.");
             return;

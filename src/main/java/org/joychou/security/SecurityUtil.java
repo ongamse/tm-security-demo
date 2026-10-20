@@ -75,7 +75,7 @@ public class SecurityUtil {
 
             // Block internal IPs (SSRF protection)
             if (SSRFChecker.isInternalIpByUrl(url)) {
-                logger.error("[-] checkURL: blocked internal IP for url: " + url);
+                logger.error("[-] checkURL: blocked internal IP for url: {}", sanitizeLogInput(url));
                 return null;
             }
 
@@ -102,7 +102,7 @@ public class SecurityUtil {
             }
             return null;
         } catch (NullPointerException e) {
-            logger.error(e.toString());
+            logger.error("checkURL error: {}", sanitizeLogInput(e.getMessage()));
             return null;
         }
     }
@@ -190,10 +190,10 @@ public class SecurityUtil {
             try {
                 temp = URLDecoder.decode(temp, "utf-8");
             } catch (UnsupportedEncodingException e) {
-                logger.info("Unsupported encoding exception: " + filepath);
+                logger.info("Unsupported encoding exception: {}", sanitizeLogInput(filepath));
                 return null;
             } catch (Exception e) {
-                logger.info(e.toString());
+                logger.info("URL decode exception: {}", sanitizeLogInput(e.getMessage()));
                 return null;
             }
         }
@@ -282,6 +282,20 @@ public class SecurityUtil {
             return null;
         }
         return value.replaceAll("[\\r\\n]", "");
+    }
+
+    /**
+     * Sanitize user-controlled data before including in log messages.
+     * Strips \r, \n, and \t to prevent log forging / injection.
+     *
+     * @param input the user-controlled input
+     * @return sanitized string safe for logging, or null if input is null
+     */
+    public static String sanitizeLogInput(String input) {
+        if (input == null) {
+            return null;
+        }
+        return input.replaceAll("[\\r\\n\\t]", "_");
     }
 
     public static void main(String[] args) {

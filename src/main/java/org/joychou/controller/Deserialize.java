@@ -82,8 +82,8 @@ public class Deserialize {
             in.readObject();
             in.close();
         } catch (InvalidClassException e) {
-            logger.info(e.toString());
-            return e.toString();
+            logger.info("Deserialization blocked: invalid class");
+            return "Deserialization blocked: invalid class";
         }
 
         return "I'm very OK.";

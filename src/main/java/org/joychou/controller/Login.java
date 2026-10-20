@@ -1,5 +1,6 @@
 package org.joychou.controller;
 
+import org.joychou.security.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
@@ -43,9 +44,9 @@ public class Login {
         }
 
         if (null == request.getUserPrincipal()) {
-            logger.info("USER " + username + " LOGOUT SUCCESS.");
+            logger.info("USER {} LOGOUT SUCCESS.", SecurityUtil.sanitizeLogInput(username));
         } else {
-            logger.info("User " + username + " logout failed. Please try again.");
+            logger.info("User {} logout failed. Please try again.", SecurityUtil.sanitizeLogInput(username));
         }
 
         return "redirect:/login?logout";

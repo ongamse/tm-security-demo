@@ -101,7 +101,7 @@ public class FileUpload {
 
         } catch (IOException e) {
             redirectAttributes.addFlashAttribute("message", "upload failed");
-            logger.error(e.toString());
+            logger.error("File upload error: {}", SecurityUtil.sanitizeLogInput(e.getMessage()));
         }
 
         return "redirect:/file/status";
@@ -142,7 +142,7 @@ public class FileUpload {
             }
         }
         if (!suffixFlag) {
-            logger.error("[-] Suffix error: " + Suffix);
+            logger.error("[-] Suffix error: {}", SecurityUtil.sanitizeLogInput(Suffix));
             deleteFile(filePath);
             return "Upload failed. Illeagl picture.";
         }
@@ -160,7 +160,7 @@ public class FileUpload {
         for (String blackMimeType : mimeTypeBlackList) {
             // 用contains是为了防止text/html;charset=UTF-8绕过
             if (SecurityUtil.replaceSpecialStr(mimeType).toLowerCase().contains(blackMimeType)) {
-                logger.error("[-] Mime type error: " + mimeType);
+                logger.error("[-] Mime type error: {}", SecurityUtil.sanitizeLogInput(mimeType));
                 deleteFile(filePath);
                 return "Upload failed. Illeagl picture.";
             }
@@ -183,31 +183,31 @@ public class FileUpload {
             Path path = Paths.get(filePath);
             Files.write(path, bytes);
         } catch (IOException e) {
-            logger.error(e.toString());
+            logger.error("File upload error: {}", SecurityUtil.sanitizeLogInput(e.getMessage()));
             deleteFile(filePath);
             return "Upload failed";
         }
 
-        logger.info("[+] Safe file. Suffix: {}, MIME: {}", Suffix, mimeType);
-        logger.info("[+] Successfully uploaded {}", filePath);
-        return String.format("You successfully uploaded '%s'", filePath);
+        logger.info("[+] Safe file. Suffix: {}, MIME: {}", SecurityUtil.sanitizeLogInput(Suffix), SecurityUtil.sanitizeLogInput(mimeType));
+        logger.info("[+] Successfully uploaded {}", SecurityUtil.sanitizeLogInput(filePath));
+        return "You successfully uploaded the file";
     }
 
     private void deleteFile(String filePath) {
         try {
             validateWithinUploadDir(filePath);
         } catch (IOException e) {
-            logger.error("Refusing to delete file outside upload directory: " + filePath);
+            logger.error("Refusing to delete file outside upload directory: {}", SecurityUtil.sanitizeLogInput(filePath));
             return;
         }
         File delFile = new File(filePath);
         if(delFile.isFile() && delFile.exists()) {
             if (delFile.delete()) {
-                logger.info("[+] " + filePath + " delete successfully!");
+                logger.info("[+] {} delete successfully!", SecurityUtil.sanitizeLogInput(filePath));
                 return;
             }
         }
-        logger.info(filePath + " delete failed!");
+        logger.info("{} delete failed!", SecurityUtil.sanitizeLogInput(filePath));
     }
 
     /**

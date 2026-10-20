@@ -1,6 +1,7 @@
 package org.joychou.controller;
 
 import lombok.extern.slf4j.Slf4j;
+import org.joychou.security.SecurityUtil;
 import org.joychou.util.CookieUtils;
 import org.joychou.util.JwtUtils;
 import org.springframework.web.bind.annotation.CookieValue;
@@ -31,7 +32,7 @@ public class Jwt {
     @GetMapping("/createToken")
     public String createToken(HttpServletResponse response, HttpServletRequest request) {
         String loginUser = request.getUserPrincipal().getName();
-        log.info("Current login user is " + loginUser);
+        log.info("Current login user is {}", SecurityUtil.sanitizeLogInput(loginUser));
 
         CookieUtils.deleteCookie(response, COOKIE_NAME);
         String token = JwtUtils.generateTokenByJavaJwt(loginUser);

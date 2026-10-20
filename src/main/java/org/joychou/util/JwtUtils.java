@@ -44,7 +44,7 @@ public class JwtUtils {
             Claims claims = Jwts.parser().setSigningKey(B64_SECRET).parseClaimsJws(token).getBody();
             return (String)claims.get("userid");
         } catch (Exception e) {
-            return e.toString();
+            return "Invalid token";
         }
     }
 
@@ -76,7 +76,7 @@ public class JwtUtils {
             verifier.verify(token);
             return true;
         } catch (JWTVerificationException exception){
-            log.error(exception.toString());
+            log.error("JWT verification failed");
             return false;
         }
     }

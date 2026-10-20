@@ -84,7 +84,7 @@ public class Object2Jsonp extends AbstractJsonpResponseBodyAdvice {
 
         // 校验jsonp逻辑，如果不安全，返回forbidden
         if (SecurityUtil.checkURL(refer) == null ){
-            logger.error("[-] URL: " + url + "?" + query + "\t" + "Referer: " + refer);
+            logger.error("[-] URL: {}?{}\tReferer: {}", SecurityUtil.sanitizeLogInput(url), SecurityUtil.sanitizeLogInput(query), SecurityUtil.sanitizeLogInput(refer));
             try{
                 // 使用response.getWriter().write后，后续写入jsonp后还会继续使用response.getWriteer()，导致报错
 //                response.setStatus(HttpServletResponse.SC_FORBIDDEN);
@@ -92,7 +92,7 @@ public class Object2Jsonp extends AbstractJsonpResponseBodyAdvice {
 //                response.flushBuffer();
                 response.sendRedirect(Constants.ERROR_PAGE);
             } catch (Exception e){
-                logger.error(e.toString());
+                logger.error("Jsonp redirect error: {}", SecurityUtil.sanitizeLogInput(e.getMessage()));
             }
 
         }
