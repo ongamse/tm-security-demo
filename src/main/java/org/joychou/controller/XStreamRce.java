@@ -37,7 +37,7 @@ public class XStreamRce {
         Document document = dbf.newDocumentBuilder().parse(new InputSource(new StringReader(xml)));
 
         XStream xstream = new XStream(new DomDriver());
-        XStream.setupDefaultSecurity(xstream);
+        xstream.addPermission(com.thoughtworks.xstream.security.NoTypePermission.NONE);
         xstream.allowTypes(new Class[]{org.joychou.dao.User.class});
         xstream.unmarshal(new DomReader(document));
         return "xstream";
@@ -49,6 +49,8 @@ public class XStreamRce {
         user.setUsername("admin");
 
         XStream xstream = new XStream(new DomDriver());
+        XStream.setupDefaultSecurity(xstream);
+        xstream.allowTypes(new Class[]{User.class});
         String xml = xstream.toXML(user); // Serialize
         System.out.println(xml);
 

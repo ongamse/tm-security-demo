@@ -20,12 +20,10 @@ public class AntObjectInputStream extends ObjectInputStream {
     }
 
     /**
-     * 只允许反序列化SerialObject class
+     * Only allow deserialization of explicitly permitted classes (allowlist approach).
      *
-     * 在应用上使用黑白名单校验方案比较局限，因为只有使用自己定义的AntObjectInputStream类，进行反序列化才能进行校验。
-     * 类似fastjson通用类的反序列化就不能校验。
-     * 但是RASP是通过HOOK java/io/ObjectInputStream类的resolveClass方法，全局的检测白名单。
-     *
+     * Allowlist is more secure than denylist because it rejects unknown gadget classes
+     * by default, rather than requiring each dangerous class to be enumerated.
      */
     @Override
     protected Class<?> resolveClass(final ObjectStreamClass desc)
@@ -36,17 +34,43 @@ public class AntObjectInputStream extends ObjectInputStream {
         // Deserialize class name: org.joychou.security.AntObjectInputStream$MyObject
         logger.info("Deserialize class name: " + className);
 
-        String[] denyClasses = {"java.net.InetAddress",
-                                "org.apache.commons.collections.Transformer",
-                                "org.apache.commons.collections.functors"};
+        // Allowlist: only permit known safe types for deserialization
+        String[] allowedClasses = {
+                "org.joychou.security.AntObjectInputStream$MyObject",
+                "org.joychou.dao.User",
+                "java.lang.String",
+                "java.lang.Number",
+                "java.lang.Integer",
+                "java.lang.Long",
+                "java.lang.Boolean",
+                "java.util.ArrayList",
+                "java.util.HashMap"
+        };
 
-        for (String denyClass : denyClasses) {
-            if (className.startsWith(denyClass)) {
+        // Allow primitive types and arrays of allowed types
+        if (className.startsWith("[")) {
+            // Array type — resolve element type check
+            String elementClass = className.replaceAll("^\\[+L?", "").replace(";", "");
+            boolean elementAllowed = false;
+            for (String allowedClass : allowedClasses) {
+                if (elementClass.equals(allowedClass)) {
+                    elementAllowed = true;
+                    break;
+                }
+            }
+            if (!elementAllowed) {
                 throw new InvalidClassException("Unauthorized deserialization attempt", className);
+            }
+            return super.resolveClass(desc);
+        }
+
+        for (String allowedClass : allowedClasses) {
+            if (className.equals(allowedClass)) {
+                return super.resolveClass(desc);
             }
         }
 
-        return super.resolveClass(desc);
+        throw new InvalidClassException("Unauthorized deserialization attempt", className);
     }
 
     public static void main(String args[]) throws Exception{
