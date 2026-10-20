@@ -376,7 +376,7 @@ public class SSRF {
         try {
             SecurityUtil.startSSRFHook();
             return HttpUtil.get(url);
-        } catch (SSRFException e) {
+        } catch (SSRFException | IOException e) {
             return e.getMessage();
         } finally {
             SecurityUtil.stopSSRFHook();

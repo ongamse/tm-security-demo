@@ -169,12 +169,12 @@ public class Rce {
         }
         // Use SecureASTCustomizer to restrict dangerous operations
         SecureASTCustomizer secureASTCustomizer = new SecureASTCustomizer();
-        secureASTCustomizer.setDisallowedImports(Arrays.asList(
+        secureASTCustomizer.setImportsBlacklist(Arrays.asList(
                 "java.lang.Runtime", "java.lang.ProcessBuilder",
                 "java.io.File", "java.lang.System",
                 "java.lang.reflect.*", "java.net.*"
         ));
-        secureASTCustomizer.setDisallowedReceiversClasses(Arrays.asList(
+        secureASTCustomizer.setReceiversClassesBlacklist(Arrays.asList(
                 (Class) Runtime.class, (Class) ProcessBuilder.class,
                 (Class) System.class, (Class) Class.class
         ));
