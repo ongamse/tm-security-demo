@@ -31,6 +31,7 @@ import org.xml.sax.helpers.DefaultHandler;
 import org.apache.commons.digester3.Digester;
 import org.jdom2.input.SAXBuilder;
 import org.joychou.util.WebUtils;
+import org.springframework.web.util.HtmlUtils;
 import org.xmlbeam.annotation.XBRead;
 
 /**
@@ -273,11 +274,11 @@ public class XXE {
                     buf.append(String.format("%s: %s\n", node.getNodeName(), node.getTextContent()));
                 }
             }
-            return buf.toString();
+            return HtmlUtils.htmlEscape(buf.toString());
         } catch (Exception e) {
             e.printStackTrace();
             logger.error(e.toString());
-            return e.toString();
+            return HtmlUtils.htmlEscape(e.toString());
         }
     }
 
@@ -447,7 +448,7 @@ public class XXE {
         HttpEntity<String> post(@RequestBody UserPayload user) {
             try {
                 logger.info(user.toString());
-                return ResponseEntity.ok(String.format("hello, %s!", user.getUserName()));
+                return ResponseEntity.ok(String.format("hello, %s!", HtmlUtils.htmlEscape(user.getUserName())));
             }catch (Exception e){
                 e.printStackTrace();
                 return ResponseEntity.ok("error");
