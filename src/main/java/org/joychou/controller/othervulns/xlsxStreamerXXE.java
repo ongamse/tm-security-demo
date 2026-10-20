@@ -36,17 +36,25 @@ public class xlsxStreamerXXE {
     @PostMapping("/readxlsx")
     public void xllx_streamer_xxe(MultipartFile file) throws IOException {
         // xlsx-streamer 2.1.0+ secures XML parsing internally (XXE disabled)
-        try (InputStream is = file.getInputStream();
-             Workbook workbook = StreamingReader.builder().open(is)) {
-            // process workbook securely
+        try (InputStream is = file.getInputStream()) {
+            Workbook workbook = StreamingReader.builder().open(is);
+            try {
+                // process workbook securely
+            } finally {
+                workbook.close();
+            }
         }
     }
 
 
     public static void main(String[] args) throws Exception {
-        try (InputStream is = new FileInputStream("poc.xlsx");
-             Workbook workbook = StreamingReader.builder().open(is)) {
-            // process workbook securely
+        try (InputStream is = new FileInputStream("poc.xlsx")) {
+            Workbook workbook = StreamingReader.builder().open(is);
+            try {
+                // process workbook securely
+            } finally {
+                workbook.close();
+            }
         }
     }
 }
