@@ -19,6 +19,7 @@ import java.util.regex.Pattern;
 public class SecurityUtil {
 
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
+    private static final Pattern USERNAME_PATTERN = Pattern.compile("^[a-zA-Z0-9_]{1,64}$");
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
 
 
@@ -262,6 +263,21 @@ public class SecurityUtil {
         return input;
     }
 
+
+    /**
+     * Validate username format to prevent IDOR and injection attacks.
+     * Only alphanumeric characters and underscores are allowed, with a max length of 64.
+     *
+     * @param username the username to validate
+     * @return the username if valid
+     * @throws IllegalArgumentException if the username is null or does not match the allowed pattern
+     */
+    public static String validateUsername(String username) {
+        if (username == null || !USERNAME_PATTERN.matcher(username).matches()) {
+            throw new IllegalArgumentException("Invalid username format");
+        }
+        return username;
+    }
 
     /**
      * 过滤mybatis中order by不能用#的情况。
