@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
 import java.sql.*;
+import java.util.Collections;
 import java.util.List;
 
 
@@ -94,6 +95,12 @@ public class SQLI {
      */
     @RequestMapping("/jdbc/sec")
     public String jdbc_sqli_sec(@RequestParam("username") String username) {
+
+        // Validate input to prevent IDOR: reject empty, overly long, or suspicious usernames
+        if (username == null || username.isEmpty() || username.length() > 64
+                || !username.matches("^[a-zA-Z0-9_.-]+$")) {
+            return "";
+        }
 
         StringBuilder result = new StringBuilder();
         try {
@@ -182,6 +189,11 @@ public class SQLI {
      */
     @GetMapping("/mybatis/vuln01")
     public List<User> mybatisVuln01(@RequestParam("username") String username) {
+        // Validate input to prevent IDOR: reject empty, overly long, or suspicious usernames
+        if (username == null || username.isEmpty() || username.length() > 64
+                || !username.matches("^[a-zA-Z0-9_.-]+$")) {
+            return Collections.emptyList();
+        }
         return userMapper.findByUserNameVuln01(username);
     }
 
@@ -192,6 +204,11 @@ public class SQLI {
      */
     @GetMapping("/mybatis/vuln02")
     public List<User> mybatisVuln02(@RequestParam("username") String username) {
+        // Validate input to prevent IDOR: reject empty, overly long, or suspicious usernames
+        if (username == null || username.isEmpty() || username.length() > 64
+                || !username.matches("^[a-zA-Z0-9_.-]+$")) {
+            return Collections.emptyList();
+        }
         return userMapper.findByUserNameVuln02(username);
     }
 
@@ -212,6 +229,11 @@ public class SQLI {
      */
     @GetMapping("/mybatis/sec01")
     public User mybatisSec01(@RequestParam("username") String username) {
+        // Validate input to prevent IDOR: reject empty, overly long, or suspicious usernames
+        if (username == null || username.isEmpty() || username.length() > 64
+                || !username.matches("^[a-zA-Z0-9_.-]+$")) {
+            return null;
+        }
         return userMapper.findByUserName(username);
     }
 
@@ -221,6 +243,10 @@ public class SQLI {
      */
     @GetMapping("/mybatis/sec02")
     public User mybatisSec02(@RequestParam("id") Integer id) {
+        // Validate input to prevent IDOR: id must be a positive integer in a reasonable range
+        if (id == null || id <= 0 || id > 10000) {
+            return null;
+        }
         return userMapper.findById(id);
     }
 
