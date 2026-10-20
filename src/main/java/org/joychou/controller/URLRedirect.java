@@ -29,22 +29,27 @@ public class URLRedirect {
      * http://localhost:8080/urlRedirect/redirect?url=http://www.baidu.com
      */
     @GetMapping("/redirect")
-    public String redirect(@RequestParam("url") String url) {
+    @ResponseBody
+    public void redirect(@RequestParam("url") String url,
+                         HttpServletResponse response) throws IOException {
         String safeUrl = SecurityUtil.checkURL(url);
         if (safeUrl == null) {
-            return "redirect:/error";
+            response.sendRedirect("/error");
+            return;
         }
         // Validate URL structure to prevent open redirect
         java.net.URI uri;
         try {
             uri = java.net.URI.create(safeUrl);
         } catch (IllegalArgumentException e) {
-            return "redirect:/error";
+            response.sendRedirect("/error");
+            return;
         }
         if (uri.getHost() == null || (!"http".equals(uri.getScheme()) && !"https".equals(uri.getScheme()))) {
-            return "redirect:/error";
+            response.sendRedirect("/error");
+            return;
         }
-        return "redirect:" + uri.toASCIIString();
+        response.sendRedirect(uri.toASCIIString());
     }
 
 
