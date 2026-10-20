@@ -1,7 +1,6 @@
 package org.joychou.controller.othervulns;
 
 import org.apache.poi.openxml4j.opc.OPCPackage;
-import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 import org.springframework.stereotype.Controller;
@@ -35,7 +34,7 @@ public class xlsxStreamerXXE {
     public void xllx_streamer_xxe(MultipartFile file) throws IOException {
         try (InputStream is = file.getInputStream();
              OPCPackage pkg = OPCPackage.open(is);
-             Workbook workbook = new XSSFWorkbook(pkg)) {
+             XSSFWorkbook workbook = new XSSFWorkbook(pkg)) {
             // Workbook opened safely via OPCPackage (no external entity processing)
         } catch (Exception e) {
             throw new IOException("Failed to process xlsx file", e);
@@ -46,7 +45,7 @@ public class xlsxStreamerXXE {
     public static void main(String[] args) throws Exception {
         try (InputStream is = new FileInputStream("poc.xlsx");
              OPCPackage pkg = OPCPackage.open(is);
-             Workbook workbook = new XSSFWorkbook(pkg)) {
+             XSSFWorkbook workbook = new XSSFWorkbook(pkg)) {
             // Workbook opened safely via OPCPackage
         }
     }
