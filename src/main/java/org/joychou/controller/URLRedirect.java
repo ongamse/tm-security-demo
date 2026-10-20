@@ -30,10 +30,11 @@ public class URLRedirect {
      */
     @GetMapping("/redirect")
     public String redirect(@RequestParam("url") String url) {
-        if (SecurityUtil.checkURL(url) == null) {
+        String safeUrl = SecurityUtil.checkURL(url);
+        if (safeUrl == null) {
             return "redirect:/";
         }
-        return "redirect:" + url;
+        return "redirect:" + safeUrl;
     }
 
 
