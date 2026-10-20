@@ -94,6 +94,7 @@ public class SQLI {
     @RequestMapping("/jdbc/sec")
     public String jdbc_sqli_sec(@RequestParam("username") String username) {
 
+        String validatedUsername = SecurityUtil.validateUsername(username);
         StringBuilder result = new StringBuilder();
         try {
             Class.forName(driver);
@@ -105,7 +106,7 @@ public class SQLI {
             // fix code
             String sql = "select * from users where username = ?";
             PreparedStatement st = con.prepareStatement(sql);
-            st.setString(1, username);
+            st.setString(1, validatedUsername);
 
             logger.info(st.toString());  // sql after prepare statement
             ResultSet rs = st.executeQuery();
@@ -181,7 +182,8 @@ public class SQLI {
      */
     @GetMapping("/mybatis/vuln01")
     public List<User> mybatisVuln01(@RequestParam("username") String username) {
-        return userMapper.findByUserNameVuln01(username);
+        String validatedUsername = SecurityUtil.validateUsername(username);
+        return userMapper.findByUserNameVuln01(validatedUsername);
     }
 
     /**
@@ -191,7 +193,8 @@ public class SQLI {
      */
     @GetMapping("/mybatis/vuln02")
     public List<User> mybatisVuln02(@RequestParam("username") String username) {
-        return userMapper.findByUserNameVuln02(username);
+        String validatedUsername = SecurityUtil.validateUsername(username);
+        return userMapper.findByUserNameVuln02(validatedUsername);
     }
 
     /**
@@ -211,7 +214,8 @@ public class SQLI {
      */
     @GetMapping("/mybatis/sec01")
     public User mybatisSec01(@RequestParam("username") String username) {
-        return userMapper.findByUserName(username);
+        String validatedUsername = SecurityUtil.validateUsername(username);
+        return userMapper.findByUserName(validatedUsername);
     }
 
     /**
@@ -220,6 +224,9 @@ public class SQLI {
      */
     @GetMapping("/mybatis/sec02")
     public User mybatisSec02(@RequestParam("id") Integer id) {
+        if (id == null || id <= 0) {
+            throw new IllegalArgumentException("Invalid user id");
+        }
         return userMapper.findById(id);
     }
 
