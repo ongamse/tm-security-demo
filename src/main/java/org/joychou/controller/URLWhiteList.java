@@ -9,7 +9,6 @@ import org.springframework.web.util.HtmlUtils;
 
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.net.URL;
 import java.util.ArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -31,16 +30,19 @@ public class URLWhiteList {
     private static final Logger logger = LoggerFactory.getLogger(URLWhiteList.class);
 
     /**
-     * bypass poc: bypassjoychou.org
-     * http://localhost:8080/url/vuln/endswith?url=http://aaajoychou.org
+     * Fixed: require exact match or subdomain match with dot prefix.
      */
     @GetMapping("/vuln/endsWith")
     public String endsWith(@RequestParam("url") String url) {
 
+        if (!SecurityUtil.isHttp(url)) {
+            return "Bad url.";
+        }
+
         String host = SecurityUtil.gethost(url);
 
         for (String domain : domainwhitelist) {
-            if (host.endsWith(domain)) {
+            if (host.equals(domain) || host.endsWith("." + domain)) {
                 return "Good url.";
             }
         }
@@ -49,18 +51,19 @@ public class URLWhiteList {
 
 
     /**
-     * It's the same with <code>indexOf</code>.
-     * <p>
-     * http://localhost:8080/url/vuln/contains?url=http://joychou.org.bypass.com
-     * http://localhost:8080/url/vuln/contains?url=http://bypassjoychou.org
+     * Fixed: use exact match or subdomain match instead of contains.
      */
     @GetMapping("/vuln/contains")
     public String contains(@RequestParam("url") String url) {
 
+        if (!SecurityUtil.isHttp(url)) {
+            return "Bad url.";
+        }
+
         String host = SecurityUtil.gethost(url);
 
         for (String domain : domainwhitelist) {
-            if (host.contains(domain)) {
+            if (host.equals(domain) || host.endsWith("." + domain)) {
                 return "Good url.";
             }
         }
@@ -69,14 +72,18 @@ public class URLWhiteList {
 
 
     /**
-     * bypass poc: bypassjoychou.org. It's the same with endsWith.
-     * http://localhost:8080/url/vuln/regex?url=http://aaajoychou.org
+     * Fixed: regex anchored to match exact domain or subdomain only.
      */
     @GetMapping("/vuln/regex")
     public String regex(@RequestParam("url") String url) {
 
+        if (!SecurityUtil.isHttp(url)) {
+            return "Bad url.";
+        }
+
         String host = SecurityUtil.gethost(url);
-        Pattern p = Pattern.compile("joychou\\.org$");
+        // Match exactly "joychou.org" or any subdomain "*.joychou.org"
+        Pattern p = Pattern.compile("^(.*\\.)?joychou\\.org$");
         Matcher m = p.matcher(host);
 
         if (m.find()) {
@@ -105,14 +112,14 @@ public class URLWhiteList {
             return;
         }
 
-        URL u = new URL(url);
-        String host = u.getHost();
+        // Use URI instead of URL to avoid host parsing bypass
+        String host = SecurityUtil.gethost(url);
         logger.info("host:  " + host);
 
-        // endsWith .
         for (String domain : domainwhitelist) {
-            if (host.endsWith("." + domain)) {
+            if (host.equals(domain) || host.endsWith("." + domain)) {
                 res.sendRedirect(url);
+                return;
             }
         }
 
