@@ -33,7 +33,10 @@ public class SSTI {
         context.put("address", "217 E Broadway");
         context.put("phone", "555-1337");
 
+        // Use a fixed template; user input is passed as a context variable, not as template code.
+        context.put("template", template);
+        String safeTemplate = "$template";
         StringWriter swOut = new StringWriter();
-        Velocity.evaluate(context, swOut, "test", template);
+        Velocity.evaluate(context, swOut, "test", safeTemplate);
     }
 }
