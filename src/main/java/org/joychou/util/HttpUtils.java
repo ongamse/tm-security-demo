@@ -179,6 +179,16 @@ public class HttpUtils {
     public static void imageIO(String url) {
         try {
             URL u = new URL(url);
+            String protocol = u.getProtocol();
+            if (!"http".equals(protocol) && !"https".equals(protocol)) {
+                logger.error("Blocked non-HTTP protocol in imageIO: " + protocol);
+                return;
+            }
+            String path = u.getPath();
+            if (path != null && (path.contains("..") || path.contains("%2e") || path.contains("%2E"))) {
+                logger.error("Path traversal detected in imageIO URL path");
+                return;
+            }
             ImageIO.read(u); // send request
         } catch (IOException e) {
             logger.error(e.getMessage());
