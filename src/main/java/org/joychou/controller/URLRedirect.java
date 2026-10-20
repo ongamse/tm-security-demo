@@ -29,8 +29,12 @@ public class URLRedirect {
      * http://localhost:8080/urlRedirect/redirect?url=http://www.baidu.com
      */
     @GetMapping("/redirect")
-    public String redirect(@RequestParam("url") String url) {
-        return "redirect:" + url;
+    public void redirect(@RequestParam("url") String url, HttpServletResponse response) throws IOException {
+        if (SecurityUtil.checkURL(url) == null) {
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            return;
+        }
+        response.sendRedirect(url);
     }
 
 
@@ -59,6 +63,10 @@ public class URLRedirect {
     @ResponseBody
     public static void sendRedirect(HttpServletRequest request, HttpServletResponse response) throws IOException {
         String url = request.getParameter("url");
+        if (url == null || SecurityUtil.checkURL(url) == null) {
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            return;
+        }
         response.sendRedirect(url); // 302 redirect
     }
 

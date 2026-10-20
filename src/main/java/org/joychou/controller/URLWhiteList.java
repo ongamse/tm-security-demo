@@ -2,7 +2,6 @@ package org.joychou.controller;
 
 
 import org.joychou.security.SecurityUtil;
-import org.joychou.security.ssrf.SSRFChecker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.*;
@@ -10,7 +9,6 @@ import org.springframework.web.util.HtmlUtils;
 
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.net.URL;
 import java.util.ArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -102,27 +100,12 @@ public class URLWhiteList {
 
         logger.info("url:  " + url);
 
-        if (!SecurityUtil.isHttp(url)) {
+        if (SecurityUtil.checkURL(url) == null) {
+            res.setStatus(HttpServletResponse.SC_FORBIDDEN);
             return;
         }
 
-        // Block URLs targeting internal/private IPs
-        if (SSRFChecker.isInternalIpByUrl(url)) {
-            logger.error("[-] url_bypass: blocked internal IP for url: " + url);
-            return;
-        }
-
-        URL u = new URL(url);
-        String host = u.getHost();
-        logger.info("host:  " + host);
-
-        // endsWith .
-        for (String domain : domainwhitelist) {
-            if (host.endsWith("." + domain)) {
-                res.sendRedirect(url);
-            }
-        }
-
+        res.sendRedirect(url);
     }
 
 
