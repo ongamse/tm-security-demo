@@ -174,9 +174,9 @@ public class Rce {
                 "java.io.File", "java.lang.System",
                 "java.lang.reflect.*", "java.net.*"
         ));
-        secureASTCustomizer.setReceiversClassesBlacklist(Arrays.asList(
-                (Class) Runtime.class, (Class) ProcessBuilder.class,
-                (Class) System.class, (Class) Class.class
+        secureASTCustomizer.setReceiversBlackList(Arrays.asList(
+                "java.lang.Runtime", "java.lang.ProcessBuilder",
+                "java.lang.System", "java.lang.Class"
         ));
         secureASTCustomizer.setIndirectImportCheckEnabled(true);
 
