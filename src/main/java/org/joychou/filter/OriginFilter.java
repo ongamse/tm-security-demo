@@ -33,7 +33,7 @@ public class OriginFilter implements Filter {
         HttpServletRequest request = (HttpServletRequest) req;
         HttpServletResponse response = (HttpServletResponse) res;
 
-        String origin = request.getHeader("Origin");
+        String origin = SecurityUtil.sanitizeHeaderValue(request.getHeader("Origin"));
         logger.info("[+] Origin: " + origin + "\tCurrent url:" + request.getRequestURL());
 
         // 以file协议访问html，origin为字符串的null，所以依然会走安全check逻辑

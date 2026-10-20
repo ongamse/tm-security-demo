@@ -12,6 +12,7 @@ import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 
 import org.joychou.security.SecurityUtil;
+import static org.joychou.security.SecurityUtil.sanitizeHeaderValue;
 
 /**
  * The vulnerability code and security code of Java url redirect.
@@ -42,7 +43,7 @@ public class URLRedirect {
     public static void setHeader(HttpServletRequest request, HttpServletResponse response) {
         String url = request.getParameter("url");
         response.setStatus(HttpServletResponse.SC_MOVED_PERMANENTLY); // 301 redirect
-        response.setHeader("Location", url);
+        response.setHeader("Location", sanitizeHeaderValue(url));
     }
 
 
