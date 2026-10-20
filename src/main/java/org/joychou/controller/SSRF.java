@@ -97,6 +97,9 @@ public class SSRF {
      */
     @GetMapping("/request/sec")
     public String request(@RequestParam String url) {
+        if (!SecurityUtil.validateURLForSSRF(url)) {
+            return "[-] SSRF check failed";
+        }
         try {
             SecurityUtil.startSSRFHook();
             return HtmlUtils.htmlEscape(HttpUtils.request(url));
@@ -118,6 +121,10 @@ public class SSRF {
      */
     @GetMapping("/openStream")
     public void openStream(@RequestParam String url, HttpServletResponse response) throws IOException {
+        if (!SecurityUtil.validateURLForSSRF(url)) {
+            response.sendError(HttpServletResponse.SC_FORBIDDEN, "SSRF validation failed");
+            return;
+        }
         InputStream inputStream = null;
         OutputStream outputStream = null;
         try {

@@ -63,8 +63,21 @@ public class SSRFChecker {
         int connectTime = 5 * 1000;  // 设置连接超时时间5s
         int i = 1;
         String finalUrl = url;
+
+        // Validate scheme - only allow http/https
+        if (!SecurityUtil.isHttp(url)) {
+            logger.error("[-] SSRF check failed. Non-HTTP scheme: " + url);
+            return false;
+        }
+
         try {
             do {
+                // Validate scheme for redirected URLs as well
+                if (!SecurityUtil.isHttp(finalUrl)) {
+                    logger.error("[-] SSRF check failed. Redirect to non-HTTP scheme: " + finalUrl);
+                    return false;
+                }
+
                 // 判断当前请求的URL是否是内网ip
                 if (isInternalIpByUrl(finalUrl)) {
                     logger.error("[-] SSRF check failed. Dangerous url: " + finalUrl);
@@ -289,12 +302,13 @@ public class SSRFChecker {
      */
     private static String url2host(String url) {
         try {
+            if (url == null || !SecurityUtil.isHttp(url)) {
+                return "";
+            }
             // use URI instead of URL
             URI u = new URI(url);
-            if (SecurityUtil.isHttp(url)) {
-                return u.getHost();
-            }
-            return "";
+            String host = u.getHost();
+            return host != null ? host : "";
         } catch (Exception e) {
             return "";
         }

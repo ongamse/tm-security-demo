@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
+import java.net.InetAddress;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLDecoder;
@@ -40,8 +41,12 @@ public class SecurityUtil {
      */
     public static String gethost(String url) {
         try {
+            if (url == null || !isHttp(url)) {
+                return "";
+            }
             URI uri = new URI(url);
-            return uri.getHost().toLowerCase();
+            String host = uri.getHost();
+            return host != null ? host.toLowerCase() : "";
         } catch (URISyntaxException e) {
             return "";
         }
@@ -147,6 +152,56 @@ public class SecurityUtil {
             return false;
         }
         return !SSRFChecker.isInternalIpByUrl(url);
+    }
+
+    /**
+     * Validate a URL to prevent SSRF attacks. Checks:
+     * 1. Only http/https schemes are allowed.
+     * 2. Host must not resolve to a private/internal/loopback/link-local IP address.
+     *
+     * @param url The URL to validate.
+     * @return true if the URL is safe, false otherwise.
+     */
+    public static boolean validateURLForSSRF(String url) {
+        if (url == null) {
+            return false;
+        }
+
+        // Only allow http and https schemes
+        if (!isHttp(url)) {
+            return false;
+        }
+
+        String host = gethost(url);
+        if (host == null || host.isEmpty()) {
+            return false;
+        }
+
+        try {
+            InetAddress address = InetAddress.getByName(host);
+            // Reject loopback, link-local, site-local (private), any-local, and multicast addresses
+            if (address.isLoopbackAddress()
+                    || address.isLinkLocalAddress()
+                    || address.isSiteLocalAddress()
+                    || address.isAnyLocalAddress()
+                    || address.isMulticastAddress()) {
+                logger.error("SSRF validation failed: URL resolves to internal/private IP: " + address.getHostAddress());
+                return false;
+            }
+
+            // Additional check for IPv4-mapped IPv6 addresses and metadata endpoints
+            String hostAddress = address.getHostAddress();
+            if (hostAddress.startsWith("0.") || hostAddress.equals("0.0.0.0")
+                    || hostAddress.startsWith("169.254.")) {
+                logger.error("SSRF validation failed: URL resolves to disallowed IP: " + hostAddress);
+                return false;
+            }
+        } catch (Exception e) {
+            logger.error("SSRF validation failed: could not resolve host: " + host);
+            return false;
+        }
+
+        return true;
     }
 
     /**
