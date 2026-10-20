@@ -61,6 +61,11 @@ public class SecurityUtil {
             return null;
         }
 
+        // Block SSRF: reject URLs targeting private/reserved IP ranges
+        if (!SSRFChecker.isSSRFSafe(url)) {
+            return null;
+        }
+
         ArrayList<String> safeDomains = WebConfig.getSafeDomains();
         ArrayList<String> blockDomains = WebConfig.getBlockDomains();
 

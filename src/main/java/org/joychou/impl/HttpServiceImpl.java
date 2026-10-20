@@ -1,6 +1,7 @@
 package org.joychou.impl;
 
 
+import org.joychou.security.ssrf.SSRFChecker;
 import org.joychou.service.HttpService;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -26,6 +27,9 @@ public class HttpServiceImpl implements HttpService {
      * User-Agent: Java/1.8.0_102 <p>
      */
     public String RequestHttp(String url, HttpHeaders headers) {
+        if (!SSRFChecker.isSSRFSafe(url)) {
+            throw new IllegalArgumentException("SSRF blocked");
+        }
         HttpEntity<String> entity = new HttpEntity<>(headers);
         ResponseEntity<String> re = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
         return re.getBody();
@@ -37,6 +41,9 @@ public class HttpServiceImpl implements HttpService {
      * User-Agent: Java/1.8.0_102 <p>
      */
     public String RequestHttpBanRedirects(String url, HttpHeaders headers) {
+        if (!SSRFChecker.isSSRFSafe(url)) {
+            throw new IllegalArgumentException("SSRF blocked");
+        }
         HttpEntity<String> entity = new HttpEntity<>(headers);
         ResponseEntity<String> re = restTemplateBanRedirects.exchange(url, HttpMethod.GET, entity, String.class);
         return re.getBody();
