@@ -169,8 +169,8 @@ public class Rce {
         ));
         secureASTCustomizer.setIndirectImportCheckEnabled(true);
         secureASTCustomizer.setReceiversBlackList(Arrays.asList(
-                (Class) Runtime.class, (Class) ProcessBuilder.class,
-                (Class) System.class, (Class) Class.class
+                "java.lang.Runtime", "java.lang.ProcessBuilder",
+                "java.lang.System", "java.lang.Class"
         ));
 
         CompilerConfiguration config = new CompilerConfiguration();
