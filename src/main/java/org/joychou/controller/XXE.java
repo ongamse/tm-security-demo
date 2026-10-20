@@ -94,12 +94,15 @@ public class XXE {
             String body = WebUtils.getRequestBody(request);
             logger.info(body);
 
+            rejectDoctypeDecl(body);
+
             SAXBuilder builder = new SAXBuilder();
             builder.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
             builder.setFeature("http://xml.org/sax/features/external-general-entities", false);
             builder.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            builder.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
             // org.jdom2.Document document
-            builder.build(new InputSource(new StringReader(body)));  // cause xxe
+            builder.build(new InputSource(new StringReader(body)));
             return "SAXBuilder xxe vuln code";
         } catch (Exception e) {
             logger.error(e.toString());
@@ -112,6 +115,8 @@ public class XXE {
         try {
             String body = WebUtils.getRequestBody(request);
             logger.info(body);
+
+            rejectDoctypeDecl(body);
 
             SAXBuilder builder = new SAXBuilder();
             builder.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
@@ -213,11 +218,14 @@ public class XXE {
             String body = WebUtils.getRequestBody(request);
             logger.info(body);
 
+            rejectDoctypeDecl(body);
+
             Digester digester = new Digester();
             digester.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
             digester.setFeature("http://xml.org/sax/features/external-general-entities", false);
             digester.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
-            digester.parse(new StringReader(body));  // parse xml
+            digester.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+            digester.parse(new StringReader(body));
         } catch (Exception e) {
             logger.error(e.toString());
             return EXCEPT;
@@ -231,12 +239,14 @@ public class XXE {
             String body = WebUtils.getRequestBody(request);
             logger.info(body);
 
+            rejectDoctypeDecl(body);
+
             Digester digester = new Digester();
             digester.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
             digester.setFeature("http://xml.org/sax/features/external-general-entities", false);
             digester.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             digester.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
-            digester.parse(new StringReader(body));  // parse xml
+            digester.parse(new StringReader(body));
 
             return "Digester xxe security code";
         } catch (Exception e) {
@@ -423,6 +433,19 @@ public class XXE {
         return "DocumentHelper xxe vuln code";
     }
 
+
+    /**
+     * Rejects XML input containing DOCTYPE or ENTITY declarations to prevent XXE attacks.
+     * Defense-in-depth: ensures malicious payloads are rejected before any parser touches them.
+     */
+    private static void rejectDoctypeDecl(String xml) {
+        if (xml != null) {
+            String upper = xml.toUpperCase();
+            if (upper.contains("<!DOCTYPE") || upper.contains("<!ENTITY")) {
+                throw new SecurityException("XML input contains prohibited DOCTYPE or ENTITY declaration");
+            }
+        }
+    }
 
     private static void response(NodeList rootNodeList){
         for (int i = 0; i < rootNodeList.getLength(); i++) {

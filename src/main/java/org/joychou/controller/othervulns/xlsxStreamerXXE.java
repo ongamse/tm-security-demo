@@ -1,19 +1,23 @@
 package org.joychou.controller.othervulns;
 
 import com.monitorjbl.xlsx.StreamingReader;
-import org.apache.poi.ss.usermodel.Workbook;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.multipart.MultipartFile;
 
-import javax.xml.XMLConstants;
-import javax.xml.parsers.SAXParserFactory;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 
 /**
@@ -28,20 +32,18 @@ import java.io.InputStream;
 @RequestMapping("xlsx-streamer")
 public class xlsxStreamerXXE {
 
+    private static final Logger logger = LoggerFactory.getLogger(xlsxStreamerXXE.class);
+
     /**
-     * Set JVM-wide SAX parser defaults to disable external entities, mitigating XXE
+     * Set JVM-wide SAX parser system properties to disable external entities, mitigating XXE
      * in libraries like xlsx-streamer that do not expose parser configuration.
+     * System properties affect all SAXParserFactory.newInstance() calls in this JVM.
      */
     static {
-        try {
-            SAXParserFactory spf = SAXParserFactory.newInstance();
-            spf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            spf.setFeature("http://xml.org/sax/features/external-general-entities", false);
-            spf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
-            spf.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
-        } catch (Exception e) {
-            // Features not supported by this SAX implementation; logged at class load.
-        }
+        // Disable external entities at the JVM level for SAX/DOM parsers
+        System.setProperty("javax.xml.accessExternalDTD", "");
+        System.setProperty("javax.xml.accessExternalSchema", "");
+        System.setProperty("javax.xml.accessExternalStylesheet", "");
     }
 
 
@@ -50,13 +52,57 @@ public class xlsxStreamerXXE {
         return "xxe_upload"; // return xxe_upload.html page
     }
 
+    /**
+     * Validates that no XML entry inside a ZIP/XLSX file contains DOCTYPE or ENTITY declarations.
+     * XLSX files are ZIP archives containing XML parts; this check prevents XXE payloads
+     * embedded in internal XML entries (e.g., xl/workbook.xml) from reaching the parser.
+     */
+    private static void validateXlsxNoDoctype(byte[] data) throws IOException {
+        try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(data))) {
+            ZipEntry entry;
+            while ((entry = zis.getNextEntry()) != null) {
+                String name = entry.getName().toLowerCase();
+                if (name.endsWith(".xml") || name.endsWith(".rels")) {
+                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                    byte[] buf = new byte[4096];
+                    int len;
+                    while ((len = zis.read(buf)) > 0) {
+                        baos.write(buf, 0, len);
+                    }
+                    String content = baos.toString("UTF-8").toUpperCase();
+                    if (content.contains("<!DOCTYPE") || content.contains("<!ENTITY")) {
+                        throw new SecurityException(
+                                "XLSX entry " + entry.getName() + " contains prohibited DOCTYPE or ENTITY declaration");
+                    }
+                }
+                zis.closeEntry();
+            }
+        }
+    }
+
 
     @PostMapping("/readxlsx")
-    public void xllx_streamer_xxe(MultipartFile file) throws IOException {
-        try (InputStream is = file.getInputStream()) {
-            // xlsx-streamer 2.0.0 does not expose parser config; use POI OPCPackage for safer handling
+    @ResponseBody
+    public String xllx_streamer_xxe(MultipartFile file) throws IOException {
+        // Buffer the upload so we can validate ZIP entries before parsing
+        byte[] data;
+        try (InputStream uploadStream = file.getInputStream();
+             ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+            byte[] buf = new byte[4096];
+            int len;
+            while ((len = uploadStream.read(buf)) > 0) {
+                baos.write(buf, 0, len);
+            }
+            data = baos.toByteArray();
+        }
+
+        // Reject XLSX files whose internal XML entries contain DOCTYPE/ENTITY declarations
+        validateXlsxNoDoctype(data);
+
+        try (InputStream is = new ByteArrayInputStream(data)) {
             StreamingReader.builder().open(is);
         }
+        return "ok";
     }
 
 
