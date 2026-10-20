@@ -3,7 +3,6 @@ package org.joychou.security.ssrf;
 import java.net.HttpURLConnection;
 import java.net.InetAddress;
 import java.net.URI;
-import java.net.URL;
 import java.util.ArrayList;
 
 import org.apache.commons.lang.StringUtils;
@@ -71,7 +70,7 @@ public class SSRFChecker {
                     return false;  // 内网ip直接return，非内网ip继续判断是否有重定向
                 }
 
-                connection = (HttpURLConnection) new URL(finalUrl).openConnection();
+                connection = (HttpURLConnection) new URI(finalUrl).toURL().openConnection();
                 connection.setInstanceFollowRedirects(false);
                 connection.setUseCaches(false); // 设置为false，手动处理跳转，可以拿到每个跳转的URL
                 connection.setConnectTimeout(connectTime);
