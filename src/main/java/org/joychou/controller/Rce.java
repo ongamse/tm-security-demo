@@ -16,6 +16,9 @@ import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.sql.DriverManager;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 
 
 /**
@@ -28,13 +31,21 @@ import java.sql.DriverManager;
 @RequestMapping("/rce")
 public class Rce {
 
+    private static final Set<String> ALLOWED_COMMANDS = new HashSet<>(Arrays.asList(
+            "whoami", "id", "hostname", "date", "uptime", "uname"
+    ));
+
     @GetMapping("/runtime/exec")
     public String CommandExec(String cmd) {
-        Runtime run = Runtime.getRuntime();
+        if (cmd == null || !ALLOWED_COMMANDS.contains(cmd.trim())) {
+            return "Command not allowed. Allowed commands: " + ALLOWED_COMMANDS;
+        }
         StringBuilder sb = new StringBuilder();
 
         try {
-            Process p = run.exec(cmd);
+            ProcessBuilder pb = new ProcessBuilder(cmd.trim());
+            pb.redirectErrorStream(true);
+            Process p = pb.start();
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
             String tmpStr;
@@ -63,11 +74,15 @@ public class Rce {
     @GetMapping("/ProcessBuilder")
     public String processBuilder(String cmd) {
 
+        if (cmd == null || !ALLOWED_COMMANDS.contains(cmd.trim())) {
+            return "Command not allowed. Allowed commands: " + ALLOWED_COMMANDS;
+        }
+
         StringBuilder sb = new StringBuilder();
 
         try {
-            String[] arrCmd = {"/bin/sh", "-c", cmd};
-            ProcessBuilder processBuilder = new ProcessBuilder(arrCmd);
+            ProcessBuilder processBuilder = new ProcessBuilder(cmd.trim());
+            processBuilder.redirectErrorStream(true);
             Process p = processBuilder.start();
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
@@ -93,12 +108,43 @@ public class Rce {
      * @param jsurl js url
      */
     @GetMapping("/jscmd")
-    public void jsEngine(String jsurl) throws Exception{
-        // js nashorn javascript ecmascript
+    public String jsEngine(String jsurl) throws Exception {
+        if (jsurl == null || jsurl.isEmpty()) {
+            return "Missing jsurl parameter.";
+        }
+        // Validate URL against allowlist to prevent arbitrary code loading
+        java.net.URI uri;
+        try {
+            uri = new java.net.URI(jsurl);
+        } catch (java.net.URISyntaxException e) {
+            return "Invalid URL format.";
+        }
+        String host = uri.getHost();
+        String scheme = uri.getScheme();
+        if (host == null || scheme == null
+                || (!scheme.equals("http") && !scheme.equals("https"))) {
+            return "Only http/https URLs are allowed.";
+        }
+        // Block internal/link-local/metadata addresses
+        try {
+            java.net.InetAddress addr = java.net.InetAddress.getByName(host);
+            if (addr.isLoopbackAddress() || addr.isSiteLocalAddress()
+                    || addr.isLinkLocalAddress() || addr.isAnyLocalAddress()) {
+                return "Internal addresses are not allowed.";
+            }
+        } catch (java.net.UnknownHostException e) {
+            return "Cannot resolve host.";
+        }
         ScriptEngine engine = new ScriptEngineManager().getEngineByName("js");
         Bindings bindings = engine.getBindings(ScriptContext.ENGINE_SCOPE);
-        String cmd = String.format("load(\"%s\")", jsurl);
+        // Remove dangerous Java type access from the engine scope
+        bindings.remove("java");
+        bindings.remove("javax");
+        bindings.remove("Java");
+        bindings.remove("Packages");
+        String cmd = String.format("load(\"%s\")", jsurl.replace("\\", "\\\\").replace("\"", "\\\""));
         engine.eval(cmd, bindings);
+        return "Executed.";
     }
 
 
@@ -110,7 +156,7 @@ public class Rce {
      */
     @GetMapping("/vuln/yarm")
     public void yarm(String content) {
-        Yaml y = new Yaml();
+        Yaml y = new Yaml(new SafeConstructor());
         y.load(content);
     }
 
