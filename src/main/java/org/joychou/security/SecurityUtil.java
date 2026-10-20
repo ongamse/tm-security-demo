@@ -320,6 +320,20 @@ public class SecurityUtil {
         return sb.toString();
     }
 
+    /**
+     * Sanitize a value before using it in an HTTP header to prevent CRLF / header injection.
+     * Strips carriage-return (\r), line-feed (\n), and null (\0) characters.
+     *
+     * @param value the raw header value (may be null)
+     * @return sanitized value safe for use in response headers, or null if input is null
+     */
+    public static String sanitizeHeaderValue(String value) {
+        if (value == null) {
+            return null;
+        }
+        return value.replaceAll("[\\r\\n\\0]", "");
+    }
+
     public static void main(String[] args) {
     }
 
