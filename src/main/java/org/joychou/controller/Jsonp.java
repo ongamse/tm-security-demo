@@ -50,7 +50,7 @@ public class Jsonp {
         if (callback != null && !callback.matches("^[a-zA-Z_$][a-zA-Z0-9_$.]*$")) {
             return "invalid callback";
         }
-        return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
+        return HtmlUtils.htmlEscape(WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request)));
     }
 
     /**
@@ -70,7 +70,7 @@ public class Jsonp {
         if (callback != null && !callback.matches("^[a-zA-Z_$][a-zA-Z0-9_$.]*$")) {
             return "invalid callback";
         }
-        return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
+        return HtmlUtils.htmlEscape(WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request)));
     }
 
     /**
@@ -98,7 +98,7 @@ public class Jsonp {
     public ModelAndView mappingJackson2JsonView(HttpServletRequest req) {
         ModelAndView view = new ModelAndView(new MappingJackson2JsonView());
         Principal principal = req.getUserPrincipal();
-        view.addObject("username", principal.getName());
+        view.addObject("username", HtmlUtils.htmlEscape(principal.getName()));
         return view;
     }
 
@@ -118,7 +118,7 @@ public class Jsonp {
         if (callback != null && !callback.matches("^[a-zA-Z_$][a-zA-Z0-9_$.]*$")) {
             return "invalid callback";
         }
-        return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
+        return HtmlUtils.htmlEscape(WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request)));
     }
 
     /**
@@ -147,9 +147,9 @@ public class Jsonp {
         if (StringUtils.isNotBlank(callback)) {
             JSONPObject jsonpObj = new JSONPObject(callback);
             jsonpObj.addParameter(csrfToken);
-            return jsonpObj.toString();
+            return HtmlUtils.htmlEscape(jsonpObj.toString());
         } else {
-            return csrfToken.toString();
+            return HtmlUtils.htmlEscape(csrfToken.toString());
         }
     }
 
