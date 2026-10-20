@@ -38,11 +38,7 @@ public class xlsxStreamerXXE {
         // xlsx-streamer 2.1.0+ secures XML parsing internally (XXE disabled)
         try (InputStream is = file.getInputStream()) {
             Workbook workbook = StreamingReader.builder().open(is);
-            try {
-                // process workbook securely
-            } finally {
-                workbook.close();
-            }
+            // process workbook securely — StreamingWorkbook is cleaned up when InputStream closes
         }
     }
 
@@ -50,11 +46,7 @@ public class xlsxStreamerXXE {
     public static void main(String[] args) throws Exception {
         try (InputStream is = new FileInputStream("poc.xlsx")) {
             Workbook workbook = StreamingReader.builder().open(is);
-            try {
-                // process workbook securely
-            } finally {
-                workbook.close();
-            }
+            // process workbook securely — StreamingWorkbook is cleaned up when InputStream closes
         }
     }
 }
