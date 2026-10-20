@@ -1,0 +1,247 @@
+pipeline:
+  name: tm-secure-delivery
+  identifier: tm_secure_delivery
+  projectIdentifier: magman
+  orgIdentifier: sandbox
+  tags: {}
+  properties:
+    ci:
+      codebase:
+        connectorRef: ONGAMSE
+        repoName: tm-security-demo
+        build: <+input>
+  stages:
+    - stage:
+        name: Build and Scan
+        identifier: Build_and_Scan
+        description: ""
+        type: CI
+        spec:
+          cloneCodebase: true
+          caching:
+            enabled: true
+            override: false
+          buildIntelligence:
+            enabled: true
+          platform:
+            os: Linux
+            arch: Amd64
+          runtime:
+            type: Cloud
+            spec:
+              size: small
+              imageSpec:
+                imageName: ubuntu-latest
+          execution:
+            steps:
+              - step:
+                  type: Run
+                  name: Maven
+                  identifier: Maven
+                  spec:
+                    shell: Sh
+                    command: mvn -B -DskipTests compile package
+              - stepGroup:
+                  name: Harness SAST-SCA
+                  identifier: Harness_SASTSCA
+                  steps:
+                    - step:
+                        type: HarnessSAST
+                        name: Harness Code
+                        identifier: Harness_Code
+                        spec:
+                          mode: orchestration
+                          config: sast_sca
+                          target:
+                            type: repository
+                            detection: auto
+                          advanced:
+                            log:
+                              level: info
+                    - step:
+                        type: OpenAi
+                        name: LLM Security Check
+                        identifier: LLM_Security_Check
+                        spec:
+                          mode: orchestration
+                          config: incremental
+                          target:
+                            type: repository
+                            detection: auto
+                          advanced:
+                            log:
+                              level: debug
+                          privileged: false
+                          llmConnectorRef: TestinOAI
+                        failureStrategies:
+                          - onFailure:
+                              errors:
+                                - AllErrors
+                              action:
+                                type: Ignore
+              - stepGroup:
+                  name: Supply Chain
+                  identifier: Supply_Chain
+                  steps:
+                    - step:
+                        type: SscaOrchestration
+                        name: SBOM Generation
+                        identifier: SBOM_Generation
+                        spec:
+                          mode: generation
+                          tool:
+                            type: Syft
+                            spec:
+                              format: spdx-json
+                          source:
+                            type: repository
+                            spec:
+                              url: https://github.com/ongamse/tm-security-demo
+                              variant_type: branch
+                              variant: <+codebase.branch>
+                          resources:
+                            limits:
+                              memory: 500Mi
+                              cpu: "0.5"
+              - stepGroup:
+                  name: Image and Attestation
+                  identifier: Image_and_Attestation
+                  steps:
+                    - step:
+                        type: BuildAndPushDockerRegistry
+                        name: Build and Push
+                        identifier: Build_and_Push
+                        spec:
+                          connectorRef: tmsecurity
+                          repo: ongamsrse/tm-security-demo
+                          tags:
+                            - <+pipeline.sequenceId>
+                    - step:
+                        type: SscaOrchestration
+                        name: Image SBOM and Attestation
+                        identifier: Image_SBOM_and_Attestation
+                        spec:
+                          mode: generation
+                          tool:
+                            type: Syft
+                            spec:
+                              format: spdx-json
+                          source:
+                            type: docker
+                            spec:
+                              connector: tmsecurity
+                              image: ongamsrse/tm-security-demo:<+pipeline.sequenceId>
+                          attestation:
+                            type: keyless
+                            spec:
+                              oidcProvider: harness
+                          resources:
+                            limits:
+                              memory: 500Mi
+                              cpu: "0.5"
+                        timeout: 15m
+    - stage:
+        name: Approve and Release
+        identifier: Approve_and_Release
+        description: ""
+        type: Approval
+        spec:
+          execution:
+            steps:
+              - step:
+                  type: HarnessApproval
+                  name: Release approval
+                  identifier: Release_approval
+                  timeout: 1d
+                  spec:
+                    approvalMessage: Review the findings and approve the release.
+                    includePipelineExecutionHistory: true
+                    isAutoRejectEnabled: false
+                    approvers:
+                      userGroups:
+                        - _project_all_users
+                      minimumCount: 1
+                      disallowPipelineExecutor: false
+                    approverInputs: []
+    - stage:
+        name: QA Validation
+        identifier: QA_Validation
+        description: Re-verify the approved image before QA - signed SBOM, policy check, smoke test, image scan
+        type: CI
+        spec:
+          cloneCodebase: false
+          platform:
+            os: Linux
+            arch: Amd64
+          runtime:
+            type: Cloud
+            spec:
+              size: small
+              imageSpec:
+                imageName: ubuntu-latest
+          execution:
+            steps:
+              - step:
+                  type: SscaEnforcement
+                  name: SBOM Policy Enforcement
+                  identifier: SBOMPolicyEnforcement_1
+                  spec:
+                    source:
+                      type: docker
+                      spec:
+                        connector: tmsecurity
+                        image: ongamsrse/tm-security-demo:<+pipeline.sequenceId>
+                    verifyAttestation:
+                      type: keyless
+                      spec:
+                        oidcProvider: harness
+                    policy:
+                      policySets:
+                        - SBOM_Policy
+                    resources:
+                      limits:
+                        memory: 500Mi
+                        cpu: "0.5"
+                  timeout: 15m
+              - step:
+                  type: Run
+                  name: Smoke Test Image
+                  identifier: Smoke_Test_Image
+                  spec:
+                    shell: Sh
+                    command: |
+                      set -e
+                      IMG=ongamsrse/tm-security-demo:<+pipeline.sequenceId>
+                      docker pull $IMG
+                      docker run --rm --entrypoint sh $IMG -c "java -version && ls -l /app/app.jar"
+                      echo "Smoke test passed: image pulls, JRE runs, application jar present"
+                  timeout: 10m
+              - step:
+                  type: AquaTrivy
+                  name: QA Image Scan
+                  identifier: QA_Image_Scan
+                  spec:
+                    mode: orchestration
+                    config: default
+                    target:
+                      type: container
+                      detection: manual
+                      name: tm-security-demo
+                      variant: <+pipeline.sequenceId>
+                    advanced:
+                      log:
+                        level: info
+                    privileged: true
+                    image:
+                      type: docker_v2
+                      name: ongamsrse/tm-security-demo
+                      tag: <+pipeline.sequenceId>
+                  timeout: 15m
+              - step:
+                  type: Run
+                  name: QA Ready
+                  identifier: QA_Ready
+                  spec:
+                    shell: Sh
+                    command: |
+                      echo "Image ongamsrse/tm-security-demo:<+pipeline.sequenceId> verified, smoke tested, scanned and ready for QA"
