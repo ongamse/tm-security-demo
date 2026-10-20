@@ -32,21 +32,31 @@ public class xlsxStreamerXXE {
 
     @PostMapping("/readxlsx")
     public void xllx_streamer_xxe(MultipartFile file) throws IOException {
-        try (InputStream is = file.getInputStream();
-             OPCPackage pkg = OPCPackage.open(is);
-             XSSFWorkbook workbook = new XSSFWorkbook(pkg)) {
-            // Workbook opened safely via OPCPackage (no external entity processing)
+        InputStream is = null;
+        OPCPackage pkg = null;
+        try {
+            is = file.getInputStream();
+            pkg = OPCPackage.open(is);
+            XSSFWorkbook workbook = new XSSFWorkbook(pkg);
         } catch (Exception e) {
             throw new IOException("Failed to process xlsx file", e);
+        } finally {
+            if (pkg != null) { try { pkg.close(); } catch (Exception ignored) {} }
+            if (is != null) { is.close(); }
         }
     }
 
 
     public static void main(String[] args) throws Exception {
-        try (InputStream is = new FileInputStream("poc.xlsx");
-             OPCPackage pkg = OPCPackage.open(is);
-             XSSFWorkbook workbook = new XSSFWorkbook(pkg)) {
-            // Workbook opened safely via OPCPackage
+        InputStream is = null;
+        OPCPackage pkg = null;
+        try {
+            is = new FileInputStream("poc.xlsx");
+            pkg = OPCPackage.open(is);
+            XSSFWorkbook workbook = new XSSFWorkbook(pkg);
+        } finally {
+            if (pkg != null) { try { pkg.close(); } catch (Exception ignored) {} }
+            if (is != null) { is.close(); }
         }
     }
 }
