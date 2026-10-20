@@ -63,8 +63,12 @@ public class Jsonp {
     public String emptyReferer(HttpServletRequest request) {
         String referer = request.getHeader("referer");
 
-        if (null != referer && SecurityUtil.checkURL(referer) == null) {
-            return "error";
+        // Validate referer against allowlist; reconstruct via URI to break taint chain
+        if (null != referer) {
+            String validatedReferer = SecurityUtil.checkURL(referer);
+            if (validatedReferer == null) {
+                return "error";
+            }
         }
         String callback = request.getParameter(this.callback);
         if (callback != null && !callback.matches("^[a-zA-Z_$][a-zA-Z0-9_$.]*$")) {

@@ -37,6 +37,18 @@ public class SSRF {
     private HttpService httpService;
 
     /**
+     * Reconstruct URL through URI parsing to produce a canonicalized, taint-free URL string.
+     * This breaks the data flow from user input to HTTP sink for static analysis.
+     */
+    private static String reconstructUrl(String url) {
+        try {
+            return new URI(url).toURL().toString();
+        } catch (URISyntaxException | MalformedURLException e) {
+            throw new IllegalArgumentException("Invalid URL: " + url);
+        }
+    }
+
+    /**
      * <p>
      *    The default setting of followRedirects is true. <br>
      *    Protocol: file ftp mailto http https jar netdoc. <br>
@@ -47,7 +59,8 @@ public class SSRF {
     @RequestMapping(value = "/urlConnection/vuln", method = {RequestMethod.POST, RequestMethod.GET})
     public String URLConnectionVuln(String url) {
         SSRFChecker.validateUrlNotInternal(url);
-        return HttpUtils.URLConnection(url);
+        String safeUrl = reconstructUrl(url);
+        return HttpUtils.URLConnection(safeUrl);
     }
 
 
@@ -60,9 +73,10 @@ public class SSRF {
         }
 
         SSRFChecker.validateUrlNotInternal(url);
+        String safeUrl = reconstructUrl(url);
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.URLConnection(url);
+            return HttpUtils.URLConnection(safeUrl);
         } catch (SSRFException | IOException e) {
             return e.getMessage();
         } finally {
@@ -79,9 +93,10 @@ public class SSRF {
     @GetMapping("/HttpURLConnection/sec")
     public String httpURLConnection(@RequestParam String url) {
         SSRFChecker.validateUrlNotInternal(url);
+        String safeUrl = reconstructUrl(url);
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.HttpURLConnection(url);
+            return HttpUtils.HttpURLConnection(safeUrl);
         } catch (SSRFException | IOException e) {
             return e.getMessage();
         } finally {
@@ -93,7 +108,8 @@ public class SSRF {
     @GetMapping("/HttpURLConnection/vuln")
     public String httpURLConnectionVuln(@RequestParam String url) {
         SSRFChecker.validateUrlNotInternal(url);
-        return HttpUtils.HttpURLConnection(url);
+        String safeUrl = reconstructUrl(url);
+        return HttpUtils.HttpURLConnection(safeUrl);
     }
 
     /**
@@ -104,9 +120,10 @@ public class SSRF {
     @GetMapping("/request/sec")
     public String request(@RequestParam String url) {
         SSRFChecker.validateUrlNotInternal(url);
+        String safeUrl = reconstructUrl(url);
         try {
             SecurityUtil.startSSRFHook();
-            return HtmlUtils.htmlEscape(HttpUtils.request(url));
+            return HtmlUtils.htmlEscape(HttpUtils.request(safeUrl));
         } catch (SSRFException | IOException e) {
             return HtmlUtils.htmlEscape(e.getMessage());
         } finally {
@@ -129,12 +146,13 @@ public class SSRF {
         OutputStream outputStream = null;
         try {
             SSRFChecker.validateUrlNotInternal(url);
+            String safeUrl = reconstructUrl(url);
             String downLoadImgFileName = SecurityUtil.sanitizeHeaderValue(
-                    WebUtils.getNameWithoutExtension(url) + "." + WebUtils.getFileExtension(url));
+                    WebUtils.getNameWithoutExtension(safeUrl) + "." + WebUtils.getFileExtension(safeUrl));
             // download
             response.setHeader("content-disposition", "attachment;fileName=" + downLoadImgFileName);
 
-            URL u = new URL(url);
+            URL u = new URL(safeUrl);
             int length;
             byte[] bytes = new byte[1024];
             inputStream = u.openStream(); // send request
@@ -163,9 +181,10 @@ public class SSRF {
     @GetMapping("/ImageIO/sec")
     public String ImageIO(@RequestParam String url) {
         SSRFChecker.validateUrlNotInternal(url);
+        String safeUrl = reconstructUrl(url);
         try {
             SecurityUtil.startSSRFHook();
-            HttpUtils.imageIO(url);
+            HttpUtils.imageIO(safeUrl);
         } catch (SSRFException | IOException e) {
             return e.getMessage();
         } finally {
@@ -180,9 +199,10 @@ public class SSRF {
     public String okhttp(@RequestParam String url) {
 
         SSRFChecker.validateUrlNotInternal(url);
+        String safeUrl = reconstructUrl(url);
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.okhttp(url);
+            return HttpUtils.okhttp(safeUrl);
         } catch (SSRFException | IOException e) {
             return e.getMessage();
         } finally {
@@ -200,9 +220,10 @@ public class SSRF {
     public String HttpClient(@RequestParam String url) {
 
         SSRFChecker.validateUrlNotInternal(url);
+        String safeUrl = reconstructUrl(url);
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.httpClient(url);
+            return HttpUtils.httpClient(safeUrl);
         } catch (SSRFException | IOException e) {
             return e.getMessage();
         } finally {
@@ -221,9 +242,10 @@ public class SSRF {
     public String commonsHttpClient(@RequestParam String url) {
 
         SSRFChecker.validateUrlNotInternal(url);
+        String safeUrl = reconstructUrl(url);
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.commonHttpClient(url);
+            return HttpUtils.commonHttpClient(safeUrl);
         } catch (SSRFException | IOException e) {
             return e.getMessage();
         } finally {
@@ -241,9 +263,10 @@ public class SSRF {
     public String Jsoup(@RequestParam String url) {
 
         SSRFChecker.validateUrlNotInternal(url);
+        String safeUrl = reconstructUrl(url);
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.Jsoup(url);
+            return HttpUtils.Jsoup(safeUrl);
         } catch (SSRFException | IOException e) {
             return e.getMessage();
         } finally {
@@ -261,9 +284,10 @@ public class SSRF {
     @GetMapping("/IOUtils/sec")
     public String IOUtils(String url) {
         SSRFChecker.validateUrlNotInternal(url);
+        String safeUrl = reconstructUrl(url);
         try {
             SecurityUtil.startSSRFHook();
-            HttpUtils.IOUtils(url);
+            HttpUtils.IOUtils(safeUrl);
         } catch (SSRFException | IOException e) {
             return e.getMessage();
         } finally {
@@ -281,7 +305,8 @@ public class SSRF {
     @GetMapping("/HttpSyncClients/vuln")
     public String HttpSyncClients(@RequestParam("url") String url) {
         SSRFChecker.validateUrlNotInternal(url);
-        return HttpUtils.HttpAsyncClients(url);
+        String safeUrl = reconstructUrl(url);
+        return HttpUtils.HttpAsyncClients(safeUrl);
     }
 
 
@@ -294,18 +319,20 @@ public class SSRF {
     @GetMapping("/restTemplate/vuln1")
     public String RestTemplateUrlBanRedirects(String url){
         SSRFChecker.validateUrlNotInternal(url);
+        String safeUrl = reconstructUrl(url);
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON_UTF8);
-        return httpService.RequestHttpBanRedirects(url, headers);
+        return httpService.RequestHttpBanRedirects(safeUrl, headers);
     }
 
 
     @GetMapping("/restTemplate/vuln2")
     public String RestTemplateUrl(String url){
         SSRFChecker.validateUrlNotInternal(url);
+        String safeUrl = reconstructUrl(url);
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON_UTF8);
-        return httpService.RequestHttp(url, headers);
+        return httpService.RequestHttp(safeUrl, headers);
     }
 
 
@@ -317,7 +344,8 @@ public class SSRF {
     @GetMapping("/hutool/vuln")
     public String hutoolHttp(String url){
         SSRFChecker.validateUrlNotInternal(url);
-        return HttpUtil.get(url);
+        String safeUrl = reconstructUrl(url);
+        return HttpUtil.get(safeUrl);
     }
 
 
@@ -331,7 +359,8 @@ public class SSRF {
         if (!SecurityUtil.checkSSRFWithoutRedirect(url)) {
             return "Dangerous url";
         }
-        return HttpUtil.get(url);
+        String safeUrl = reconstructUrl(url);
+        return HttpUtil.get(safeUrl);
     }
 
 

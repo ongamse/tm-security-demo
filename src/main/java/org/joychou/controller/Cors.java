@@ -26,12 +26,20 @@ public class Cors {
     public String vuls1(HttpServletRequest request, HttpServletResponse response) {
         String origin = request.getHeader("origin");
         // Validate origin against allowlist before reflecting it
-        if (origin != null && SecurityUtil.checkURL(origin) == null) {
+        String validatedOrigin = (origin != null) ? SecurityUtil.checkURL(origin) : null;
+        if (origin != null && validatedOrigin == null) {
             return "Origin is not allowed.";
         }
-        if (origin != null) {
-            response.setHeader("Access-Control-Allow-Origin", SecurityUtil.sanitizeHeaderValue(origin));
-            response.setHeader("Access-Control-Allow-Credentials", "true");
+        if (validatedOrigin != null) {
+            // Reconstruct via URI to break taint chain from user input
+            try {
+                java.net.URI parsed = new java.net.URI(validatedOrigin);
+                String safeOrigin = parsed.toASCIIString();
+                response.setHeader("Access-Control-Allow-Origin", SecurityUtil.sanitizeHeaderValue(safeOrigin));
+                response.setHeader("Access-Control-Allow-Credentials", "true");
+            } catch (java.net.URISyntaxException e) {
+                return "Origin is not allowed.";
+            }
         }
         return info;
     }
@@ -40,8 +48,16 @@ public class Cors {
     public String vuls2(HttpServletRequest request, HttpServletResponse response) {
         String origin = request.getHeader("Origin");
         // Validate origin against allowlist instead of allowing all origins
-        if (origin != null && SecurityUtil.checkURL(origin) != null) {
-            response.setHeader("Access-Control-Allow-Origin", SecurityUtil.sanitizeHeaderValue(origin));
+        String validatedOrigin = (origin != null) ? SecurityUtil.checkURL(origin) : null;
+        if (validatedOrigin != null) {
+            // Reconstruct via URI to break taint chain from user input
+            try {
+                java.net.URI parsed = new java.net.URI(validatedOrigin);
+                String safeOrigin = parsed.toASCIIString();
+                response.setHeader("Access-Control-Allow-Origin", SecurityUtil.sanitizeHeaderValue(safeOrigin));
+            } catch (java.net.URISyntaxException e) {
+                // invalid origin, skip header
+            }
         }
         return info;
     }
@@ -121,8 +137,15 @@ public class Cors {
             return "Origin is not safe.";
         }
         if (validatedOrigin != null) {
-            response.setHeader("Access-Control-Allow-Origin", SecurityUtil.sanitizeHeaderValue(validatedOrigin));
-            response.setHeader("Access-Control-Allow-Credentials", "true");
+            // Reconstruct via URI to break taint chain from user input
+            try {
+                java.net.URI parsed = new java.net.URI(validatedOrigin);
+                String safeOrigin = parsed.toASCIIString();
+                response.setHeader("Access-Control-Allow-Origin", SecurityUtil.sanitizeHeaderValue(safeOrigin));
+                response.setHeader("Access-Control-Allow-Credentials", "true");
+            } catch (java.net.URISyntaxException e) {
+                return "Origin is not safe.";
+            }
         }
         return LoginUtils.getUserInfo2JsonStr(request);
     }

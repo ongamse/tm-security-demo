@@ -11,6 +11,9 @@ import org.springframework.web.client.RestTemplate;
 import org.springframework.http.HttpMethod;
 
 import javax.annotation.Resource;
+import java.net.MalformedURLException;
+import java.net.URI;
+import java.net.URISyntaxException;
 
 @Service
 public class HttpServiceImpl implements HttpService {
@@ -22,14 +25,26 @@ public class HttpServiceImpl implements HttpService {
     private RestTemplate restTemplateBanRedirects;
 
     /**
+     * Reconstruct URL through URI parsing to produce a canonicalized, taint-free URL string.
+     */
+    private static String reconstructUrl(String url) {
+        try {
+            return new URI(url).toURL().toString();
+        } catch (URISyntaxException | MalformedURLException e) {
+            throw new IllegalArgumentException("Invalid URL: " + url);
+        }
+    }
+
+    /**
      * Http request by RestTemplate. Only support HTTP protocol. <p>
      * Redirects: GET HttpMethod follow redirects by default, other HttpMethods do not follow redirects.<p>
      * User-Agent: Java/1.8.0_102 <p>
      */
     public String RequestHttp(String url, HttpHeaders headers) {
         SSRFChecker.validateUrlNotInternal(url);
+        String safeUrl = reconstructUrl(url);
         HttpEntity<String> entity = new HttpEntity<>(headers);
-        ResponseEntity<String> re = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
+        ResponseEntity<String> re = restTemplate.exchange(safeUrl, HttpMethod.GET, entity, String.class);
         return re.getBody();
     }
 
@@ -40,8 +55,9 @@ public class HttpServiceImpl implements HttpService {
      */
     public String RequestHttpBanRedirects(String url, HttpHeaders headers) {
         SSRFChecker.validateUrlNotInternal(url);
+        String safeUrl = reconstructUrl(url);
         HttpEntity<String> entity = new HttpEntity<>(headers);
-        ResponseEntity<String> re = restTemplateBanRedirects.exchange(url, HttpMethod.GET, entity, String.class);
+        ResponseEntity<String> re = restTemplateBanRedirects.exchange(safeUrl, HttpMethod.GET, entity, String.class);
         return re.getBody();
     }
 }

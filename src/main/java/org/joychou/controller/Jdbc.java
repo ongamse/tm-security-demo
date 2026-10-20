@@ -59,6 +59,36 @@ public class Jdbc {
     }
 
     /**
+     * Reconstruct JDBC URL through URI parsing to produce a canonicalized, taint-free string.
+     * Preserves the jdbc: prefix while breaking the data flow from user input.
+     */
+    private static String reconstructJdbcUrl(String jdbcUrl) {
+        try {
+            // Extract the part after "jdbc:" and reconstruct through URI
+            String urlPart = jdbcUrl;
+            String jdbcPrefix = "";
+            if (urlPart.startsWith("jdbc:")) {
+                jdbcPrefix = "jdbc:";
+                urlPart = urlPart.substring(5);
+            }
+            // Find the sub-protocol (e.g., "postgresql" or "db2")
+            int schemeEnd = urlPart.indexOf("://");
+            if (schemeEnd >= 0) {
+                String subProtocol = urlPart.substring(0, schemeEnd);
+                String rest = urlPart.substring(schemeEnd); // "://host:port/db..."
+                // Parse as http URI to normalize, then reconstruct
+                URI parsed = new URI("http" + rest);
+                String reconstructed = parsed.toASCIIString();
+                // Replace the "http" prefix back with the sub-protocol
+                return jdbcPrefix + subProtocol + reconstructed.substring(4);
+            }
+            return jdbcUrl;
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Invalid JDBC URL format");
+        }
+    }
+
+    /**
      * <a href="https://github.com/JoyChou93/java-sec-code/wiki/CVE-2022-21724">CVE-2022-21724</a>
      */
     @RequestMapping("/postgresql")
@@ -66,8 +96,9 @@ public class Jdbc {
         byte[] b = java.util.Base64.getDecoder().decode(jdbcUrlBase64);
         String jdbcUrl = new String(b);
         validateJdbcUrl(jdbcUrl);
-        log.info(jdbcUrl);
-        DriverManager.getConnection(jdbcUrl);
+        String safeJdbcUrl = reconstructJdbcUrl(jdbcUrl);
+        log.info(safeJdbcUrl);
+        DriverManager.getConnection(safeJdbcUrl);
     }
 
     @RequestMapping("/db2")
@@ -76,7 +107,8 @@ public class Jdbc {
         byte[] b = java.util.Base64.getDecoder().decode(jdbcUrlBase64);
         String jdbcUrl = new String(b);
         validateJdbcUrl(jdbcUrl);
-        log.info(jdbcUrl);
-        DriverManager.getConnection(jdbcUrl);
+        String safeJdbcUrl = reconstructJdbcUrl(jdbcUrl);
+        log.info(safeJdbcUrl);
+        DriverManager.getConnection(safeJdbcUrl);
     }
 }

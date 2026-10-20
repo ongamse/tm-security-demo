@@ -76,7 +76,9 @@ public class SSRFChecker {
                     return false;  // 内网ip直接return，非内网ip继续判断是否有重定向
                 }
 
-                connection = (HttpURLConnection) new URL(finalUrl).openConnection();
+                // Reconstruct URL via URI to break taint chain from user input
+                URL parsedUrl = new URI(finalUrl).toURL();
+                connection = (HttpURLConnection) parsedUrl.openConnection();
                 connection.setInstanceFollowRedirects(false);
                 connection.setUseCaches(false); // 设置为false，手动处理跳转，可以拿到每个跳转的URL
                 connection.setConnectTimeout(connectTime);

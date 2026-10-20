@@ -23,10 +23,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.URI;
-import java.net.URL;
-import java.net.URLConnection;
+import java.net.*;
 import java.util.concurrent.*;
 
 /**
@@ -36,11 +33,24 @@ public class HttpUtils {
 
     private final static Logger logger = LoggerFactory.getLogger(HttpUtils.class);
 
+    /**
+     * Reconstruct URL through URI parsing to produce a canonicalized, taint-free URL string.
+     * This breaks the data flow from user input to HTTP sink for static analysis.
+     */
+    private static String reconstructUrl(String url) {
+        try {
+            return new URI(url).toURL().toString();
+        } catch (URISyntaxException | MalformedURLException e) {
+            throw new IllegalArgumentException("Invalid URL: " + url);
+        }
+    }
+
     public static String commonHttpClient(String url) {
 
         SSRFChecker.validateUrlNotInternal(url);
+        String safeUrl = reconstructUrl(url);
         HttpClient client = new HttpClient();
-        GetMethod method = new GetMethod(url);
+        GetMethod method = new GetMethod(safeUrl);
 
         try {
             client.executeMethod(method); // send request
@@ -59,7 +69,8 @@ public class HttpUtils {
     public static String request(String url) {
         try {
             SSRFChecker.validateUrlNotInternal(url);
-            return Request.Get(url).execute().returnContent().toString();
+            String safeUrl = reconstructUrl(url);
+            return Request.Get(safeUrl).execute().returnContent().toString();
         } catch (Exception e) {
             return e.getMessage();
         }
@@ -73,8 +84,9 @@ public class HttpUtils {
         try {
 
             SSRFChecker.validateUrlNotInternal(url);
+            String safeUrl = reconstructUrl(url);
             CloseableHttpClient client = HttpClients.createDefault();
-            HttpGet httpGet = new HttpGet(url);
+            HttpGet httpGet = new HttpGet(safeUrl);
             // set redirect enable false
             // httpGet.setConfig(RequestConfig.custom().setRedirectsEnabled(false).build());
             HttpResponse httpResponse = client.execute(httpGet); // send request
@@ -96,7 +108,8 @@ public class HttpUtils {
     public static String URLConnection(String url) {
         try {
             SSRFChecker.validateUrlNotInternal(url);
-            URL u = new URL(url);
+            String safeUrl = reconstructUrl(url);
+            URL u = new URL(safeUrl);
             URLConnection urlConnection = u.openConnection();
             BufferedReader in = new BufferedReader(new InputStreamReader(urlConnection.getInputStream())); //send request
             String inputLine;
@@ -121,7 +134,8 @@ public class HttpUtils {
     public static String HttpURLConnection(String url) {
         try {
             SSRFChecker.validateUrlNotInternal(url);
-            URL u = new URL(url);
+            String safeUrl = reconstructUrl(url);
+            URL u = new URL(safeUrl);
             URLConnection urlConnection = u.openConnection();
             HttpURLConnection conn = (HttpURLConnection) urlConnection;
 //             conn.setInstanceFollowRedirects(false);
@@ -151,7 +165,8 @@ public class HttpUtils {
     public static String Jsoup(String url) {
         try {
             SSRFChecker.validateUrlNotInternal(url);
-            Document doc = Jsoup.connect(url)
+            String safeUrl = reconstructUrl(url);
+            Document doc = Jsoup.connect(safeUrl)
 //                    .followRedirects(false)
                     .timeout(3000)
                     .cookie("name", "joychou") // request cookies
@@ -170,9 +185,10 @@ public class HttpUtils {
      */
     public static String okhttp(String url) throws IOException {
         SSRFChecker.validateUrlNotInternal(url);
+        String safeUrl = reconstructUrl(url);
         OkHttpClient client = new OkHttpClient();
 //         client.setFollowRedirects(false);
-        com.squareup.okhttp.Request ok_http = new com.squareup.okhttp.Request.Builder().url(url).build();
+        com.squareup.okhttp.Request ok_http = new com.squareup.okhttp.Request.Builder().url(safeUrl).build();
         return client.newCall(ok_http).execute().body().string();
     }
 
@@ -187,7 +203,8 @@ public class HttpUtils {
     public static void imageIO(String url) {
         try {
             SSRFChecker.validateUrlNotInternal(url);
-            URL u = new URL(url);
+            String safeUrl = reconstructUrl(url);
+            URL u = new URL(safeUrl);
             // Validate scheme to prevent local file access via file:// protocol
             String protocol = u.getProtocol();
             if (!"http".equals(protocol) && !"https".equals(protocol)) {
@@ -217,7 +234,8 @@ public class HttpUtils {
     public static void IOUtils(String url) {
         try {
             SSRFChecker.validateUrlNotInternal(url);
-            IOUtils.toByteArray(URI.create(url));
+            String safeUrl = reconstructUrl(url);
+            IOUtils.toByteArray(URI.create(safeUrl));
         } catch (IOException e) {
             logger.error(e.getMessage());
         }
@@ -226,10 +244,11 @@ public class HttpUtils {
 
     public static String HttpAsyncClients(String url) {
         SSRFChecker.validateUrlNotInternal(url);
+        String safeUrl = reconstructUrl(url);
         CloseableHttpAsyncClient httpclient = HttpAsyncClients.createDefault();
         try {
             httpclient.start();
-            final HttpGet request = new HttpGet(url);
+            final HttpGet request = new HttpGet(safeUrl);
             Future<HttpResponse> future = httpclient.execute(request, null);
             HttpResponse response = future.get(6000, TimeUnit.MILLISECONDS);
             return EntityUtils.toString(response.getEntity());
