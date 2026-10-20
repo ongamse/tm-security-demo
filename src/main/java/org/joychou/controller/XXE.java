@@ -8,6 +8,7 @@ import org.springframework.data.web.ProjectedPayload;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.util.HtmlUtils;
 
 import javax.servlet.http.HttpServletRequest;
 
@@ -267,11 +268,11 @@ public class XXE {
                     buf.append(String.format("%s: %s\n", node.getNodeName(), node.getTextContent()));
                 }
             }
-            return buf.toString();
+            return HtmlUtils.htmlEscape(buf.toString());
         } catch (Exception e) {
             e.printStackTrace();
             logger.error(e.toString());
-            return e.toString();
+            return HtmlUtils.htmlEscape(e.toString());
         }
     }
 
@@ -441,7 +442,7 @@ public class XXE {
         HttpEntity<String> post(@RequestBody UserPayload user) {
             try {
                 logger.info(user.toString());
-                return ResponseEntity.ok(String.format("hello, %s!", user.getUserName()));
+                return ResponseEntity.ok(String.format("hello, %s!", HtmlUtils.htmlEscape(user.getUserName())));
             }catch (Exception e){
                 e.printStackTrace();
                 return ResponseEntity.ok("error");
