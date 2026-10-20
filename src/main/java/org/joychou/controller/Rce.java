@@ -1,6 +1,8 @@
 package org.joychou.controller;
 
 import groovy.lang.GroovyShell;
+import org.codehaus.groovy.control.CompilerConfiguration;
+import org.codehaus.groovy.control.customizers.SecureASTCustomizer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -10,14 +12,17 @@ import org.yaml.snakeyaml.constructor.SafeConstructor;
 
 import org.springframework.web.util.HtmlUtils;
 
-import javax.script.Bindings;
-import javax.script.ScriptContext;
 import javax.script.ScriptEngine;
 import javax.script.ScriptEngineManager;
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.net.MalformedURLException;
+import java.net.URL;
 import java.sql.DriverManager;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 
 
 /**
@@ -30,13 +35,25 @@ import java.sql.DriverManager;
 @RequestMapping("/rce")
 public class Rce {
 
+    private static final Set<String> ALLOWED_COMMANDS = new HashSet<>(Arrays.asList(
+            "whoami", "id", "hostname", "date", "uptime", "uname", "ls", "df", "pwd"
+    ));
+
+    private static final Set<String> ALLOWED_JS_HOSTS = new HashSet<>(Arrays.asList(
+            "trusted.example.com"
+    ));
+
     @GetMapping("/runtime/exec")
     public String CommandExec(String cmd) {
+        if (cmd == null || !ALLOWED_COMMANDS.contains(cmd.trim())) {
+            return "Command not allowed. Allowed commands: " + ALLOWED_COMMANDS;
+        }
         Runtime run = Runtime.getRuntime();
         StringBuilder sb = new StringBuilder();
 
         try {
-            Process p = run.exec(cmd);
+            // Use argv form (no shell) with the validated command
+            Process p = run.exec(new String[]{cmd.trim()});
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
             String tmpStr;
@@ -64,12 +81,15 @@ public class Rce {
      */
     @GetMapping("/ProcessBuilder")
     public String processBuilder(String cmd) {
+        if (cmd == null || !ALLOWED_COMMANDS.contains(cmd.trim())) {
+            return "Command not allowed. Allowed commands: " + ALLOWED_COMMANDS;
+        }
 
         StringBuilder sb = new StringBuilder();
 
         try {
-            String[] arrCmd = {"/bin/sh", "-c", cmd};
-            ProcessBuilder processBuilder = new ProcessBuilder(arrCmd);
+            // Use argv form without shell to prevent injection
+            ProcessBuilder processBuilder = new ProcessBuilder(cmd.trim());
             Process p = processBuilder.start();
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
@@ -79,10 +99,10 @@ public class Rce {
                 sb.append(tmpStr);
             }
         } catch (Exception e) {
-            return e.toString();
+            return HtmlUtils.htmlEscape(e.toString());
         }
 
-        return sb.toString();
+        return HtmlUtils.htmlEscape(sb.toString());
     }
 
 
@@ -95,12 +115,28 @@ public class Rce {
      * @param jsurl js url
      */
     @GetMapping("/jscmd")
-    public void jsEngine(String jsurl) throws Exception{
-        // js nashorn javascript ecmascript
+    public String jsEngine(String jsurl) throws Exception {
+        // Validate URL and check host against allowlist
+        if (jsurl == null || jsurl.isEmpty()) {
+            return "URL is required";
+        }
+        URL parsedUrl;
+        try {
+            parsedUrl = new URL(jsurl);
+        } catch (MalformedURLException e) {
+            return "Invalid URL";
+        }
+        String scheme = parsedUrl.getProtocol();
+        if (!"https".equals(scheme)) {
+            return "Only HTTPS URLs are allowed";
+        }
+        String host = parsedUrl.getHost();
+        if (!ALLOWED_JS_HOSTS.contains(host)) {
+            return "Host not in allowlist. Allowed hosts: " + ALLOWED_JS_HOSTS;
+        }
         ScriptEngine engine = new ScriptEngineManager().getEngineByName("js");
-        Bindings bindings = engine.getBindings(ScriptContext.ENGINE_SCOPE);
-        String cmd = String.format("load(\"%s\")", jsurl);
-        engine.eval(cmd, bindings);
+        engine.eval("load('" + jsurl.replace("'", "") + "')");
+        return "Executed";
     }
 
 
@@ -127,9 +163,29 @@ public class Rce {
      * @param content groovy shell
      */
     @GetMapping("groovy")
-    public void groovyshell(String content) {
-        GroovyShell groovyShell = new GroovyShell();
-        groovyShell.evaluate(content);
+    public String groovyshell(String content) {
+        if (content == null || content.isEmpty()) {
+            return "Content is required";
+        }
+        // Use SecureASTCustomizer to restrict dangerous operations
+        SecureASTCustomizer secureASTCustomizer = new SecureASTCustomizer();
+        secureASTCustomizer.setDisallowedImports(Arrays.asList(
+                "java.lang.Runtime", "java.lang.ProcessBuilder",
+                "java.io.File", "java.lang.System",
+                "java.lang.reflect.*", "java.net.*"
+        ));
+        secureASTCustomizer.setDisallowedReceiversClasses(Arrays.asList(
+                (Class) Runtime.class, (Class) ProcessBuilder.class,
+                (Class) System.class, (Class) Class.class
+        ));
+        secureASTCustomizer.setIndirectImportCheckEnabled(true);
+
+        CompilerConfiguration config = new CompilerConfiguration();
+        config.addCompilationCustomizers(secureASTCustomizer);
+
+        GroovyShell groovyShell = new GroovyShell(config);
+        Object result = groovyShell.evaluate(content);
+        return result != null ? HtmlUtils.htmlEscape(result.toString()) : "";
     }
 
 
