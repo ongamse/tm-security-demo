@@ -108,20 +108,15 @@ public class URLWhiteList {
 
         logger.info("url:  " + url);
 
-        if (!SecurityUtil.isHttp(url)) {
-            return;
-        }
-
-        // Use URI instead of URL to avoid host parsing bypass
         String host = SecurityUtil.gethost(url);
         logger.info("host:  " + host);
 
-        for (String domain : domainwhitelist) {
-            if (host.equals(domain) || host.endsWith("." + domain)) {
-                res.sendRedirect(url);
-                return;
-            }
+        if (SecurityUtil.checkURL(url) == null) {
+            res.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            return;
         }
+
+        res.sendRedirect(url);
 
     }
 
