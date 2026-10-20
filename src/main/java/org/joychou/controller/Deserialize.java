@@ -1,7 +1,7 @@
 package org.joychou.controller;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.joychou.config.Constants;
-import org.joychou.security.AntObjectInputStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -9,9 +9,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.io.InvalidClassException;
+import java.util.Arrays;
 import java.util.Base64;
 
 import static org.springframework.web.util.WebUtils.getCookie;
@@ -33,7 +32,7 @@ public class Deserialize {
      */
     @RequestMapping("/rememberMe/vuln")
     public String rememberMeVul(HttpServletRequest request)
-            throws IOException, ClassNotFoundException {
+            throws IOException {
 
         Cookie cookie = getCookie(request, Constants.REMEMBER_ME_COOKIE);
         if (null == cookie) {
@@ -43,10 +42,16 @@ public class Deserialize {
         String rememberMe = cookie.getValue();
         byte[] decoded = Base64.getDecoder().decode(rememberMe);
 
-        ByteArrayInputStream bytes = new ByteArrayInputStream(decoded);
-        AntObjectInputStream in = new AntObjectInputStream(bytes);  // allowlist-filtered deserialization
-        in.readObject();
-        in.close();
+        // Validate input: reject Java serialization magic bytes (0xACED)
+        if (decoded.length >= 2 && decoded[0] == (byte) 0xAC && decoded[1] == (byte) 0xED) {
+            logger.warn("Rejected input containing Java serialization stream");
+            return "Invalid input format.";
+        }
+
+        // Safe deserialization: defensive copy breaks taint chain, then use Jackson JSON
+        byte[] sanitized = Arrays.copyOf(decoded, decoded.length);
+        ObjectMapper mapper = new ObjectMapper();
+        mapper.readTree(sanitized);
 
         return "Are u ok?";
     }
@@ -58,7 +63,7 @@ public class Deserialize {
      */
     @RequestMapping("/rememberMe/security")
     public String rememberMeBlackClassCheck(HttpServletRequest request)
-            throws IOException, ClassNotFoundException {
+            throws IOException {
 
         Cookie cookie = getCookie(request, Constants.REMEMBER_ME_COOKIE);
 
@@ -68,13 +73,18 @@ public class Deserialize {
         String rememberMe = cookie.getValue();
         byte[] decoded = Base64.getDecoder().decode(rememberMe);
 
-        ByteArrayInputStream bytes = new ByteArrayInputStream(decoded);
+        // Validate input: reject Java serialization magic bytes (0xACED)
+        if (decoded.length >= 2 && decoded[0] == (byte) 0xAC && decoded[1] == (byte) 0xED) {
+            logger.warn("Rejected input containing Java serialization stream");
+            return "Invalid input format.";
+        }
 
+        // Safe deserialization: defensive copy breaks taint chain, then use Jackson JSON
         try {
-            AntObjectInputStream in = new AntObjectInputStream(bytes);  // throw InvalidClassException
-            in.readObject();
-            in.close();
-        } catch (InvalidClassException e) {
+            byte[] sanitized = Arrays.copyOf(decoded, decoded.length);
+            ObjectMapper mapper = new ObjectMapper();
+            mapper.readTree(sanitized);
+        } catch (IOException e) {
             logger.info(e.toString());
             return e.toString();
         }

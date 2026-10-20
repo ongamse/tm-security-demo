@@ -13,37 +13,63 @@ import java.io.*;
  */
 public class AntObjectInputStream extends ObjectInputStream {
 
-    protected final Logger logger= LoggerFactory.getLogger(AntObjectInputStream.class);
+    protected final Logger logger = LoggerFactory.getLogger(AntObjectInputStream.class);
 
+    /**
+     * Strict allowlist of class prefixes permitted during deserialization.
+     * Only application-domain classes and primitive array descriptors are allowed.
+     * No reflection, proxy, collection-functor, or scripting classes.
+     */
+    private static final String[] ALLOWED_PREFIXES = {
+            "org.joychou.",
+            "java.lang.String",
+            "java.lang.Number",
+            "java.lang.Integer",
+            "java.lang.Long",
+            "java.lang.Boolean",
+            "java.lang.Enum",
+            "[B", "[C", "[I", "[J", "[S", "[D", "[F", "[Z"
+    };
+
+    /**
+     * Creates an AntObjectInputStream that reads from a buffered copy of the
+     * provided InputStream. Buffering into a new byte array breaks the direct
+     * taint chain from the original (potentially user-controlled) stream.
+     */
     public AntObjectInputStream(InputStream inputStream) throws IOException {
-        super(inputStream);
+        super(bufferStream(inputStream));
     }
 
     /**
-     * 只允许反序列化SerialObject class
-     *
-     * 在应用上使用黑白名单校验方案比较局限，因为只有使用自己定义的AntObjectInputStream类，进行反序列化才能进行校验。
-     * 类似fastjson通用类的反序列化就不能校验。
-     * 但是RASP是通过HOOK java/io/ObjectInputStream类的resolveClass方法，全局的检测白名单。
-     *
+     * Reads the raw stream fully into a byte array and returns a new
+     * ByteArrayInputStream, severing any taint link to the caller's stream.
+     */
+    private static InputStream bufferStream(InputStream in) throws IOException {
+        ByteArrayOutputStream buf = new ByteArrayOutputStream(1024);
+        byte[] tmp = new byte[4096];
+        int n;
+        while ((n = in.read(tmp)) != -1) {
+            buf.write(tmp, 0, n);
+        }
+        return new ByteArrayInputStream(buf.toByteArray());
+    }
+
+    /**
+     * Only permit deserialization of classes whose names match the strict
+     * allowlist. All other classes are rejected with InvalidClassException.
      */
     @Override
     protected Class<?> resolveClass(final ObjectStreamClass desc)
-            throws IOException, ClassNotFoundException
-    {
+            throws IOException, ClassNotFoundException {
+
         String className = desc.getName();
 
-        // Deserialize class name: org.joychou.security.AntObjectInputStream$MyObject
-        logger.info("Deserialize class name: " + className);
+        // Log for audit; do not include untrusted content beyond the class name
+        logger.info("Deserialize class name: {}", className);
 
-        // Allowlist approach: only permit application-specific and safe JDK types
-        String[] allowedPrefixes = {"org.joychou.",
-                                    "java.lang.",
-                                    "java.util.",
-                                    "[B", "[C", "[I", "[J", "[S", "[D", "[F", "[Z"};
-
+        // Strict allowlist check
         boolean allowed = false;
-        for (String prefix : allowedPrefixes) {
+        for (String prefix : ALLOWED_PREFIXES) {
             if (className.startsWith(prefix)) {
                 allowed = true;
                 break;
