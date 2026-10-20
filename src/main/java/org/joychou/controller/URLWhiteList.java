@@ -109,6 +109,13 @@ public class URLWhiteList {
             return;
         }
 
+        // Validate redirect target against domain allowlist
+        if (SecurityUtil.checkURL(url) == null) {
+            res.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            res.getWriter().write("url forbidden");
+            return;
+        }
+
         String host = SecurityUtil.gethost(url);
         logger.info("host:  " + host);
 
@@ -116,6 +123,7 @@ public class URLWhiteList {
         for (String domain : domainwhitelist) {
             if (host.endsWith("." + domain)) {
                 res.sendRedirect(url);
+                return;
             }
         }
 
