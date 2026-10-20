@@ -72,6 +72,12 @@ public class SecurityUtil {
                 return null;
             }
 
+            // Block internal IPs (SSRF protection)
+            if (SSRFChecker.isInternalIpByUrl(url)) {
+                logger.error("[-] checkURL blocked internal IP for url: " + url);
+                return null;
+            }
+
             // 如果满足黑名单返回null
             if (blockDomains.contains(host)){
                 return null;

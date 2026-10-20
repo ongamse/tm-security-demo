@@ -121,6 +121,16 @@ public class SSRF {
         InputStream inputStream = null;
         OutputStream outputStream = null;
         try {
+            // SSRF protection: enforce http/https and block internal IPs
+            if (!SecurityUtil.isHttp(url)) {
+                response.sendError(HttpServletResponse.SC_BAD_REQUEST, "URL must use http or https protocol");
+                return;
+            }
+            if (org.joychou.security.ssrf.SSRFChecker.isInternalIpByUrl(url)) {
+                response.sendError(HttpServletResponse.SC_FORBIDDEN, "URL resolves to an internal IP address");
+                return;
+            }
+
             String downLoadImgFileName = WebUtils.getNameWithoutExtension(url) + "." + WebUtils.getFileExtension(url);
             // download
             response.setHeader("content-disposition", "attachment;fileName=" + downLoadImgFileName);

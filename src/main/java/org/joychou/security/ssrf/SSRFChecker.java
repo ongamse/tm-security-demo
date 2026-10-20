@@ -93,9 +93,10 @@ public class SSRFChecker {
             } while (connection.getResponseCode() != HttpURLConnection.HTTP_OK);
             connection.disconnect();
         } catch (Exception e) {
-            return true;  // 如果异常了，认为是安全的，防止是超时导致的异常而验证不成功。
+            logger.error("[-] SSRF check exception: " + e.getMessage());
+            return false;  // fail closed: treat exceptions as unsafe
         }
-        return true; // 默认返回true
+        return true; // all redirect checks passed
     }
 
 
@@ -132,12 +133,32 @@ public class SSRFChecker {
             return true;
         }
 
-        ArrayList<String> blackSubnets = WebConfig.getSsrfBlockIps();
-        for (String subnet : blackSubnets) {
-            SubnetUtils utils = new SubnetUtils(subnet);
-            if (utils.getInfo().isInRange(strIP)) {
+        // Use InetAddress methods to check loopback, link-local, site-local, and any-local.
+        // Covers 127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16,
+        // 169.254.0.0/16, 0.0.0.0/8, ::1, fe80::/10 and more.
+        try {
+            InetAddress addr = InetAddress.getByName(strIP);
+            if (addr.isLoopbackAddress() || addr.isLinkLocalAddress()
+                    || addr.isSiteLocalAddress() || addr.isAnyLocalAddress()) {
                 logger.error("[-] SSRF check failed. Internal IP: " + strIP);
                 return true;
+            }
+        } catch (Exception e) {
+            logger.error("[-] SSRF check failed. Cannot parse IP: " + strIP);
+            return true; // fail closed
+        }
+
+        // Also check configured block IPs
+        ArrayList<String> blackSubnets = WebConfig.getSsrfBlockIps();
+        for (String subnet : blackSubnets) {
+            try {
+                SubnetUtils utils = new SubnetUtils(subnet);
+                if (utils.getInfo().isInRange(strIP)) {
+                    logger.error("[-] SSRF check failed. Internal IP: " + strIP);
+                    return true;
+                }
+            } catch (Exception e) {
+                // Skip invalid subnet format (e.g. if strIP is IPv6)
             }
         }
 
