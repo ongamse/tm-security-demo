@@ -95,6 +95,9 @@ public class SQLI {
     @RequestMapping("/jdbc/sec")
     public String jdbc_sqli_sec(@RequestParam("username") String username) {
 
+        // Validate username: allowlist alphanumeric + underscore, max 64 chars
+        username = SecurityUtil.validateUsername(username);
+
         StringBuilder result = new StringBuilder();
         try {
             Class.forName(driver);
@@ -182,6 +185,8 @@ public class SQLI {
      */
     @GetMapping("/mybatis/vuln01")
     public List<User> mybatisVuln01(@RequestParam("username") String username) {
+        // Validate username: allowlist alphanumeric + underscore, max 64 chars
+        username = SecurityUtil.validateUsername(username);
         return userMapper.findByUserNameVuln01(username);
     }
 
@@ -192,6 +197,8 @@ public class SQLI {
      */
     @GetMapping("/mybatis/vuln02")
     public List<User> mybatisVuln02(@RequestParam("username") String username) {
+        // Validate username: allowlist alphanumeric + underscore, max 64 chars
+        username = SecurityUtil.validateUsername(username);
         return userMapper.findByUserNameVuln02(username);
     }
 
@@ -212,6 +219,8 @@ public class SQLI {
      */
     @GetMapping("/mybatis/sec01")
     public User mybatisSec01(@RequestParam("username") String username) {
+        // Validate username: allowlist alphanumeric + underscore, max 64 chars
+        username = SecurityUtil.validateUsername(username);
         return userMapper.findByUserName(username);
     }
 
@@ -221,6 +230,10 @@ public class SQLI {
      */
     @GetMapping("/mybatis/sec02")
     public User mybatisSec02(@RequestParam("id") Integer id) {
+        // Validate id: must be a positive integer to prevent enumeration
+        if (id == null || id <= 0) {
+            throw new IllegalArgumentException("Invalid id: must be a positive integer");
+        }
         return userMapper.findById(id);
     }
 
