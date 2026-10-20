@@ -107,6 +107,19 @@ public class Rce {
      *
      * @param jsurl js url
      */
+    /**
+     * Patterns that indicate Java class access from within JS, which enables RCE.
+     * Scripts containing any of these are rejected before evaluation.
+     */
+    private static final String[] DANGEROUS_JS_PATTERNS = {
+            "java.lang", "java.io", "java.net", "java.nio", "java.util",
+            "javax.", "org.joychou",
+            "getruntime", "getclass", "forname",
+            "processbuilder", "classloader", "urlclassloader",
+            "packages.", "importpackage", "importclass",
+            "loadclass", ".exec(", "reflection"
+    };
+
     @GetMapping("/jscmd")
     public void jsEngine(String jsurl) throws Exception{
         // js nashorn javascript ecmascript
@@ -114,15 +127,29 @@ public class Rce {
         if (jsurl == null || SecurityUtil.checkURL(jsurl) == null) {
             throw new IllegalArgumentException("URL not allowed. Must be an HTTP(S) URL on an allowed domain.");
         }
-        jdk.nashorn.api.scripting.NashornScriptEngineFactory factory =
-                new jdk.nashorn.api.scripting.NashornScriptEngineFactory();
-        // ClassFilter that blocks all Java class access from JS, preventing RCE
-        ScriptEngine engine = factory.getScriptEngine(
-                (String className) -> false
-        );
+
+        // Fetch the script content from the validated URL instead of using Nashorn load()
+        java.net.URL url = new java.net.URL(jsurl);
+        StringBuilder scriptContent = new StringBuilder();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(url.openStream()))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                scriptContent.append(line).append("\n");
+            }
+        }
+
+        // Block scripts that attempt to access Java classes (RCE prevention)
+        String script = scriptContent.toString();
+        String scriptLower = script.toLowerCase();
+        for (String pattern : DANGEROUS_JS_PATTERNS) {
+            if (scriptLower.contains(pattern)) {
+                throw new SecurityException("Script contains blocked Java class access pattern");
+            }
+        }
+
+        ScriptEngine engine = new ScriptEngineManager().getEngineByName("JavaScript");
         Bindings bindings = engine.getBindings(ScriptContext.ENGINE_SCOPE);
-        String cmd = String.format("load(\"%s\")", jsurl);
-        engine.eval(cmd, bindings);
+        engine.eval(script, bindings);
     }
 
 
