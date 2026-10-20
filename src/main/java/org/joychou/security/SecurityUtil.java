@@ -271,6 +271,19 @@ public class SecurityUtil {
         return sb.toString();
     }
 
+    /**
+     * Strip CR and LF characters from a string to prevent HTTP header injection (CRLF injection).
+     *
+     * @param value the input string
+     * @return the sanitized string with \r and \n removed, or null if input is null
+     */
+    public static String stripCRLF(String value) {
+        if (value == null) {
+            return null;
+        }
+        return value.replaceAll("[\\r\\n]", "");
+    }
+
     public static void main(String[] args) {
     }
 

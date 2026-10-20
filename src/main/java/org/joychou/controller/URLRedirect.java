@@ -41,8 +41,14 @@ public class URLRedirect {
     @ResponseBody
     public static void setHeader(HttpServletRequest request, HttpServletResponse response) {
         String url = request.getParameter("url");
+        // Validate URL against allowlist and strip CRLF to prevent header injection
+        if (url == null || SecurityUtil.checkURL(url) == null) {
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            return;
+        }
+        String sanitizedUrl = SecurityUtil.stripCRLF(url);
         response.setStatus(HttpServletResponse.SC_MOVED_PERMANENTLY); // 301 redirect
-        response.setHeader("Location", url);
+        response.setHeader("Location", sanitizedUrl);
     }
 
 

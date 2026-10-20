@@ -125,7 +125,8 @@ public class SSRF {
             // Validate URL is not targeting internal/private IPs
             SSRFChecker.validateUrlForSSRF(url);
 
-            String downLoadImgFileName = WebUtils.getNameWithoutExtension(url) + "." + WebUtils.getFileExtension(url);
+            String downLoadImgFileName = SecurityUtil.stripCRLF(
+                    WebUtils.getNameWithoutExtension(url) + "." + WebUtils.getFileExtension(url));
             // download
             response.setHeader("content-disposition", "attachment;fileName=" + downLoadImgFileName);
 
