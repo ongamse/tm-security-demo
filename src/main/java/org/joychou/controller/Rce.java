@@ -2,6 +2,8 @@ package org.joychou.controller;
 
 import groovy.lang.GroovyShell;
 import lombok.extern.slf4j.Slf4j;
+import org.codehaus.groovy.control.CompilerConfiguration;
+import org.codehaus.groovy.control.customizers.SecureASTCustomizer;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -53,6 +55,15 @@ public class Rce {
         ALLOWED_COMMANDS_MAP = Collections.unmodifiableMap(m);
     }
     private static final Set<String> ALLOWED_COMMANDS = ALLOWED_COMMANDS_MAP.keySet();
+
+    // Allowlist of trusted hostnames for JavaScript evaluation via /rce/jscmd
+    private static final Set<String> ALLOWED_JS_HOSTS;
+    static {
+        Set<String> hosts = new HashSet<>();
+        hosts.add("trusted.example.com");
+        hosts.add("cdn.example.com");
+        ALLOWED_JS_HOSTS = Collections.unmodifiableSet(hosts);
+    }
 
     @GetMapping("/runtime/exec")
     public String CommandExec(String cmd) {
@@ -129,8 +140,8 @@ public class Rce {
      * @param jsurl js url
      */
     @GetMapping("/jscmd")
-    public void jsEngine(String jsurl) throws Exception{
-        // Validate jsurl is a well-formed HTTP/HTTPS URL to prevent script injection
+    public String jsEngine(String jsurl) throws Exception {
+        // Validate jsurl is a well-formed HTTP/HTTPS URL
         if (jsurl == null || jsurl.isEmpty()) {
             throw new IllegalArgumentException("jsurl must not be empty");
         }
@@ -138,6 +149,12 @@ public class Rce {
         String protocol = parsedUrl.getProtocol();
         if (!"http".equals(protocol) && !"https".equals(protocol)) {
             throw new IllegalArgumentException("Only http and https URLs are allowed");
+        }
+
+        // Validate the URL host against the allowlist to prevent loading scripts from untrusted origins
+        String host = parsedUrl.getHost();
+        if (host == null || !ALLOWED_JS_HOSTS.contains(host.toLowerCase())) {
+            return "Blocked: host not in allowlist. Allowed hosts: " + ALLOWED_JS_HOSTS;
         }
 
         // js nashorn javascript ecmascript
@@ -149,6 +166,7 @@ public class Rce {
         bindings.remove("Java");
         bindings.remove("Packages");
         engine.eval("load('" + parsedUrl.toExternalForm().replace("'", "") + "')", bindings);
+        return "Executed script from " + HtmlUtils.htmlEscape(host);
     }
 
 
@@ -175,9 +193,39 @@ public class Rce {
      * @param content groovy shell
      */
     @GetMapping("groovy")
-    public void groovyshell(String content) {
-        GroovyShell groovyShell = new GroovyShell();
-        groovyShell.evaluate(content);
+    public String groovyshell(String content) {
+        if (content == null || content.isEmpty()) {
+            return "Content must not be empty";
+        }
+
+        // Sandbox Groovy evaluation: restrict imports, method calls, and dangerous receivers
+        SecureASTCustomizer secureAst = new SecureASTCustomizer();
+        secureAst.setImportsWhitelist(Collections.<String>emptyList());
+        secureAst.setStarImportsWhitelist(Collections.<String>emptyList());
+        secureAst.setStaticImportsWhitelist(Collections.<String>emptyList());
+        secureAst.setStaticStarImportsWhitelist(Collections.<String>emptyList());
+        secureAst.setIndirectImportCheckEnabled(true);
+
+        // Block dangerous receivers: Runtime, ProcessBuilder, System, Class, ClassLoader, Thread, etc.
+        secureAst.setReceiversBlackList(Arrays.asList(
+                "java.lang.Runtime", "java.lang.ProcessBuilder",
+                "java.lang.System", "java.lang.Class",
+                "java.lang.ClassLoader", "java.lang.Thread",
+                "java.lang.reflect.Method", "java.lang.reflect.Constructor",
+                "java.lang.reflect.Field", "java.io.File",
+                "java.net.URL", "java.net.URLClassLoader",
+                "groovy.lang.GroovyShell", "groovy.lang.GroovyClassLoader"
+        ));
+
+        // Disallow method definition to prevent bypass via helper methods
+        secureAst.setMethodDefinitionAllowed(false);
+
+        CompilerConfiguration config = new CompilerConfiguration();
+        config.addCompilationCustomizers(secureAst);
+
+        GroovyShell groovyShell = new GroovyShell(config);
+        Object result = groovyShell.evaluate(content);
+        return HtmlUtils.htmlEscape(result != null ? result.toString() : "null");
     }
 
 
