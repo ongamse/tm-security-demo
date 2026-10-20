@@ -161,20 +161,17 @@ public class Rce {
      */
     @GetMapping("groovy")
     public void groovyshell(String content) {
-        // Use SecureASTCustomizer to restrict dangerous operations
         SecureASTCustomizer secureASTCustomizer = new SecureASTCustomizer();
-        secureASTCustomizer.setDisallowedImports(Arrays.asList(
+        secureASTCustomizer.setImportsBlacklist(Arrays.asList(
                 "java.lang.Runtime", "java.lang.ProcessBuilder",
                 "java.io.File", "java.lang.System",
                 "java.lang.reflect.*"
         ));
         secureASTCustomizer.setIndirectImportCheckEnabled(true);
-        secureASTCustomizer.setDisallowedReceiversClasses(Arrays.asList(
+        secureASTCustomizer.setReceiversBlackList(Arrays.asList(
                 (Class) Runtime.class, (Class) ProcessBuilder.class,
                 (Class) System.class, (Class) Class.class
         ));
-        // Disallow method execution on Runtime, Process, etc.
-        secureASTCustomizer.setReceiversClassesAreAllowed(false);
 
         CompilerConfiguration config = new CompilerConfiguration();
         config.addCompilationCustomizers(secureASTCustomizer);
