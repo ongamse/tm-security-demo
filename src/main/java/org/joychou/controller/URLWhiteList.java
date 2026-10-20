@@ -2,13 +2,14 @@ package org.joychou.controller;
 
 
 import org.joychou.security.SecurityUtil;
+import org.joychou.security.ssrf.SSRFChecker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.util.HtmlUtils;
 
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.net.URL;
 import java.util.ArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -35,6 +36,9 @@ public class URLWhiteList {
      */
     @GetMapping("/vuln/endsWith")
     public String endsWith(@RequestParam("url") String url) {
+        if (!SSRFChecker.isSSRFSafe(url)) {
+            return "SSRF blocked";
+        }
 
         String host = SecurityUtil.gethost(url);
 
@@ -55,6 +59,9 @@ public class URLWhiteList {
      */
     @GetMapping("/vuln/contains")
     public String contains(@RequestParam("url") String url) {
+        if (!SSRFChecker.isSSRFSafe(url)) {
+            return "SSRF blocked";
+        }
 
         String host = SecurityUtil.gethost(url);
 
@@ -73,6 +80,9 @@ public class URLWhiteList {
      */
     @GetMapping("/vuln/regex")
     public String regex(@RequestParam("url") String url) {
+        if (!SSRFChecker.isSSRFSafe(url)) {
+            return "SSRF blocked";
+        }
 
         String host = SecurityUtil.gethost(url);
         Pattern p = Pattern.compile("joychou\\.org$");
@@ -104,17 +114,23 @@ public class URLWhiteList {
             return;
         }
 
-        URL u = new URL(url);
-        String host = u.getHost();
+        if (!SSRFChecker.isSSRFSafe(url)) {
+            res.sendError(HttpServletResponse.SC_FORBIDDEN, "SSRF blocked");
+            return;
+        }
+
+        String host = SecurityUtil.gethost(url);
         logger.info("host:  " + host);
 
-        // endsWith .
+        // Use exact domain match or subdomain match with leading dot
         for (String domain : domainwhitelist) {
-            if (host.endsWith("." + domain)) {
+            if (host.equals(domain) || host.endsWith("." + domain)) {
                 res.sendRedirect(url);
+                return;
             }
         }
 
+        res.sendError(HttpServletResponse.SC_FORBIDDEN, "url forbidden");
     }
 
 
@@ -135,9 +151,9 @@ public class URLWhiteList {
 
         for (String whiteHost: whiteDomainlists){
             if (whiteHost.startsWith(".") && host.endsWith(whiteHost)) {
-                return url;
+                return HtmlUtils.htmlEscape(url);
             } else if (!whiteHost.startsWith(".") && host.equals(whiteHost)) {
-                return url;
+                return HtmlUtils.htmlEscape(url);
             }
         }
 

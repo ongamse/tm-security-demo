@@ -7,6 +7,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import org.springframework.web.util.HtmlUtils;
+
 import javax.servlet.http.HttpServletRequest;
 import java.io.IOException;
 
@@ -24,11 +26,14 @@ public class CommandInject {
     @GetMapping("/codeinject")
     public String codeInject(String filepath) throws IOException {
 
-        String[] cmdList = new String[]{"sh", "-c", "ls -la " + filepath};
-        ProcessBuilder builder = new ProcessBuilder(cmdList);
+        String filtered = SecurityUtil.cmdFilter(filepath);
+        if (null == filtered) {
+            return "Invalid filepath.";
+        }
+        ProcessBuilder builder = new ProcessBuilder("ls", "-la", filtered);
         builder.redirectErrorStream(true);
         Process process = builder.start();
-        return WebUtils.convertStreamToString(process.getInputStream());
+        return HtmlUtils.htmlEscape(WebUtils.convertStreamToString(process.getInputStream()));
     }
 
     /**
@@ -40,12 +45,14 @@ public class CommandInject {
     public String codeInjectHost(HttpServletRequest request) throws IOException {
 
         String host = request.getHeader("host");
+        if (host == null || !host.matches("^[a-zA-Z0-9._:-]+$")) {
+            return "Invalid host.";
+        }
         logger.info(host);
-        String[] cmdList = new String[]{"sh", "-c", "curl " + host};
-        ProcessBuilder builder = new ProcessBuilder(cmdList);
+        ProcessBuilder builder = new ProcessBuilder("curl", host);
         builder.redirectErrorStream(true);
         Process process = builder.start();
-        return WebUtils.convertStreamToString(process.getInputStream());
+        return HtmlUtils.htmlEscape(WebUtils.convertStreamToString(process.getInputStream()));
     }
 
     @GetMapping("/codeinject/sec")
@@ -54,10 +61,9 @@ public class CommandInject {
         if (null == filterFilePath) {
             return "Bad boy. I got u.";
         }
-        String[] cmdList = new String[]{"sh", "-c", "ls -la " + filterFilePath};
-        ProcessBuilder builder = new ProcessBuilder(cmdList);
+        ProcessBuilder builder = new ProcessBuilder("ls", "-la", filterFilePath);
         builder.redirectErrorStream(true);
         Process process = builder.start();
-        return WebUtils.convertStreamToString(process.getInputStream());
+        return HtmlUtils.htmlEscape(WebUtils.convertStreamToString(process.getInputStream()));
     }
 }

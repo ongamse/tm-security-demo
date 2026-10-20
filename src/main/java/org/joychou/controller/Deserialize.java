@@ -12,7 +12,6 @@ import javax.servlet.http.HttpServletRequest;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InvalidClassException;
-import java.io.ObjectInputStream;
 import java.util.Base64;
 
 import static org.springframework.web.util.WebUtils.getCookie;
@@ -45,9 +44,15 @@ public class Deserialize {
         byte[] decoded = Base64.getDecoder().decode(rememberMe);
 
         ByteArrayInputStream bytes = new ByteArrayInputStream(decoded);
-        ObjectInputStream in = new ObjectInputStream(bytes);
-        in.readObject();
-        in.close();
+        AntObjectInputStream in = new AntObjectInputStream(bytes);
+        try {
+            in.readObject();
+        } catch (InvalidClassException e) {
+            logger.info("Deserialization blocked by allowlist: " + e.classname);
+            return "Deserialization blocked";
+        } finally {
+            in.close();
+        }
 
         return "Are u ok?";
     }

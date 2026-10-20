@@ -2,6 +2,8 @@ package org.joychou.controller;
 
 import cn.hutool.http.HttpUtil;
 import org.joychou.security.SecurityUtil;
+import static org.joychou.security.SecurityUtil.sanitizeHeaderValue;
+import org.joychou.security.ssrf.SSRFChecker;
 import org.joychou.security.ssrf.SSRFException;
 import org.joychou.service.HttpService;
 import org.joychou.util.HttpUtils;
@@ -11,6 +13,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.util.HtmlUtils;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletResponse;
@@ -98,9 +101,9 @@ public class SSRF {
     public String request(@RequestParam String url) {
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.request(url);
+            return HtmlUtils.htmlEscape(HttpUtils.request(url));
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return HtmlUtils.htmlEscape(e.getMessage());
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -117,12 +120,16 @@ public class SSRF {
      */
     @GetMapping("/openStream")
     public void openStream(@RequestParam String url, HttpServletResponse response) throws IOException {
+        if (!SSRFChecker.isSSRFSafe(url)) {
+            response.sendError(HttpServletResponse.SC_FORBIDDEN, "SSRF blocked");
+            return;
+        }
         InputStream inputStream = null;
         OutputStream outputStream = null;
         try {
             String downLoadImgFileName = WebUtils.getNameWithoutExtension(url) + "." + WebUtils.getFileExtension(url);
             // download
-            response.setHeader("content-disposition", "attachment;fileName=" + downLoadImgFileName);
+            response.setHeader("content-disposition", "attachment;fileName=" + sanitizeHeaderValue(downLoadImgFileName));
 
             URL u = new URL(url);
             int length;
@@ -225,6 +232,9 @@ public class SSRF {
      */
     @GetMapping("/Jsoup/sec")
     public String Jsoup(@RequestParam String url) {
+        if (!SSRFChecker.isSSRFSafe(url)) {
+            return "SSRF blocked";
+        }
 
         try {
             SecurityUtil.startSSRFHook();
@@ -276,6 +286,9 @@ public class SSRF {
      */
     @GetMapping("/restTemplate/vuln1")
     public String RestTemplateUrlBanRedirects(String url){
+        if (!SSRFChecker.isSSRFSafe(url)) {
+            return "SSRF blocked";
+        }
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON_UTF8);
         return httpService.RequestHttpBanRedirects(url, headers);
@@ -284,6 +297,9 @@ public class SSRF {
 
     @GetMapping("/restTemplate/vuln2")
     public String RestTemplateUrl(String url){
+        if (!SSRFChecker.isSSRFSafe(url)) {
+            return "SSRF blocked";
+        }
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON_UTF8);
         return httpService.RequestHttp(url, headers);
@@ -297,6 +313,9 @@ public class SSRF {
      */
     @GetMapping("/hutool/vuln")
     public String hutoolHttp(String url){
+        if (!SSRFChecker.isSSRFSafe(url)) {
+            return "SSRF blocked";
+        }
         return HttpUtil.get(url);
     }
 
@@ -307,6 +326,9 @@ public class SSRF {
      */
     @GetMapping("/dnsrebind/vuln")
     public String DnsRebind(String url) {
+        if (!SSRFChecker.isSSRFSafe(url)) {
+            return "SSRF blocked";
+        }
         java.security.Security.setProperty("networkaddress.cache.negative.ttl" , "0");
         if (!SecurityUtil.checkSSRFWithoutRedirect(url)) {
             return "Dangerous url";

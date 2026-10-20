@@ -11,6 +11,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 
 @RestController
@@ -40,9 +41,17 @@ public class PathTraversal {
         logger.info("Working directory: " + System.getProperty("user.dir"));
         logger.info("File path: " + imgFile);
 
-        File f = new File(imgFile);
+        // Prevent path traversal: resolve against a safe base directory and validate
+        Path baseDir = Paths.get(System.getProperty("user.dir")).toAbsolutePath().normalize();
+        Path resolved = baseDir.resolve(imgFile).normalize();
+        if (!resolved.startsWith(baseDir)) {
+            logger.warn("Path traversal attempt blocked: " + imgFile);
+            return "Bad boy. Illegal file path.";
+        }
+
+        File f = resolved.toFile();
         if (f.exists() && !f.isDirectory()) {
-            byte[] data = Files.readAllBytes(Paths.get(imgFile));
+            byte[] data = Files.readAllBytes(resolved);
             return new String(Base64.encodeBase64(data));
         } else {
             return "File doesn't exist or is not a file.";

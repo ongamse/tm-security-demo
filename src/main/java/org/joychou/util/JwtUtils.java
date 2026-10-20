@@ -4,6 +4,7 @@ import com.auth0.jwt.JWT;
 import com.auth0.jwt.JWTVerifier;
 import com.auth0.jwt.algorithms.Algorithm;
 import com.auth0.jwt.exceptions.JWTVerificationException;
+import com.auth0.jwt.interfaces.DecodedJWT;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
@@ -83,12 +84,16 @@ public class JwtUtils {
 
 
     public static String getNicknameByJavaJwt(String token) {
-        // If the signature is not verified, there will be security issues.
-        if (!verifyTokenByJavaJwt(token)) {
-            log.error("token is invalid");
+        try {
+            Algorithm algorithm = Algorithm.HMAC256(SECRET);
+            JWTVerifier verifier = JWT.require(algorithm).build();
+            // Extract claims from the verified result to ensure signature is checked
+            DecodedJWT verifiedJwt = verifier.verify(token);
+            return verifiedJwt.getClaim("nickname").asString();
+        } catch (JWTVerificationException exception) {
+            log.error("token is invalid: {}", exception.getMessage());
             return null;
         }
-        return JWT.decode(token).getClaim("nickname").asString();
     }
 
 

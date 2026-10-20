@@ -21,6 +21,7 @@ import java.io.*;
 
 import org.xml.sax.InputSource;
 
+import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.SAXParserFactory;
@@ -30,6 +31,7 @@ import org.xml.sax.helpers.DefaultHandler;
 import org.apache.commons.digester3.Digester;
 import org.jdom2.input.SAXBuilder;
 import org.joychou.util.WebUtils;
+import org.springframework.web.util.HtmlUtils;
 import org.xmlbeam.annotation.XBRead;
 
 /**
@@ -51,6 +53,9 @@ public class XXE {
             String body = WebUtils.getRequestBody(request);
             logger.info(body);
             XMLReader xmlReader = XMLReaderFactory.createXMLReader();
+            xmlReader.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            xmlReader.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            xmlReader.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             xmlReader.parse(new InputSource(new StringReader(body)));  // parse xml
             return "xmlReader xxe vuln code";
         } catch (Exception e) {
@@ -90,6 +95,9 @@ public class XXE {
             logger.info(body);
 
             SAXBuilder builder = new SAXBuilder();
+            builder.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            builder.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            builder.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             // org.jdom2.Document document
             builder.build(new InputSource(new StringReader(body)));  // cause xxe
             return "SAXBuilder xxe vuln code";
@@ -109,6 +117,7 @@ public class XXE {
             builder.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
             builder.setFeature("http://xml.org/sax/features/external-general-entities", false);
             builder.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            builder.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
             // org.jdom2.Document document
             builder.build(new InputSource(new StringReader(body)));
 
@@ -127,6 +136,9 @@ public class XXE {
             logger.info(body);
 
             SAXReader reader = new SAXReader();
+            reader.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            reader.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            reader.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             // org.dom4j.Document document
             reader.read(new InputSource(new StringReader(body))); // cause xxe
 
@@ -164,6 +176,9 @@ public class XXE {
             logger.info(body);
 
             SAXParserFactory spf = SAXParserFactory.newInstance();
+            spf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            spf.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            spf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             SAXParser parser = spf.newSAXParser();
             parser.parse(new InputSource(new StringReader(body)), new DefaultHandler());  // parse xml
 
@@ -201,8 +216,13 @@ public class XXE {
             String body = WebUtils.getRequestBody(request);
             logger.info(body);
 
-            Digester digester = new Digester();
-            digester.parse(new StringReader(body));  // parse xml
+            SAXParserFactory spf = SAXParserFactory.newInstance();
+            spf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            spf.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            spf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            spf.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+            Digester digester = new Digester(spf.newSAXParser());
+            digester.parse(new StringReader(body));
         } catch (Exception e) {
             logger.error(e.toString());
             return EXCEPT;
@@ -216,11 +236,13 @@ public class XXE {
             String body = WebUtils.getRequestBody(request);
             logger.info(body);
 
-            Digester digester = new Digester();
-            digester.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            digester.setFeature("http://xml.org/sax/features/external-general-entities", false);
-            digester.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
-            digester.parse(new StringReader(body));  // parse xml
+            SAXParserFactory spf = SAXParserFactory.newInstance();
+            spf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            spf.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            spf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            spf.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+            Digester digester = new Digester(spf.newSAXParser());
+            digester.parse(new StringReader(body));
 
             return "Digester xxe security code";
         } catch (Exception e) {
@@ -237,6 +259,9 @@ public class XXE {
     public String DocumentBuilderVuln(HttpServletRequest request) {
         try {
             DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+            dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            dbf.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            dbf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             DocumentBuilder db = dbf.newDocumentBuilder();
             InputSource is = new InputSource(request.getInputStream());
             Document document = db.parse(is);  // parse xml
@@ -252,11 +277,11 @@ public class XXE {
                     buf.append(String.format("%s: %s\n", node.getNodeName(), node.getTextContent()));
                 }
             }
-            return buf.toString();
+            return HtmlUtils.htmlEscape(buf.toString());
         } catch (Exception e) {
             e.printStackTrace();
             logger.error(e.toString());
-            return e.toString();
+            return HtmlUtils.htmlEscape(e.toString());
         }
     }
 
@@ -290,6 +315,9 @@ public class XXE {
             logger.info(body);
 
             DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+            dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            dbf.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            dbf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             dbf.setXIncludeAware(true);   // 支持XInclude
             dbf.setNamespaceAware(true);  // 支持XInclude
             DocumentBuilder db = dbf.newDocumentBuilder();
@@ -346,6 +374,9 @@ public class XXE {
             logger.info(body);
 
             SAXParserFactory spf = SAXParserFactory.newInstance();
+            spf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            spf.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            spf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             SAXParser saxParser = spf.newSAXParser();
             XMLReader xmlReader = saxParser.getXMLReader();
             xmlReader.parse(new InputSource(new StringReader(body)));
@@ -420,7 +451,7 @@ public class XXE {
         HttpEntity<String> post(@RequestBody UserPayload user) {
             try {
                 logger.info(user.toString());
-                return ResponseEntity.ok(String.format("hello, %s!", user.getUserName()));
+                return ResponseEntity.ok(String.format("hello, %s!", HtmlUtils.htmlEscape(user.getUserName())));
             }catch (Exception e){
                 e.printStackTrace();
                 return ResponseEntity.ok("error");

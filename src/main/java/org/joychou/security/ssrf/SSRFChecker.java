@@ -19,6 +19,85 @@ public class SSRFChecker {
     private static final Logger logger = LoggerFactory.getLogger(SSRFChecker.class);
     private static String decimalIp;
 
+    /**
+     * Validates that a URL is safe from SSRF attacks by:
+     * 1. Ensuring the protocol is HTTP or HTTPS only.
+     * 2. Resolving the hostname to IP addresses.
+     * 3. Rejecting private, loopback, link-local, and other reserved IP ranges.
+     *
+     * @param url the URL to validate
+     * @return true if the URL is safe (public IP, HTTP/HTTPS), false otherwise
+     */
+    public static boolean isSSRFSafe(String url) {
+        if (url == null || url.isEmpty()) {
+            return false;
+        }
+
+        // Must be http or https
+        if (!SecurityUtil.isHttp(url)) {
+            logger.error("[-] SSRF blocked. Non-HTTP protocol: " + url);
+            return false;
+        }
+
+        try {
+            URI uri = new URI(url);
+            String host = uri.getHost();
+            if (host == null || host.isEmpty()) {
+                logger.error("[-] SSRF blocked. No host in URL.");
+                return false;
+            }
+
+            // Resolve all IP addresses for the host and check each one
+            InetAddress[] addresses = InetAddress.getAllByName(host);
+            for (InetAddress addr : addresses) {
+                if (isPrivateOrReservedAddress(addr)) {
+                    logger.error("[-] SSRF blocked. Private/reserved IP for host: " + host
+                            + " resolved to: " + addr.getHostAddress());
+                    return false;
+                }
+            }
+            return true;
+        } catch (Exception e) {
+            logger.error("[-] SSRF check error: " + e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Checks if an InetAddress is a private, loopback, link-local, or otherwise reserved address.
+     * Covers: 127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16,
+     *         0.0.0.0, ::1, fd00::/8, multicast, and carrier-grade NAT (100.64.0.0/10).
+     */
+    private static boolean isPrivateOrReservedAddress(InetAddress addr) {
+        if (addr.isLoopbackAddress()        // 127.0.0.0/8, ::1
+                || addr.isSiteLocalAddress()  // 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+                || addr.isLinkLocalAddress()  // 169.254.0.0/16, fe80::/10
+                || addr.isAnyLocalAddress()   // 0.0.0.0, ::0
+                || addr.isMulticastAddress()) {
+            return true;
+        }
+
+        byte[] bytes = addr.getAddress();
+        if (bytes.length == 4) {
+            int b0 = bytes[0] & 0xFF;
+            int b1 = bytes[1] & 0xFF;
+            // 100.64.0.0/10 (Carrier-grade NAT / shared address space)
+            if (b0 == 100 && b1 >= 64 && b1 <= 127) {
+                return true;
+            }
+        } else if (bytes.length == 16) {
+            // fd00::/8 (IPv6 Unique Local Address)
+            if ((bytes[0] & 0xFF) == 0xFD) {
+                return true;
+            }
+            // fc00::/7 (broader ULA block)
+            if ((bytes[0] & 0xFE) == 0xFC) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public static boolean checkURLFckSSRF(String url) {
         if (null == url) {
             return false;

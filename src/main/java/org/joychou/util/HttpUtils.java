@@ -17,6 +17,8 @@ import org.jsoup.nodes.Document;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.joychou.security.ssrf.SSRFChecker;
+
 import javax.imageio.ImageIO;
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -36,6 +38,9 @@ public class HttpUtils {
     private final static Logger logger = LoggerFactory.getLogger(HttpUtils.class);
 
     public static String commonHttpClient(String url) {
+        if (!SSRFChecker.isSSRFSafe(url)) {
+            throw new IllegalArgumentException("SSRF blocked");
+        }
 
         HttpClient client = new HttpClient();
         GetMethod method = new GetMethod(url);
@@ -55,6 +60,9 @@ public class HttpUtils {
 
 
     public static String request(String url) {
+        if (!SSRFChecker.isSSRFSafe(url)) {
+            throw new IllegalArgumentException("SSRF blocked");
+        }
         try {
             return Request.Get(url).execute().returnContent().toString();
         } catch (Exception e) {
@@ -64,6 +72,9 @@ public class HttpUtils {
 
 
     public static String httpClient(String url) {
+        if (!SSRFChecker.isSSRFSafe(url)) {
+            throw new IllegalArgumentException("SSRF blocked");
+        }
 
         StringBuilder result = new StringBuilder();
 
@@ -90,6 +101,9 @@ public class HttpUtils {
 
 
     public static String URLConnection(String url) {
+        if (!SSRFChecker.isSSRFSafe(url)) {
+            throw new IllegalArgumentException("SSRF blocked");
+        }
         try {
             URL u = new URL(url);
             URLConnection urlConnection = u.openConnection();
@@ -114,6 +128,9 @@ public class HttpUtils {
      * UserAgent is Java/1.8.0_102.
      */
     public static String HttpURLConnection(String url) {
+        if (!SSRFChecker.isSSRFSafe(url)) {
+            throw new IllegalArgumentException("SSRF blocked");
+        }
         try {
             URL u = new URL(url);
             URLConnection urlConnection = u.openConnection();
@@ -143,6 +160,9 @@ public class HttpUtils {
      * @param url http request url
      */
     public static String Jsoup(String url) {
+        if (!SSRFChecker.isSSRFSafe(url)) {
+            throw new IllegalArgumentException("SSRF blocked");
+        }
         try {
             Document doc = Jsoup.connect(url)
 //                    .followRedirects(false)
@@ -162,6 +182,9 @@ public class HttpUtils {
      * UserAgent is <code>okhttp/2.5.0</code>.
      */
     public static String okhttp(String url) throws IOException {
+        if (!SSRFChecker.isSSRFSafe(url)) {
+            throw new IllegalArgumentException("SSRF blocked");
+        }
         OkHttpClient client = new OkHttpClient();
 //         client.setFollowRedirects(false);
         com.squareup.okhttp.Request ok_http = new com.squareup.okhttp.Request.Builder().url(url).build();
@@ -177,8 +200,17 @@ public class HttpUtils {
      * @param url http request url
      */
     public static void imageIO(String url) {
+        if (!SSRFChecker.isSSRFSafe(url)) {
+            throw new IllegalArgumentException("SSRF blocked");
+        }
         try {
             URL u = new URL(url);
+            // Validate scheme to prevent file:// path traversal and other non-HTTP access
+            String scheme = u.getProtocol();
+            if (scheme == null || (!scheme.equalsIgnoreCase("http") && !scheme.equalsIgnoreCase("https"))) {
+                logger.error("Blocked non-HTTP URL scheme: " + scheme);
+                return;
+            }
             ImageIO.read(u); // send request
         } catch (IOException e) {
             logger.error(e.getMessage());
@@ -194,6 +226,9 @@ public class HttpUtils {
      * @param url http request url
      */
     public static void IOUtils(String url) {
+        if (!SSRFChecker.isSSRFSafe(url)) {
+            throw new IllegalArgumentException("SSRF blocked");
+        }
         try {
             IOUtils.toByteArray(URI.create(url));
         } catch (IOException e) {
@@ -203,6 +238,9 @@ public class HttpUtils {
 
 
     public static String HttpAsyncClients(String url) {
+        if (!SSRFChecker.isSSRFSafe(url)) {
+            throw new IllegalArgumentException("SSRF blocked");
+        }
         CloseableHttpAsyncClient httpclient = HttpAsyncClients.createDefault();
         try {
             httpclient.start();
