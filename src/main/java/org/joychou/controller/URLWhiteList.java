@@ -10,7 +10,6 @@ import org.springframework.web.util.HtmlUtils;
 
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.net.URL;
 import java.util.ArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -120,17 +119,18 @@ public class URLWhiteList {
             return;
         }
 
-        URL u = new URL(url);
-        String host = u.getHost();
+        String host = SecurityUtil.gethost(url);
         logger.info("host:  " + host);
 
-        // endsWith .
+        // Use exact domain match or subdomain match with leading dot
         for (String domain : domainwhitelist) {
-            if (host.endsWith("." + domain)) {
+            if (host.equals(domain) || host.endsWith("." + domain)) {
                 res.sendRedirect(url);
+                return;
             }
         }
 
+        res.sendError(HttpServletResponse.SC_FORBIDDEN, "url forbidden");
     }
 
 
