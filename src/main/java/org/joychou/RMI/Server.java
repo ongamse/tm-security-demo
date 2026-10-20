@@ -15,6 +15,11 @@ public class Server implements Hello {
     public static void main(String args[]) {
 
         try {
+            // Set JEP 290 deserialization filter to restrict loadable classes
+            System.setProperty("sun.rmi.registry.registryFilter",
+                    "java.lang.String;java.lang.Number;org.joychou.RMI.*;!*");
+            System.setProperty("java.rmi.server.hostname", "127.0.0.1");
+
             Server obj = new Server();
             Hello stub = (Hello) UnicastRemoteObject.exportObject(obj, 0);
             LocateRegistry.createRegistry(1099);

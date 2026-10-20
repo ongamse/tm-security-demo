@@ -16,6 +16,9 @@ import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.sql.DriverManager;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 
 
 /**
@@ -28,13 +31,20 @@ import java.sql.DriverManager;
 @RequestMapping("/rce")
 public class Rce {
 
+    private static final Set<String> ALLOWED_COMMANDS = new HashSet<>(
+            Arrays.asList("ls", "whoami", "date", "hostname", "id", "uname", "pwd"));
+
     @GetMapping("/runtime/exec")
     public String CommandExec(String cmd) {
+        if (cmd == null || !ALLOWED_COMMANDS.contains(cmd.trim())) {
+            return "Command not allowed";
+        }
         Runtime run = Runtime.getRuntime();
         StringBuilder sb = new StringBuilder();
 
         try {
-            Process p = run.exec(cmd);
+            // Use String[] to avoid shell interpretation
+            Process p = run.exec(new String[]{cmd.trim()});
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
             String tmpStr;
@@ -62,12 +72,14 @@ public class Rce {
      */
     @GetMapping("/ProcessBuilder")
     public String processBuilder(String cmd) {
-
+        if (cmd == null || !ALLOWED_COMMANDS.contains(cmd.trim())) {
+            return "Command not allowed";
+        }
         StringBuilder sb = new StringBuilder();
 
         try {
-            String[] arrCmd = {"/bin/sh", "-c", cmd};
-            ProcessBuilder processBuilder = new ProcessBuilder(arrCmd);
+            // No shell invocation; pass command directly as single argument
+            ProcessBuilder processBuilder = new ProcessBuilder(cmd.trim());
             Process p = processBuilder.start();
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
@@ -94,9 +106,16 @@ public class Rce {
      */
     @GetMapping("/jscmd")
     public void jsEngine(String jsurl) throws Exception{
+        // Validate jsurl: only allow http/https URLs with safe characters
+        if (jsurl == null || !jsurl.matches("^https?://[a-zA-Z0-9._/~:@!$&'()*+,;=-]+$")) {
+            throw new IllegalArgumentException("Invalid JS URL");
+        }
         // js nashorn javascript ecmascript
         ScriptEngine engine = new ScriptEngineManager().getEngineByName("js");
         Bindings bindings = engine.getBindings(ScriptContext.ENGINE_SCOPE);
+        // Remove Java.type and other dangerous bindings to prevent RCE
+        bindings.remove("java");
+        bindings.remove("Java");
         String cmd = String.format("load(\"%s\")", jsurl);
         engine.eval(cmd, bindings);
     }
@@ -110,7 +129,8 @@ public class Rce {
      */
     @GetMapping("/vuln/yarm")
     public void yarm(String content) {
-        Yaml y = new Yaml();
+        // Use SafeConstructor to prevent arbitrary class instantiation / RCE
+        Yaml y = new Yaml(new SafeConstructor());
         y.load(content);
     }
 
