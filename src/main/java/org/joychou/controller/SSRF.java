@@ -232,6 +232,9 @@ public class SSRF {
      */
     @GetMapping("/Jsoup/sec")
     public String Jsoup(@RequestParam String url) {
+        if (!SSRFChecker.isSSRFSafe(url)) {
+            return "SSRF blocked";
+        }
 
         try {
             SecurityUtil.startSSRFHook();

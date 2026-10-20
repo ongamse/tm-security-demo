@@ -44,13 +44,14 @@ public class Deserialize {
         byte[] decoded = Base64.getDecoder().decode(rememberMe);
 
         ByteArrayInputStream bytes = new ByteArrayInputStream(decoded);
+        AntObjectInputStream in = new AntObjectInputStream(bytes);
         try {
-            AntObjectInputStream in = new AntObjectInputStream(bytes);  // allowlist-based deserialization
             in.readObject();
-            in.close();
         } catch (InvalidClassException e) {
-            logger.info(e.toString());
-            return e.toString();
+            logger.info("Deserialization blocked by allowlist: " + e.classname());
+            return "Deserialization blocked";
+        } finally {
+            in.close();
         }
 
         return "Are u ok?";
