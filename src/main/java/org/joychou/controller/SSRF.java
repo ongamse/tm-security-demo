@@ -121,9 +121,9 @@ public class SSRF {
     public String request(@RequestParam String url) {
         try {
             SecurityUtil.startSSRFHook();
-            return HtmlUtils.htmlEscape(HttpUtils.request(url));
+            return SecurityUtil.sanitizeHeaderValue(HtmlUtils.htmlEscape(HttpUtils.request(url)));
         } catch (SSRFException | IOException e) {
-            return HtmlUtils.htmlEscape(e.getMessage());
+            return SecurityUtil.sanitizeHeaderValue(HtmlUtils.htmlEscape(e.getMessage()));
         } finally {
             SecurityUtil.stopSSRFHook();
         }
