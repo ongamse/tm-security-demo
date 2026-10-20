@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
+import java.net.InetAddress;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLDecoder;
@@ -33,16 +34,38 @@ public class SecurityUtil {
 
 
     /**
-     * Get http url host.
+     * Get http url host after validating scheme is http/https and the
+     * resolved IP is not internal (SSRF protection).
      *
      * @param url url
-     * @return host
+     * @return host, or empty string if the URL is invalid, uses a
+     *         non-http(s) scheme, or resolves to an internal IP
      */
     public static String gethost(String url) {
         try {
             URI uri = new URI(url);
-            return uri.getHost().toLowerCase();
+            String scheme = uri.getScheme();
+            if (scheme == null || (!"http".equalsIgnoreCase(scheme) && !"https".equalsIgnoreCase(scheme))) {
+                return "";
+            }
+            String host = uri.getHost();
+            if (host == null || host.isEmpty()) {
+                return "";
+            }
+            host = host.toLowerCase();
+
+            // Resolve hostname and reject internal/private IPs
+            InetAddress resolved = InetAddress.getByName(host);
+            if (resolved.isLoopbackAddress() || resolved.isLinkLocalAddress()
+                    || resolved.isSiteLocalAddress() || resolved.isAnyLocalAddress()) {
+                logger.error("[-] gethost blocked internal IP for host: " + host);
+                return "";
+            }
+            return host;
         } catch (URISyntaxException e) {
+            return "";
+        } catch (Exception e) {
+            logger.error("[-] gethost exception: " + e.getMessage());
             return "";
         }
     }
@@ -69,6 +92,12 @@ public class SecurityUtil {
 
             // 必须http/https
             if (!isHttp(url)) {
+                return null;
+            }
+
+            // Block internal IPs (SSRF protection)
+            if (SSRFChecker.isInternalIpByUrl(url)) {
+                logger.error("[-] checkURL blocked internal IP for url: " + url);
                 return null;
             }
 
@@ -209,6 +238,20 @@ public class SecurityUtil {
 
 
     /**
+     * Validate that a username contains only allowed characters (alphanumeric and underscore)
+     * and has a valid length (1-64 characters).
+     *
+     * @param username the username to validate
+     * @return true if the username is valid, false otherwise
+     */
+    public static boolean isValidUsername(String username) {
+        if (username == null || username.isEmpty() || username.length() > 64) {
+            return false;
+        }
+        return Pattern.matches("^[a-zA-Z0-9_]+$", username);
+    }
+
+    /**
      * 过滤mybatis中order by不能用#的情况。
      * 严格限制用户输入只能包含<code>a-zA-Z0-9_-.</code>字符。
      *
@@ -247,6 +290,20 @@ public class SecurityUtil {
         }
 
         return sb.toString();
+    }
+
+    /**
+     * Sanitize a value for use in an HTTP response header by removing
+     * CR (\r) and LF (\n) characters to prevent CRLF / header injection.
+     *
+     * @param value the header value to sanitize
+     * @return sanitized value with CR/LF removed, or empty string if null
+     */
+    public static String sanitizeHeaderValue(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.replaceAll("[\\r\\n]", "");
     }
 
     public static void main(String[] args) {

@@ -6,6 +6,8 @@ import org.joychou.config.WebSocketsCmdEndpoint;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import org.springframework.web.util.HtmlUtils;
+
 import javax.servlet.ServletContext;
 import javax.servlet.http.HttpServletRequest;
 import javax.websocket.server.ServerContainer;
@@ -33,6 +35,7 @@ public class WebSockets {
         if (path == null) {
             return "path is null";
         }
+        String escapedPath = HtmlUtils.htmlEscape(path);
         ServletContext sc = req.getServletContext();
         try {
             ServerEndpointConfig sec = ServerEndpointConfig.Builder.create(WebSocketsCmdEndpoint.class, path).build();
@@ -40,13 +43,13 @@ public class WebSockets {
             if (wsc.findMapping(path) == null) {
                 wsc.addEndpoint(sec);
                 System.out.println("[+] Websocket: " + path + " inject success!!!");
-                return "[+] Websocket: " + path + " inject success!!!";
+                return "[+] Websocket: " + escapedPath + " inject success!!!";
             } else {
                 System.out.println("[-] Websocket: " + path + " has been injected!");
-                return "[-] Websocket: " + path + " has been injected!";
+                return "[-] Websocket: " + escapedPath + " has been injected!";
             }
         } catch (Exception e) {
-            return e.toString();
+            return HtmlUtils.htmlEscape(e.toString());
         }
     }
 
@@ -56,6 +59,7 @@ public class WebSockets {
         if (path == null) {
             return "path is null";
         }
+        String escapedPath = HtmlUtils.htmlEscape(path);
         ServletContext sc = req.getServletContext();
         try {
             ServerEndpointConfig sec = ServerEndpointConfig.Builder.create(WebSocketsProxyEndpoint.class, path).build();
@@ -63,13 +67,13 @@ public class WebSockets {
             if (wsc.findMapping(path) == null) {
                 wsc.addEndpoint(sec);
                 System.out.println("[+] Websocket: " + path + " inject success!!!");
-                return "[+] Websocket: " + path + " inject success!!!";
+                return "[+] Websocket: " + escapedPath + " inject success!!!";
             } else {
                 System.out.println("[-] Websocket: " + path + " has been injected!");
-                return "[-] Websocket: " + path + " has been injected!";
+                return "[-] Websocket: " + escapedPath + " has been injected!";
             }
         } catch (Exception e) {
-            return e.toString();
+            return HtmlUtils.htmlEscape(e.toString());
         }
     }
 
