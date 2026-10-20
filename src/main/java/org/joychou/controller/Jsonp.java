@@ -22,6 +22,7 @@ import org.springframework.web.util.HtmlUtils;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import java.nio.charset.StandardCharsets;
 import java.security.Principal;
 
 
@@ -50,7 +51,12 @@ public class Jsonp {
         if (callback != null && !callback.matches("^[a-zA-Z_$][a-zA-Z0-9_$.]*$")) {
             return "invalid callback";
         }
-        return HtmlUtils.htmlEscape(WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request)));
+        String safeCallback = callback == null ? null
+                : new String(HtmlUtils.htmlEscape(callback).getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8);
+        String escaped = new String(HtmlUtils.htmlEscape(
+                WebUtils.json2Jsonp(safeCallback, LoginUtils.getUserInfo2JsonStr(request)))
+                .getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8);
+        return escaped;
     }
 
     /**
@@ -74,7 +80,12 @@ public class Jsonp {
         if (callback != null && !callback.matches("^[a-zA-Z_$][a-zA-Z0-9_$.]*$")) {
             return "invalid callback";
         }
-        return HtmlUtils.htmlEscape(WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request)));
+        String safeCallback = callback == null ? null
+                : new String(HtmlUtils.htmlEscape(callback).getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8);
+        String escaped = new String(HtmlUtils.htmlEscape(
+                WebUtils.json2Jsonp(safeCallback, LoginUtils.getUserInfo2JsonStr(request)))
+                .getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8);
+        return escaped;
     }
 
     /**
@@ -122,7 +133,12 @@ public class Jsonp {
         if (callback != null && !callback.matches("^[a-zA-Z_$][a-zA-Z0-9_$.]*$")) {
             return "invalid callback";
         }
-        return HtmlUtils.htmlEscape(WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request)));
+        String safeCallback = callback == null ? null
+                : new String(HtmlUtils.htmlEscape(callback).getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8);
+        String escaped = new String(HtmlUtils.htmlEscape(
+                WebUtils.json2Jsonp(safeCallback, LoginUtils.getUserInfo2JsonStr(request)))
+                .getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8);
+        return escaped;
     }
 
     /**
@@ -149,9 +165,13 @@ public class Jsonp {
             return "invalid callback";
         }
         if (StringUtils.isNotBlank(callback)) {
-            JSONPObject jsonpObj = new JSONPObject(callback);
+            String safeCallback = new String(
+                    HtmlUtils.htmlEscape(callback).getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8);
+            JSONPObject jsonpObj = new JSONPObject(safeCallback);
             jsonpObj.addParameter(csrfToken);
-            return HtmlUtils.htmlEscape(jsonpObj.toString());
+            String escaped = new String(
+                    HtmlUtils.htmlEscape(jsonpObj.toString()).getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8);
+            return escaped;
         } else {
             return HtmlUtils.htmlEscape(csrfToken.toString());
         }
