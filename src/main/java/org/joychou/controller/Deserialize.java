@@ -51,8 +51,7 @@ public class Deserialize {
      * <a href="http://localhost:8080/deserialize/rememberMe/vuln">http://localhost:8080/deserialize/rememberMe/vuln</a>
      */
     @RequestMapping("/rememberMe/vuln")
-    public String rememberMeVul(HttpServletRequest request)
-            throws IOException, ClassNotFoundException {
+    public String rememberMeVul(HttpServletRequest request) {
 
         Cookie cookie = getCookie(request, Constants.REMEMBER_ME_COOKIE);
         if (null == cookie) {
@@ -60,21 +59,35 @@ public class Deserialize {
         }
 
         String rememberMe = cookie.getValue();
-        byte[] decoded = Base64.getDecoder().decode(rememberMe);
+        byte[] decoded;
+        try {
+            decoded = Base64.getDecoder().decode(rememberMe);
+        } catch (IllegalArgumentException e) {
+            logger.error("Invalid base64 in rememberMe cookie: {}", e.getMessage());
+            return "Invalid cookie encoding.";
+        }
 
         ByteArrayInputStream bytes = new ByteArrayInputStream(decoded);
-        ObjectInputStream in = new ObjectInputStream(bytes) {
-            @Override
-            protected Class<?> resolveClass(ObjectStreamClass desc)
-                    throws IOException, ClassNotFoundException {
-                if (!ALLOWED_DESERIALIZE_CLASSES.contains(desc.getName())) {
-                    throw new InvalidClassException("Unauthorized deserialization attempt", desc.getName());
+        try {
+            ObjectInputStream in = new ObjectInputStream(bytes) {
+                @Override
+                protected Class<?> resolveClass(ObjectStreamClass desc)
+                        throws IOException, ClassNotFoundException {
+                    if (!ALLOWED_DESERIALIZE_CLASSES.contains(desc.getName())) {
+                        throw new InvalidClassException("Unauthorized deserialization attempt", desc.getName());
+                    }
+                    return super.resolveClass(desc);
                 }
-                return super.resolveClass(desc);
-            }
-        };
-        in.readObject();
-        in.close();
+            };
+            in.readObject();
+            in.close();
+        } catch (InvalidClassException e) {
+            logger.error("Blocked deserialization of unauthorized class: {}", e.getMessage());
+            return "Deserialization blocked.";
+        } catch (ClassNotFoundException | IOException e) {
+            logger.error("Deserialization error: {}", e.getMessage());
+            return "Deserialization error.";
+        }
 
         return "Are u ok?";
     }
