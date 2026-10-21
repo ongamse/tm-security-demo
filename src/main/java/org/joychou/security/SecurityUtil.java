@@ -287,7 +287,9 @@ public class SecurityUtil {
         if (value == null) {
             return null;
         }
-        return value.replaceAll("[\\r\\n]", "");
+        // Remove all control characters (including CR, LF, tab, null, etc.)
+        // to prevent CRLF injection and header manipulation
+        return value.replaceAll("[\\x00-\\x1f\\x7f]", "");
     }
 
     public static void main(String[] args) {
