@@ -1,7 +1,6 @@
 package org.joychou.controller;
 
 import org.joychou.config.Constants;
-import org.joychou.security.AntObjectInputStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -13,7 +12,11 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InvalidClassException;
 import java.io.ObjectInputStream;
+import java.io.ObjectStreamClass;
+import java.util.Arrays;
 import java.util.Base64;
+import java.util.HashSet;
+import java.util.Set;
 
 import static org.springframework.web.util.WebUtils.getCookie;
 
@@ -27,6 +30,21 @@ import static org.springframework.web.util.WebUtils.getCookie;
 public class Deserialize {
 
     protected final Logger logger = LoggerFactory.getLogger(this.getClass());
+
+    /**
+     * Allowlist of classes permitted for deserialization.
+     * Only domain types that are expected in serialized cookie data are allowed.
+     */
+    private static final Set<String> ALLOWED_DESERIALIZE_CLASSES = new HashSet<>(Arrays.asList(
+            "org.joychou.security.AntObjectInputStream$MyObject",
+            "org.joychou.dao.User",
+            "java.lang.String",
+            "java.lang.Number",
+            "java.lang.Integer",
+            "java.lang.Long",
+            "java.util.ArrayList",
+            "java.util.HashMap"
+    ));
 
     /**
      * java -jar ysoserial.jar CommonsCollections5 "open -a Calculator" | base64 <br>
@@ -45,7 +63,16 @@ public class Deserialize {
         byte[] decoded = Base64.getDecoder().decode(rememberMe);
 
         ByteArrayInputStream bytes = new ByteArrayInputStream(decoded);
-        ObjectInputStream in = new ObjectInputStream(bytes);
+        ObjectInputStream in = new ObjectInputStream(bytes) {
+            @Override
+            protected Class<?> resolveClass(ObjectStreamClass desc)
+                    throws IOException, ClassNotFoundException {
+                if (!ALLOWED_DESERIALIZE_CLASSES.contains(desc.getName())) {
+                    throw new InvalidClassException("Unauthorized deserialization attempt", desc.getName());
+                }
+                return super.resolveClass(desc);
+            }
+        };
         in.readObject();
         in.close();
 
@@ -72,7 +99,16 @@ public class Deserialize {
         ByteArrayInputStream bytes = new ByteArrayInputStream(decoded);
 
         try {
-            AntObjectInputStream in = new AntObjectInputStream(bytes);  // throw InvalidClassException
+            ObjectInputStream in = new ObjectInputStream(bytes) {
+                @Override
+                protected Class<?> resolveClass(ObjectStreamClass desc)
+                        throws IOException, ClassNotFoundException {
+                    if (!ALLOWED_DESERIALIZE_CLASSES.contains(desc.getName())) {
+                        throw new InvalidClassException("Unauthorized deserialization attempt", desc.getName());
+                    }
+                    return super.resolveClass(desc);
+                }
+            };
             in.readObject();
             in.close();
         } catch (InvalidClassException e) {
