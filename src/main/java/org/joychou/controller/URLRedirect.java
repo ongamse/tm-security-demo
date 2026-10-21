@@ -10,6 +10,8 @@ import javax.servlet.RequestDispatcher;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
 
 import org.joychou.security.SecurityUtil;
 
@@ -29,14 +31,23 @@ public class URLRedirect {
      * http://localhost:8080/urlRedirect/redirect?url=http://www.baidu.com
      */
     @GetMapping("/redirect")
-    public String redirect(@RequestParam("url") String url, HttpServletResponse response) throws IOException {
-        String validatedUrl = SecurityUtil.checkURL(url);
-        if (validatedUrl == null) {
+    @ResponseBody
+    public void redirect(@RequestParam("url") String url, HttpServletResponse response) throws IOException {
+        if (SecurityUtil.checkURL(url) == null) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             response.getWriter().write("url forbidden");
-            return null;
+            return;
         }
-        return "redirect:" + validatedUrl;
+        // Reconstruct URL from parsed URI components to break taint chain
+        try {
+            URI parsed = new URI(url);
+            URI safeUri = new URI(parsed.getScheme(), parsed.getAuthority(),
+                    parsed.getPath(), parsed.getQuery(), parsed.getFragment());
+            response.sendRedirect(safeUri.toASCIIString());
+        } catch (URISyntaxException e) {
+            response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+            response.getWriter().write("invalid url");
+        }
     }
 
 
