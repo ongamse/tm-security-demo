@@ -187,10 +187,11 @@ public class SQLI {
      */
     @GetMapping("/mybatis/vuln01")
     public List<User> mybatisVuln01(@RequestParam("username") String username) {
-        if (SecurityUtil.validateUsername(username) == null) {
+        String validatedUsername = SecurityUtil.validateUsername(username);
+        if (validatedUsername == null) {
             return Collections.emptyList();
         }
-        return userMapper.findByUserNameVuln01(username);
+        return userMapper.findByUserNameVuln01(validatedUsername);
     }
 
     /**
