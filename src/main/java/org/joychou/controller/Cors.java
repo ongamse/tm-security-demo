@@ -34,9 +34,13 @@ public class Cors {
     }
 
     @GetMapping("/vuln/setHeader")
-    public String vuls2(HttpServletResponse response) {
-        // 后端设置Access-Control-Allow-Origin为*的情况下，跨域的时候前端如果设置withCredentials为true会异常
-        response.setHeader("Access-Control-Allow-Origin", "*");
+    public String vuls2(HttpServletRequest request, HttpServletResponse response) {
+        // Validate origin against allowlist before setting CORS headers
+        String origin = request.getHeader("origin");
+        if (origin != null && SecurityUtil.checkURL(origin) != null) {
+            response.setHeader("Access-Control-Allow-Origin", SecurityUtil.sanitizeHeaderValue(origin));
+            response.setHeader("Access-Control-Allow-Credentials", "true");
+        }
         return info;
     }
 
@@ -109,13 +113,14 @@ public class Cors {
         String origin = request.getHeader("Origin");
 
         // If origin is not empty and not in the allowlist, reject as unsafe.
-        // If origin is null, it is a same-origin or direct browser request.
         if (origin != null && SecurityUtil.checkURL(origin) == null) {
             return "Origin is not safe.";
         }
-        // Sanitize CRLF characters before setting in response header
-        response.setHeader("Access-Control-Allow-Origin", SecurityUtil.sanitizeHeaderValue(origin));
-        response.setHeader("Access-Control-Allow-Credentials", "true");
+        // Only set CORS headers when origin is present and validated
+        if (origin != null) {
+            response.setHeader("Access-Control-Allow-Origin", SecurityUtil.sanitizeHeaderValue(origin));
+            response.setHeader("Access-Control-Allow-Credentials", "true");
+        }
         return LoginUtils.getUserInfo2JsonStr(request);
     }
 
