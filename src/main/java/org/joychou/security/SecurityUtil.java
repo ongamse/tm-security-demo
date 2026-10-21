@@ -18,6 +18,8 @@ import java.util.regex.Pattern;
 public class SecurityUtil {
 
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
+    private static final int MAX_USERNAME_LENGTH = 64;
+    private static final Pattern USERNAME_PATTERN = Pattern.compile("^[a-zA-Z0-9_.]+$");
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
 
 
@@ -39,9 +41,16 @@ public class SecurityUtil {
      * @return host
      */
     public static String gethost(String url) {
+        if (url == null || url.isEmpty()) {
+            return "";
+        }
         try {
             URI uri = new URI(url);
-            return uri.getHost().toLowerCase();
+            String host = uri.getHost();
+            if (host == null) {
+                return "";
+            }
+            return host.toLowerCase();
         } catch (URISyntaxException e) {
             return "";
         }
@@ -199,6 +208,24 @@ public class SecurityUtil {
     }
 
 
+    /**
+     * Validate username to prevent IDOR / information disclosure.
+     * Only alphanumeric characters, underscores and dots are allowed.
+     * Maximum length is 64 characters.
+     *
+     * @param username the username to validate
+     * @return the username if valid, null otherwise
+     */
+    public static String validateUsername(String username) {
+        if (username == null || username.isEmpty() || username.length() > MAX_USERNAME_LENGTH) {
+            return null;
+        }
+        if (!USERNAME_PATTERN.matcher(username).matches()) {
+            return null;
+        }
+        return username;
+    }
+
     public static String cmdFilter(String input) {
         if (!FILTER_PATTERN.matcher(input).matches()) {
             return null;
@@ -247,6 +274,22 @@ public class SecurityUtil {
         }
 
         return sb.toString();
+    }
+
+    /**
+     * Sanitize a value for use in HTTP headers by removing CR and LF characters
+     * to prevent CRLF injection / header injection attacks.
+     *
+     * @param value the header value to sanitize
+     * @return the sanitized value, or null if input is null
+     */
+    public static String sanitizeHeaderValue(String value) {
+        if (value == null) {
+            return null;
+        }
+        // Remove all control characters (including CR, LF, tab, null, etc.)
+        // to prevent CRLF injection and header manipulation
+        return value.replaceAll("[\\x00-\\x1f\\x7f]", "");
     }
 
     public static void main(String[] args) {

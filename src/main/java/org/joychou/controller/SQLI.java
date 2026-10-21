@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
 import java.sql.*;
+import java.util.Collections;
 import java.util.List;
 
 
@@ -60,11 +61,12 @@ public class SQLI {
             if (!con.isClosed())
                 System.out.println("Connect to database successfully.");
 
-            // sqli vuln code
-            Statement statement = con.createStatement();
-            String sql = "select * from users where username = '" + username + "'";
-            logger.info(sql);
-            ResultSet rs = statement.executeQuery(sql);
+            // Use parameterized query to prevent SQL injection
+            String sql = "select * from users where username = ?";
+            PreparedStatement st = con.prepareStatement(sql);
+            st.setString(1, username);
+            logger.info(st.toString());
+            ResultSet rs = st.executeQuery();
 
             while (rs.next()) {
                 String res_name = rs.getString("username");
@@ -93,6 +95,10 @@ public class SQLI {
      */
     @RequestMapping("/jdbc/sec")
     public String jdbc_sqli_sec(@RequestParam("username") String username) {
+
+        if (SecurityUtil.validateUsername(username) == null) {
+            return "Invalid username.";
+        }
 
         StringBuilder result = new StringBuilder();
         try {
@@ -146,8 +152,9 @@ public class SQLI {
             if (!con.isClosed())
                 System.out.println("Connecting to Database successfully.");
 
-            String sql = "select * from users where username = '" + username + "'";
+            String sql = "select * from users where username = ?";
             PreparedStatement st = con.prepareStatement(sql);
+            st.setString(1, username);
 
             logger.info(st.toString());
             ResultSet rs = st.executeQuery();
@@ -180,7 +187,11 @@ public class SQLI {
      */
     @GetMapping("/mybatis/vuln01")
     public List<User> mybatisVuln01(@RequestParam("username") String username) {
-        return userMapper.findByUserNameVuln01(username);
+        String validatedUsername = SecurityUtil.validateUsername(username);
+        if (validatedUsername == null) {
+            return Collections.emptyList();
+        }
+        return userMapper.findByUserNameVuln01(validatedUsername);
     }
 
     /**
@@ -190,6 +201,9 @@ public class SQLI {
      */
     @GetMapping("/mybatis/vuln02")
     public List<User> mybatisVuln02(@RequestParam("username") String username) {
+        if (SecurityUtil.validateUsername(username) == null) {
+            return Collections.emptyList();
+        }
         return userMapper.findByUserNameVuln02(username);
     }
 
@@ -210,6 +224,9 @@ public class SQLI {
      */
     @GetMapping("/mybatis/sec01")
     public User mybatisSec01(@RequestParam("username") String username) {
+        if (SecurityUtil.validateUsername(username) == null) {
+            return null;
+        }
         return userMapper.findByUserName(username);
     }
 
@@ -219,6 +236,9 @@ public class SQLI {
      */
     @GetMapping("/mybatis/sec02")
     public User mybatisSec02(@RequestParam("id") Integer id) {
+        if (id == null || id <= 0) {
+            return null;
+        }
         return userMapper.findById(id);
     }
 

@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.util.HtmlUtils;
 
 import java.io.IOException;
 import java.util.Iterator;
@@ -61,7 +62,7 @@ public class ooxmlXXE {
                 cell = (XSSFCell) cells.next();
 
                 if (cell.getCellType() == XSSFCell.CELL_TYPE_STRING) {
-                    sbResult.append(cell.getStringCellValue()).append(" ");
+                    sbResult.append(HtmlUtils.htmlEscape(cell.getStringCellValue())).append(" ");
                 } else if (cell.getCellType() == XSSFCell.CELL_TYPE_NUMERIC) {
                     sbResult.append(cell.getNumericCellValue()).append(" ");
                 } else {

@@ -11,6 +11,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 
 @RestController
@@ -18,11 +19,17 @@ public class PathTraversal {
 
     protected final Logger logger = LoggerFactory.getLogger(this.getClass());
 
+    /** Base directory for serving image files. */
+    private static final String IMAGE_BASE_DIR = System.getProperty("user.dir");
+
     /**
-     * http://localhost:8080/path_traversal/vul?filepath=../../../../../etc/passwd
+     * http://localhost:8080/path_traversal/vul?filepath=example.png
      */
     @GetMapping("/path_traversal/vul")
     public String getImage(String filepath) throws IOException {
+        if (filepath == null || filepath.contains("..")) {
+            return "Bad boy. Illegal file path.";
+        }
         return getImgBase64(filepath);
     }
 
@@ -40,9 +47,17 @@ public class PathTraversal {
         logger.info("Working directory: " + System.getProperty("user.dir"));
         logger.info("File path: " + imgFile);
 
-        File f = new File(imgFile);
+        // Canonicalize and verify the path stays within the allowed base directory
+        Path basePath = Paths.get(IMAGE_BASE_DIR).toAbsolutePath().normalize();
+        Path resolvedPath = basePath.resolve(imgFile).normalize();
+        if (!resolvedPath.startsWith(basePath)) {
+            logger.error("Path traversal attempt blocked: " + imgFile);
+            return "Bad boy. Illegal file path.";
+        }
+
+        File f = resolvedPath.toFile();
         if (f.exists() && !f.isDirectory()) {
-            byte[] data = Files.readAllBytes(Paths.get(imgFile));
+            byte[] data = Files.readAllBytes(resolvedPath);
             return new String(Base64.encodeBase64(data));
         } else {
             return "File doesn't exist or is not a file.";
