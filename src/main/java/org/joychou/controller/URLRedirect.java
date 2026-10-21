@@ -30,12 +30,13 @@ public class URLRedirect {
      */
     @GetMapping("/redirect")
     public String redirect(@RequestParam("url") String url, HttpServletResponse response) throws IOException {
-        if (SecurityUtil.checkURL(url) == null) {
+        String validatedUrl = SecurityUtil.checkURL(url);
+        if (validatedUrl == null) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             response.getWriter().write("url forbidden");
             return null;
         }
-        return "redirect:" + url;
+        return "redirect:" + validatedUrl;
     }
 
 
