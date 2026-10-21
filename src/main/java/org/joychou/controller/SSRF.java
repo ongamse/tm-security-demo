@@ -121,6 +121,12 @@ public class SSRF {
         InputStream inputStream = null;
         OutputStream outputStream = null;
         try {
+            // Validate URL: only allow http/https and reject internal IPs
+            if (!SecurityUtil.isHttp(url) || !SecurityUtil.checkSSRFWithoutRedirect(url)) {
+                response.sendError(HttpServletResponse.SC_FORBIDDEN, "SSRF check failed");
+                return;
+            }
+
             String downLoadImgFileName = WebUtils.getNameWithoutExtension(url) + "." + WebUtils.getFileExtension(url);
             // download
             response.setHeader("content-disposition", "attachment;fileName=" + downLoadImgFileName);

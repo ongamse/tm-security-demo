@@ -12,6 +12,8 @@ import org.apache.http.impl.client.HttpClients;
 import org.apache.http.impl.nio.client.CloseableHttpAsyncClient;
 import org.apache.http.impl.nio.client.HttpAsyncClients;
 import org.apache.http.util.EntityUtils;
+import org.joychou.security.SecurityUtil;
+import org.joychou.security.ssrf.SSRFChecker;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.slf4j.Logger;
@@ -35,7 +37,31 @@ public class HttpUtils {
 
     private final static Logger logger = LoggerFactory.getLogger(HttpUtils.class);
 
+    /**
+     * Validate URL to prevent SSRF attacks.
+     * Only allows http/https protocols and rejects requests to internal network addresses.
+     */
+    private static boolean isValidUrl(String url) {
+        if (url == null || url.isEmpty()) {
+            return false;
+        }
+        if (!SecurityUtil.isHttp(url)) {
+            return false;
+        }
+        if (SSRFChecker.isInternalIpByUrl(url)) {
+            return false;
+        }
+        return true;
+    }
+
+    private static final String URL_VALIDATION_ERROR =
+            "Error: URL validation failed - only http/https to non-internal hosts allowed";
+
     public static String commonHttpClient(String url) {
+
+        if (!isValidUrl(url)) {
+            return URL_VALIDATION_ERROR;
+        }
 
         HttpClient client = new HttpClient();
         GetMethod method = new GetMethod(url);
@@ -55,6 +81,9 @@ public class HttpUtils {
 
 
     public static String request(String url) {
+        if (!isValidUrl(url)) {
+            return URL_VALIDATION_ERROR;
+        }
         try {
             return Request.Get(url).execute().returnContent().toString();
         } catch (Exception e) {
@@ -64,6 +93,10 @@ public class HttpUtils {
 
 
     public static String httpClient(String url) {
+
+        if (!isValidUrl(url)) {
+            return URL_VALIDATION_ERROR;
+        }
 
         StringBuilder result = new StringBuilder();
 
@@ -90,6 +123,9 @@ public class HttpUtils {
 
 
     public static String URLConnection(String url) {
+        if (!isValidUrl(url)) {
+            return URL_VALIDATION_ERROR;
+        }
         try {
             URL u = new URL(url);
             URLConnection urlConnection = u.openConnection();
@@ -114,6 +150,9 @@ public class HttpUtils {
      * UserAgent is Java/1.8.0_102.
      */
     public static String HttpURLConnection(String url) {
+        if (!isValidUrl(url)) {
+            return URL_VALIDATION_ERROR;
+        }
         try {
             URL u = new URL(url);
             URLConnection urlConnection = u.openConnection();
@@ -143,6 +182,9 @@ public class HttpUtils {
      * @param url http request url
      */
     public static String Jsoup(String url) {
+        if (!isValidUrl(url)) {
+            return URL_VALIDATION_ERROR;
+        }
         try {
             Document doc = Jsoup.connect(url)
 //                    .followRedirects(false)
@@ -162,6 +204,9 @@ public class HttpUtils {
      * UserAgent is <code>okhttp/2.5.0</code>.
      */
     public static String okhttp(String url) throws IOException {
+        if (!isValidUrl(url)) {
+            throw new IOException("URL validation failed - only http/https to non-internal hosts allowed");
+        }
         OkHttpClient client = new OkHttpClient();
 //         client.setFollowRedirects(false);
         com.squareup.okhttp.Request ok_http = new com.squareup.okhttp.Request.Builder().url(url).build();
@@ -177,13 +222,12 @@ public class HttpUtils {
      * @param url http request url
      */
     public static void imageIO(String url) {
+        if (!isValidUrl(url)) {
+            logger.error("URL validation failed - only http/https to non-internal hosts allowed");
+            return;
+        }
         try {
             URL u = new URL(url);
-            String protocol = u.getProtocol();
-            if (!"http".equals(protocol) && !"https".equals(protocol)) {
-                logger.error("Blocked non-HTTP protocol in imageIO: " + protocol);
-                return;
-            }
             ImageIO.read(u); // send request
         } catch (IOException e) {
             logger.error(e.getMessage());
@@ -199,6 +243,10 @@ public class HttpUtils {
      * @param url http request url
      */
     public static void IOUtils(String url) {
+        if (!isValidUrl(url)) {
+            logger.error("URL validation failed - only http/https to non-internal hosts allowed");
+            return;
+        }
         try {
             IOUtils.toByteArray(URI.create(url));
         } catch (IOException e) {
@@ -208,6 +256,9 @@ public class HttpUtils {
 
 
     public static String HttpAsyncClients(String url) {
+        if (!isValidUrl(url)) {
+            return URL_VALIDATION_ERROR;
+        }
         CloseableHttpAsyncClient httpclient = HttpAsyncClients.createDefault();
         try {
             httpclient.start();
