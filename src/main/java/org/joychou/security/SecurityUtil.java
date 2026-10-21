@@ -18,6 +18,8 @@ import java.util.regex.Pattern;
 public class SecurityUtil {
 
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
+    private static final int MAX_USERNAME_LENGTH = 64;
+    private static final Pattern USERNAME_PATTERN = Pattern.compile("^[a-zA-Z0-9_.]+$");
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
 
 
@@ -205,6 +207,24 @@ public class SecurityUtil {
         return filepath;
     }
 
+
+    /**
+     * Validate username to prevent IDOR / information disclosure.
+     * Only alphanumeric characters, underscores and dots are allowed.
+     * Maximum length is 64 characters.
+     *
+     * @param username the username to validate
+     * @return the username if valid, null otherwise
+     */
+    public static String validateUsername(String username) {
+        if (username == null || username.isEmpty() || username.length() > MAX_USERNAME_LENGTH) {
+            return null;
+        }
+        if (!USERNAME_PATTERN.matcher(username).matches()) {
+            return null;
+        }
+        return username;
+    }
 
     public static String cmdFilter(String input) {
         if (!FILTER_PATTERN.matcher(input).matches()) {
