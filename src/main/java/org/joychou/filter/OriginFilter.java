@@ -9,6 +9,7 @@ import java.io.IOException;
 import org.joychou.security.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import static org.joychou.security.SecurityUtil.sanitizeHeaderValue;
 
 
 /**
@@ -45,7 +46,7 @@ public class OriginFilter implements Filter {
             return;
         }
 
-        response.setHeader("Access-Control-Allow-Origin", origin);
+        response.setHeader("Access-Control-Allow-Origin", sanitizeHeaderValue(origin));
         response.setHeader("Access-Control-Allow-Credentials", "true");
         response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTION");
 

@@ -276,6 +276,20 @@ public class SecurityUtil {
         return sb.toString();
     }
 
+    /**
+     * Sanitize a value for use in HTTP headers by removing CR and LF characters
+     * to prevent CRLF injection / header injection attacks.
+     *
+     * @param value the header value to sanitize
+     * @return the sanitized value, or null if input is null
+     */
+    public static String sanitizeHeaderValue(String value) {
+        if (value == null) {
+            return null;
+        }
+        return value.replaceAll("[\\r\\n]", "");
+    }
+
     public static void main(String[] args) {
     }
 
