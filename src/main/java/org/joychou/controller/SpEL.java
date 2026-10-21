@@ -7,6 +7,7 @@ import org.springframework.expression.spel.support.SimpleEvaluationContext;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.util.HtmlUtils;
 
 
 /**
@@ -25,7 +26,8 @@ public class SpEL {
     public String rce(String expression) {
         ExpressionParser parser = new SpelExpressionParser();
         EvaluationContext context = SimpleEvaluationContext.forReadOnlyDataBinding().build();
-        return parser.parseExpression(expression).getValue(context, String.class);
+        String result = parser.parseExpression(expression).getValue(context, String.class);
+        return HtmlUtils.htmlEscape(result != null ? result : "");
     }
 
     public static void main(String[] args) {
