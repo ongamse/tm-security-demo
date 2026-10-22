@@ -25,21 +25,23 @@ public class IPForge {
 
 
     /**
-     * proxy_set_header X-Real-IP $remote_addr;
-     * proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for
-     * if code used X-Forwarded-For to get ip, the code must be vulnerable.
+     * Use request.getRemoteAddr() as the authoritative client IP source.
+     * Headers like X-Real-IP and X-Forwarded-For are client-controlled and
+     * must not be trusted without prior validation of a trusted reverse proxy
+     * at the infrastructure layer (e.g. Spring's ForwardedHeaderFilter with
+     * a trusted-proxy allowlist). Without that, only getRemoteAddr() is safe.
      */
     @RequestMapping("/proxy")
     @ResponseBody
     public static String proxy(HttpServletRequest request) {
-        String ip = request.getHeader("X-Real-IP");
-        if (StringUtils.isNotBlank(ip)) {
-            return HtmlUtils.htmlEscape(ip);
-        } else {
-            String remoteAddr = request.getRemoteAddr();
-            if (StringUtils.isNotBlank(remoteAddr)) {
-                return HtmlUtils.htmlEscape(remoteAddr);
-            }
+        // Use the TCP-level remote address — not spoofable by the client.
+        // If the app sits behind a trusted reverse proxy, configure
+        // server.forward-headers-strategy=NATIVE or a ForwardedHeaderFilter
+        // with a trusted-proxy allowlist so that getRemoteAddr() already
+        // reflects the real client IP resolved by the container.
+        String remoteAddr = request.getRemoteAddr();
+        if (StringUtils.isNotBlank(remoteAddr)) {
+            return HtmlUtils.htmlEscape(remoteAddr);
         }
         return "";
     }
