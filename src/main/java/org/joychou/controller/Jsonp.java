@@ -45,6 +45,9 @@ public class Jsonp {
     @RequestMapping(value = "/vuln/referer", produces = "application/javascript")
     public String referer(HttpServletRequest request) {
         String callback = request.getParameter(this.callback);
+        if (callback == null || !callback.matches("^[a-zA-Z_][a-zA-Z0-9_.]*$")) {
+            return "invalid callback";
+        }
         return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
     }
 
@@ -62,6 +65,9 @@ public class Jsonp {
             return "error";
         }
         String callback = request.getParameter(this.callback);
+        if (callback == null || !callback.matches("^[a-zA-Z_][a-zA-Z0-9_.]*$")) {
+            return "invalid callback";
+        }
         return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
     }
 
@@ -107,6 +113,9 @@ public class Jsonp {
             return "error";
         }
         String callback = request.getParameter(this.callback);
+        if (callback == null || !callback.matches("^[a-zA-Z_][a-zA-Z0-9_.]*$")) {
+            return "invalid callback";
+        }
         return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
     }
 
@@ -131,6 +140,9 @@ public class Jsonp {
 
         String callback = request.getParameter("fastjsonpCallback");
         if (StringUtils.isNotBlank(callback)) {
+            if (!callback.matches("^[a-zA-Z_][a-zA-Z0-9_.]*$")) {
+                return "invalid callback";
+            }
             JSONPObject jsonpObj = new JSONPObject(callback);
             jsonpObj.addParameter(csrfToken);
             return jsonpObj.toString();

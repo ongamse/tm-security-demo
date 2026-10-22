@@ -12,6 +12,7 @@ import java.net.URL;
 import java.util.ArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.springframework.web.util.HtmlUtils;
 
 /**
  * The vulnerability code and security code of Java url whitelist.
@@ -135,9 +136,9 @@ public class URLWhiteList {
 
         for (String whiteHost: whiteDomainlists){
             if (whiteHost.startsWith(".") && host.endsWith(whiteHost)) {
-                return url;
+                return HtmlUtils.htmlEscape(url);
             } else if (!whiteHost.startsWith(".") && host.equals(whiteHost)) {
-                return url;
+                return HtmlUtils.htmlEscape(url);
             }
         }
 

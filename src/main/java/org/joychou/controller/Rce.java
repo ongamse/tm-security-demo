@@ -17,6 +17,7 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.sql.DriverManager;
 import java.util.Set;
+import org.springframework.web.util.HtmlUtils;
 
 
 /**
@@ -62,9 +63,9 @@ public class Rce {
             inBr.close();
             in.close();
         } catch (Exception e) {
-            return e.toString();
+            return HtmlUtils.htmlEscape(e.toString());
         }
-        return sb.toString();
+        return HtmlUtils.htmlEscape(sb.toString());
     }
 
 
