@@ -118,6 +118,12 @@ public class SSRF {
      */
     @GetMapping("/openStream")
     public void openStream(@RequestParam String url, HttpServletResponse response) throws IOException {
+        // Validate URL against SSRF before opening stream
+        if (!SecurityUtil.checkSSRFByWhitehosts(url)) {
+            response.sendError(HttpServletResponse.SC_FORBIDDEN, "[-] SSRF check failed");
+            return;
+        }
+
         InputStream inputStream = null;
         OutputStream outputStream = null;
         try {

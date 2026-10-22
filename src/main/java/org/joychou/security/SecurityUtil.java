@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
+import java.net.InetAddress;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLDecoder;
@@ -67,12 +68,16 @@ public class SecurityUtil {
         try {
             String host = gethost(url);
 
-            // 必须http/https
+            // Must be http/https
             if (!isHttp(url)) {
                 return null;
             }
 
-            // 如果满足黑名单返回null
+            if (host == null || host.isEmpty()) {
+                return null;
+            }
+
+            // Block blacklisted domains
             if (blockDomains.contains(host)){
                 return null;
             }
@@ -82,19 +87,33 @@ public class SecurityUtil {
                 }
             }
 
-            // 支持多级域名
+            // Check domain whitelist
+            boolean domainAllowed = false;
             if (safeDomains.contains(host)){
-                return url;
+                domainAllowed = true;
             }
-
-            // 支持一级域名
-            for(String safedomain: safeDomains) {
-                if(host.endsWith("." + safedomain)) {
-                    return url;
+            if (!domainAllowed) {
+                for (String safedomain : safeDomains) {
+                    if (host.endsWith("." + safedomain)) {
+                        domainAllowed = true;
+                        break;
+                    }
                 }
             }
-            return null;
-        } catch (NullPointerException e) {
+            if (!domainAllowed) {
+                return null;
+            }
+
+            // After domain whitelist passes, resolve DNS and check IP is not internal
+            // This prevents DNS rebinding and domain-to-internal-IP attacks
+            InetAddress resolvedAddr = InetAddress.getByName(host);
+            if (SSRFChecker.isInternalIp(resolvedAddr.getHostAddress())) {
+                logger.error("checkURL blocked internal IP for host: " + host);
+                return null;
+            }
+
+            return url;
+        } catch (Exception e) {
             logger.error(e.toString());
             return null;
         }

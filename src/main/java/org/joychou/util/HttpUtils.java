@@ -17,6 +17,8 @@ import org.jsoup.nodes.Document;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.joychou.security.ssrf.SSRFChecker;
+
 import javax.imageio.ImageIO;
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -56,6 +58,9 @@ public class HttpUtils {
 
     public static String request(String url) {
         try {
+            if (!SSRFChecker.checkURLFckSSRF(url)) {
+                return "[-] SSRF check failed";
+            }
             return Request.Get(url).execute().returnContent().toString();
         } catch (Exception e) {
             return e.getMessage();
@@ -91,6 +96,9 @@ public class HttpUtils {
 
     public static String URLConnection(String url) {
         try {
+            if (!SSRFChecker.checkURLFckSSRF(url)) {
+                return "[-] SSRF check failed";
+            }
             URL u = new URL(url);
             URLConnection urlConnection = u.openConnection();
             BufferedReader in = new BufferedReader(new InputStreamReader(urlConnection.getInputStream())); //send request
@@ -115,6 +123,9 @@ public class HttpUtils {
      */
     public static String HttpURLConnection(String url) {
         try {
+            if (!SSRFChecker.checkURLFckSSRF(url)) {
+                return "[-] SSRF check failed";
+            }
             URL u = new URL(url);
             URLConnection urlConnection = u.openConnection();
             HttpURLConnection conn = (HttpURLConnection) urlConnection;
@@ -144,6 +155,9 @@ public class HttpUtils {
      */
     public static String Jsoup(String url) {
         try {
+            if (!SSRFChecker.checkURLFckSSRF(url)) {
+                return "[-] SSRF check failed";
+            }
             Document doc = Jsoup.connect(url)
 //                    .followRedirects(false)
                     .timeout(3000)
@@ -203,6 +217,9 @@ public class HttpUtils {
 
 
     public static String HttpAsyncClients(String url) {
+        if (!SSRFChecker.checkURLFckSSRF(url)) {
+            return "[-] SSRF check failed";
+        }
         CloseableHttpAsyncClient httpclient = HttpAsyncClients.createDefault();
         try {
             httpclient.start();

@@ -28,24 +28,43 @@ public class SSRFChecker {
         try {
             String host = SecurityUtil.gethost(url);
 
-            // 必须http/https
+            // Must be http/https
             if (!SecurityUtil.isHttp(url)) {
                 return false;
             }
 
-            if (ssrfSafeDomains.contains(host)) {
-                return true;
+            if (host == null || host.isEmpty()) {
+                return false;
             }
-            for (String ssrfSafeDomain : ssrfSafeDomains) {
-                if (host.endsWith("." + ssrfSafeDomain)) {
-                    return true;
+
+            boolean domainAllowed = false;
+            if (ssrfSafeDomains.contains(host)) {
+                domainAllowed = true;
+            }
+            if (!domainAllowed) {
+                for (String ssrfSafeDomain : ssrfSafeDomains) {
+                    if (host.endsWith("." + ssrfSafeDomain)) {
+                        domainAllowed = true;
+                        break;
+                    }
                 }
             }
+            if (!domainAllowed) {
+                return false;
+            }
+
+            // After domain whitelist passes, resolve DNS and verify IP is not internal/private
+            InetAddress resolvedAddr = InetAddress.getByName(host);
+            if (isInternalIp(resolvedAddr.getHostAddress())) {
+                logger.error("[-] SSRF check failed. Domain " + host + " resolves to internal IP.");
+                return false;
+            }
+
         } catch (Exception e) {
             logger.error(e.toString());
             return false;
         }
-        return false;
+        return true;
     }
 
     /**
@@ -65,37 +84,44 @@ public class SSRFChecker {
         String finalUrl = url;
         try {
             do {
-                // 判断当前请求的URL是否是内网ip
+                // Require http/https scheme
+                if (!SecurityUtil.isHttp(finalUrl)) {
+                    logger.error("[-] SSRF check failed. Non-HTTP scheme: " + finalUrl);
+                    return false;
+                }
+
+                // Resolve DNS and check IP BEFORE connecting
                 if (isInternalIpByUrl(finalUrl)) {
                     logger.error("[-] SSRF check failed. Dangerous url: " + finalUrl);
-                    return false;  // 内网ip直接return，非内网ip继续判断是否有重定向
+                    return false;
                 }
 
                 connection = (HttpURLConnection) new URL(finalUrl).openConnection();
                 connection.setInstanceFollowRedirects(false);
-                connection.setUseCaches(false); // 设置为false，手动处理跳转，可以拿到每个跳转的URL
+                connection.setUseCaches(false);
                 connection.setConnectTimeout(connectTime);
-                //connection.setRequestMethod("GET");
-                connection.connect(); // send dns request
-                int responseCode = connection.getResponseCode(); // 发起网络请求
+                connection.connect();
+                int responseCode = connection.getResponseCode();
                 if (responseCode >= 300 && responseCode <= 307 && responseCode != 304 && responseCode != 306) {
                     String redirectedUrl = connection.getHeaderField("Location");
                     if (null == redirectedUrl)
                         break;
                     finalUrl = redirectedUrl;
-                    i += 1;  // 重定向次数加1
+                    i += 1;
                     logger.info("redirected url: " + finalUrl);
                     if (i == checkTimes) {
                         return false;
                     }
-                } else
+                } else {
                     break;
-            } while (connection.getResponseCode() != HttpURLConnection.HTTP_OK);
+                }
+            } while (true);
             connection.disconnect();
         } catch (Exception e) {
-            return true;  // 如果异常了，认为是安全的，防止是超时导致的异常而验证不成功。
+            logger.error("[-] SSRF check exception: " + e.getMessage());
+            return false;  // Fail closed on exception
         }
-        return true; // 默认返回true
+        return true;
     }
 
 
@@ -129,6 +155,20 @@ public class SSRFChecker {
     public static boolean isInternalIp(String strIP) {
         if (StringUtils.isEmpty(strIP)) {
             logger.error("[-] SSRF check failed. IP is empty. " + strIP);
+            return true;
+        }
+
+        // Built-in check for loopback, site-local, link-local, and multicast addresses
+        try {
+            InetAddress addr = InetAddress.getByName(strIP);
+            if (addr.isLoopbackAddress() || addr.isSiteLocalAddress() ||
+                addr.isLinkLocalAddress() || addr.isAnyLocalAddress() ||
+                addr.isMulticastAddress()) {
+                logger.error("[-] SSRF check failed. Internal/reserved IP: " + strIP);
+                return true;
+            }
+        } catch (Exception e) {
+            logger.error("[-] SSRF check failed. Invalid IP: " + strIP);
             return true;
         }
 
