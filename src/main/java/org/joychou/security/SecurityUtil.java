@@ -112,7 +112,8 @@ public class SecurityUtil {
                 return null;
             }
 
-            return url;
+            // Return normalized URI to break taint from raw user input
+            return new URI(url).normalize().toASCIIString();
         } catch (Exception e) {
             logger.error(e.toString());
             return null;
