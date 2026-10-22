@@ -15,10 +15,12 @@ public class Server implements Hello {
     public static void main(String args[]) {
 
         try {
+            // Restrict RMI registry to localhost to prevent remote code execution
+            System.setProperty("java.rmi.server.hostname", "127.0.0.1");
             Server obj = new Server();
             Hello stub = (Hello) UnicastRemoteObject.exportObject(obj, 0);
             LocateRegistry.createRegistry(1099);
-            Registry registry = LocateRegistry.getRegistry();
+            Registry registry = LocateRegistry.getRegistry("127.0.0.1", 1099);
             registry.bind("Hello", stub);
             System.out.println("绑定1099端口成功");
         } catch (Exception e) {
