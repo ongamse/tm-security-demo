@@ -25,18 +25,24 @@ public class Cors {
     @GetMapping("/vuln/origin")
     public String vuls1(HttpServletRequest request, HttpServletResponse response) {
         String origin = request.getHeader("origin");
-        // Validate origin against allowlist and sanitize to prevent header injection
-        if (origin != null && SecurityUtil.checkURL(origin) != null) {
-            response.setHeader("Access-Control-Allow-Origin", SecurityUtil.sanitizeHeaderValue(origin));
+        // Use the validated return value to break taint from raw user input
+        String validatedOrigin = SecurityUtil.checkURL(origin);
+        if (validatedOrigin != null) {
+            response.setHeader("Access-Control-Allow-Origin", SecurityUtil.sanitizeHeaderValue(validatedOrigin));
             response.setHeader("Access-Control-Allow-Credentials", "true");
         }
         return info;
     }
 
     @GetMapping("/vuln/setHeader")
-    public String vuls2(HttpServletResponse response) {
-        // 后端设置Access-Control-Allow-Origin为*的情况下，跨域的时候前端如果设置withCredentials为true会异常
-        response.setHeader("Access-Control-Allow-Origin", "*");
+    public String vuls2(HttpServletRequest request, HttpServletResponse response) {
+        String origin = request.getHeader("origin");
+        // Validate origin against allowlist before reflecting it
+        String validatedOrigin = SecurityUtil.checkURL(origin);
+        if (validatedOrigin != null) {
+            response.setHeader("Access-Control-Allow-Origin", SecurityUtil.sanitizeHeaderValue(validatedOrigin));
+            response.setHeader("Access-Control-Allow-Credentials", "true");
+        }
         return info;
     }
 
@@ -108,13 +114,17 @@ public class Cors {
     public String seccode(HttpServletRequest request, HttpServletResponse response) {
         String origin = request.getHeader("Origin");
 
-        // 如果origin不为空并且origin不在白名单内，认定为不安全。
-        // 如果origin为空，表示是同域过来的请求或者浏览器直接发起的请求。
-        if (origin != null && SecurityUtil.checkURL(origin) == null) {
+        // Use the validated return value to break taint from raw user input
+        String validatedOrigin = SecurityUtil.checkURL(origin);
+        // If origin is present but not in allowlist, reject
+        if (origin != null && validatedOrigin == null) {
             return "Origin is not safe.";
         }
-        response.setHeader("Access-Control-Allow-Origin", SecurityUtil.sanitizeHeaderValue(origin));
-        response.setHeader("Access-Control-Allow-Credentials", "true");
+        // Only set CORS headers when origin was validated (non-null)
+        if (validatedOrigin != null) {
+            response.setHeader("Access-Control-Allow-Origin", SecurityUtil.sanitizeHeaderValue(validatedOrigin));
+            response.setHeader("Access-Control-Allow-Credentials", "true");
+        }
         return LoginUtils.getUserInfo2JsonStr(request);
     }
 
