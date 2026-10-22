@@ -5,9 +5,11 @@ import javax.servlet.http.HttpServletRequest;
 import java.io.*;
 
 import com.google.common.base.Preconditions;
-import org.springframework.web.util.HtmlUtils;
 
 public class WebUtils {
+
+    private static final java.util.regex.Pattern JSONP_CALLBACK_PATTERN =
+            java.util.regex.Pattern.compile("^[a-zA-Z_][a-zA-Z0-9_.]*$");
 
     // Get request body.
     public static String getRequestBody(HttpServletRequest request) throws IOException {
@@ -28,7 +30,10 @@ public class WebUtils {
 
 
     public static String json2Jsonp(String callback, String jsonStr) {
-        return HtmlUtils.htmlEscape(callback) + "(" + jsonStr + ")";
+        if (callback == null || !JSONP_CALLBACK_PATTERN.matcher(callback).matches()) {
+            throw new IllegalArgumentException("Invalid JSONP callback parameter");
+        }
+        return callback + "(" + jsonStr + ")";
     }
 
 
