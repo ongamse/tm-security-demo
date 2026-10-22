@@ -4,12 +4,14 @@ package org.joychou.controller;
 import org.joychou.mapper.UserMapper;
 import org.joychou.dao.User;
 import org.joychou.security.SecurityUtil;
+import org.springframework.security.access.AccessDeniedException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
+import java.security.Principal;
 import java.sql.*;
 import java.util.List;
 
@@ -93,7 +95,12 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/jdbc/sec?username=joychou">http://localhost:8080/sqli/jdbc/sec?username=joychou</a>
      */
     @RequestMapping("/jdbc/sec")
-    public String jdbc_sqli_sec(@RequestParam("username") String username) {
+    public String jdbc_sqli_sec(@RequestParam("username") String username, Principal principal) {
+
+        // IDOR protection: ensure the requested username matches the authenticated user
+        if (principal == null || !username.equals(principal.getName())) {
+            throw new AccessDeniedException("Access denied: you can only query your own user data.");
+        }
 
         StringBuilder result = new StringBuilder();
         try {
@@ -181,7 +188,11 @@ public class SQLI {
      * <p>select * from users where username = 'joychou' or '1'='1' </p>
      */
     @GetMapping("/mybatis/vuln01")
-    public List<User> mybatisVuln01(@RequestParam("username") String username) {
+    public List<User> mybatisVuln01(@RequestParam("username") String username, Principal principal) {
+        // IDOR protection: ensure the requested username matches the authenticated user
+        if (principal == null || !username.equals(principal.getName())) {
+            throw new AccessDeniedException("Access denied: you can only query your own user data.");
+        }
         return userMapper.findByUserNameVuln01(username);
     }
 
@@ -191,7 +202,11 @@ public class SQLI {
      * <p>select * from users where username like '%joychou' or '1'='1%' </p>
      */
     @GetMapping("/mybatis/vuln02")
-    public List<User> mybatisVuln02(@RequestParam("username") String username) {
+    public List<User> mybatisVuln02(@RequestParam("username") String username, Principal principal) {
+        // IDOR protection: ensure the requested username matches the authenticated user
+        if (principal == null || !username.equals(principal.getName())) {
+            throw new AccessDeniedException("Access denied: you can only query your own user data.");
+        }
         return userMapper.findByUserNameVuln02(username);
     }
 
@@ -211,7 +226,11 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/mybatis/sec01?username=joychou">http://localhost:8080/sqli/mybatis/sec01?username=joychou</a>
      */
     @GetMapping("/mybatis/sec01")
-    public User mybatisSec01(@RequestParam("username") String username) {
+    public User mybatisSec01(@RequestParam("username") String username, Principal principal) {
+        // IDOR protection: ensure the requested username matches the authenticated user
+        if (principal == null || !username.equals(principal.getName())) {
+            throw new AccessDeniedException("Access denied: you can only query your own user data.");
+        }
         return userMapper.findByUserName(username);
     }
 
@@ -220,8 +239,16 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/mybatis/sec02?id=1">http://localhost:8080/sqli/mybatis/sec02?id=1</a>
      */
     @GetMapping("/mybatis/sec02")
-    public User mybatisSec02(@RequestParam("id") Integer id) {
-        return userMapper.findById(id);
+    public User mybatisSec02(@RequestParam("id") Integer id, Principal principal) {
+        if (principal == null) {
+            throw new AccessDeniedException("Access denied: authentication required.");
+        }
+        User result = userMapper.findById(id);
+        // IDOR protection: ensure the fetched user matches the authenticated user
+        if (result != null && !result.getUsername().equals(principal.getName())) {
+            throw new AccessDeniedException("Access denied: you can only query your own user data.");
+        }
+        return result;
     }
 
 
