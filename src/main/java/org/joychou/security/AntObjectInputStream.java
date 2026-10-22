@@ -1,5 +1,6 @@
 package org.joychou.security;
 
+import static org.joychou.security.SecurityUtil.sanitizeLogParam;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -53,7 +54,7 @@ public class AntObjectInputStream extends ObjectInputStream {
     {
         String className = desc.getName();
 
-        logger.info("Deserialize class name: " + className);
+        logger.info("Deserialize class name: " + sanitizeLogParam(className));
 
         if (!ALLOWED_CLASSES.contains(className)) {
             throw new InvalidClassException(

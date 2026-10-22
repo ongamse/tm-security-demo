@@ -1,6 +1,5 @@
 package org.joychou.controller;
 
-import com.fasterxml.uuid.Generators;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Controller;
@@ -11,13 +10,15 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.UUID;
 
+import static org.joychou.security.SecurityUtil.sanitizeLogParam;
 import org.joychou.security.SecurityUtil;
 
 
@@ -145,7 +146,7 @@ public class FileUpload {
             }
         }
         if (!suffixFlag) {
-            logger.error("[-] Suffix error: " + Suffix);
+            logger.error("[-] Suffix error: " + sanitizeLogParam(Suffix));
             deleteFile(filePath);
             return "Upload failed. Illeagl picture.";
         }
@@ -163,7 +164,7 @@ public class FileUpload {
         for (String blackMimeType : mimeTypeBlackList) {
             // 用contains是为了防止text/html;charset=UTF-8绕过
             if (SecurityUtil.replaceSpecialStr(mimeType).toLowerCase().contains(blackMimeType)) {
-                logger.error("[-] Mime type error: " + mimeType);
+                logger.error("[-] Mime type error: " + sanitizeLogParam(mimeType));
                 deleteFile(filePath);
                 return "Upload failed. Illeagl picture.";
             }
@@ -190,8 +191,8 @@ public class FileUpload {
             return "Upload failed";
         }
 
-        logger.info("[+] Safe file. Suffix: {}, MIME: {}", Suffix, mimeType);
-        logger.info("[+] Successfully uploaded {}", filePath);
+        logger.info("[+] Safe file. Suffix: {}, MIME: {}", sanitizeLogParam(Suffix), sanitizeLogParam(mimeType));
+        logger.info("[+] Successfully uploaded {}", sanitizeLogParam(filePath));
         return String.format("You successfully uploaded '%s'", filePath);
     }
 
@@ -199,17 +200,18 @@ public class FileUpload {
         Path delPath = Paths.get(filePath).toAbsolutePath().normalize();
         Path allowedBase = Paths.get(UPLOADED_FOLDER).toAbsolutePath().normalize();
         if (!delPath.startsWith(allowedBase)) {
-            logger.error("Refusing to delete file outside upload directory: " + filePath);
+            logger.error("Refusing to delete file outside upload directory: " + sanitizeLogParam(filePath));
             return;
         }
-        File delFile = delPath.toFile();
-        if(delFile.isFile() && delFile.exists()) {
-            if (delFile.delete()) {
-                logger.info("[+] " + filePath + " delete successfully!");
-                return;
+        try {
+            if (Files.deleteIfExists(delPath)) {
+                logger.info("[+] " + sanitizeLogParam(filePath) + " delete successfully!");
+            } else {
+                logger.info(filePath + " does not exist.");
             }
+        } catch (IOException e) {
+            logger.info(sanitizeLogParam(filePath) + " delete failed!");
         }
-        logger.info(filePath + " delete failed!");
     }
 
     /**
@@ -225,19 +227,15 @@ public class FileUpload {
             throw new Exception("Invalid file name");
         }
         String suffix = safeName.substring(safeName.lastIndexOf("."));
-        UUID uuid = Generators.timeBasedGenerator().generate();
+        UUID uuid = UUID.randomUUID();
         Path safeRandomPath = safePath(UPLOADED_FOLDER, uuid + suffix);
         randomFilePath = safeRandomPath.toString();
-        // 随机生成一个同后缀名的文件
-        File convFile = safeRandomPath.toFile();
-        boolean ret = convFile.createNewFile();
-        if (!ret) {
-            return null;
+        // Atomically create the file and write content
+        Files.createFile(safeRandomPath);
+        try (OutputStream fos = Files.newOutputStream(safeRandomPath, StandardOpenOption.WRITE)) {
+            fos.write(multiFile.getBytes());
         }
-        FileOutputStream fos = new FileOutputStream(convFile);
-        fos.write(multiFile.getBytes());
-        fos.close();
-        return convFile;
+        return safeRandomPath.toFile();
     }
 
     /**

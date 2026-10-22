@@ -1,6 +1,7 @@
 package org.joychou.security.ssrf;
 
 
+import static org.joychou.security.SecurityUtil.sanitizeLogParam;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -94,7 +95,7 @@ public class SocketHookImpl extends SocketImpl implements SocketOptions {
 
     @Override
     protected void connect(String host, int port) {
-        logger.info("host: " + host + "\tport: " + port);
+        logger.info("host: " + sanitizeLogParam(host) + "\tport: " + port);
         try {
             connectHostImpl.invoke(socketImpl, host, port);
         } catch (IllegalAccessException | InvocationTargetException | IllegalArgumentException ex) {
@@ -107,7 +108,7 @@ public class SocketHookImpl extends SocketImpl implements SocketOptions {
     @Override
     protected void connect(InetAddress address, int port) {
 
-        logger.info("InetAddress: " + address.toString());
+        logger.info("InetAddress: " + sanitizeLogParam(address.toString()));
 
         try {
             if (SSRFChecker.isInternalIp(address.getHostAddress())) {
@@ -127,7 +128,7 @@ public class SocketHookImpl extends SocketImpl implements SocketOptions {
 
         String ip = addr.getAddress().getHostAddress();
         String host = addr.getHostName();
-        logger.info(String.format("[+] SocketAddress address's Hostname: %s IP: %s", host, ip));
+        logger.info(String.format("[+] SocketAddress address's Hostname: %s IP: %s", sanitizeLogParam(host), sanitizeLogParam(ip)));
 
         try {
             if (SSRFChecker.isInternalIp(ip)) {

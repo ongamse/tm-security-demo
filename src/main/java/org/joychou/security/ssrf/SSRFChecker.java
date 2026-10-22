@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.net.util.SubnetUtils;
 import org.joychou.config.WebConfig;
+import static org.joychou.security.SecurityUtil.sanitizeLogParam;
 import org.joychou.security.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -56,7 +57,7 @@ public class SSRFChecker {
             // After domain whitelist passes, resolve DNS and verify IP is not internal/private
             InetAddress resolvedAddr = InetAddress.getByName(host);
             if (isInternalIp(resolvedAddr.getHostAddress())) {
-                logger.error("[-] SSRF check failed. Domain " + host + " resolves to internal IP.");
+                logger.error("[-] SSRF check failed. Domain " + sanitizeLogParam(host) + " resolves to internal IP.");
                 return false;
             }
 
@@ -86,13 +87,13 @@ public class SSRFChecker {
             do {
                 // Require http/https scheme
                 if (!SecurityUtil.isHttp(finalUrl)) {
-                    logger.error("[-] SSRF check failed. Non-HTTP scheme: " + finalUrl);
+                    logger.error("[-] SSRF check failed. Non-HTTP scheme: " + sanitizeLogParam(finalUrl));
                     return false;
                 }
 
                 // Resolve DNS and check IP BEFORE connecting
                 if (isInternalIpByUrl(finalUrl)) {
-                    logger.error("[-] SSRF check failed. Dangerous url: " + finalUrl);
+                    logger.error("[-] SSRF check failed. Dangerous url: " + sanitizeLogParam(finalUrl));
                     return false;
                 }
 
@@ -108,7 +109,7 @@ public class SSRFChecker {
                         break;
                     finalUrl = redirectedUrl;
                     i += 1;
-                    logger.info("redirected url: " + finalUrl);
+                    logger.info("redirected url: " + sanitizeLogParam(finalUrl));
                     if (i == checkTimes) {
                         return false;
                     }
@@ -154,7 +155,7 @@ public class SSRFChecker {
      */
     public static boolean isInternalIp(String strIP) {
         if (StringUtils.isEmpty(strIP)) {
-            logger.error("[-] SSRF check failed. IP is empty. " + strIP);
+            logger.error("[-] SSRF check failed. IP is empty. " + sanitizeLogParam(strIP));
             return true;
         }
 
@@ -164,11 +165,11 @@ public class SSRFChecker {
             if (addr.isLoopbackAddress() || addr.isSiteLocalAddress() ||
                 addr.isLinkLocalAddress() || addr.isAnyLocalAddress() ||
                 addr.isMulticastAddress()) {
-                logger.error("[-] SSRF check failed. Internal/reserved IP: " + strIP);
+                logger.error("[-] SSRF check failed. Internal/reserved IP: " + sanitizeLogParam(strIP));
                 return true;
             }
         } catch (Exception e) {
-            logger.error("[-] SSRF check failed. Invalid IP: " + strIP);
+            logger.error("[-] SSRF check failed. Invalid IP: " + sanitizeLogParam(strIP));
             return true;
         }
 
@@ -176,7 +177,7 @@ public class SSRFChecker {
         for (String subnet : blackSubnets) {
             SubnetUtils utils = new SubnetUtils(subnet);
             if (utils.getInfo().isInRange(strIP)) {
-                logger.error("[-] SSRF check failed. Internal IP: " + strIP);
+                logger.error("[-] SSRF check failed. Internal IP: " + sanitizeLogParam(strIP));
                 return true;
             }
         }
@@ -249,7 +250,7 @@ public class SSRFChecker {
 
                 // not support ipv6
                 if (ipParts.length > 4) {
-                    logger.error("Illegal ipv4: " + host);
+                    logger.error("Illegal ipv4: " + sanitizeLogParam(host));
                     return false;
                 }
 
@@ -262,20 +263,20 @@ public class SSRFChecker {
                 // 012.23.78.233
                 for(String ip : ipParts) {
                     if (!isNumber(ip)){
-                        logger.error("Illegal ipv4: " + host);
+                        logger.error("Illegal ipv4: " + sanitizeLogParam(host));
                         return false;
                     }
                     // start with "0", but not "0"
                     if (ip.startsWith("0") && !ip.equals("0")) {
                         if (Integer.valueOf(ip, 8) >= 256){
-                            logger.error("Illegal ipv4: " + host);
+                            logger.error("Illegal ipv4: " + sanitizeLogParam(host));
                             return false;
                         }
                         newDecimalIP.append(Integer.valueOf(ip, 8)).append(".");
                         is_octal = true;
                     }else{
                         if (Integer.valueOf(ip, 10) >= 256) {
-                            logger.error("Illegal ipv4: " + host);
+                            logger.error("Illegal ipv4: " + sanitizeLogParam(host));
                             return false;
                         }
                         newDecimalIP.append(ip).append(".");

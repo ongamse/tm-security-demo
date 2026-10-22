@@ -1,6 +1,7 @@
 package org.joychou.controller;
 
 import org.apache.commons.codec.binary.Base64;
+import static org.joychou.security.SecurityUtil.sanitizeLogParam;
 import org.joychou.security.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,7 +33,7 @@ public class PathTraversal {
     @GetMapping("/path_traversal/sec")
     public String getImageSec(String filepath) throws IOException {
         if (SecurityUtil.pathFilter(filepath) == null) {
-            logger.info("Illegal file path: " + filepath);
+            logger.info("Illegal file path: " + sanitizeLogParam(filepath));
             return "Bad boy. Illegal file path.";
         }
         return getImgBase64(filepath);
@@ -41,20 +42,22 @@ public class PathTraversal {
     private String getImgBase64(String imgFile) throws IOException {
 
         logger.info("Working directory: " + System.getProperty("user.dir"));
-        logger.info("File path: " + imgFile);
+        logger.info("File path: " + sanitizeLogParam(imgFile));
 
         Path base = Paths.get(BASE_DIR).toAbsolutePath().normalize();
         Path resolved = base.resolve(imgFile).normalize();
         if (!resolved.startsWith(base)) {
-            logger.error("Path traversal attempt detected: " + imgFile);
+            logger.error("Path traversal attempt detected: " + sanitizeLogParam(imgFile));
             return "Bad boy. Illegal file path.";
         }
 
-        File f = resolved.toFile();
-        if (f.exists() && !f.isDirectory()) {
+        try {
+            if (Files.isDirectory(resolved)) {
+                return "File doesn't exist or is not a file.";
+            }
             byte[] data = Files.readAllBytes(resolved);
             return new String(Base64.encodeBase64(data));
-        } else {
+        } catch (java.nio.file.NoSuchFileException e) {
             return "File doesn't exist or is not a file.";
         }
     }

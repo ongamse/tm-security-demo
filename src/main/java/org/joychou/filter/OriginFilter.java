@@ -6,6 +6,7 @@ import javax.servlet.annotation.WebFilter;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import static org.joychou.security.SecurityUtil.sanitizeLogParam;
 import org.joychou.security.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,13 +35,13 @@ public class OriginFilter implements Filter {
         HttpServletResponse response = (HttpServletResponse) res;
 
         String origin = request.getHeader("Origin");
-        logger.info("[+] Origin: " + origin + "\tCurrent url:" + request.getRequestURL());
+        logger.info("[+] Origin: " + sanitizeLogParam(origin) + "\tCurrent url:" + sanitizeLogParam(request.getRequestURL().toString()));
 
         // Use the validated return value to break taint from raw user input
         String validatedOrigin = SecurityUtil.checkURL(origin);
         if (origin != null && validatedOrigin == null) {
-            logger.error("[-] Origin check error. " + "Origin: " + origin +
-                    "\tCurrent url:" + request.getRequestURL());
+            logger.error("[-] Origin check error. " + "Origin: " + sanitizeLogParam(origin) +
+                    "\tCurrent url:" + sanitizeLogParam(request.getRequestURL().toString()));
             response.setStatus(response.SC_FORBIDDEN);
             response.getWriter().println("Invaid cors config by joychou.");
             return;

@@ -1,6 +1,7 @@
 package org.joychou.controller;
 
 
+import static org.joychou.security.SecurityUtil.sanitizeLogParam;
 import org.joychou.security.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -98,7 +99,7 @@ public class URLWhiteList {
     @GetMapping("/vuln/url_bypass")
     public void url_bypass(String url, HttpServletResponse res) throws IOException {
 
-        logger.info("url:  " + url);
+        logger.info("url:  " + sanitizeLogParam(url));
 
         // Validate redirect URL against the project-wide domain allowlist
         String safeUrl = SecurityUtil.checkURL(url);
@@ -108,7 +109,7 @@ public class URLWhiteList {
         }
 
         String host = SecurityUtil.gethost(safeUrl);
-        logger.info("host:  " + host);
+        logger.info("host:  " + sanitizeLogParam(host));
 
         res.sendRedirect(safeUrl);
     }

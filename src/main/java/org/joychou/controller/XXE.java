@@ -273,9 +273,8 @@ public class XXE {
             }
             return buf.toString();
         } catch (Exception e) {
-            e.printStackTrace();
             logger.error(e.toString());
-            return e.toString();
+            return EXCEPT;
         }
     }
 

@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.ResponseBody;
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletResponse;
 import org.springframework.web.util.HtmlUtils;
+import org.joychou.security.SecurityUtil;
 
 
 /**
@@ -41,7 +42,9 @@ public class XSS {
     @RequestMapping("/stored/store")
     @ResponseBody
     public String store(String xss, HttpServletResponse response) {
-        Cookie cookie = new Cookie("xss", xss);
+        Cookie cookie = new Cookie("xss", SecurityUtil.sanitizeHeaderValue(xss));
+        cookie.setHttpOnly(true);
+        cookie.setSecure(true);
         response.addCookie(cookie);
         return "Set param into cookie";
     }

@@ -108,7 +108,7 @@ public class SecurityUtil {
             // This prevents DNS rebinding and domain-to-internal-IP attacks
             InetAddress resolvedAddr = InetAddress.getByName(host);
             if (SSRFChecker.isInternalIp(resolvedAddr.getHostAddress())) {
-                logger.error("checkURL blocked internal IP for host: " + host);
+                logger.error("checkURL blocked internal IP for host: " + sanitizeLogParam(host));
                 return null;
             }
 
@@ -203,7 +203,7 @@ public class SecurityUtil {
             try {
                 temp = URLDecoder.decode(temp, "utf-8");
             } catch (UnsupportedEncodingException e) {
-                logger.info("Unsupported encoding exception: " + filepath);
+                logger.info("Unsupported encoding exception: " + sanitizeLogParam(filepath));
                 return null;
             } catch (Exception e) {
                 logger.info(e.toString());
@@ -318,6 +318,20 @@ public class SecurityUtil {
             logger.error("reconstructURL failed: " + e.toString());
             return null;
         }
+    }
+
+    /**
+     * Sanitize a value before writing it to a log message.
+     * Replaces CR, LF, and TAB characters with underscores to prevent log forging / log injection (CWE-117).
+     *
+     * @param input the raw value that may contain attacker-controlled data
+     * @return sanitized value safe for inclusion in log output
+     */
+    public static String sanitizeLogParam(String input) {
+        if (input == null) {
+            return "null";
+        }
+        return input.replaceAll("[\\r\\n\\t]", "_");
     }
 
     public static void main(String[] args) {

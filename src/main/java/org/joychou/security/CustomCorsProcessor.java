@@ -1,6 +1,7 @@
 package org.joychou.security;
 
 import org.apache.commons.lang.StringUtils;
+import static org.joychou.security.SecurityUtil.sanitizeLogParam;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.cors.CorsConfiguration;
@@ -41,10 +42,10 @@ public class CustomCorsProcessor extends DefaultCorsProcessor {
     private String customCheckOrigin(String requestOrigin) {
 
         if ( SecurityUtil.checkURL(requestOrigin) != null) {
-            logger.info("[+] Origin: "  + requestOrigin );
+            logger.info("[+] Origin: "  + sanitizeLogParam(requestOrigin) );
             return requestOrigin;
         }
-        logger.error("[-] Origin: " + requestOrigin );
+        logger.error("[-] Origin: " + sanitizeLogParam(requestOrigin) );
         return null;
     }
 

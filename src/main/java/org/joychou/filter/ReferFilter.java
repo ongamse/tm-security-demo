@@ -8,6 +8,7 @@ import java.io.IOException;
 
 import org.apache.commons.lang.StringUtils;
 import org.joychou.config.WebConfig;
+import static org.joychou.security.SecurityUtil.sanitizeLogParam;
 import org.joychou.security.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -65,8 +66,8 @@ public class ReferFilter implements Filter {
         if ("GET".equals(request.getMethod()) && StringUtils.isNotBlank(reqCallback)) {
             // If the check of referer fails, a 403 forbidden error page will be returned.
             if (SecurityUtil.checkURL(refer) == null) {
-                logger.info("[-] URL: " + request.getRequestURL() + "?" + request.getQueryString() + "\t"
-                        + "Referer: " + refer);
+                logger.info("[-] URL: " + sanitizeLogParam(request.getRequestURL().toString()) + "?" + sanitizeLogParam(request.getQueryString()) + "\t"
+                        + "Referer: " + sanitizeLogParam(refer));
                 response.setStatus(HttpServletResponse.SC_FORBIDDEN);
                 response.getWriter().write(" Referer check error.");
                 response.flushBuffer();

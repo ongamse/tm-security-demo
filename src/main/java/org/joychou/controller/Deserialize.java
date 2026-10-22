@@ -51,7 +51,7 @@ public class Deserialize {
             in.close();
         } catch (InvalidClassException e) {
             logger.info(e.toString());
-            return e.toString();
+            return "An error occurred";
         }
 
         return "Are u ok?";
@@ -82,7 +82,7 @@ public class Deserialize {
             in.close();
         } catch (InvalidClassException e) {
             logger.info(e.toString());
-            return e.toString();
+            return "An error occurred";
         }
 
         return "I'm very OK.";

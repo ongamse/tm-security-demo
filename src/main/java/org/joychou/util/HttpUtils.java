@@ -48,7 +48,8 @@ public class HttpUtils {
             return new String(resBody);
 
         } catch (IOException e) {
-            return "Error: " + e.getMessage();
+            logger.error("commonHttpClient error", e);
+            return "An error occurred";
         } finally {
             // Release the connection.
             method.releaseConnection();
@@ -63,7 +64,8 @@ public class HttpUtils {
             }
             return Request.Get(url).execute().returnContent().toString();
         } catch (Exception e) {
-            return e.getMessage();
+            logger.error("request error", e);
+            return "An error occurred";
         }
     }
 
@@ -89,7 +91,8 @@ public class HttpUtils {
             return result.toString();
 
         } catch (Exception e) {
-            return e.getMessage();
+            logger.error("httpClient error", e);
+            return "An error occurred";
         }
     }
 
@@ -111,8 +114,8 @@ public class HttpUtils {
             in.close();
             return html.toString();
         } catch (Exception e) {
-            logger.error(e.getMessage());
-            return e.getMessage();
+            logger.error("URLConnection error", e);
+            return "An error occurred";
         }
     }
 
@@ -142,8 +145,8 @@ public class HttpUtils {
             in.close();
             return html.toString();
         } catch (IOException e) {
-            logger.error(e.getMessage());
-            return e.getMessage();
+            logger.error("HttpURLConnection error", e);
+            return "An error occurred";
         }
     }
 
@@ -165,7 +168,8 @@ public class HttpUtils {
                     .execute().parse();
             return doc.outerHtml();
         } catch (IOException e) {
-            return e.getMessage();
+            logger.error("Jsoup error", e);
+            return "An error occurred";
         }
     }
 
@@ -228,12 +232,13 @@ public class HttpUtils {
             HttpResponse response = future.get(6000, TimeUnit.MILLISECONDS);
             return EntityUtils.toString(response.getEntity());
         } catch (Exception e) {
-            return e.getMessage();
+            logger.error("HttpAsyncClients error", e);
+            return "An error occurred";
         } finally {
             try {
                 httpclient.close();
             } catch (Exception e) {
-                logger.error(e.getMessage());
+                logger.error("HttpAsyncClients close error", e);
             }
         }
     }
