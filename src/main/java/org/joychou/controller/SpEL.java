@@ -1,13 +1,12 @@
 package org.joychou.controller;
 
-import org.springframework.expression.EvaluationContext;
 import org.springframework.expression.ExpressionParser;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
-import org.springframework.expression.spel.support.SimpleEvaluationContext;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.util.HtmlUtils;
+
+import java.util.regex.Pattern;
 
 
 /**
@@ -19,6 +18,15 @@ import org.springframework.web.util.HtmlUtils;
 public class SpEL {
 
     /**
+     * Allowlist pattern: only permit simple property names, string/number literals,
+     * dots (property access), and basic arithmetic operators.
+     * Blocks parentheses (method calls, T() type refs), # (variable refs),
+     * @ (bean refs), { } (template expressions), and all other special characters.
+     */
+    private static final Pattern SAFE_SPEL_PATTERN =
+            Pattern.compile("^[a-zA-Z0-9_.\\s'\"\\+\\-*/]+$");
+
+    /**
      * SpEL to RCE
      * http://localhost:8080/spel/vul/?expression=xxx.
      * xxx is urlencode(exp)
@@ -26,10 +34,14 @@ public class SpEL {
      */
     @GetMapping("/spel/vuln")
     public String rce(String expression) {
+        // Validate expression against a strict allowlist to prevent SpEL injection.
+        // Reject null/empty input and any expression containing characters that
+        // could enable code execution (parentheses, #, @, etc.).
+        if (expression == null || !SAFE_SPEL_PATTERN.matcher(expression).matches()) {
+            return "Expression rejected: only simple property references and literals are allowed";
+        }
         ExpressionParser parser = new SpelExpressionParser();
-        // Use SimpleEvaluationContext to prevent arbitrary type access and code execution
-        EvaluationContext context = SimpleEvaluationContext.forReadOnlyDataBinding().build();
-        return HtmlUtils.htmlEscape(parser.parseExpression(expression).getValue(context).toString());
+        return HtmlUtils.htmlEscape(parser.parseExpression(expression).getValue().toString());
     }
 
     public static void main(String[] args) {
