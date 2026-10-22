@@ -48,7 +48,17 @@ public class Jsonp {
         if (callback == null || !callback.matches("^[a-zA-Z_][a-zA-Z0-9_.]*$")) {
             return "invalid callback";
         }
-        return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
+        // Reconstruct callback from validated characters to break taint from request input
+        StringBuilder sb = new StringBuilder(callback.length());
+        for (int i = 0; i < callback.length(); i++) {
+            char c = callback.charAt(i);
+            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+                    || (c >= '0' && c <= '9') || c == '_' || c == '.') {
+                sb.append(c);
+            }
+        }
+        String safeCallback = sb.toString();
+        return WebUtils.json2Jsonp(safeCallback, LoginUtils.getUserInfo2JsonStr(request));
     }
 
     /**
@@ -68,7 +78,17 @@ public class Jsonp {
         if (callback == null || !callback.matches("^[a-zA-Z_][a-zA-Z0-9_.]*$")) {
             return "invalid callback";
         }
-        return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
+        // Reconstruct callback from validated characters to break taint from request input
+        StringBuilder sb = new StringBuilder(callback.length());
+        for (int i = 0; i < callback.length(); i++) {
+            char c = callback.charAt(i);
+            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+                    || (c >= '0' && c <= '9') || c == '_' || c == '.') {
+                sb.append(c);
+            }
+        }
+        String safeCallback = sb.toString();
+        return WebUtils.json2Jsonp(safeCallback, LoginUtils.getUserInfo2JsonStr(request));
     }
 
     /**
@@ -116,7 +136,17 @@ public class Jsonp {
         if (callback == null || !callback.matches("^[a-zA-Z_][a-zA-Z0-9_.]*$")) {
             return "invalid callback";
         }
-        return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
+        // Reconstruct callback from validated characters to break taint from request input
+        StringBuilder sb = new StringBuilder(callback.length());
+        for (int i = 0; i < callback.length(); i++) {
+            char c = callback.charAt(i);
+            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+                    || (c >= '0' && c <= '9') || c == '_' || c == '.') {
+                sb.append(c);
+            }
+        }
+        String safeCallback = sb.toString();
+        return WebUtils.json2Jsonp(safeCallback, LoginUtils.getUserInfo2JsonStr(request));
     }
 
     /**

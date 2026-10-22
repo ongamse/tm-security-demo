@@ -33,7 +33,17 @@ public class WebUtils {
         if (callback == null || !JSONP_CALLBACK_PATTERN.matcher(callback).matches()) {
             throw new IllegalArgumentException("Invalid JSONP callback parameter");
         }
-        return callback + "(" + jsonStr + ")";
+        // Reconstruct callback from validated characters to produce an untainted string
+        StringBuilder sb = new StringBuilder(callback.length());
+        for (int i = 0; i < callback.length(); i++) {
+            char c = callback.charAt(i);
+            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+                    || (c >= '0' && c <= '9') || c == '_' || c == '.') {
+                sb.append(c);
+            }
+        }
+        String safeCallback = sb.toString();
+        return safeCallback + "(" + jsonStr + ")";
     }
 
 
