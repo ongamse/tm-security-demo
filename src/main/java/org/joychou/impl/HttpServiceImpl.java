@@ -1,6 +1,7 @@
 package org.joychou.impl;
 
 
+import org.joychou.security.SecurityUtil;
 import org.joychou.service.HttpService;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -26,8 +27,12 @@ public class HttpServiceImpl implements HttpService {
      * User-Agent: Java/1.8.0_102 <p>
      */
     public String RequestHttp(String url, HttpHeaders headers) {
+        String safeUrl = SecurityUtil.checkURL(url);
+        if (safeUrl == null) {
+            return "[-] SSRF check failed";
+        }
         HttpEntity<String> entity = new HttpEntity<>(headers);
-        ResponseEntity<String> re = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
+        ResponseEntity<String> re = restTemplate.exchange(safeUrl, HttpMethod.GET, entity, String.class);
         return re.getBody();
     }
 
@@ -37,8 +42,12 @@ public class HttpServiceImpl implements HttpService {
      * User-Agent: Java/1.8.0_102 <p>
      */
     public String RequestHttpBanRedirects(String url, HttpHeaders headers) {
+        String safeUrl = SecurityUtil.checkURL(url);
+        if (safeUrl == null) {
+            return "[-] SSRF check failed";
+        }
         HttpEntity<String> entity = new HttpEntity<>(headers);
-        ResponseEntity<String> re = restTemplateBanRedirects.exchange(url, HttpMethod.GET, entity, String.class);
+        ResponseEntity<String> re = restTemplateBanRedirects.exchange(safeUrl, HttpMethod.GET, entity, String.class);
         return re.getBody();
     }
 }

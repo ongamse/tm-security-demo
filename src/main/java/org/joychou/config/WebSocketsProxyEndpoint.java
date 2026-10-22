@@ -5,6 +5,7 @@ import javax.websocket.EndpointConfig;
 import javax.websocket.MessageHandler;
 import javax.websocket.Session;
 import java.io.ByteArrayOutputStream;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.AsynchronousSocketChannel;
@@ -12,6 +13,8 @@ import java.nio.channels.CompletionHandler;
 import java.util.HashMap;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+
+import org.joychou.security.ssrf.SSRFChecker;
 
 public class WebSocketsProxyEndpoint extends Endpoint {
     long i = 0;
@@ -73,9 +76,18 @@ public class WebSocketsProxyEndpoint extends Endpoint {
                 String values = new String(z.array());
                 String[] array = values.split(" ");
                 String[] addrarray = array[1].split(":");
-                AsynchronousSocketChannel client = AsynchronousSocketChannel.open();
+                String host = addrarray[0];
                 int po = Integer.parseInt(addrarray[1]);
-                InetSocketAddress hostAddress = new InetSocketAddress(addrarray[0], po);
+
+                // SSRF check: resolve DNS and reject internal/private IPs
+                InetAddress resolved = InetAddress.getByName(host);
+                if (SSRFChecker.isInternalIp(resolved.getHostAddress())) {
+                    channel.getBasicRemote().sendText("HTTP/1.1 403 Forbidden\r\n\r\n");
+                    return;
+                }
+
+                AsynchronousSocketChannel client = AsynchronousSocketChannel.open();
+                InetSocketAddress hostAddress = new InetSocketAddress(resolved, po);
                 Future<Void> future = client.connect(hostAddress);
                 try {
                     future.get(10, TimeUnit.SECONDS);

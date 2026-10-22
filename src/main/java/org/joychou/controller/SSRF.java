@@ -44,21 +44,25 @@ public class SSRF {
      */
     @RequestMapping(value = "/urlConnection/vuln", method = {RequestMethod.POST, RequestMethod.GET})
     public String URLConnectionVuln(String url) {
-        return HttpUtils.URLConnection(url);
+        String safeUrl = SecurityUtil.checkURL(url);
+        if (safeUrl == null) {
+            return "[-] SSRF check failed";
+        }
+        return HttpUtils.URLConnection(safeUrl);
     }
 
 
     @GetMapping("/urlConnection/sec")
     public String URLConnectionSec(String url) {
 
-        // Decline not http/https protocol
-        if (!SecurityUtil.isHttp(url)) {
+        String safeUrl = SecurityUtil.checkURL(url);
+        if (safeUrl == null) {
             return "[-] SSRF check failed";
         }
 
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.URLConnection(url);
+            return HttpUtils.URLConnection(safeUrl);
         } catch (SSRFException | IOException e) {
             return e.getMessage();
         } finally {
@@ -74,9 +78,13 @@ public class SSRF {
      */
     @GetMapping("/HttpURLConnection/sec")
     public String httpURLConnection(@RequestParam String url) {
+        String safeUrl = SecurityUtil.checkURL(url);
+        if (safeUrl == null) {
+            return "[-] SSRF check failed";
+        }
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.HttpURLConnection(url);
+            return HttpUtils.HttpURLConnection(safeUrl);
         } catch (SSRFException | IOException e) {
             return e.getMessage();
         } finally {
@@ -87,7 +95,11 @@ public class SSRF {
 
     @GetMapping("/HttpURLConnection/vuln")
     public String httpURLConnectionVuln(@RequestParam String url) {
-        return HttpUtils.HttpURLConnection(url);
+        String safeUrl = SecurityUtil.checkURL(url);
+        if (safeUrl == null) {
+            return "[-] SSRF check failed";
+        }
+        return HttpUtils.HttpURLConnection(safeUrl);
     }
 
     /**
@@ -97,9 +109,13 @@ public class SSRF {
      */
     @GetMapping("/request/sec")
     public String request(@RequestParam String url) {
+        String safeUrl = SecurityUtil.checkURL(url);
+        if (safeUrl == null) {
+            return "[-] SSRF check failed";
+        }
         try {
             SecurityUtil.startSSRFHook();
-            return HtmlUtils.htmlEscape(HttpUtils.request(url));
+            return HtmlUtils.htmlEscape(HttpUtils.request(safeUrl));
         } catch (SSRFException | IOException e) {
             return HtmlUtils.htmlEscape(e.getMessage() != null ? e.getMessage() : "");
         } finally {
@@ -118,8 +134,9 @@ public class SSRF {
      */
     @GetMapping("/openStream")
     public void openStream(@RequestParam String url, HttpServletResponse response) throws IOException {
-        // Validate URL against SSRF before opening stream
-        if (!SecurityUtil.checkSSRFByWhitehosts(url)) {
+        // Validate URL against SSRF allowlist and normalize to break taint
+        String safeUrl = SecurityUtil.checkURL(url);
+        if (safeUrl == null) {
             response.sendError(HttpServletResponse.SC_FORBIDDEN, "[-] SSRF check failed");
             return;
         }
@@ -127,11 +144,11 @@ public class SSRF {
         InputStream inputStream = null;
         OutputStream outputStream = null;
         try {
-            String downLoadImgFileName = WebUtils.getNameWithoutExtension(url) + "." + WebUtils.getFileExtension(url);
+            String downLoadImgFileName = WebUtils.getNameWithoutExtension(safeUrl) + "." + WebUtils.getFileExtension(safeUrl);
             // download - sanitize header value to prevent CRLF injection
             response.setHeader("content-disposition", "attachment;fileName=" + SecurityUtil.sanitizeHeaderValue(downLoadImgFileName));
 
-            URL u = new URL(url);
+            URL u = new URL(safeUrl);
             int length;
             byte[] bytes = new byte[1024];
             inputStream = u.openStream(); // send request
@@ -159,9 +176,13 @@ public class SSRF {
      */
     @GetMapping("/ImageIO/sec")
     public String ImageIO(@RequestParam String url) {
+        String safeUrl = SecurityUtil.checkURL(url);
+        if (safeUrl == null) {
+            return "[-] SSRF check failed";
+        }
         try {
             SecurityUtil.startSSRFHook();
-            HttpUtils.imageIO(url);
+            HttpUtils.imageIO(safeUrl);
         } catch (SSRFException | IOException e) {
             return e.getMessage();
         } finally {
@@ -174,10 +195,13 @@ public class SSRF {
 
     @GetMapping("/okhttp/sec")
     public String okhttp(@RequestParam String url) {
-
+        String safeUrl = SecurityUtil.checkURL(url);
+        if (safeUrl == null) {
+            return "[-] SSRF check failed";
+        }
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.okhttp(url);
+            return HttpUtils.okhttp(safeUrl);
         } catch (SSRFException | IOException e) {
             return e.getMessage();
         } finally {
@@ -193,10 +217,13 @@ public class SSRF {
      */
     @GetMapping("/httpclient/sec")
     public String HttpClient(@RequestParam String url) {
-
+        String safeUrl = SecurityUtil.checkURL(url);
+        if (safeUrl == null) {
+            return "[-] SSRF check failed";
+        }
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.httpClient(url);
+            return HttpUtils.httpClient(safeUrl);
         } catch (SSRFException | IOException e) {
             return e.getMessage();
         } finally {
@@ -213,10 +240,13 @@ public class SSRF {
      */
     @GetMapping("/commonsHttpClient/sec")
     public String commonsHttpClient(@RequestParam String url) {
-
+        String safeUrl = SecurityUtil.checkURL(url);
+        if (safeUrl == null) {
+            return "[-] SSRF check failed";
+        }
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.commonHttpClient(url);
+            return HttpUtils.commonHttpClient(safeUrl);
         } catch (SSRFException | IOException e) {
             return e.getMessage();
         } finally {
@@ -232,10 +262,13 @@ public class SSRF {
      */
     @GetMapping("/Jsoup/sec")
     public String Jsoup(@RequestParam String url) {
-
+        String safeUrl = SecurityUtil.checkURL(url);
+        if (safeUrl == null) {
+            return "[-] SSRF check failed";
+        }
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.Jsoup(url);
+            return HttpUtils.Jsoup(safeUrl);
         } catch (SSRFException | IOException e) {
             return e.getMessage();
         } finally {
@@ -252,9 +285,13 @@ public class SSRF {
      */
     @GetMapping("/IOUtils/sec")
     public String IOUtils(String url) {
+        String safeUrl = SecurityUtil.checkURL(url);
+        if (safeUrl == null) {
+            return "[-] SSRF check failed";
+        }
         try {
             SecurityUtil.startSSRFHook();
-            HttpUtils.IOUtils(url);
+            HttpUtils.IOUtils(safeUrl);
         } catch (SSRFException | IOException e) {
             return e.getMessage();
         } finally {
@@ -271,7 +308,11 @@ public class SSRF {
      */
     @GetMapping("/HttpSyncClients/vuln")
     public String HttpSyncClients(@RequestParam("url") String url) {
-        return HttpUtils.HttpAsyncClients(url);
+        String safeUrl = SecurityUtil.checkURL(url);
+        if (safeUrl == null) {
+            return "[-] SSRF check failed";
+        }
+        return HttpUtils.HttpAsyncClients(safeUrl);
     }
 
 
@@ -283,17 +324,25 @@ public class SSRF {
      */
     @GetMapping("/restTemplate/vuln1")
     public String RestTemplateUrlBanRedirects(String url){
+        String safeUrl = SecurityUtil.checkURL(url);
+        if (safeUrl == null) {
+            return "[-] SSRF check failed";
+        }
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON_UTF8);
-        return httpService.RequestHttpBanRedirects(url, headers);
+        return httpService.RequestHttpBanRedirects(safeUrl, headers);
     }
 
 
     @GetMapping("/restTemplate/vuln2")
     public String RestTemplateUrl(String url){
+        String safeUrl = SecurityUtil.checkURL(url);
+        if (safeUrl == null) {
+            return "[-] SSRF check failed";
+        }
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON_UTF8);
-        return httpService.RequestHttp(url, headers);
+        return httpService.RequestHttp(safeUrl, headers);
     }
 
 
@@ -304,7 +353,11 @@ public class SSRF {
      */
     @GetMapping("/hutool/vuln")
     public String hutoolHttp(String url){
-        return HttpUtil.get(url);
+        String safeUrl = SecurityUtil.checkURL(url);
+        if (safeUrl == null) {
+            return "[-] SSRF check failed";
+        }
+        return HttpUtil.get(safeUrl);
     }
 
 
@@ -315,10 +368,11 @@ public class SSRF {
     @GetMapping("/dnsrebind/vuln")
     public String DnsRebind(String url) {
         java.security.Security.setProperty("networkaddress.cache.negative.ttl" , "0");
-        if (!SecurityUtil.checkSSRFWithoutRedirect(url)) {
+        String safeUrl = SecurityUtil.checkURL(url);
+        if (safeUrl == null) {
             return "Dangerous url";
         }
-        return HttpUtil.get(url);
+        return HttpUtil.get(safeUrl);
     }
 
 
