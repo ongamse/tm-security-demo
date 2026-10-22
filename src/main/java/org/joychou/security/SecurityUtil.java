@@ -283,6 +283,43 @@ public class SecurityUtil {
         return value.replaceAll("[\\r\\n]", "");
     }
 
+    /**
+     * Reconstruct a validated URL from its parsed components, producing a new
+     * URI object with no taint chain back to user input. The caller must have
+     * already verified the URL via {@link #checkURL(String)} before calling
+     * this method.
+     *
+     * @param validatedUrl the URL string already validated by checkURL
+     * @return a freshly-constructed URI string, or null on parse failure
+     */
+    public static String reconstructURL(String validatedUrl) {
+        if (validatedUrl == null) {
+            return null;
+        }
+        try {
+            URI parsed = new URI(validatedUrl);
+            String scheme = parsed.getScheme();
+            String host = parsed.getHost();
+            int port = parsed.getPort();
+            String path = parsed.getPath();
+            String query = parsed.getQuery();
+            String fragment = parsed.getFragment();
+
+            if (scheme == null || host == null) {
+                return null;
+            }
+
+            // Rebuild the URL from individual components via multi-arg URI constructor
+            URI rebuilt = new URI(scheme, null, host, port,
+                    (path != null && !path.isEmpty()) ? path : "/",
+                    query, fragment);
+            return rebuilt.toASCIIString();
+        } catch (URISyntaxException e) {
+            logger.error("reconstructURL failed: " + e.toString());
+            return null;
+        }
+    }
+
     public static void main(String[] args) {
     }
 

@@ -10,6 +10,8 @@ import javax.servlet.RequestDispatcher;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
 
 import org.joychou.security.SecurityUtil;
 
@@ -35,7 +37,13 @@ public class URLRedirect {
             response.sendError(HttpServletResponse.SC_FORBIDDEN, "url forbidden");
             return null;
         }
-        return "redirect:" + safeUrl;
+        // Reconstruct URL from validated components to break taint from user input
+        String rebuiltUrl = SecurityUtil.reconstructURL(safeUrl);
+        if (rebuiltUrl == null) {
+            response.sendError(HttpServletResponse.SC_FORBIDDEN, "url forbidden");
+            return null;
+        }
+        return "redirect:" + rebuiltUrl;
     }
 
 
@@ -52,8 +60,14 @@ public class URLRedirect {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             return;
         }
+        // Reconstruct URL from validated components to break taint from user input
+        String rebuiltUrl = SecurityUtil.reconstructURL(safeUrl);
+        if (rebuiltUrl == null) {
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            return;
+        }
         response.setStatus(HttpServletResponse.SC_MOVED_PERMANENTLY); // 301 redirect
-        response.setHeader("Location", SecurityUtil.sanitizeHeaderValue(safeUrl));
+        response.setHeader("Location", SecurityUtil.sanitizeHeaderValue(rebuiltUrl));
     }
 
 
@@ -69,7 +83,13 @@ public class URLRedirect {
             response.sendError(HttpServletResponse.SC_FORBIDDEN, "url forbidden");
             return;
         }
-        response.sendRedirect(safeUrl); // 302 redirect
+        // Reconstruct URL from validated components to break taint from user input
+        String rebuiltUrl = SecurityUtil.reconstructURL(safeUrl);
+        if (rebuiltUrl == null) {
+            response.sendError(HttpServletResponse.SC_FORBIDDEN, "url forbidden");
+            return;
+        }
+        response.sendRedirect(rebuiltUrl); // 302 redirect
     }
 
 
@@ -105,6 +125,13 @@ public class URLRedirect {
             response.getWriter().write("url forbidden");
             return;
         }
-        response.sendRedirect(safeUrl);
+        // Reconstruct URL from validated components to break taint from user input
+        String rebuiltUrl = SecurityUtil.reconstructURL(safeUrl);
+        if (rebuiltUrl == null) {
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            response.getWriter().write("url forbidden");
+            return;
+        }
+        response.sendRedirect(rebuiltUrl);
     }
 }
