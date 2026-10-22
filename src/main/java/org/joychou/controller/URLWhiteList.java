@@ -100,24 +100,17 @@ public class URLWhiteList {
 
         logger.info("url:  " + url);
 
-        if (!SecurityUtil.isHttp(url)) {
+        // Validate redirect URL against the project-wide domain allowlist
+        String safeUrl = SecurityUtil.checkURL(url);
+        if (safeUrl == null) {
+            res.sendError(HttpServletResponse.SC_FORBIDDEN, "url forbidden");
             return;
         }
 
-        // Use SecurityUtil.gethost (URI-based) instead of java.net.URL to avoid parser-differential bypasses
-        String host = SecurityUtil.gethost(url);
-        if (host == null || host.isEmpty()) {
-            return;
-        }
+        String host = SecurityUtil.gethost(safeUrl);
         logger.info("host:  " + host);
 
-        for (String domain : domainwhitelist) {
-            if (host.equals(domain) || host.endsWith("." + domain)) {
-                res.sendRedirect(url);
-                return;
-            }
-        }
-
+        res.sendRedirect(safeUrl);
     }
 
 
