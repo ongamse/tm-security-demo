@@ -1,7 +1,7 @@
 package org.joychou.controller.othervulns;
 
-import com.monitorjbl.xlsx.StreamingReader;
-import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.openxml4j.opc.OPCPackage;
+import org.apache.poi.xssf.eventusermodel.XSSFReader;
 
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -9,8 +9,13 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.multipart.MultipartFile;
 
+import javax.xml.parsers.SAXParser;
+import javax.xml.parsers.SAXParserFactory;
+import org.xml.sax.InputSource;
+import org.xml.sax.helpers.DefaultHandler;
 import java.io.FileInputStream;
-import java.io.IOException;
+import java.io.InputStream;
+import java.util.Iterator;
 
 
 /**
@@ -33,12 +38,28 @@ public class xlsxStreamerXXE {
 
 
     @PostMapping("/readxlsx")
-    public void xllx_streamer_xxe(MultipartFile file) throws IOException {
-        StreamingReader.builder().open(file.getInputStream());
+    public void xllx_streamer_xxe(MultipartFile file) throws Exception {
+        parseXlsxSafely(file.getInputStream());
     }
 
+    private static void parseXlsxSafely(InputStream inputStream) throws Exception {
+        OPCPackage pkg = OPCPackage.open(inputStream);
+        XSSFReader reader = new XSSFReader(pkg);
+        SAXParserFactory spf = SAXParserFactory.newInstance();
+        spf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+        spf.setFeature("http://xml.org/sax/features/external-general-entities", false);
+        spf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+        SAXParser saxParser = spf.newSAXParser();
+        Iterator<InputStream> sheets = reader.getSheetsData();
+        while (sheets.hasNext()) {
+            try (InputStream sheet = sheets.next()) {
+                saxParser.parse(new InputSource(sheet), new DefaultHandler());
+            }
+        }
+        pkg.close();
+    }
 
     public static void main(String[] args) throws Exception {
-        StreamingReader.builder().open((new FileInputStream("poc.xlsx")));
+        parseXlsxSafely(new FileInputStream("poc.xlsx"));
     }
 }
