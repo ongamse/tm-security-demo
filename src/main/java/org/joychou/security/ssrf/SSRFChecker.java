@@ -65,6 +65,12 @@ public class SSRFChecker {
         String finalUrl = url;
         try {
             do {
+                // Must be http or https protocol
+                if (!SecurityUtil.isHttp(finalUrl)) {
+                    logger.error("[-] SSRF check failed. Non-HTTP protocol: " + finalUrl);
+                    return false;
+                }
+
                 // 判断当前请求的URL是否是内网ip
                 if (isInternalIpByUrl(finalUrl)) {
                     logger.error("[-] SSRF check failed. Dangerous url: " + finalUrl);
@@ -288,13 +294,20 @@ public class SSRFChecker {
      * Get host from URL which the protocol must be http:// or https:// and not be //.
      */
     private static String url2host(String url) {
+        if (url == null || url.isEmpty()) {
+            return "";
+        }
         try {
+            if (!SecurityUtil.isHttp(url)) {
+                return "";
+            }
             // use URI instead of URL
             URI u = new URI(url);
-            if (SecurityUtil.isHttp(url)) {
-                return u.getHost();
+            String host = u.getHost();
+            if (host == null || host.isEmpty()) {
+                return "";
             }
-            return "";
+            return host;
         } catch (Exception e) {
             return "";
         }

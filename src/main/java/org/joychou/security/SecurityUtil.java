@@ -39,11 +39,38 @@ public class SecurityUtil {
      * @return host
      */
     public static String gethost(String url) {
+        if (url == null || url.isEmpty()) {
+            return "";
+        }
         try {
             URI uri = new URI(url);
-            return uri.getHost().toLowerCase();
+            String host = uri.getHost();
+            if (host == null) {
+                return "";
+            }
+            return host.toLowerCase();
         } catch (URISyntaxException e) {
             return "";
+        }
+    }
+
+
+    /**
+     * Validate URL against SSRF: must be http(s) and pass whitelist check.
+     * Throws SSRFException if the URL is not allowed.
+     *
+     * @param url the URL to validate
+     * @throws org.joychou.security.ssrf.SSRFException if URL fails validation
+     */
+    public static void validateURLForSSRF(String url) {
+        if (url == null || url.isEmpty()) {
+            throw new org.joychou.security.ssrf.SSRFException("URL is null or empty");
+        }
+        if (!isHttp(url)) {
+            throw new org.joychou.security.ssrf.SSRFException("URL protocol must be http or https");
+        }
+        if (!checkSSRFByWhitehosts(url)) {
+            throw new org.joychou.security.ssrf.SSRFException("URL not in SSRF whitelist: " + gethost(url));
         }
     }
 

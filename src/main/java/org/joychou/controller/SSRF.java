@@ -118,6 +118,7 @@ public class SSRF {
      */
     @GetMapping("/openStream")
     public void openStream(@RequestParam String url, HttpServletResponse response) throws IOException {
+        SecurityUtil.validateURLForSSRF(url);
         InputStream inputStream = null;
         OutputStream outputStream = null;
         try {

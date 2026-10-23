@@ -8,7 +8,6 @@ import org.springframework.web.bind.annotation.*;
 
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.net.URL;
 import org.springframework.web.util.HtmlUtils;
 import java.util.ArrayList;
 import java.util.regex.Matcher;
@@ -105,14 +104,18 @@ public class URLWhiteList {
             return;
         }
 
-        URL u = new URL(url);
-        String host = u.getHost();
+        // Use URI-based host parsing to prevent URL parser differential bypass
+        String host = SecurityUtil.gethost(url);
+        if (host.isEmpty()) {
+            return;
+        }
         logger.info("host:  " + host);
 
-        // endsWith .
+        // Check exact match or subdomain match with leading dot
         for (String domain : domainwhitelist) {
-            if (host.endsWith("." + domain)) {
+            if (host.equals(domain) || host.endsWith("." + domain)) {
                 res.sendRedirect(url);
+                return;
             }
         }
 
