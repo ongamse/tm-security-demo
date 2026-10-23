@@ -27,11 +27,17 @@ public class XStreamRce {
     public String parseXml(HttpServletRequest request) throws Exception {
         String xml = WebUtils.getRequestBody(request);
         XStream xstream = new XStream(new DomDriver());
+        // Deny all types first, then allowlist only safe types to prevent deserialization RCE
+        XStream.setupDefaultSecurity(xstream);
         xstream.addPermission(NoTypePermission.NONE);
         xstream.addPermission(NullPermission.NULL);
         xstream.addPermission(PrimitiveTypePermission.PRIMITIVES);
+        xstream.allowTypeHierarchy(String.class);
         xstream.allowTypes(new Class[]{User.class});
-        xstream.fromXML(xml);
+        Object result = xstream.fromXML(xml);
+        if (!(result instanceof User)) {
+            return "Invalid XML: only User objects are accepted";
+        }
         return "xstream";
     }
 

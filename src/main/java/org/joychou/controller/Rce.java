@@ -8,10 +8,11 @@ import org.springframework.web.bind.annotation.RestController;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
 
+import jdk.nashorn.api.scripting.ClassFilter;
+import jdk.nashorn.api.scripting.NashornScriptEngineFactory;
 import javax.script.Bindings;
 import javax.script.ScriptContext;
 import javax.script.ScriptEngine;
-import javax.script.ScriptEngineManager;
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -115,7 +116,10 @@ public class Rce {
         if (jsurl == null || !SAFE_URL_PATTERN.matcher(jsurl).matches()) {
             throw new IllegalArgumentException("Invalid JS URL: must be an HTTPS URL pointing to a .js file with safe characters.");
         }
-        ScriptEngine engine = new ScriptEngineManager().getEngineByName("js");
+        // Use ClassFilter to block all Java class access from scripts, preventing RCE
+        NashornScriptEngineFactory factory = new NashornScriptEngineFactory();
+        ClassFilter classFilter = className -> false;  // deny all Java class access
+        ScriptEngine engine = factory.getScriptEngine(classFilter);
         Bindings bindings = engine.getBindings(ScriptContext.ENGINE_SCOPE);
         String cmd = String.format("load(\"%s\")", jsurl);
         engine.eval(cmd, bindings);
