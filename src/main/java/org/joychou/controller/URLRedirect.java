@@ -25,6 +25,9 @@ import org.joychou.security.SecurityUtil;
 @RequestMapping("/urlRedirect")
 public class URLRedirect {
 
+    private static final String FORBIDDEN_MSG = "url forbidden";
+
+
     /**
      * http://localhost:8080/urlRedirect/redirect?url=http://www.baidu.com
      */
@@ -41,8 +44,15 @@ public class URLRedirect {
     @ResponseBody
     public static void setHeader(HttpServletRequest request, HttpServletResponse response) {
         String url = request.getParameter("url");
+        if (SecurityUtil.checkURL(url) == null) {
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            try {
+                response.getWriter().write(FORBIDDEN_MSG);
+            } catch (IOException ignored) { }
+            return;
+        }
         response.setStatus(HttpServletResponse.SC_MOVED_PERMANENTLY); // 301 redirect
-        response.setHeader("Location", url);
+        response.setHeader("Location", SecurityUtil.sanitizeHeaderValue(url));
     }
 
 
