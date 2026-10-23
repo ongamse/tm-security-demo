@@ -44,6 +44,7 @@ public class SSRF {
      */
     @RequestMapping(value = "/urlConnection/vuln", method = {RequestMethod.POST, RequestMethod.GET})
     public String URLConnectionVuln(String url) {
+        SecurityUtil.validateURLForSSRF(url);
         return HttpUtils.URLConnection(url);
     }
 
@@ -87,6 +88,7 @@ public class SSRF {
 
     @GetMapping("/HttpURLConnection/vuln")
     public String httpURLConnectionVuln(@RequestParam String url) {
+        SecurityUtil.validateURLForSSRF(url);
         return HttpUtils.HttpURLConnection(url);
     }
 
@@ -267,6 +269,7 @@ public class SSRF {
      */
     @GetMapping("/HttpSyncClients/vuln")
     public String HttpSyncClients(@RequestParam("url") String url) {
+        SecurityUtil.validateURLForSSRF(url);
         return HttpUtils.HttpAsyncClients(url);
     }
 
@@ -279,6 +282,7 @@ public class SSRF {
      */
     @GetMapping("/restTemplate/vuln1")
     public String RestTemplateUrlBanRedirects(String url){
+        SecurityUtil.validateURLForSSRF(url);
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON_UTF8);
         return httpService.RequestHttpBanRedirects(url, headers);
@@ -287,6 +291,7 @@ public class SSRF {
 
     @GetMapping("/restTemplate/vuln2")
     public String RestTemplateUrl(String url){
+        SecurityUtil.validateURLForSSRF(url);
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON_UTF8);
         return httpService.RequestHttp(url, headers);
@@ -300,6 +305,7 @@ public class SSRF {
      */
     @GetMapping("/hutool/vuln")
     public String hutoolHttp(String url){
+        SecurityUtil.validateURLForSSRF(url);
         return HttpUtil.get(url);
     }
 
@@ -310,10 +316,7 @@ public class SSRF {
      */
     @GetMapping("/dnsrebind/vuln")
     public String DnsRebind(String url) {
-        java.security.Security.setProperty("networkaddress.cache.negative.ttl" , "0");
-        if (!SecurityUtil.checkSSRFWithoutRedirect(url)) {
-            return "Dangerous url";
-        }
+        SecurityUtil.validateURLForSSRF(url);
         return HttpUtil.get(url);
     }
 
