@@ -15,13 +15,10 @@ import java.io.StringWriter;
 public class SSTI {
 
     /**
-     * SSTI of Java velocity. The latest Velocity version still has this problem.
-     * Fix method: Avoid to use Velocity.evaluate method.
-     * <p>
-     * http://localhost:8080/ssti/velocity?template=%23set($e=%22e%22);$e.getClass().forName(%22java.lang.Runtime%22).getMethod(%22getRuntime%22,null).invoke(null,null).exec(%22open%20-a%20Calculator%22)
-     * Open a calculator in MacOS.
+     * Velocity template rendering endpoint.
+     * User input is passed as a context variable, never evaluated as template code.
      *
-     * @param template exp
+     * @param template user-supplied value rendered safely as data
      */
     @GetMapping("/velocity")
     public void velocity(String template) {
@@ -32,8 +29,13 @@ public class SSTI {
         context.put("author", "Elliot A.");
         context.put("address", "217 E Broadway");
         context.put("phone", "555-1337");
+        // User input is placed in the context as a data value, not interpreted as template code.
+        context.put("userInput", template);
+
+        // Fixed template string — user data is rendered via $userInput, preventing SSTI.
+        String safeTemplate = "Author: $author, Address: $address, Phone: $phone, Input: $userInput";
 
         StringWriter swOut = new StringWriter();
-        Velocity.evaluate(context, swOut, "test", template);
+        Velocity.evaluate(context, swOut, "test", safeTemplate);
     }
 }
