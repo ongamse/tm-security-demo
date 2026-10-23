@@ -15,10 +15,16 @@ public class Server implements Hello {
     public static void main(String args[]) {
 
         try {
+            // Set JVM-wide deserialization filter to restrict RMI attack surface
+            // and prevent arbitrary code execution via malicious deserialization.
+            // Allowlist only classes needed for this RMI service.
+            System.setProperty("sun.rmi.registry.registryFilter",
+                "org.joychou.RMI.**;java.lang.**;java.rmi.**;sun.rmi.**;javax.rmi.**;!*");
+
             Server obj = new Server();
+            // Bind to localhost only to restrict network access
             Hello stub = (Hello) UnicastRemoteObject.exportObject(obj, 0);
-            LocateRegistry.createRegistry(1099);
-            Registry registry = LocateRegistry.getRegistry();
+            Registry registry = LocateRegistry.createRegistry(1099);
             registry.bind("Hello", stub);
             System.out.println("绑定1099端口成功");
         } catch (Exception e) {

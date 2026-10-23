@@ -16,15 +16,21 @@ public class CommandInject {
     protected final Logger logger = LoggerFactory.getLogger(this.getClass());
 
     /**
-     * http://localhost:8080/codeinject?filepath=/tmp;cat /etc/passwd
+     * http://localhost:8080/codeinject?filepath=/tmp
      *
      * @param filepath filepath
      * @return result
      */
     @GetMapping("/codeinject")
     public String codeInject(String filepath) throws IOException {
+        // Validate filepath to prevent command injection
+        String filteredPath = SecurityUtil.cmdFilter(filepath);
+        if (null == filteredPath) {
+            return "Invalid filepath: only alphanumeric characters, dots, hyphens, underscores, and slashes are allowed.";
+        }
 
-        String[] cmdList = new String[]{"sh", "-c", "ls -la " + filepath};
+        // Use explicit argument array without shell to prevent command injection
+        String[] cmdList = new String[]{"ls", "-la", filteredPath};
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);
         Process process = builder.start();
@@ -32,16 +38,21 @@ public class CommandInject {
     }
 
     /**
-     * Host Injection
-     * Host: hacked by joychou;cat /etc/passwd
+     * Host header info
      * http://localhost:8080/codeinject/host
      */
     @GetMapping("/codeinject/host")
     public String codeInjectHost(HttpServletRequest request) throws IOException {
 
         String host = request.getHeader("host");
-        logger.info(host);
-        String[] cmdList = new String[]{"sh", "-c", "curl " + host};
+        // Validate host header to prevent command injection
+        String filteredHost = SecurityUtil.cmdFilter(host);
+        if (null == filteredHost) {
+            return "Invalid host header: only alphanumeric characters, dots, hyphens, underscores, and slashes are allowed.";
+        }
+        logger.info(filteredHost);
+        // Use explicit argument array without shell to prevent command injection
+        String[] cmdList = new String[]{"curl", filteredHost};
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);
         Process process = builder.start();
@@ -54,7 +65,8 @@ public class CommandInject {
         if (null == filterFilePath) {
             return "Bad boy. I got u.";
         }
-        String[] cmdList = new String[]{"sh", "-c", "ls -la " + filterFilePath};
+        // Use explicit argument array without shell to prevent command injection
+        String[] cmdList = new String[]{"ls", "-la", filterFilePath};
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);
         Process process = builder.start();

