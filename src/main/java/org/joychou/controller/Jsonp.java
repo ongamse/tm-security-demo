@@ -22,6 +22,7 @@ import org.springframework.web.util.HtmlUtils;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.security.Principal;
+import java.util.regex.Pattern;
 
 
 /**
@@ -34,7 +35,23 @@ import java.security.Principal;
 @RequestMapping("/jsonp")
 public class Jsonp {
 
+    /** Only allow valid JSONP callback names: JS identifiers optionally chained with dots. */
+    private static final Pattern SAFE_JSONP_CALLBACK = Pattern.compile(
+            "^[a-zA-Z_$][a-zA-Z0-9_$]*(\\.[a-zA-Z_$][a-zA-Z0-9_$]*)*$");
+
     private String callback = WebConfig.getBusinessCallback();
+
+    /**
+     * Validates a JSONP callback parameter. Returns the callback if it matches
+     * a safe identifier pattern, or {@code null} otherwise.
+     */
+    private static String validateCallback(String callback) {
+        if (callback == null || callback.length() > 150
+                || !SAFE_JSONP_CALLBACK.matcher(callback).matches()) {
+            return null;
+        }
+        return callback;
+    }
 
     @Autowired
     CookieCsrfTokenRepository cookieCsrfTokenRepository;
@@ -45,7 +62,10 @@ public class Jsonp {
      */
     @RequestMapping(value = "/vuln/referer", produces = "application/javascript")
     public String referer(HttpServletRequest request) {
-        String callback = request.getParameter(this.callback);
+        String callback = validateCallback(request.getParameter(this.callback));
+        if (callback == null) {
+            return "error";
+        }
         return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
     }
 
@@ -62,7 +82,10 @@ public class Jsonp {
         if (null != referer && SecurityUtil.checkURL(referer) == null) {
             return "error";
         }
-        String callback = request.getParameter(this.callback);
+        String callback = validateCallback(request.getParameter(this.callback));
+        if (callback == null) {
+            return "error";
+        }
         return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
     }
 
