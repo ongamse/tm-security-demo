@@ -290,6 +290,26 @@ public class SecurityUtil {
         return value.replaceAll("[\\r\\n]", "");
     }
 
+    /**
+     * Validate that a header value does not contain CR or LF characters.
+     * Unlike {@link #sanitizeHeaderValue(String)}, this method rejects the input
+     * outright rather than silently stripping — providing a stronger defence
+     * against header / CRLF injection.
+     *
+     * @param value the raw header value (may be null)
+     * @return the original value if it is safe
+     * @throws IllegalArgumentException if value contains \r or \n
+     */
+    public static String rejectHeaderIfCRLF(String value) {
+        if (value == null) {
+            return null;
+        }
+        if (value.indexOf('\r') >= 0 || value.indexOf('\n') >= 0) {
+            throw new IllegalArgumentException("Header value contains illegal CR/LF characters");
+        }
+        return value;
+    }
+
     public static void main(String[] args) {
     }
 

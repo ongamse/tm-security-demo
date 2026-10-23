@@ -20,11 +20,22 @@ public class CRLFInjection {
 
     @RequestMapping("/safecode")
     @ResponseBody
-    public void crlf(HttpServletRequest request, HttpServletResponse response) {
-        response.addHeader("test1", SecurityUtil.sanitizeHeaderValue(request.getParameter("test1")));
-        response.setHeader("test2", SecurityUtil.sanitizeHeaderValue(request.getParameter("test2")));
-        String author = SecurityUtil.sanitizeHeaderValue(request.getParameter("test3"));
-        Cookie cookie = new Cookie("test3", author);
+    public String crlf(HttpServletRequest request, HttpServletResponse response) {
+        String test1;
+        String test2;
+        String test3;
+        try {
+            test1 = SecurityUtil.rejectHeaderIfCRLF(request.getParameter("test1"));
+            test2 = SecurityUtil.rejectHeaderIfCRLF(request.getParameter("test2"));
+            test3 = SecurityUtil.rejectHeaderIfCRLF(request.getParameter("test3"));
+        } catch (IllegalArgumentException e) {
+            response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+            return "Invalid input: header value must not contain CR or LF characters";
+        }
+        response.addHeader("test1", test1);
+        response.setHeader("test2", test2);
+        Cookie cookie = new Cookie("test3", test3);
         response.addCookie(cookie);
+        return null;
     }
 }
