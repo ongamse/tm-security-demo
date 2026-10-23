@@ -190,6 +190,12 @@ public class SQLI {
         if (username == null || SecurityUtil.sqlFilter(username) == null) {
             return Collections.emptyList();
         }
+        // Validate that the parameter is a numeric ID to prevent IDOR
+        try {
+            Integer.parseInt(username);
+        } catch (NumberFormatException e) {
+            return Collections.emptyList();
+        }
         return userMapper.findByUserNameVuln01(username);
     }
 
