@@ -193,7 +193,7 @@ public class HttpUtils {
             if (path != null) {
                 String normalizedPath = java.nio.file.Paths.get(path).normalize().toString();
                 if (normalizedPath.contains("..")) {
-                    logger.error("Path traversal detected in URL path: " + path);
+                    logger.error("Path traversal detected in URL path: " + SecurityUtil.sanitizeForLog(path));
                     return;
                 }
             }

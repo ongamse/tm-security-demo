@@ -37,7 +37,7 @@ public class PathTraversal {
     @GetMapping("/path_traversal/sec")
     public String getImageSec(String filepath) throws IOException {
         if (SecurityUtil.pathFilter(filepath) == null) {
-            logger.info("Illegal file path: " + filepath);
+            logger.info("Illegal file path: " + SecurityUtil.sanitizeForLog(filepath));
             return "Bad boy. Illegal file path.";
         }
         Path safePath = resolveAndValidatePath(filepath);
@@ -57,7 +57,7 @@ public class PathTraversal {
         Path basePath = Paths.get(BASE_IMAGE_DIR).toAbsolutePath().normalize();
         Path resolved = basePath.resolve(filepath).normalize();
         if (!resolved.startsWith(basePath)) {
-            logger.info("Path traversal detected: " + filepath);
+            logger.info("Path traversal detected: " + SecurityUtil.sanitizeForLog(filepath));
             return null;
         }
         return resolved;
@@ -66,7 +66,7 @@ public class PathTraversal {
     private String getImgBase64(Path safePath) throws IOException {
 
         logger.info("Working directory: " + System.getProperty("user.dir"));
-        logger.info("File path: " + safePath.toString());
+        logger.info("File path: " + SecurityUtil.sanitizeForLog(safePath.toString()));
 
         File f = safePath.toFile();
         if (f.exists() && !f.isDirectory()) {

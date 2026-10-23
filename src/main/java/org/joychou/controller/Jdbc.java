@@ -1,6 +1,7 @@
 package org.joychou.controller;
 
 import lombok.extern.slf4j.Slf4j;
+import org.joychou.security.SecurityUtil;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -69,7 +70,7 @@ public class Jdbc {
         byte[] b = java.util.Base64.getDecoder().decode(jdbcUrlBase64);
         String jdbcUrl = new String(b);
         validateJdbcUrl(jdbcUrl);
-        log.info(jdbcUrl);
+        log.info(SecurityUtil.sanitizeForLog(jdbcUrl));
         DriverManager.getConnection(jdbcUrl);
     }
 
@@ -79,7 +80,7 @@ public class Jdbc {
         byte[] b = java.util.Base64.getDecoder().decode(jdbcUrlBase64);
         String jdbcUrl = new String(b);
         validateJdbcUrl(jdbcUrl);
-        log.info(jdbcUrl);
+        log.info(SecurityUtil.sanitizeForLog(jdbcUrl));
         DriverManager.getConnection(jdbcUrl);
     }
 }

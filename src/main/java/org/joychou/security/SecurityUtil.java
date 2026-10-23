@@ -210,7 +210,7 @@ public class SecurityUtil {
             try {
                 temp = URLDecoder.decode(temp, "utf-8");
             } catch (UnsupportedEncodingException e) {
-                logger.info("Unsupported encoding exception: " + filepath);
+                logger.info("Unsupported encoding exception: " + sanitizeForLog(filepath));
                 return null;
             } catch (Exception e) {
                 logger.info(e.toString());
@@ -308,6 +308,21 @@ public class SecurityUtil {
             throw new IllegalArgumentException("Header value contains illegal CR/LF characters");
         }
         return value;
+    }
+
+    /**
+     * Sanitize a string before writing it to log output to prevent log forging.
+     * Replaces CR, LF, and TAB characters with underscores so that attacker-controlled
+     * data cannot inject fake log entries or corrupt log integrity.
+     *
+     * @param input the raw string (may be null)
+     * @return sanitized string safe for logging, or null if input is null
+     */
+    public static String sanitizeForLog(String input) {
+        if (input == null) {
+            return null;
+        }
+        return input.replaceAll("[\\r\\n\\t]", "_");
     }
 
     public static void main(String[] args) {

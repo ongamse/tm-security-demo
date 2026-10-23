@@ -3,6 +3,7 @@ package org.joychou.controller;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.joychou.config.Constants;
 import org.joychou.dao.User;
+import org.joychou.security.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -52,7 +53,7 @@ public class Deserialize {
             String json = new String(decoded, StandardCharsets.UTF_8);
             // Parse as JSON into a known, concrete type — no Java deserialization
             User user = objectMapper.readValue(json, User.class);
-            logger.info("Parsed rememberMe cookie for user: {}", user.getUsername());
+            logger.info("Parsed rememberMe cookie for user: {}", SecurityUtil.sanitizeForLog(user.getUsername()));
         } catch (IllegalArgumentException e) {
             logger.info("Invalid base64 in rememberMe cookie: {}", e.getMessage());
             return "Invalid cookie encoding.";
@@ -82,7 +83,7 @@ public class Deserialize {
             String json = new String(decoded, StandardCharsets.UTF_8);
             // Parse as JSON into a known, concrete type — no Java deserialization
             User user = objectMapper.readValue(json, User.class);
-            logger.info("Parsed rememberMe cookie for user: {}", user.getUsername());
+            logger.info("Parsed rememberMe cookie for user: {}", SecurityUtil.sanitizeForLog(user.getUsername()));
         } catch (IllegalArgumentException e) {
             logger.info("Invalid base64 in rememberMe cookie: {}", e.getMessage());
             return "Invalid cookie encoding.";

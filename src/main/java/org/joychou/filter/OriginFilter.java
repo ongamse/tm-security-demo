@@ -39,7 +39,7 @@ public class OriginFilter implements Filter {
         // Validate origin against allowlist before reflecting
         String validatedOrigin = SecurityUtil.checkURL(origin);
         if (origin != null && validatedOrigin == null) {
-            logger.error("[-] Origin check error. " + "Origin: " + origin +
+            logger.error("[-] Origin check error. " + "Origin: " + SecurityUtil.sanitizeForLog(origin) +
                     "\tCurrent url:" + request.getRequestURL());
             response.setStatus(response.SC_FORBIDDEN);
             response.getWriter().println("Invaid cors config by joychou.");

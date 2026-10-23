@@ -51,7 +51,7 @@ public class CommandInject {
         if (null == filteredHost) {
             return "Invalid host header: only alphanumeric characters, dots, hyphens, underscores, and slashes are allowed.";
         }
-        logger.info(filteredHost);
+        logger.info(SecurityUtil.sanitizeForLog(filteredHost));
         // Use explicit argument array without shell to prevent command injection
         String[] cmdList = new String[]{"curl", filteredHost};
         ProcessBuilder builder = new ProcessBuilder(cmdList);
