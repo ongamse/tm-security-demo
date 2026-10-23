@@ -179,6 +179,15 @@ public class HttpUtils {
     public static void imageIO(String url) {
         try {
             URL u = new URL(url);
+            // Validate the URL path component to prevent path traversal
+            String path = u.getPath();
+            if (path != null) {
+                String normalizedPath = java.nio.file.Paths.get(path).normalize().toString();
+                if (normalizedPath.contains("..")) {
+                    logger.error("Path traversal detected in URL path: " + path);
+                    return;
+                }
+            }
             ImageIO.read(u); // send request
         } catch (IOException e) {
             logger.error(e.getMessage());

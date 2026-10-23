@@ -11,6 +11,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 
 @RestController
@@ -18,12 +19,19 @@ public class PathTraversal {
 
     protected final Logger logger = LoggerFactory.getLogger(this.getClass());
 
+    // Base directory for serving images
+    private static final String BASE_IMAGE_DIR = System.getProperty("user.dir");
+
     /**
      * http://localhost:8080/path_traversal/vul?filepath=../../../../../etc/passwd
      */
     @GetMapping("/path_traversal/vul")
     public String getImage(String filepath) throws IOException {
-        return getImgBase64(filepath);
+        Path safePath = resolveAndValidatePath(filepath);
+        if (safePath == null) {
+            return "Bad boy. Illegal file path.";
+        }
+        return getImgBase64(safePath);
     }
 
     @GetMapping("/path_traversal/sec")
@@ -32,17 +40,37 @@ public class PathTraversal {
             logger.info("Illegal file path: " + filepath);
             return "Bad boy. Illegal file path.";
         }
-        return getImgBase64(filepath);
+        Path safePath = resolveAndValidatePath(filepath);
+        if (safePath == null) {
+            return "Bad boy. Illegal file path.";
+        }
+        return getImgBase64(safePath);
     }
 
-    private String getImgBase64(String imgFile) throws IOException {
+    /**
+     * Resolve and validate filepath against the base directory to prevent path traversal.
+     */
+    private Path resolveAndValidatePath(String filepath) {
+        if (filepath == null || filepath.isEmpty()) {
+            return null;
+        }
+        Path basePath = Paths.get(BASE_IMAGE_DIR).toAbsolutePath().normalize();
+        Path resolved = basePath.resolve(filepath).normalize();
+        if (!resolved.startsWith(basePath)) {
+            logger.info("Path traversal detected: " + filepath);
+            return null;
+        }
+        return resolved;
+    }
+
+    private String getImgBase64(Path safePath) throws IOException {
 
         logger.info("Working directory: " + System.getProperty("user.dir"));
-        logger.info("File path: " + imgFile);
+        logger.info("File path: " + safePath.toString());
 
-        File f = new File(imgFile);
+        File f = safePath.toFile();
         if (f.exists() && !f.isDirectory()) {
-            byte[] data = Files.readAllBytes(Paths.get(imgFile));
+            byte[] data = Files.readAllBytes(safePath);
             return new String(Base64.encodeBase64(data));
         } else {
             return "File doesn't exist or is not a file.";
