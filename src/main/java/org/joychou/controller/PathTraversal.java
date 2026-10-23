@@ -7,10 +7,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
@@ -68,11 +68,14 @@ public class PathTraversal {
         logger.info("Working directory: " + System.getProperty("user.dir"));
         logger.info("File path: " + SecurityUtil.sanitizeForLog(safePath.toString()));
 
-        File f = safePath.toFile();
-        if (f.exists() && !f.isDirectory()) {
+        // Read directly without check-then-act to avoid TOCTOU race condition
+        try {
+            if (Files.isDirectory(safePath)) {
+                return "File doesn't exist or is not a file.";
+            }
             byte[] data = Files.readAllBytes(safePath);
             return new String(Base64.encodeBase64(data));
-        } else {
+        } catch (NoSuchFileException e) {
             return "File doesn't exist or is not a file.";
         }
     }

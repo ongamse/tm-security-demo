@@ -1,6 +1,5 @@
 package org.joychou.controller;
 
-import com.fasterxml.uuid.Generators;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Controller;
@@ -12,8 +11,8 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -174,14 +173,12 @@ public class FileUpload {
                 logger.error("Refusing to delete file outside upload directory: " + SecurityUtil.sanitizeForLog(filePath));
                 return;
             }
-            File delFile = targetPath.toFile();
-            if(delFile.isFile() && delFile.exists()) {
-                if (delFile.delete()) {
-                    logger.info("[+] " + SecurityUtil.sanitizeForLog(filePath) + " delete successfully!");
-                    return;
-                }
+            // Use atomic delete to avoid TOCTOU race between exists check and delete
+            if (Files.deleteIfExists(targetPath)) {
+                logger.info("[+] " + SecurityUtil.sanitizeForLog(filePath) + " delete successfully!");
+            } else {
+                logger.info(SecurityUtil.sanitizeForLog(filePath) + " delete failed!");
             }
-            logger.info(SecurityUtil.sanitizeForLog(filePath) + " delete failed!");
         } catch (Exception e) {
             logger.error("Error deleting file: " + e.getMessage());
         }
@@ -200,19 +197,17 @@ public class FileUpload {
             throw new IllegalArgumentException("Invalid file name");
         }
         String suffix = safeName.substring(safeName.lastIndexOf("."));
-        UUID uuid = Generators.timeBasedGenerator().generate();
+        // Use cryptographically secure random UUID for unpredictable file names
+        String uuid = UUID.randomUUID().toString();
         // Use resolveAndValidate to ensure the random temp file stays within UPLOADED_FOLDER
         Path safePath = resolveAndValidate(UPLOADED_FOLDER, uuid + suffix);
         randomFilePath = safePath.toString();
-        // 随机生成一个同后缀名的文件
+        // Atomically create the file (throws FileAlreadyExistsException if it exists)
+        Files.createFile(safePath);
         File convFile = safePath.toFile();
-        boolean ret = convFile.createNewFile();
-        if (!ret) {
-            return null;
+        try (OutputStream fos = Files.newOutputStream(safePath)) {
+            fos.write(multiFile.getBytes());
         }
-        FileOutputStream fos = new FileOutputStream(convFile);
-        fos.write(multiFile.getBytes());
-        fos.close();
         return convFile;
     }
 
