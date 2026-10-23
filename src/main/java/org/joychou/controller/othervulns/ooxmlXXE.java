@@ -15,6 +15,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.util.Iterator;
+import org.springframework.web.util.HtmlUtils;
 
 
 /**
@@ -70,6 +71,6 @@ public class ooxmlXXE {
             }
         }
 
-        return sbResult.toString();
+        return HtmlUtils.htmlEscape(sbResult.toString());
     }
 }

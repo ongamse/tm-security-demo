@@ -17,6 +17,7 @@ import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.view.json.MappingJackson2JsonView;
 import org.joychou.config.WebConfig;
 import org.joychou.util.WebUtils;
+import org.springframework.web.util.HtmlUtils;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
@@ -131,7 +132,7 @@ public class Jsonp {
 
         String callback = request.getParameter("fastjsonpCallback");
         if (StringUtils.isNotBlank(callback)) {
-            JSONPObject jsonpObj = new JSONPObject(callback);
+            JSONPObject jsonpObj = new JSONPObject(HtmlUtils.htmlEscape(callback));
             jsonpObj.addParameter(csrfToken);
             return jsonpObj.toString();
         } else {
