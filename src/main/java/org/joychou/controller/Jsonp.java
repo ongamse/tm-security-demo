@@ -130,7 +130,10 @@ public class Jsonp {
         if (SecurityUtil.checkURL(referer) == null) {
             return "error";
         }
-        String callback = request.getParameter(this.callback);
+        String callback = validateCallback(request.getParameter(this.callback));
+        if (callback == null) {
+            return "error";
+        }
         return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
     }
 
@@ -153,9 +156,9 @@ public class Jsonp {
     public String getCsrfToken2(HttpServletRequest request) {
         CsrfToken csrfToken = cookieCsrfTokenRepository.loadToken(request); // get csrf token
 
-        String callback = request.getParameter("fastjsonpCallback");
-        if (StringUtils.isNotBlank(callback)) {
-            JSONPObject jsonpObj = new JSONPObject(HtmlUtils.htmlEscape(callback));
+        String callback = validateCallback(request.getParameter("fastjsonpCallback"));
+        if (callback != null) {
+            JSONPObject jsonpObj = new JSONPObject(callback);
             jsonpObj.addParameter(csrfToken);
             return jsonpObj.toString();
         } else {
