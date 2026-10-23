@@ -18,8 +18,63 @@ public class AntObjectInputStream extends ObjectInputStream {
 
     protected final Logger logger= LoggerFactory.getLogger(AntObjectInputStream.class);
 
+    /** Maximum object graph depth and number of references permitted during deserialization. */
+    private static final long MAX_DEPTH = 5;
+    private static final long MAX_REFERENCES = 100;
+    private static final long MAX_BYTES = 1024 * 1024; // 1 MB
+
     public AntObjectInputStream(InputStream inputStream) throws IOException {
         super(inputStream);
+        installObjectInputFilter();
+    }
+
+    /**
+     * Install an ObjectInputFilter (Java 9+ API, backported to 8u121+ as sun.misc.ObjectInputFilter)
+     * to restrict deserialization before readObject reaches resolveClass.
+     */
+    private void installObjectInputFilter() {
+        // Try Java 9+ API first, then fall back to Java 8 sun.misc backport
+        try {
+            // Java 9+: java.io.ObjectInputFilter
+            Class<?> filterClass = Class.forName("java.io.ObjectInputFilter");
+            Class<?> configClass = Class.forName("java.io.ObjectInputFilter$Config");
+            Object filter = configClass.getMethod("createFilter", String.class)
+                    .invoke(null, buildFilterPattern());
+            ObjectInputStream.class.getMethod("setObjectInputFilter", filterClass)
+                    .invoke(this, filter);
+            logger.info("Installed java.io.ObjectInputFilter for deserialization protection");
+            return;
+        } catch (Exception ignored) {
+            // Not Java 9+, try sun.misc backport
+        }
+        try {
+            // Java 8u121+: sun.misc.ObjectInputFilter
+            Class<?> filterClass = Class.forName("sun.misc.ObjectInputFilter");
+            Class<?> configClass = Class.forName("sun.misc.ObjectInputFilter$Config");
+            Object filter = configClass.getMethod("createFilter", String.class)
+                    .invoke(null, buildFilterPattern());
+            configClass.getMethod("setObjectInputFilter", ObjectInputStream.class, filterClass)
+                    .invoke(null, this, filter);
+            logger.info("Installed sun.misc.ObjectInputFilter for deserialization protection");
+        } catch (Exception e) {
+            logger.warn("ObjectInputFilter not available on this JVM — relying on resolveClass allowlist only");
+        }
+    }
+
+    /**
+     * Build a JEP 290 filter pattern string that allowlists only safe classes
+     * and rejects everything else.
+     */
+    private static String buildFilterPattern() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("maxdepth=").append(MAX_DEPTH).append(";");
+        sb.append("maxrefs=").append(MAX_REFERENCES).append(";");
+        sb.append("maxbytes=").append(MAX_BYTES).append(";");
+        for (String allowed : ALLOWED_CLASSES) {
+            sb.append(allowed).append(";");
+        }
+        sb.append("!*");  // reject everything not explicitly allowed
+        return sb.toString();
     }
 
     /**
