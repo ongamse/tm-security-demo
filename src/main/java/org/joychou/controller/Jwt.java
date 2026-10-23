@@ -41,6 +41,7 @@ public class Jwt {
 
         cookie.setMaxAge(86400);    // 1 DAY
         cookie.setPath("/");
+        cookie.setHttpOnly(true);
         cookie.setSecure(true);
         response.addCookie(cookie);
         return "Add jwt token cookie successfully. Cookie name is USER_COOKIE";
