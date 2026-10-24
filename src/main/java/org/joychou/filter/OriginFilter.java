@@ -33,10 +33,11 @@ public class OriginFilter implements Filter {
         HttpServletRequest request = (HttpServletRequest) req;
         HttpServletResponse response = (HttpServletResponse) res;
 
-        String origin = request.getHeader("Origin");
+        String origin = SecurityUtil.sanitizeHeaderValue(request.getHeader("Origin"));
         logger.info("[+] Origin: " + origin + "\tCurrent url:" + request.getRequestURL());
 
-        // 以file协议访问html，origin为字符串的null，所以依然会走安全check逻辑
+        // Only set CORS headers if origin is non-null and passes the allowlist check.
+        // Null origin (same-domain or direct request) proceeds without CORS headers.
         if (origin != null && SecurityUtil.checkURL(origin) == null) {
             logger.error("[-] Origin check error. " + "Origin: " + origin +
                     "\tCurrent url:" + request.getRequestURL());
@@ -45,9 +46,11 @@ public class OriginFilter implements Filter {
             return;
         }
 
-        response.setHeader("Access-Control-Allow-Origin", origin);
-        response.setHeader("Access-Control-Allow-Credentials", "true");
-        response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTION");
+        if (origin != null) {
+            response.setHeader("Access-Control-Allow-Origin", origin);
+            response.setHeader("Access-Control-Allow-Credentials", "true");
+            response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTION");
+        }
 
         filterChain.doFilter(req, res);
     }
