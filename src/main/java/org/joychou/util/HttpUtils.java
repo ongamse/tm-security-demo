@@ -35,7 +35,46 @@ public class HttpUtils {
 
     private final static Logger logger = LoggerFactory.getLogger(HttpUtils.class);
 
+    /**
+     * Validate that a URL is safe from SSRF: must use http/https protocol
+     * and must not target internal/link-local/metadata IP addresses.
+     *
+     * @param url the URL to validate
+     * @throws IllegalArgumentException if the URL is null, uses a non-HTTP protocol,
+     *         or resolves to an internal/link-local/metadata IP
+     */
+    private static void validateUrlAgainstSSRF(String url) {
+        if (url == null) {
+            throw new IllegalArgumentException("URL must not be null");
+        }
+        try {
+            URI uri = new URI(url);
+            String scheme = uri.getScheme();
+            if (scheme == null || (!"http".equalsIgnoreCase(scheme) && !"https".equalsIgnoreCase(scheme))) {
+                throw new IllegalArgumentException("Only http and https protocols are allowed");
+            }
+            String host = uri.getHost();
+            if (host == null || host.isEmpty()) {
+                throw new IllegalArgumentException("URL must have a valid host");
+            }
+            java.net.InetAddress resolved = java.net.InetAddress.getByName(host);
+            if (resolved.isLoopbackAddress() || resolved.isLinkLocalAddress()
+                    || resolved.isSiteLocalAddress() || resolved.isAnyLocalAddress()
+                    || resolved.isMulticastAddress()) {
+                throw new IllegalArgumentException("Requests to internal/link-local/metadata addresses are not allowed");
+            }
+            // Block AWS/cloud metadata endpoint 169.254.169.254
+            byte[] addr = resolved.getAddress();
+            if (addr.length == 4 && (addr[0] & 0xFF) == 169 && (addr[1] & 0xFF) == 254) {
+                throw new IllegalArgumentException("Requests to metadata service addresses are not allowed");
+            }
+        } catch (java.net.URISyntaxException | java.net.UnknownHostException e) {
+            throw new IllegalArgumentException("Invalid URL: " + e.getMessage());
+        }
+    }
+
     public static String commonHttpClient(String url) {
+        validateUrlAgainstSSRF(url);
 
         HttpClient client = new HttpClient();
         GetMethod method = new GetMethod(url);
@@ -55,6 +94,7 @@ public class HttpUtils {
 
 
     public static String request(String url) {
+        validateUrlAgainstSSRF(url);
         try {
             return Request.Get(url).execute().returnContent().toString();
         } catch (Exception e) {
@@ -64,6 +104,7 @@ public class HttpUtils {
 
 
     public static String httpClient(String url) {
+        validateUrlAgainstSSRF(url);
 
         StringBuilder result = new StringBuilder();
 
@@ -90,6 +131,7 @@ public class HttpUtils {
 
 
     public static String URLConnection(String url) {
+        validateUrlAgainstSSRF(url);
         try {
             URL u = new URL(url);
             URLConnection urlConnection = u.openConnection();
@@ -114,6 +156,7 @@ public class HttpUtils {
      * UserAgent is Java/1.8.0_102.
      */
     public static String HttpURLConnection(String url) {
+        validateUrlAgainstSSRF(url);
         try {
             URL u = new URL(url);
             URLConnection urlConnection = u.openConnection();
@@ -143,6 +186,7 @@ public class HttpUtils {
      * @param url http request url
      */
     public static String Jsoup(String url) {
+        validateUrlAgainstSSRF(url);
         try {
             Document doc = Jsoup.connect(url)
 //                    .followRedirects(false)
@@ -162,6 +206,7 @@ public class HttpUtils {
      * UserAgent is <code>okhttp/2.5.0</code>.
      */
     public static String okhttp(String url) throws IOException {
+        validateUrlAgainstSSRF(url);
         OkHttpClient client = new OkHttpClient();
 //         client.setFollowRedirects(false);
         com.squareup.okhttp.Request ok_http = new com.squareup.okhttp.Request.Builder().url(url).build();
@@ -177,13 +222,9 @@ public class HttpUtils {
      * @param url http request url
      */
     public static void imageIO(String url) {
+        validateUrlAgainstSSRF(url);
         try {
             URL u = new URL(url);
-            String protocol = u.getProtocol();
-            if (!"http".equals(protocol) && !"https".equals(protocol)) {
-                logger.error("Blocked non-HTTP protocol in imageIO: " + protocol);
-                return;
-            }
             ImageIO.read(u); // send request
         } catch (IOException e) {
             logger.error(e.getMessage());
@@ -199,6 +240,7 @@ public class HttpUtils {
      * @param url http request url
      */
     public static void IOUtils(String url) {
+        validateUrlAgainstSSRF(url);
         try {
             IOUtils.toByteArray(URI.create(url));
         } catch (IOException e) {
@@ -208,6 +250,7 @@ public class HttpUtils {
 
 
     public static String HttpAsyncClients(String url) {
+        validateUrlAgainstSSRF(url);
         CloseableHttpAsyncClient httpclient = HttpAsyncClients.createDefault();
         try {
             httpclient.start();
