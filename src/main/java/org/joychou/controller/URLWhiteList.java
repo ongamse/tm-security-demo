@@ -89,28 +89,17 @@ public class URLWhiteList {
 
     /**
      * First-level & Multi-level host whitelist.
+     * Checks url against domain whitelist using SecurityUtil.checkURL for safe matching.
      * http://localhost:8080/url/sec?url=http://aa.joychou.org
      */
     @GetMapping("/sec")
     public String sec(@RequestParam("url") String url) {
 
-        String whiteDomainlists[] = {"joychou.org", "joychou.com", "test.joychou.me"};
-
-        if (!SecurityUtil.isHttp(url)) {
-            return "SecurityUtil is not http or https";
+        if (SecurityUtil.checkURL(url) == null) {
+            return "Bad url.";
         }
 
-        String host = SecurityUtil.gethost(url);
-
-        for (String whiteHost: whiteDomainlists){
-            if (whiteHost.startsWith(".") && host.endsWith(whiteHost)) {
-                return HtmlUtils.htmlEscape(url);
-            } else if (!whiteHost.startsWith(".") && host.equals(whiteHost)) {
-                return HtmlUtils.htmlEscape(url);
-            }
-        }
-
-        return "Bad url.";
+        return HtmlUtils.htmlEscape(url);
     }
 
 

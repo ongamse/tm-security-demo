@@ -81,6 +81,16 @@ public class URLRedirect {
     @ResponseBody
     public static void forward(HttpServletRequest request, HttpServletResponse response) {
         String url = request.getParameter("url");
+        // Validate forward path: must be an internal path, no external schemes or traversal
+        if (url == null || !url.startsWith("/") || url.contains("://") || url.contains("..")) {
+            try {
+                response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                response.getWriter().write("url forbidden");
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+            return;
+        }
         RequestDispatcher rd = request.getRequestDispatcher(url);
         try {
             rd.forward(request, response);
