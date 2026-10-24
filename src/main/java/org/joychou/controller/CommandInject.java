@@ -24,8 +24,14 @@ public class CommandInject {
     @GetMapping("/codeinject")
     public String codeInject(String filepath) throws IOException {
 
-        String[] cmdList = new String[]{"sh", "-c", "ls -la " + filepath};
-        ProcessBuilder builder = new ProcessBuilder(cmdList);
+        if (filepath == null || filepath.trim().isEmpty()) {
+            return "Filepath not provided";
+        }
+        String filteredPath = SecurityUtil.cmdFilter(filepath);
+        if (filteredPath == null) {
+            return "Invalid filepath";
+        }
+        ProcessBuilder builder = new ProcessBuilder("ls", "-la", filteredPath);
         builder.redirectErrorStream(true);
         Process process = builder.start();
         return WebUtils.convertStreamToString(process.getInputStream());
