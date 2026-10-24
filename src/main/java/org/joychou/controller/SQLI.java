@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
 import java.sql.*;
+import java.util.Collections;
 import java.util.List;
 
 
@@ -26,6 +27,13 @@ import java.util.List;
 public class SQLI {
 
     private static final Logger logger = LoggerFactory.getLogger(SQLI.class);
+
+    /** Allowlist pattern for username: alphanumeric, underscores, hyphens; 1-64 chars. */
+    private static final String USERNAME_PATTERN = "^[a-zA-Z0-9_-]{1,64}$";
+
+    private static boolean isValidUsername(String username) {
+        return username != null && username.matches(USERNAME_PATTERN);
+    }
 
     // com.mysql.jdbc.Driver is deprecated. Change to com.mysql.cj.jdbc.Driver.
     private static final String driver = "com.mysql.cj.jdbc.Driver";
@@ -94,6 +102,10 @@ public class SQLI {
      */
     @RequestMapping("/jdbc/sec")
     public String jdbc_sqli_sec(@RequestParam("username") String username) {
+
+        if (!isValidUsername(username)) {
+            return "Invalid username";
+        }
 
         StringBuilder result = new StringBuilder();
         try {
@@ -182,6 +194,9 @@ public class SQLI {
      */
     @GetMapping("/mybatis/vuln01")
     public List<User> mybatisVuln01(@RequestParam("username") String username) {
+        if (!isValidUsername(username)) {
+            return Collections.emptyList();
+        }
         return userMapper.findByUserNameVuln01(username);
     }
 
@@ -192,6 +207,9 @@ public class SQLI {
      */
     @GetMapping("/mybatis/vuln02")
     public List<User> mybatisVuln02(@RequestParam("username") String username) {
+        if (!isValidUsername(username)) {
+            return Collections.emptyList();
+        }
         return userMapper.findByUserNameVuln02(username);
     }
 
@@ -212,6 +230,9 @@ public class SQLI {
      */
     @GetMapping("/mybatis/sec01")
     public User mybatisSec01(@RequestParam("username") String username) {
+        if (!isValidUsername(username)) {
+            return null;
+        }
         return userMapper.findByUserName(username);
     }
 
@@ -221,6 +242,9 @@ public class SQLI {
      */
     @GetMapping("/mybatis/sec02")
     public User mybatisSec02(@RequestParam("id") Integer id) {
+        if (id == null || id <= 0) {
+            return null;
+        }
         return userMapper.findById(id);
     }
 
