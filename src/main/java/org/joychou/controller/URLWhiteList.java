@@ -8,10 +8,7 @@ import org.springframework.web.bind.annotation.*;
 
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.net.URL;
 import java.util.ArrayList;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * The vulnerability code and security code of Java url whitelist.
@@ -30,91 +27,62 @@ public class URLWhiteList {
     private static final Logger logger = LoggerFactory.getLogger(URLWhiteList.class);
 
     /**
-     * bypass poc: bypassjoychou.org
-     * http://localhost:8080/url/vuln/endswith?url=http://aaajoychou.org
+     * Checks url against domain whitelist using SecurityUtil.checkURL for safe matching.
+     * http://localhost:8080/url/vuln/endswith?url=http://joychou.org
      */
     @GetMapping("/vuln/endsWith")
     public String endsWith(@RequestParam("url") String url) {
 
-        String host = SecurityUtil.gethost(url);
-
-        for (String domain : domainwhitelist) {
-            if (host.endsWith(domain)) {
-                return "Good url.";
-            }
+        if (SecurityUtil.checkURL(url) != null) {
+            return "Good url.";
         }
         return "Bad url.";
     }
 
 
     /**
-     * It's the same with <code>indexOf</code>.
-     * <p>
-     * http://localhost:8080/url/vuln/contains?url=http://joychou.org.bypass.com
-     * http://localhost:8080/url/vuln/contains?url=http://bypassjoychou.org
+     * Checks url against domain whitelist using SecurityUtil.checkURL for safe matching.
+     * http://localhost:8080/url/vuln/contains?url=http://joychou.org
      */
     @GetMapping("/vuln/contains")
     public String contains(@RequestParam("url") String url) {
 
-        String host = SecurityUtil.gethost(url);
-
-        for (String domain : domainwhitelist) {
-            if (host.contains(domain)) {
-                return "Good url.";
-            }
+        if (SecurityUtil.checkURL(url) != null) {
+            return "Good url.";
         }
         return "Bad url.";
     }
 
 
     /**
-     * bypass poc: bypassjoychou.org. It's the same with endsWith.
-     * http://localhost:8080/url/vuln/regex?url=http://aaajoychou.org
+     * Checks url against domain whitelist using SecurityUtil.checkURL for safe matching.
+     * http://localhost:8080/url/vuln/regex?url=http://joychou.org
      */
     @GetMapping("/vuln/regex")
     public String regex(@RequestParam("url") String url) {
 
-        String host = SecurityUtil.gethost(url);
-        Pattern p = Pattern.compile("joychou\\.org$");
-        Matcher m = p.matcher(host);
-
-        if (m.find()) {
+        if (SecurityUtil.checkURL(url) != null) {
             return "Good url.";
-        } else {
-            return "Bad url.";
         }
+        return "Bad url.";
     }
 
 
     /**
-     * The bypass of using {@link java.net.URL} to getHost.
-     * <p>
-     * <a href="http://localhost:8080/url/vuln/url_bypass?url=http://evil.com%5c@www.joychou.org/a.html">bypass 1</a>
-     * <a href="http://localhost:8080/url/vuln/url_bypass?url=http://evil.com%5cwww.joychou.org/a.html">bypass 2</a>
-     *
-     * <p>
-     * <a href="https://github.com/JoyChou93/java-sec-code/wiki/URL-whtielist-Bypass">More details</a>
+     * Checks url against domain whitelist using SecurityUtil.checkURL before redirect.
      */
     @GetMapping("/vuln/url_bypass")
     public void url_bypass(String url, HttpServletResponse res) throws IOException {
 
         logger.info("url:  " + url);
 
-        if (!SecurityUtil.isHttp(url)) {
+        if (SecurityUtil.checkURL(url) == null) {
+            res.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            res.getWriter().write("url forbidden");
             return;
         }
 
-        URL u = new URL(url);
-        String host = u.getHost();
-        logger.info("host:  " + host);
-
-        // endsWith .
-        for (String domain : domainwhitelist) {
-            if (host.endsWith("." + domain)) {
-                res.sendRedirect(url);
-            }
-        }
-
+        res.sendRedirect(url);
     }
 
 
