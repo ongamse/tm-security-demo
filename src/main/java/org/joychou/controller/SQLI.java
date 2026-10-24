@@ -8,6 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.util.HtmlUtils;
 
 import javax.annotation.Resource;
 import java.sql.*;
@@ -91,7 +92,7 @@ public class SQLI {
         } catch (SQLException e) {
             logger.error(e.toString());
         }
-        return result.toString();
+        return HtmlUtils.htmlEscape(result.toString());
     }
 
 
@@ -140,7 +141,7 @@ public class SQLI {
         } catch (SQLException e) {
             logger.error(e.toString());
         }
-        return result.toString();
+        return HtmlUtils.htmlEscape(result.toString());
     }
 
 
@@ -183,7 +184,7 @@ public class SQLI {
         } catch (SQLException e) {
             logger.error(e.toString());
         }
-        return result.toString();
+        return HtmlUtils.htmlEscape(result.toString());
     }
 
 

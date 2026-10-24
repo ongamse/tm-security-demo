@@ -11,6 +11,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.util.HtmlUtils;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletResponse;
@@ -48,9 +49,9 @@ public class SSRF {
         }
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.URLConnection(url);
+            return HtmlUtils.htmlEscape(HttpUtils.URLConnection(url));
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return HtmlUtils.htmlEscape(e.getMessage());
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -67,9 +68,9 @@ public class SSRF {
 
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.URLConnection(url);
+            return HtmlUtils.htmlEscape(HttpUtils.URLConnection(url));
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return HtmlUtils.htmlEscape(e.getMessage());
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -85,9 +86,9 @@ public class SSRF {
     public String httpURLConnection(@RequestParam String url) {
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.HttpURLConnection(url);
+            return HtmlUtils.htmlEscape(HttpUtils.HttpURLConnection(url));
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return HtmlUtils.htmlEscape(e.getMessage());
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -101,9 +102,9 @@ public class SSRF {
         }
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.HttpURLConnection(url);
+            return HtmlUtils.htmlEscape(HttpUtils.HttpURLConnection(url));
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return HtmlUtils.htmlEscape(e.getMessage());
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -118,9 +119,9 @@ public class SSRF {
     public String request(@RequestParam String url) {
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.request(url);
+            return HtmlUtils.htmlEscape(HttpUtils.request(url));
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return HtmlUtils.htmlEscape(e.getMessage());
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -188,7 +189,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             HttpUtils.imageIO(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return HtmlUtils.htmlEscape(e.getMessage());
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -202,9 +203,9 @@ public class SSRF {
 
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.okhttp(url);
+            return HtmlUtils.htmlEscape(HttpUtils.okhttp(url));
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return HtmlUtils.htmlEscape(e.getMessage());
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -221,9 +222,9 @@ public class SSRF {
 
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.httpClient(url);
+            return HtmlUtils.htmlEscape(HttpUtils.httpClient(url));
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return HtmlUtils.htmlEscape(e.getMessage());
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -241,9 +242,9 @@ public class SSRF {
 
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.commonHttpClient(url);
+            return HtmlUtils.htmlEscape(HttpUtils.commonHttpClient(url));
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return HtmlUtils.htmlEscape(e.getMessage());
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -260,9 +261,9 @@ public class SSRF {
 
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.Jsoup(url);
+            return HtmlUtils.htmlEscape(HttpUtils.Jsoup(url));
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return HtmlUtils.htmlEscape(e.getMessage());
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -281,7 +282,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             HttpUtils.IOUtils(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return HtmlUtils.htmlEscape(e.getMessage());
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -301,9 +302,9 @@ public class SSRF {
         }
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.HttpAsyncClients(url);
+            return HtmlUtils.htmlEscape(HttpUtils.HttpAsyncClients(url));
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return HtmlUtils.htmlEscape(e.getMessage());
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -325,9 +326,9 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON_UTF8);
-            return httpService.RequestHttpBanRedirects(url, headers);
+            return HtmlUtils.htmlEscape(httpService.RequestHttpBanRedirects(url, headers));
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return HtmlUtils.htmlEscape(e.getMessage());
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -343,9 +344,9 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON_UTF8);
-            return httpService.RequestHttp(url, headers);
+            return HtmlUtils.htmlEscape(httpService.RequestHttp(url, headers));
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return HtmlUtils.htmlEscape(e.getMessage());
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -364,9 +365,9 @@ public class SSRF {
         }
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtil.get(url);
+            return HtmlUtils.htmlEscape(HttpUtil.get(url));
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return HtmlUtils.htmlEscape(e.getMessage());
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -384,9 +385,9 @@ public class SSRF {
         }
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtil.get(url);
+            return HtmlUtils.htmlEscape(HttpUtil.get(url));
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return HtmlUtils.htmlEscape(e.getMessage());
         } finally {
             SecurityUtil.stopSSRFHook();
         }
