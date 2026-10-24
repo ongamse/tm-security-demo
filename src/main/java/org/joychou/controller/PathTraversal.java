@@ -11,6 +11,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 
 @RestController
@@ -21,9 +22,16 @@ public class PathTraversal {
     /**
      * http://localhost:8080/path_traversal/vul?filepath=../../../../../etc/passwd
      */
+    private static final String ALLOWED_BASE_DIR = System.getProperty("user.dir");
+
     @GetMapping("/path_traversal/vul")
     public String getImage(String filepath) throws IOException {
-        return getImgBase64(filepath);
+        Path resolved = Paths.get(ALLOWED_BASE_DIR, filepath).normalize();
+        if (!resolved.startsWith(Paths.get(ALLOWED_BASE_DIR).normalize())) {
+            logger.info("Illegal file path: " + filepath);
+            return "Bad boy. Illegal file path.";
+        }
+        return getImgBase64(resolved.toString());
     }
 
     @GetMapping("/path_traversal/sec")
