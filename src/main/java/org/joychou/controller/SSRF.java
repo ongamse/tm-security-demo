@@ -11,6 +11,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.util.HtmlUtils;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletResponse;
@@ -43,7 +44,17 @@ public class SSRF {
      */
     @RequestMapping(value = "/urlConnection/vuln", method = {RequestMethod.POST, RequestMethod.GET})
     public String URLConnectionVuln(String url) {
-        return HttpUtils.URLConnection(url);
+        if (!SecurityUtil.isHttp(url)) {
+            return "[-] SSRF check failed";
+        }
+        try {
+            SecurityUtil.startSSRFHook();
+            return HtmlUtils.htmlEscape(HttpUtils.URLConnection(url));
+        } catch (SSRFException | IOException e) {
+            return HtmlUtils.htmlEscape(e.getMessage());
+        } finally {
+            SecurityUtil.stopSSRFHook();
+        }
     }
 
 
@@ -57,9 +68,9 @@ public class SSRF {
 
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.URLConnection(url);
+            return HtmlUtils.htmlEscape(HttpUtils.URLConnection(url));
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return HtmlUtils.htmlEscape(e.getMessage());
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -75,9 +86,9 @@ public class SSRF {
     public String httpURLConnection(@RequestParam String url) {
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.HttpURLConnection(url);
+            return HtmlUtils.htmlEscape(HttpUtils.HttpURLConnection(url));
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return HtmlUtils.htmlEscape(e.getMessage());
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -86,7 +97,17 @@ public class SSRF {
 
     @GetMapping("/HttpURLConnection/vuln")
     public String httpURLConnectionVuln(@RequestParam String url) {
-        return HttpUtils.HttpURLConnection(url);
+        if (!SecurityUtil.isHttp(url)) {
+            return "[-] SSRF check failed";
+        }
+        try {
+            SecurityUtil.startSSRFHook();
+            return HtmlUtils.htmlEscape(HttpUtils.HttpURLConnection(url));
+        } catch (SSRFException | IOException e) {
+            return HtmlUtils.htmlEscape(e.getMessage());
+        } finally {
+            SecurityUtil.stopSSRFHook();
+        }
     }
 
     /**
@@ -98,9 +119,9 @@ public class SSRF {
     public String request(@RequestParam String url) {
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.request(url);
+            return HtmlUtils.htmlEscape(HttpUtils.request(url));
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return HtmlUtils.htmlEscape(e.getMessage());
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -117,11 +138,19 @@ public class SSRF {
      */
     @GetMapping("/openStream")
     public void openStream(@RequestParam String url, HttpServletResponse response) throws IOException {
+        if (!SecurityUtil.isHttp(url)) {
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            response.getWriter().write("[-] SSRF check failed");
+            return;
+        }
+
         InputStream inputStream = null;
         OutputStream outputStream = null;
         try {
+            SecurityUtil.startSSRFHook();
             String downLoadImgFileName = WebUtils.getNameWithoutExtension(url) + "." + WebUtils.getFileExtension(url);
-            // download
+            // download - sanitize filename to prevent CRLF injection in header
+            downLoadImgFileName = SecurityUtil.sanitizeHeaderValue(downLoadImgFileName);
             response.setHeader("content-disposition", "attachment;fileName=" + downLoadImgFileName);
 
             URL u = new URL(url);
@@ -133,9 +162,13 @@ public class SSRF {
                 outputStream.write(bytes, 0, length);
             }
 
+        } catch (SSRFException e) {
+            logger.error(e.toString());
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
         } catch (Exception e) {
             logger.error(e.toString());
         } finally {
+            SecurityUtil.stopSSRFHook();
             if (inputStream != null) {
                 inputStream.close();
             }
@@ -156,7 +189,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             HttpUtils.imageIO(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return HtmlUtils.htmlEscape(e.getMessage());
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -170,9 +203,9 @@ public class SSRF {
 
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.okhttp(url);
+            return HtmlUtils.htmlEscape(HttpUtils.okhttp(url));
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return HtmlUtils.htmlEscape(e.getMessage());
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -189,9 +222,9 @@ public class SSRF {
 
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.httpClient(url);
+            return HtmlUtils.htmlEscape(HttpUtils.httpClient(url));
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return HtmlUtils.htmlEscape(e.getMessage());
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -209,9 +242,9 @@ public class SSRF {
 
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.commonHttpClient(url);
+            return HtmlUtils.htmlEscape(HttpUtils.commonHttpClient(url));
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return HtmlUtils.htmlEscape(e.getMessage());
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -228,9 +261,9 @@ public class SSRF {
 
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.Jsoup(url);
+            return HtmlUtils.htmlEscape(HttpUtils.Jsoup(url));
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return HtmlUtils.htmlEscape(e.getMessage());
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -249,7 +282,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             HttpUtils.IOUtils(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return HtmlUtils.htmlEscape(e.getMessage());
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -264,7 +297,17 @@ public class SSRF {
      */
     @GetMapping("/HttpSyncClients/vuln")
     public String HttpSyncClients(@RequestParam("url") String url) {
-        return HttpUtils.HttpAsyncClients(url);
+        if (!SecurityUtil.isHttp(url)) {
+            return "[-] SSRF check failed";
+        }
+        try {
+            SecurityUtil.startSSRFHook();
+            return HtmlUtils.htmlEscape(HttpUtils.HttpAsyncClients(url));
+        } catch (SSRFException | IOException e) {
+            return HtmlUtils.htmlEscape(e.getMessage());
+        } finally {
+            SecurityUtil.stopSSRFHook();
+        }
     }
 
 
@@ -276,17 +319,37 @@ public class SSRF {
      */
     @GetMapping("/restTemplate/vuln1")
     public String RestTemplateUrlBanRedirects(String url){
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON_UTF8);
-        return httpService.RequestHttpBanRedirects(url, headers);
+        if (!SecurityUtil.isHttp(url)) {
+            return "[-] SSRF check failed";
+        }
+        try {
+            SecurityUtil.startSSRFHook();
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON_UTF8);
+            return HtmlUtils.htmlEscape(httpService.RequestHttpBanRedirects(url, headers));
+        } catch (SSRFException | IOException e) {
+            return HtmlUtils.htmlEscape(e.getMessage());
+        } finally {
+            SecurityUtil.stopSSRFHook();
+        }
     }
 
 
     @GetMapping("/restTemplate/vuln2")
     public String RestTemplateUrl(String url){
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON_UTF8);
-        return httpService.RequestHttp(url, headers);
+        if (!SecurityUtil.isHttp(url)) {
+            return "[-] SSRF check failed";
+        }
+        try {
+            SecurityUtil.startSSRFHook();
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON_UTF8);
+            return HtmlUtils.htmlEscape(httpService.RequestHttp(url, headers));
+        } catch (SSRFException | IOException e) {
+            return HtmlUtils.htmlEscape(e.getMessage());
+        } finally {
+            SecurityUtil.stopSSRFHook();
+        }
     }
 
 
@@ -297,7 +360,17 @@ public class SSRF {
      */
     @GetMapping("/hutool/vuln")
     public String hutoolHttp(String url){
-        return HttpUtil.get(url);
+        if (!SecurityUtil.isHttp(url)) {
+            return "[-] SSRF check failed";
+        }
+        try {
+            SecurityUtil.startSSRFHook();
+            return HtmlUtils.htmlEscape(HttpUtil.get(url));
+        } catch (SSRFException | IOException e) {
+            return HtmlUtils.htmlEscape(e.getMessage());
+        } finally {
+            SecurityUtil.stopSSRFHook();
+        }
     }
 
 
@@ -307,11 +380,17 @@ public class SSRF {
      */
     @GetMapping("/dnsrebind/vuln")
     public String DnsRebind(String url) {
-        java.security.Security.setProperty("networkaddress.cache.negative.ttl" , "0");
-        if (!SecurityUtil.checkSSRFWithoutRedirect(url)) {
-            return "Dangerous url";
+        if (!SecurityUtil.isHttp(url)) {
+            return "[-] SSRF check failed";
         }
-        return HttpUtil.get(url);
+        try {
+            SecurityUtil.startSSRFHook();
+            return HtmlUtils.htmlEscape(HttpUtil.get(url));
+        } catch (SSRFException | IOException e) {
+            return HtmlUtils.htmlEscape(e.getMessage());
+        } finally {
+            SecurityUtil.stopSSRFHook();
+        }
     }
 
 

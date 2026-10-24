@@ -30,7 +30,11 @@ public class URLRedirect {
      */
     @GetMapping("/redirect")
     public String redirect(@RequestParam("url") String url) {
-        return "redirect:" + url;
+        if (SecurityUtil.checkURL(url) == null) {
+            return "url forbidden";
+        }
+        String sanitizedUrl = SecurityUtil.sanitizeHeaderValue(url);
+        return "redirect:" + sanitizedUrl;
     }
 
 
@@ -39,10 +43,17 @@ public class URLRedirect {
      */
     @RequestMapping("/setHeader")
     @ResponseBody
-    public static void setHeader(HttpServletRequest request, HttpServletResponse response) {
+    public static void setHeader(HttpServletRequest request, HttpServletResponse response)
+            throws IOException {
         String url = request.getParameter("url");
+        if (SecurityUtil.checkURL(url) == null) {
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            response.getWriter().write("url forbidden");
+            return;
+        }
+        String sanitizedUrl = SecurityUtil.sanitizeHeaderValue(url);
         response.setStatus(HttpServletResponse.SC_MOVED_PERMANENTLY); // 301 redirect
-        response.setHeader("Location", url);
+        response.setHeader("Location", sanitizedUrl);
     }
 
 
@@ -53,6 +64,11 @@ public class URLRedirect {
     @ResponseBody
     public static void sendRedirect(HttpServletRequest request, HttpServletResponse response) throws IOException {
         String url = request.getParameter("url");
+        if (SecurityUtil.checkURL(url) == null) {
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            response.getWriter().write("url forbidden");
+            return;
+        }
         response.sendRedirect(url); // 302 redirect
     }
 
@@ -65,6 +81,16 @@ public class URLRedirect {
     @ResponseBody
     public static void forward(HttpServletRequest request, HttpServletResponse response) {
         String url = request.getParameter("url");
+        // Validate forward path: must be an internal path, no external schemes or traversal
+        if (url == null || !url.startsWith("/") || url.contains("://") || url.contains("..")) {
+            try {
+                response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                response.getWriter().write("url forbidden");
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+            return;
+        }
         RequestDispatcher rd = request.getRequestDispatcher(url);
         try {
             rd.forward(request, response);

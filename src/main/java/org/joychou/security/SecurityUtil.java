@@ -40,8 +40,15 @@ public class SecurityUtil {
      */
     public static String gethost(String url) {
         try {
+            if (url == null || !isHttp(url)) {
+                return "";
+            }
             URI uri = new URI(url);
-            return uri.getHost().toLowerCase();
+            String host = uri.getHost();
+            if (host == null) {
+                return "";
+            }
+            return host.toLowerCase();
         } catch (URISyntaxException e) {
             return "";
         }
@@ -247,6 +254,20 @@ public class SecurityUtil {
         }
 
         return sb.toString();
+    }
+
+    /**
+     * Sanitize a value before placing it in an HTTP header.
+     * Strips CR and LF characters to prevent CRLF / header injection.
+     *
+     * @param value the raw header value (may be null)
+     * @return sanitized value with CR/LF removed, or null if input is null
+     */
+    public static String sanitizeHeaderValue(String value) {
+        if (value == null) {
+            return null;
+        }
+        return value.replaceAll("[\\r\\n]", "");
     }
 
     public static void main(String[] args) {
