@@ -148,7 +148,8 @@ public class SSRF {
         try {
             SecurityUtil.startSSRFHook();
             String downLoadImgFileName = WebUtils.getNameWithoutExtension(url) + "." + WebUtils.getFileExtension(url);
-            // download
+            // download - sanitize filename to prevent CRLF injection in header
+            downLoadImgFileName = SecurityUtil.sanitizeHeaderValue(downLoadImgFileName);
             response.setHeader("content-disposition", "attachment;fileName=" + downLoadImgFileName);
 
             URL u = new URL(url);

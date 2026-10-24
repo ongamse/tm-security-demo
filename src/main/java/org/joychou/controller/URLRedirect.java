@@ -33,7 +33,8 @@ public class URLRedirect {
         if (SecurityUtil.checkURL(url) == null) {
             return "url forbidden";
         }
-        return "redirect:" + url;
+        String sanitizedUrl = SecurityUtil.sanitizeHeaderValue(url);
+        return "redirect:" + sanitizedUrl;
     }
 
 
@@ -50,8 +51,9 @@ public class URLRedirect {
             response.getWriter().write("url forbidden");
             return;
         }
+        String sanitizedUrl = SecurityUtil.sanitizeHeaderValue(url);
         response.setStatus(HttpServletResponse.SC_MOVED_PERMANENTLY); // 301 redirect
-        response.setHeader("Location", url);
+        response.setHeader("Location", sanitizedUrl);
     }
 
 
