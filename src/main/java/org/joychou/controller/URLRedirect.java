@@ -34,7 +34,7 @@ public class URLRedirect {
         if (safeUrl == null) {
             return "redirect:/";
         }
-        return "redirect:" + safeUrl;
+        return "redirect:" + SecurityUtil.reconstructSafeUrl(safeUrl);
     }
 
 

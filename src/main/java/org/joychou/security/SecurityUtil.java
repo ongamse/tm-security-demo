@@ -325,6 +325,16 @@ public class SecurityUtil {
         return value.replaceAll("[\\r\\n]", "");
     }
 
+    public static String reconstructSafeUrl(String validatedUrl) {
+        try {
+            URI uri = new URI(validatedUrl);
+            URI safe = new URI(uri.getScheme(), null, uri.getHost(), uri.getPort(), uri.getPath(), uri.getQuery(), null);
+            return safe.toString();
+        } catch (URISyntaxException e) {
+            return "/";
+        }
+    }
+
     public static void main(String[] args) {
     }
 
