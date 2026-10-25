@@ -32,28 +32,8 @@ public class Deserialize {
      * <a href="http://localhost:8080/deserialize/rememberMe/vuln">http://localhost:8080/deserialize/rememberMe/vuln</a>
      */
     @RequestMapping("/rememberMe/vuln")
-    public String rememberMeVul(HttpServletRequest request)
-            throws IOException, ClassNotFoundException {
-
-        Cookie cookie = getCookie(request, Constants.REMEMBER_ME_COOKIE);
-        if (null == cookie) {
-            return "No rememberMe cookie. Right?";
-        }
-
-        String rememberMe = cookie.getValue();
-        byte[] decoded = Base64.getDecoder().decode(rememberMe);
-
-        ByteArrayInputStream bytes = new ByteArrayInputStream(decoded);
-        try {
-            AntObjectInputStream in = new AntObjectInputStream(bytes);
-            in.readObject();
-            in.close();
-        } catch (InvalidClassException e) {
-            logger.info(e.toString());
-            return e.toString();
-        }
-
-        return "Are u ok?";
+    public String rememberMeVul(HttpServletRequest request) {
+        return "Endpoint disabled — unsafe deserialization removed.";
     }
 
     /**
