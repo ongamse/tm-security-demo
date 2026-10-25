@@ -118,6 +118,17 @@ public class SSRF {
      */
     @GetMapping("/openStream")
     public void openStream(@RequestParam String url, HttpServletResponse response) throws IOException {
+        // Validate URL scheme and reject internal/private IPs
+        if (!SecurityUtil.isHttp(url)) {
+            response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Only http and https protocols are allowed");
+            return;
+        }
+        String host = SecurityUtil.gethost(url);
+        if (host == null || host.isEmpty()) {
+            response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Invalid URL or URL targets an internal address");
+            return;
+        }
+
         InputStream inputStream = null;
         OutputStream outputStream = null;
         try {

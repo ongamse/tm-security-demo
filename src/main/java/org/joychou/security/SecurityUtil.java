@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
+import java.net.InetAddress;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLDecoder;
@@ -33,17 +34,54 @@ public class SecurityUtil {
 
 
     /**
-     * Get http url host.
+     * Get http url host. Only allows http/https schemes and rejects URLs
+     * that resolve to internal/private IP addresses.
      *
      * @param url url
-     * @return host
+     * @return host, or empty string if the URL is invalid or targets an internal IP
      */
     public static String gethost(String url) {
         try {
+            if (!isHttp(url)) {
+                return "";
+            }
             URI uri = new URI(url);
-            return uri.getHost().toLowerCase();
+            String host = uri.getHost();
+            if (host == null || host.isEmpty()) {
+                return "";
+            }
+            host = host.toLowerCase();
+
+            // Resolve the host to an IP and reject internal/private addresses
+            if (isInternalHost(host)) {
+                logger.error("Rejected internal IP for host: " + host);
+                return "";
+            }
+
+            return host;
         } catch (URISyntaxException e) {
             return "";
+        }
+    }
+
+    /**
+     * Resolve a hostname to its IP address and check whether it falls within
+     * private/reserved ranges (127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12,
+     * 192.168.0.0/16, 169.254.0.0/16, or IPv6 loopback/site-local).
+     *
+     * @param host hostname or IP string
+     * @return true if the host resolves to an internal/reserved address
+     */
+    public static boolean isInternalHost(String host) {
+        try {
+            InetAddress addr = InetAddress.getByName(host);
+            return addr.isLoopbackAddress()
+                    || addr.isSiteLocalAddress()
+                    || addr.isLinkLocalAddress()
+                    || addr.isAnyLocalAddress();
+        } catch (Exception e) {
+            // If DNS resolution fails, treat as internal (fail closed)
+            return true;
         }
     }
 

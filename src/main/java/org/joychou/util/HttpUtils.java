@@ -17,6 +17,8 @@ import org.jsoup.nodes.Document;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.joychou.security.SecurityUtil;
+
 import javax.imageio.ImageIO;
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -35,7 +37,27 @@ public class HttpUtils {
 
     private final static Logger logger = LoggerFactory.getLogger(HttpUtils.class);
 
+    /**
+     * Validate that a URL uses http/https and does not target internal/private IPs.
+     *
+     * @param url the URL to validate
+     * @throws IllegalArgumentException if the URL is null, non-HTTP, or targets an internal IP
+     */
+    private static void validateUrl(String url) {
+        if (url == null) {
+            throw new IllegalArgumentException("URL must not be null");
+        }
+        if (!SecurityUtil.isHttp(url)) {
+            throw new IllegalArgumentException("Only http and https protocols are allowed");
+        }
+        String host = SecurityUtil.gethost(url);
+        if (host == null || host.isEmpty()) {
+            throw new IllegalArgumentException("Invalid URL or URL targets an internal address");
+        }
+    }
+
     public static String commonHttpClient(String url) {
+        validateUrl(url);
 
         HttpClient client = new HttpClient();
         GetMethod method = new GetMethod(url);
@@ -55,6 +77,7 @@ public class HttpUtils {
 
 
     public static String request(String url) {
+        validateUrl(url);
         try {
             return Request.Get(url).execute().returnContent().toString();
         } catch (Exception e) {
@@ -64,6 +87,7 @@ public class HttpUtils {
 
 
     public static String httpClient(String url) {
+        validateUrl(url);
 
         StringBuilder result = new StringBuilder();
 
@@ -90,6 +114,7 @@ public class HttpUtils {
 
 
     public static String URLConnection(String url) {
+        validateUrl(url);
         try {
             URL u = new URL(url);
             URLConnection urlConnection = u.openConnection();
@@ -114,6 +139,7 @@ public class HttpUtils {
      * UserAgent is Java/1.8.0_102.
      */
     public static String HttpURLConnection(String url) {
+        validateUrl(url);
         try {
             URL u = new URL(url);
             URLConnection urlConnection = u.openConnection();
@@ -143,6 +169,7 @@ public class HttpUtils {
      * @param url http request url
      */
     public static String Jsoup(String url) {
+        validateUrl(url);
         try {
             Document doc = Jsoup.connect(url)
 //                    .followRedirects(false)
@@ -162,6 +189,7 @@ public class HttpUtils {
      * UserAgent is <code>okhttp/2.5.0</code>.
      */
     public static String okhttp(String url) throws IOException {
+        validateUrl(url);
         OkHttpClient client = new OkHttpClient();
 //         client.setFollowRedirects(false);
         com.squareup.okhttp.Request ok_http = new com.squareup.okhttp.Request.Builder().url(url).build();
@@ -177,6 +205,7 @@ public class HttpUtils {
      * @param url http request url
      */
     public static void imageIO(String url) {
+        validateUrl(url);
         try {
             URL u = new URL(url);
             ImageIO.read(u); // send request
@@ -194,6 +223,7 @@ public class HttpUtils {
      * @param url http request url
      */
     public static void IOUtils(String url) {
+        validateUrl(url);
         try {
             IOUtils.toByteArray(URI.create(url));
         } catch (IOException e) {
@@ -203,6 +233,7 @@ public class HttpUtils {
 
 
     public static String HttpAsyncClients(String url) {
+        validateUrl(url);
         CloseableHttpAsyncClient httpclient = HttpAsyncClients.createDefault();
         try {
             httpclient.start();
