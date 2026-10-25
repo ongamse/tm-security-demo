@@ -19,13 +19,17 @@ public class AntObjectInputStream extends ObjectInputStream {
         super(inputStream);
     }
 
+    private static final String[] ALLOWED_PREFIXES = {
+            "org.joychou.",
+            "java.lang.",
+            "java.util.",
+            "[B" // byte array
+    };
+
     /**
-     * 只允许反序列化SerialObject class
-     *
-     * 在应用上使用黑白名单校验方案比较局限，因为只有使用自己定义的AntObjectInputStream类，进行反序列化才能进行校验。
-     * 类似fastjson通用类的反序列化就不能校验。
-     * 但是RASP是通过HOOK java/io/ObjectInputStream类的resolveClass方法，全局的检测白名单。
-     *
+     * Allowlist-based deserialization filter.
+     * Only classes whose fully-qualified name starts with an allowed prefix
+     * are permitted; all others are rejected.
      */
     @Override
     protected Class<?> resolveClass(final ObjectStreamClass desc)
@@ -33,20 +37,16 @@ public class AntObjectInputStream extends ObjectInputStream {
     {
         String className = desc.getName();
 
-        // Deserialize class name: org.joychou.security.AntObjectInputStream$MyObject
         logger.info("Deserialize class name: " + className);
 
-        String[] denyClasses = {"java.net.InetAddress",
-                                "org.apache.commons.collections.Transformer",
-                                "org.apache.commons.collections.functors"};
-
-        for (String denyClass : denyClasses) {
-            if (className.startsWith(denyClass)) {
-                throw new InvalidClassException("Unauthorized deserialization attempt", className);
+        for (String allowed : ALLOWED_PREFIXES) {
+            if (className.startsWith(allowed)) {
+                return super.resolveClass(desc);
             }
         }
 
-        return super.resolveClass(desc);
+        throw new InvalidClassException(
+                "Unauthorized deserialization attempt — class not in allowlist", className);
     }
 
     public static void main(String args[]) throws Exception{
