@@ -12,7 +12,6 @@ import javax.servlet.http.HttpServletRequest;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InvalidClassException;
-import java.io.ObjectInputStream;
 import java.util.Base64;
 
 import static org.springframework.web.util.WebUtils.getCookie;
@@ -33,23 +32,8 @@ public class Deserialize {
      * <a href="http://localhost:8080/deserialize/rememberMe/vuln">http://localhost:8080/deserialize/rememberMe/vuln</a>
      */
     @RequestMapping("/rememberMe/vuln")
-    public String rememberMeVul(HttpServletRequest request)
-            throws IOException, ClassNotFoundException {
-
-        Cookie cookie = getCookie(request, Constants.REMEMBER_ME_COOKIE);
-        if (null == cookie) {
-            return "No rememberMe cookie. Right?";
-        }
-
-        String rememberMe = cookie.getValue();
-        byte[] decoded = Base64.getDecoder().decode(rememberMe);
-
-        ByteArrayInputStream bytes = new ByteArrayInputStream(decoded);
-        ObjectInputStream in = new ObjectInputStream(bytes);
-        in.readObject();
-        in.close();
-
-        return "Are u ok?";
+    public String rememberMeVul(HttpServletRequest request) {
+        return "Endpoint disabled — unsafe deserialization removed.";
     }
 
     /**

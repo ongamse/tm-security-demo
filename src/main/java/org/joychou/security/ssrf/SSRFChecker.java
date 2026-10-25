@@ -71,6 +71,10 @@ public class SSRFChecker {
                     return false;  // 内网ip直接return，非内网ip继续判断是否有重定向
                 }
 
+                if (!SecurityUtil.isHttp(finalUrl)) {
+                    logger.error("[-] SSRF check failed. Non-HTTP redirect: " + finalUrl);
+                    return false;
+                }
                 connection = (HttpURLConnection) new URL(finalUrl).openConnection();
                 connection.setInstanceFollowRedirects(false);
                 connection.setUseCaches(false); // 设置为false，手动处理跳转，可以拿到每个跳转的URL
@@ -132,9 +136,24 @@ public class SSRFChecker {
             return true;
         }
 
+        // First check using InetAddress for loopback, site-local, link-local, any-local
+        try {
+            InetAddress addr = InetAddress.getByName(strIP);
+            if (addr.isLoopbackAddress() || addr.isSiteLocalAddress()
+                    || addr.isLinkLocalAddress() || addr.isAnyLocalAddress()) {
+                logger.error("[-] SSRF check failed. Internal IP (InetAddress check): " + strIP);
+                return true;
+            }
+        } catch (Exception e) {
+            logger.error("[-] SSRF check failed. Cannot parse IP: " + strIP);
+            return true;
+        }
+
+        // Also check against configured block subnets (covers custom ranges)
         ArrayList<String> blackSubnets = WebConfig.getSsrfBlockIps();
         for (String subnet : blackSubnets) {
             SubnetUtils utils = new SubnetUtils(subnet);
+            utils.setInclusiveHostCount(true);
             if (utils.getInfo().isInRange(strIP)) {
                 logger.error("[-] SSRF check failed. Internal IP: " + strIP);
                 return true;
@@ -286,15 +305,25 @@ public class SSRFChecker {
 
     /**
      * Get host from URL which the protocol must be http:// or https:// and not be //.
+     * Rejects URLs with user-info (e.g., http://evil@internal/) and empty hosts.
      */
     private static String url2host(String url) {
         try {
             // use URI instead of URL
             URI u = new URI(url);
-            if (SecurityUtil.isHttp(url)) {
-                return u.getHost();
+            if (!SecurityUtil.isHttp(url)) {
+                return "";
             }
-            return "";
+            String host = u.getHost();
+            if (host == null || host.isEmpty()) {
+                return "";
+            }
+            // Reject URLs with embedded credentials (user-info) which can bypass checks
+            if (u.getUserInfo() != null) {
+                logger.error("[-] SSRF check: URL contains user-info, rejecting: " + url);
+                return "";
+            }
+            return host;
         } catch (Exception e) {
             return "";
         }

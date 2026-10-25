@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
+import java.net.InetAddress;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLDecoder;
@@ -18,6 +19,8 @@ import java.util.regex.Pattern;
 public class SecurityUtil {
 
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
+    private static final int MAX_USERNAME_LENGTH = 64;
+    private static final Pattern USERNAME_PATTERN = Pattern.compile("^[a-zA-Z0-9_]+$");
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
 
 
@@ -33,17 +36,54 @@ public class SecurityUtil {
 
 
     /**
-     * Get http url host.
+     * Get http url host. Only allows http/https schemes and rejects URLs
+     * that resolve to internal/private IP addresses.
      *
      * @param url url
-     * @return host
+     * @return host, or empty string if the URL is invalid or targets an internal IP
      */
     public static String gethost(String url) {
         try {
+            if (!isHttp(url)) {
+                return "";
+            }
             URI uri = new URI(url);
-            return uri.getHost().toLowerCase();
+            String host = uri.getHost();
+            if (host == null || host.isEmpty()) {
+                return "";
+            }
+            host = host.toLowerCase();
+
+            // Resolve the host to an IP and reject internal/private addresses
+            if (isInternalHost(host)) {
+                logger.error("Rejected internal IP for host: " + host);
+                return "";
+            }
+
+            return host;
         } catch (URISyntaxException e) {
             return "";
+        }
+    }
+
+    /**
+     * Resolve a hostname to its IP address and check whether it falls within
+     * private/reserved ranges (127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12,
+     * 192.168.0.0/16, 169.254.0.0/16, or IPv6 loopback/site-local).
+     *
+     * @param host hostname or IP string
+     * @return true if the host resolves to an internal/reserved address
+     */
+    public static boolean isInternalHost(String host) {
+        try {
+            InetAddress addr = InetAddress.getByName(host);
+            return addr.isLoopbackAddress()
+                    || addr.isSiteLocalAddress()
+                    || addr.isLinkLocalAddress()
+                    || addr.isAnyLocalAddress();
+        } catch (Exception e) {
+            // If DNS resolution fails, treat as internal (fail closed)
+            return true;
         }
     }
 
@@ -247,6 +287,52 @@ public class SecurityUtil {
         }
 
         return sb.toString();
+    }
+
+    /**
+     * Validate a username parameter: must be non-null, 1-64 characters,
+     * and contain only alphanumeric characters or underscores.
+     *
+     * @param username the username to validate
+     * @return the validated username
+     * @throws IllegalArgumentException if validation fails
+     */
+    public static String validateUsername(String username) {
+        if (username == null || username.isEmpty()) {
+            throw new IllegalArgumentException("Username must not be empty");
+        }
+        if (username.length() > MAX_USERNAME_LENGTH) {
+            throw new IllegalArgumentException("Username exceeds maximum length");
+        }
+        if (!USERNAME_PATTERN.matcher(username).matches()) {
+            throw new IllegalArgumentException("Username contains invalid characters");
+        }
+        return username;
+    }
+
+    /**
+     * Sanitize a value intended for use in an HTTP header by removing
+     * carriage-return (\r) and line-feed (\n) characters to prevent
+     * CRLF / header injection.
+     *
+     * @param value the raw header value (may be null)
+     * @return sanitized value with CR/LF stripped, or null if input is null
+     */
+    public static String sanitizeHeaderValue(String value) {
+        if (value == null) {
+            return null;
+        }
+        return value.replaceAll("[\\r\\n]", "");
+    }
+
+    public static String reconstructSafeUrl(String validatedUrl) {
+        try {
+            URI uri = new URI(validatedUrl);
+            URI safe = new URI(uri.getScheme(), null, uri.getHost(), uri.getPort(), uri.getPath(), uri.getQuery(), null);
+            return safe.toString();
+        } catch (URISyntaxException e) {
+            return "/";
+        }
     }
 
     public static void main(String[] args) {
