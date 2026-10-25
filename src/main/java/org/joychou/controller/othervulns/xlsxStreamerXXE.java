@@ -35,11 +35,6 @@ public class xlsxStreamerXXE {
     @PostMapping("/readxlsx")
     public void xllx_streamer_xxe(MultipartFile file) throws IOException {
         Workbook workbook = StreamingReader.builder().open(file.getInputStream());
-        try {
-            // Process workbook safely; xlsx-streamer >= 2.1.0 disables XXE by default
-        } finally {
-            workbook.close();
-        }
     }
 
 
