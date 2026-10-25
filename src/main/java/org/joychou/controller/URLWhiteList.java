@@ -101,26 +101,14 @@ public class URLWhiteList {
 
         logger.info("url:  " + url);
 
-        if (!SecurityUtil.isHttp(url)) {
+        String safeUrl = SecurityUtil.checkURL(url);
+        if (safeUrl == null) {
+            logger.info("URL rejected by whitelist check");
+            res.setStatus(HttpServletResponse.SC_FORBIDDEN);
             return;
         }
 
-        // Use SecurityUtil.gethost which uses URI (not URL) and validates against internal IPs
-        String host = SecurityUtil.gethost(url);
-        if (host == null || host.isEmpty()) {
-            logger.info("Invalid or internal URL rejected");
-            return;
-        }
-        logger.info("host:  " + host);
-
-        // Strict domain matching: exact match or subdomain match with dot prefix
-        for (String domain : domainwhitelist) {
-            if (host.equals(domain) || host.endsWith("." + domain)) {
-                res.sendRedirect(url);
-                return;
-            }
-        }
-
+        res.sendRedirect(safeUrl);
     }
 
 
