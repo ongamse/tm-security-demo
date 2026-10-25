@@ -19,6 +19,8 @@ import java.util.regex.Pattern;
 public class SecurityUtil {
 
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
+    private static final int MAX_USERNAME_LENGTH = 64;
+    private static final Pattern USERNAME_PATTERN = Pattern.compile("^[a-zA-Z0-9_]+$");
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
 
 
@@ -285,6 +287,27 @@ public class SecurityUtil {
         }
 
         return sb.toString();
+    }
+
+    /**
+     * Validate a username parameter: must be non-null, 1-64 characters,
+     * and contain only alphanumeric characters or underscores.
+     *
+     * @param username the username to validate
+     * @return the validated username
+     * @throws IllegalArgumentException if validation fails
+     */
+    public static String validateUsername(String username) {
+        if (username == null || username.isEmpty()) {
+            throw new IllegalArgumentException("Username must not be empty");
+        }
+        if (username.length() > MAX_USERNAME_LENGTH) {
+            throw new IllegalArgumentException("Username exceeds maximum length");
+        }
+        if (!USERNAME_PATTERN.matcher(username).matches()) {
+            throw new IllegalArgumentException("Username contains invalid characters");
+        }
+        return username;
     }
 
     public static void main(String[] args) {
