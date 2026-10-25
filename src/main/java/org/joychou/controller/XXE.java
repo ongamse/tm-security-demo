@@ -20,6 +20,7 @@ import org.xml.sax.XMLReader;
 import java.io.*;
 
 import org.xml.sax.InputSource;
+import org.springframework.web.util.HtmlUtils;
 
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
@@ -270,11 +271,11 @@ public class XXE {
                     buf.append(String.format("%s: %s\n", node.getNodeName(), node.getTextContent()));
                 }
             }
-            return buf.toString();
+            return HtmlUtils.htmlEscape(buf.toString());
         } catch (Exception e) {
             e.printStackTrace();
             logger.error(e.toString());
-            return e.toString();
+            return HtmlUtils.htmlEscape(e.toString());
         }
     }
 
