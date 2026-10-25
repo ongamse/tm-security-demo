@@ -9,23 +9,37 @@ import org.springframework.web.bind.annotation.RestController;
 import org.apache.velocity.app.Velocity;
 
 import java.io.StringWriter;
+import java.util.HashMap;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/ssti")
 public class SSTI {
 
+    private static final Map<String, String> ALLOWED_TEMPLATES = new HashMap<>();
+
+    static {
+        ALLOWED_TEMPLATES.put("contact", "Author: $author, Address: $address, Phone: $phone");
+        ALLOWED_TEMPLATES.put("author", "Author: $author");
+        ALLOWED_TEMPLATES.put("address", "Address: $address");
+        ALLOWED_TEMPLATES.put("phone", "Phone: $phone");
+    }
+
     /**
-     * SSTI of Java velocity. The latest Velocity version still has this problem.
-     * Fix method: Avoid to use Velocity.evaluate method.
-     * <p>
-     * http://localhost:8080/ssti/velocity?template=%23set($e=%22e%22);$e.getClass().forName(%22java.lang.Runtime%22).getMethod(%22getRuntime%22,null).invoke(null,null).exec(%22open%20-a%20Calculator%22)
-     * Open a calculator in MacOS.
+     * Velocity template rendering using an allowlist of predefined template names.
+     * User input selects a template by name; raw user content is never evaluated.
      *
-     * @param template exp
+     * @param template the name of a predefined template to render
      */
     @GetMapping("/velocity")
-    public void velocity(String template) {
+    public String velocity(String template) {
         Velocity.init();
+
+        if (template == null || !ALLOWED_TEMPLATES.containsKey(template)) {
+            return "Invalid template name. Allowed values: " + ALLOWED_TEMPLATES.keySet();
+        }
+
+        String templateContent = ALLOWED_TEMPLATES.get(template);
 
         VelocityContext context = new VelocityContext();
 
@@ -34,6 +48,7 @@ public class SSTI {
         context.put("phone", "555-1337");
 
         StringWriter swOut = new StringWriter();
-        Velocity.evaluate(context, swOut, "test", template);
+        Velocity.evaluate(context, swOut, "test", templateContent);
+        return swOut.toString();
     }
 }
