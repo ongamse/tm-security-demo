@@ -310,6 +310,21 @@ public class SecurityUtil {
         return username;
     }
 
+    /**
+     * Sanitize a value intended for use in an HTTP header by removing
+     * carriage-return (\r) and line-feed (\n) characters to prevent
+     * CRLF / header injection.
+     *
+     * @param value the raw header value (may be null)
+     * @return sanitized value with CR/LF stripped, or null if input is null
+     */
+    public static String sanitizeHeaderValue(String value) {
+        if (value == null) {
+            return null;
+        }
+        return value.replaceAll("[\\r\\n]", "");
+    }
+
     public static void main(String[] args) {
     }
 

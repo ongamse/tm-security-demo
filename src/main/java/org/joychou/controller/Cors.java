@@ -22,11 +22,20 @@ public class Cors {
 
     private static String info = "{\"name\": \"JoyChou\", \"phone\": \"18200001111\"}";
 
+    private static final java.util.Set<String> ALLOWED_ORIGINS = java.util.Collections.unmodifiableSet(
+            new java.util.HashSet<>(java.util.Arrays.asList(
+                    "http://joychou.org", "https://joychou.org",
+                    "http://test.joychou.me", "https://test.joychou.me"
+            ))
+    );
+
     @GetMapping("/vuln/origin")
     public String vuls1(HttpServletRequest request, HttpServletResponse response) {
         String origin = request.getHeader("origin");
-        response.setHeader("Access-Control-Allow-Origin", origin); // set origin from header
-        response.setHeader("Access-Control-Allow-Credentials", "true");  // allow cookie
+        if (origin != null && ALLOWED_ORIGINS.contains(SecurityUtil.sanitizeHeaderValue(origin))) {
+            response.setHeader("Access-Control-Allow-Origin", SecurityUtil.sanitizeHeaderValue(origin));
+            response.setHeader("Access-Control-Allow-Credentials", "true");
+        }
         return info;
     }
 
@@ -110,7 +119,7 @@ public class Cors {
         if (origin != null && SecurityUtil.checkURL(origin) == null) {
             return "Origin is not safe.";
         }
-        response.setHeader("Access-Control-Allow-Origin", origin);
+        response.setHeader("Access-Control-Allow-Origin", SecurityUtil.sanitizeHeaderValue(origin));
         response.setHeader("Access-Control-Allow-Credentials", "true");
         return LoginUtils.getUserInfo2JsonStr(request);
     }
