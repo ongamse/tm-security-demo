@@ -20,6 +20,7 @@ import java.io.InputStreamReader;
 import java.sql.DriverManager;
 import java.util.Arrays;
 import java.util.List;
+import org.springframework.web.util.HtmlUtils;
 
 
 /**
@@ -61,9 +62,9 @@ public class Rce {
             inBr.close();
             in.close();
         } catch (Exception e) {
-            return e.toString();
+            return HtmlUtils.htmlEscape(e.toString());
         }
-        return sb.toString();
+        return HtmlUtils.htmlEscape(sb.toString());
     }
 
 
@@ -90,10 +91,10 @@ public class Rce {
                 sb.append(tmpStr);
             }
         } catch (Exception e) {
-            return e.toString();
+            return HtmlUtils.htmlEscape(e.toString());
         }
 
-        return sb.toString();
+        return HtmlUtils.htmlEscape(sb.toString());
     }
 
 

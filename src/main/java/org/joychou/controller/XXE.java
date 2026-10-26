@@ -19,6 +19,7 @@ import org.xml.sax.XMLReader;
 
 import java.io.*;
 
+import org.springframework.web.util.HtmlUtils;
 import org.xml.sax.InputSource;
 
 import javax.xml.parsers.DocumentBuilder;
@@ -234,10 +235,10 @@ public class XXE {
             digester.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             digester.parse(new StringReader(body));  // parse xml
 
-            return "Digester xxe security code";
+            return HtmlUtils.htmlEscape("Digester xxe security code");
         } catch (Exception e) {
             logger.error(e.toString());
-            return EXCEPT;
+            return HtmlUtils.htmlEscape(EXCEPT);
         }
     }
 

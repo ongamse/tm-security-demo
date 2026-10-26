@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.ResponseBody;
 
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletResponse;
+import org.springframework.web.util.HtmlUtils;
 
 
 /**
@@ -27,7 +28,7 @@ public class XSS {
     @RequestMapping("/reflect")
     @ResponseBody
     public static String reflect(String xss) {
-        return xss;
+        return HtmlUtils.htmlEscape(xss);
     }
 
     /**
@@ -55,7 +56,7 @@ public class XSS {
     @RequestMapping("/stored/show")
     @ResponseBody
     public String show(@CookieValue("xss") String xss) {
-        return xss;
+        return HtmlUtils.htmlEscape(xss);
     }
 
     /**
