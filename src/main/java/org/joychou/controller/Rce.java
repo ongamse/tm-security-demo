@@ -16,6 +16,8 @@ import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.sql.DriverManager;
+import java.util.Arrays;
+import java.util.List;
 
 
 /**
@@ -28,13 +30,19 @@ import java.sql.DriverManager;
 @RequestMapping("/rce")
 public class Rce {
 
+    private static final List<String> ALLOWED_COMMANDS = Arrays.asList("ls", "whoami", "date", "uname", "id", "cat", "echo");
+
     @GetMapping("/runtime/exec")
     public String CommandExec(String cmd) {
-        Runtime run = Runtime.getRuntime();
         StringBuilder sb = new StringBuilder();
 
         try {
-            Process p = run.exec(cmd);
+            String[] parts = cmd.split("\\s+");
+            if (parts.length == 0 || !ALLOWED_COMMANDS.contains(parts[0])) {
+                return "Command not allowed.";
+            }
+            ProcessBuilder processBuilder = new ProcessBuilder(parts);
+            Process p = processBuilder.start();
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
             String tmpStr;
@@ -66,8 +74,11 @@ public class Rce {
         StringBuilder sb = new StringBuilder();
 
         try {
-            String[] arrCmd = {"/bin/sh", "-c", cmd};
-            ProcessBuilder processBuilder = new ProcessBuilder(arrCmd);
+            String[] parts = cmd.split("\\s+");
+            if (parts.length == 0 || !ALLOWED_COMMANDS.contains(parts[0])) {
+                return "Command not allowed.";
+            }
+            ProcessBuilder processBuilder = new ProcessBuilder(parts);
             Process p = processBuilder.start();
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
@@ -92,11 +103,32 @@ public class Rce {
      *
      * @param jsurl js url
      */
+    private static final List<String> ALLOWED_JS_HOSTS = Arrays.asList("cdn.example.com", "static.example.com");
+
     @GetMapping("/jscmd")
     public void jsEngine(String jsurl) throws Exception{
+        // Validate jsurl against allowlist to prevent arbitrary script loading / RCE
+        java.net.URI uri;
+        try {
+            uri = new java.net.URI(jsurl);
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Invalid URL");
+        }
+        String host = uri.getHost();
+        if (host == null || !ALLOWED_JS_HOSTS.contains(host.toLowerCase())) {
+            throw new IllegalArgumentException("JS URL host not allowed: " + host);
+        }
+        if (!"https".equals(uri.getScheme())) {
+            throw new IllegalArgumentException("Only HTTPS JS URLs are allowed");
+        }
         // js nashorn javascript ecmascript
         ScriptEngine engine = new ScriptEngineManager().getEngineByName("js");
         Bindings bindings = engine.getBindings(ScriptContext.ENGINE_SCOPE);
+        // Remove Java class access from the script engine to prevent RCE
+        bindings.remove("java");
+        bindings.remove("javax");
+        bindings.remove("Java");
+        bindings.remove("Packages");
         String cmd = String.format("load(\"%s\")", jsurl);
         engine.eval(cmd, bindings);
     }
@@ -110,7 +142,7 @@ public class Rce {
      */
     @GetMapping("/vuln/yarm")
     public void yarm(String content) {
-        Yaml y = new Yaml();
+        Yaml y = new Yaml(new SafeConstructor());
         y.load(content);
     }
 

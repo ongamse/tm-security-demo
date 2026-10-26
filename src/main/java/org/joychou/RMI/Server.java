@@ -17,6 +17,8 @@ public class Server implements Hello {
         try {
             Server obj = new Server();
             Hello stub = (Hello) UnicastRemoteObject.exportObject(obj, 0);
+            // Restrict RMI registry deserialization to prevent arbitrary class instantiation
+            System.setProperty("sun.rmi.registry.registryFilter", "java.**;javax.**;org.joychou.**;!*");
             LocateRegistry.createRegistry(1099);
             Registry registry = LocateRegistry.getRegistry();
             registry.bind("Hello", stub);

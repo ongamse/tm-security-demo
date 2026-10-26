@@ -24,7 +24,7 @@ public class CommandInject {
     @GetMapping("/codeinject")
     public String codeInject(String filepath) throws IOException {
 
-        String[] cmdList = new String[]{"sh", "-c", "ls -la " + filepath};
+        String[] cmdList = new String[]{"ls", "-la", filepath};
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);
         Process process = builder.start();
@@ -41,7 +41,11 @@ public class CommandInject {
 
         String host = request.getHeader("host");
         logger.info(host);
-        String[] cmdList = new String[]{"sh", "-c", "curl " + host};
+        // Validate host against allowlist pattern (hostname:optional-port only)
+        if (host == null || !host.matches("^[a-zA-Z0-9._-]+(:[0-9]{1,5})?$")) {
+            return "Invalid host header.";
+        }
+        String[] cmdList = new String[]{"curl", host};
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);
         Process process = builder.start();
@@ -54,7 +58,7 @@ public class CommandInject {
         if (null == filterFilePath) {
             return "Bad boy. I got u.";
         }
-        String[] cmdList = new String[]{"sh", "-c", "ls -la " + filterFilePath};
+        String[] cmdList = new String[]{"ls", "-la", filterFilePath};
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);
         Process process = builder.start();
