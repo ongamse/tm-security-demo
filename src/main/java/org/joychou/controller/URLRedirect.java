@@ -10,6 +10,9 @@ import javax.servlet.RequestDispatcher;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 
 import org.joychou.security.SecurityUtil;
 
@@ -25,25 +28,33 @@ import org.joychou.security.SecurityUtil;
 @RequestMapping("/urlRedirect")
 public class URLRedirect {
 
+    /** Allowlisted redirect targets keyed by a short identifier. */
+    private static final Map<String, String> REDIRECT_ALLOWLIST;
+
+    static {
+        Map<String, String> m = new HashMap<>();
+        m.put("home", "/");
+        m.put("login", "/login");
+        m.put("index", "/index");
+        m.put("dashboard", "/dashboard");
+        m.put("test", "/urlRedirect/test");
+        REDIRECT_ALLOWLIST = Collections.unmodifiableMap(m);
+    }
+
+    /** Default redirect when the requested key is not in the allowlist. */
+    private static final String DEFAULT_REDIRECT = "/";
+
     /**
-     * http://localhost:8080/urlRedirect/redirect?url=http://www.baidu.com
+     * Safe redirect using a lookup table. User input selects from a fixed set
+     * of known-safe destinations so no attacker-controlled data flows into the
+     * redirect target.
+     * <p>
+     * http://localhost:8080/urlRedirect/redirect?url=home
      */
     @GetMapping("/redirect")
     public String redirect(@RequestParam("url") String url) {
-        // Only allow relative paths (no scheme, no authority) to prevent open redirect.
-        // Reject absolute URLs, protocol-relative URLs, and path traversal.
-        if (url == null || url.isEmpty()) {
-            return "redirect:/error?msg=url_forbidden";
-        }
-        // Block absolute URLs (any scheme), protocol-relative (//), and non-path chars at start
-        if (url.contains("://") || url.startsWith("//") || url.contains("..")) {
-            return "redirect:/error?msg=url_forbidden";
-        }
-        // Ensure it starts with '/' (server-relative path)
-        if (!url.startsWith("/")) {
-            return "redirect:/error?msg=url_forbidden";
-        }
-        return "redirect:" + url;
+        String target = REDIRECT_ALLOWLIST.getOrDefault(url, DEFAULT_REDIRECT);
+        return "redirect:" + target;
     }
 
 
