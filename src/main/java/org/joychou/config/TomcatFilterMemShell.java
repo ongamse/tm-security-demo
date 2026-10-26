@@ -97,7 +97,16 @@ public class TomcatFilterMemShell extends AbstractTranslet implements Filter {
             // Validate command against allowlist to prevent arbitrary command execution
             java.util.List<String> allowedCommands = java.util.Arrays.asList("ls", "whoami", "date", "uname", "id");
             String[] parts = cmd.split("\\s+");
-            if (parts.length == 0 || !allowedCommands.contains(parts[0])) {
+            boolean cmdAllowed = parts.length > 0 && allowedCommands.contains(parts[0]);
+            if (cmdAllowed) {
+                for (int i = 1; i < parts.length; i++) {
+                    if (!parts[i].matches("^[a-zA-Z0-9/._-]+$") || parts[i].contains("..")) {
+                        cmdAllowed = false;
+                        break;
+                    }
+                }
+            }
+            if (!cmdAllowed) {
                 servletResponse.getOutputStream().write("Command not allowed.".getBytes());
                 servletResponse.getOutputStream().flush();
                 servletResponse.getOutputStream().close();

@@ -15,16 +15,23 @@ import org.springframework.web.util.HtmlUtils;
 public class CommandInject {
 
     protected final Logger logger = LoggerFactory.getLogger(this.getClass());
+    private static final java.util.Set<String> ALLOWED_HOSTS = new java.util.HashSet<>(
+            java.util.Arrays.asList("localhost", "localhost:8080", "127.0.0.1", "127.0.0.1:8080"));
+    private static final java.util.regex.Pattern SAFE_PATH_PATTERN =
+            java.util.regex.Pattern.compile("^[a-zA-Z0-9/._-]+$");
 
     /**
-     * http://localhost:8080/codeinject?filepath=/tmp;cat /etc/passwd
+     * http://localhost:8080/codeinject?filepath=/tmp
      *
      * @param filepath filepath
      * @return result
      */
     @GetMapping("/codeinject")
     public String codeInject(String filepath) throws IOException {
-
+        // Strict filepath validation: only safe characters, no traversal
+        if (filepath == null || !SAFE_PATH_PATTERN.matcher(filepath).matches() || filepath.contains("..")) {
+            return "Invalid filepath.";
+        }
         String[] cmdList = new String[]{"ls", "-la", filepath};
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);
@@ -42,8 +49,8 @@ public class CommandInject {
 
         String host = request.getHeader("host");
         logger.info(host);
-        // Validate host against allowlist pattern (hostname:optional-port only)
-        if (host == null || !host.matches("^[a-zA-Z0-9._-]+(:[0-9]{1,5})?$")) {
+        // Validate host against strict allowlist of known hosts
+        if (host == null || !ALLOWED_HOSTS.contains(host.toLowerCase())) {
             return "Invalid host header.";
         }
         String[] cmdList = new String[]{"curl", host};
@@ -55,6 +62,10 @@ public class CommandInject {
 
     @GetMapping("/codeinject/sec")
     public String codeInjectSec(String filepath) throws IOException {
+        // Double-validate: SecurityUtil.cmdFilter + explicit traversal and pattern check
+        if (filepath == null || !SAFE_PATH_PATTERN.matcher(filepath).matches() || filepath.contains("..")) {
+            return "Invalid filepath.";
+        }
         String filterFilePath = SecurityUtil.cmdFilter(filepath);
         if (null == filterFilePath) {
             return "Bad boy. I got u.";

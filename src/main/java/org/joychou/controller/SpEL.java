@@ -51,10 +51,8 @@ public class SpEL {
     }
 
     public static void main(String[] args) {
-        ExpressionParser parser = new SpelExpressionParser();
-        String expression = "T(java.lang.Runtime).getRuntime().exec(\"open -a Calculator\")";
-        String result = parser.parseExpression(expression).getValue().toString();
-        System.out.println(result);
+        // Removed: Runtime.exec() invocation via SpEL expression
+        System.out.println("SpEL demo class loaded.");
     }
 }
 

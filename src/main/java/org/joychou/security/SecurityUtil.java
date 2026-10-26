@@ -220,10 +220,13 @@ public class SecurityUtil {
 
 
     public static String cmdFilter(String input) {
-        if (!FILTER_PATTERN.matcher(input).matches()) {
+        if (input == null || !FILTER_PATTERN.matcher(input).matches()) {
             return null;
         }
-
+        // Reject path traversal sequences
+        if (input.contains("..")) {
+            return null;
+        }
         return input;
     }
 

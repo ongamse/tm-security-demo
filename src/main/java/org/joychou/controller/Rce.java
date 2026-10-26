@@ -33,7 +33,22 @@ import org.springframework.web.util.HtmlUtils;
 @RequestMapping("/rce")
 public class Rce {
 
-    private static final List<String> ALLOWED_COMMANDS = Arrays.asList("ls", "whoami", "date", "uname", "id", "cat", "echo");
+    private static final java.util.Set<String> ALLOWED_COMMANDS = new java.util.HashSet<>(
+            Arrays.asList("ls", "whoami", "date", "uname", "id"));
+    private static final java.util.regex.Pattern SAFE_ARG_PATTERN =
+            java.util.regex.Pattern.compile("^[a-zA-Z0-9/._-]+$");
+
+    private static boolean isAllowedCommand(String[] parts) {
+        if (parts == null || parts.length == 0 || !ALLOWED_COMMANDS.contains(parts[0])) {
+            return false;
+        }
+        for (int i = 1; i < parts.length; i++) {
+            if (!SAFE_ARG_PATTERN.matcher(parts[i]).matches() || parts[i].contains("..")) {
+                return false;
+            }
+        }
+        return true;
+    }
 
     @GetMapping("/runtime/exec")
     public String CommandExec(String cmd) {
@@ -41,7 +56,7 @@ public class Rce {
 
         try {
             String[] parts = cmd.split("\\s+");
-            if (parts.length == 0 || !ALLOWED_COMMANDS.contains(parts[0])) {
+            if (!isAllowedCommand(parts)) {
                 return "Command not allowed.";
             }
             ProcessBuilder processBuilder = new ProcessBuilder(parts);
@@ -78,7 +93,7 @@ public class Rce {
 
         try {
             String[] parts = cmd.split("\\s+");
-            if (parts.length == 0 || !ALLOWED_COMMANDS.contains(parts[0])) {
+            if (!isAllowedCommand(parts)) {
                 return "Command not allowed.";
             }
             ProcessBuilder processBuilder = new ProcessBuilder(parts);
@@ -127,13 +142,38 @@ public class Rce {
         // js nashorn javascript ecmascript
         ScriptEngine engine = new ScriptEngineManager().getEngineByName("js");
         Bindings bindings = engine.getBindings(ScriptContext.ENGINE_SCOPE);
-        // Remove Java class access from the script engine to prevent RCE
+        // Remove all Java/Nashorn bridging objects to prevent Java class access / RCE
         bindings.remove("java");
         bindings.remove("javax");
         bindings.remove("Java");
         bindings.remove("Packages");
-        String cmd = String.format("load(\"%s\")", jsurl);
-        engine.eval(cmd, bindings);
+        bindings.remove("com");
+        bindings.remove("org");
+        bindings.remove("edu");
+        bindings.remove("javafx");
+        // Disable Java.type, java.lang, load, loadWithNewGlobal to block eval/class access
+        engine.eval("var Java = undefined; var Packages = undefined; var load = undefined; var loadWithNewGlobal = undefined;", bindings);
+        // Fetch script content via validated URL and eval as string (no load() which can bypass binding removal)
+        java.net.HttpURLConnection conn = (java.net.HttpURLConnection) uri.toURL().openConnection();
+        conn.setRequestMethod("GET");
+        conn.setConnectTimeout(5000);
+        conn.setReadTimeout(5000);
+        conn.setInstanceFollowRedirects(false);
+        int status = conn.getResponseCode();
+        if (status != 200) {
+            throw new IllegalArgumentException("Failed to fetch JS URL: HTTP " + status);
+        }
+        String scriptContent;
+        try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                new java.io.InputStreamReader(conn.getInputStream(), java.nio.charset.StandardCharsets.UTF_8))) {
+            StringBuilder sbScript = new StringBuilder();
+            String ln;
+            while ((ln = reader.readLine()) != null) {
+                sbScript.append(ln).append('\n');
+            }
+            scriptContent = sbScript.toString();
+        }
+        engine.eval(scriptContent, bindings);
     }
 
 
@@ -161,6 +201,29 @@ public class Rce {
      */
     @GetMapping("groovy")
     public void groovyshell(String content) {
+        // Only allow safe mathematical/string expressions via strict allowlist
+        if (content == null || content.isEmpty()) {
+            return;
+        }
+        // Strict allowlist: only allow simple arithmetic and string expressions
+        // Reject any content containing method calls, class references, or dangerous patterns
+        if (!content.matches("^[a-zA-Z0-9\\s+\\-*/%().,'\"]+$")) {
+            throw new IllegalArgumentException("Expression rejected: only simple arithmetic and string literals are allowed.");
+        }
+        // Additional blocklist for dangerous Groovy/Java patterns
+        String lowerContent = content.toLowerCase();
+        if (lowerContent.contains("runtime") || lowerContent.contains("process") ||
+            lowerContent.contains("execute") || lowerContent.contains("exec") ||
+            lowerContent.contains("class") || lowerContent.contains("system") ||
+            lowerContent.contains("thread") || lowerContent.contains("file") ||
+            lowerContent.contains("socket") || lowerContent.contains("url") ||
+            lowerContent.contains("groovy") || lowerContent.contains("import") ||
+            lowerContent.contains("forname") || lowerContent.contains("invoke") ||
+            lowerContent.contains("reflect") || lowerContent.contains("shell") ||
+            lowerContent.contains("eval") || lowerContent.contains("sleep") ||
+            lowerContent.contains("getclass")) {
+            throw new IllegalArgumentException("Expression rejected: potentially dangerous pattern detected.");
+        }
         SecureASTCustomizer secureAst = new SecureASTCustomizer();
         // Deny all method calls, system exits, package access, and imports to prevent RCE
         secureAst.setMethodDefinitionAllowed(false);
@@ -186,8 +249,9 @@ public class Rce {
 
 
 
-    public static void main(String[] args) throws Exception{
-        Runtime.getRuntime().exec("touch /tmp/x");
+    public static void main(String[] args) {
+        // Removed: Runtime.exec() demo invocation
+        System.out.println("Rce demo class loaded.");
     }
 }
 
