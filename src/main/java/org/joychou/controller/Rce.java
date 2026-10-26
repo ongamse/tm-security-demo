@@ -2,6 +2,8 @@ package org.joychou.controller;
 
 import groovy.lang.GroovyShell;
 import lombok.extern.slf4j.Slf4j;
+import org.codehaus.groovy.control.CompilerConfiguration;
+import org.codehaus.groovy.control.customizers.SecureASTCustomizer;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -158,7 +160,26 @@ public class Rce {
      */
     @GetMapping("groovy")
     public void groovyshell(String content) {
-        GroovyShell groovyShell = new GroovyShell();
+        SecureASTCustomizer secureAst = new SecureASTCustomizer();
+        // Deny all method calls, system exits, package access, and imports to prevent RCE
+        secureAst.setMethodDefinitionAllowed(false);
+        secureAst.setClosuresAllowed(false);
+        secureAst.setPackageAllowed(false);
+        secureAst.setIndirectImportCheckEnabled(true);
+        secureAst.setImportsWhitelist(Arrays.asList("java.lang.Math", "java.lang.Integer", "java.lang.Double", "java.lang.String"));
+        secureAst.setStarImportsWhitelist(java.util.Collections.emptyList());
+        secureAst.setStaticImportsWhitelist(java.util.Collections.emptyList());
+        secureAst.setStaticStarImportsWhitelist(java.util.Collections.emptyList());
+        // Block dangerous receivers: Runtime, ProcessBuilder, System, Class, ClassLoader, Thread
+        secureAst.setReceiversBlackList(Arrays.asList(
+                "java.lang.Runtime", "java.lang.ProcessBuilder", "java.lang.System",
+                "java.lang.Class", "java.lang.ClassLoader", "java.lang.Thread",
+                "groovy.lang.GroovyShell", "groovy.lang.GroovyClassLoader",
+                "java.io.File", "java.net.URL", "java.net.Socket"));
+
+        CompilerConfiguration config = new CompilerConfiguration();
+        config.addCompilationCustomizers(secureAst);
+        GroovyShell groovyShell = new GroovyShell(config);
         groovyShell.evaluate(content);
     }
 
