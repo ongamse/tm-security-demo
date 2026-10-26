@@ -1,6 +1,7 @@
 package org.joychou.controller;
 
 import lombok.extern.slf4j.Slf4j;
+import org.joychou.security.SecurityUtil;
 import org.joychou.security.ssrf.SSRFChecker;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -86,11 +87,11 @@ public class Jdbc {
     public ResponseEntity<String> postgresql(String jdbcUrlBase64) throws Exception {
         byte[] b = java.util.Base64.getDecoder().decode(jdbcUrlBase64);
         String jdbcUrl = new String(b);
-        log.info(jdbcUrl);
+        log.info(SecurityUtil.sanitizeLogOutput(jdbcUrl));
         try {
             validateJdbcUrl(jdbcUrl);
         } catch (SecurityException e) {
-            log.error("JDBC SSRF rejected: " + e.getMessage());
+            log.error("JDBC SSRF rejected: " + SecurityUtil.sanitizeLogOutput(e.getMessage()));
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(e.getMessage());
         }
         DriverManager.getConnection(jdbcUrl);
@@ -102,11 +103,11 @@ public class Jdbc {
         Class.forName("com.ibm.db2.jcc.DB2Driver");
         byte[] b = java.util.Base64.getDecoder().decode(jdbcUrlBase64);
         String jdbcUrl = new String(b);
-        log.info(jdbcUrl);
+        log.info(SecurityUtil.sanitizeLogOutput(jdbcUrl));
         try {
             validateJdbcUrl(jdbcUrl);
         } catch (SecurityException e) {
-            log.error("JDBC SSRF rejected: " + e.getMessage());
+            log.error("JDBC SSRF rejected: " + SecurityUtil.sanitizeLogOutput(e.getMessage()));
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(e.getMessage());
         }
         DriverManager.getConnection(jdbcUrl);

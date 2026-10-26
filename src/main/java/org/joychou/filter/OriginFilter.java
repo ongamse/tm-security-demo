@@ -7,6 +7,7 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import org.joychou.security.SecurityUtil;
+import static org.joychou.security.SecurityUtil.sanitizeLogOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,14 +35,14 @@ public class OriginFilter implements Filter {
         HttpServletResponse response = (HttpServletResponse) res;
 
         String origin = request.getHeader("Origin");
-        logger.info("[+] Origin: " + origin + "\tCurrent url:" + request.getRequestURL());
+        logger.info("[+] Origin: " + sanitizeLogOutput(origin) + " Current url:" + sanitizeLogOutput(request.getRequestURL().toString()));
 
         // Only set CORS headers when origin is present and passes the domain allowlist
         if (origin != null) {
             String validatedOrigin = SecurityUtil.checkURL(origin);
             if (validatedOrigin == null) {
-                logger.error("[-] Origin check error. " + "Origin: " + origin +
-                        "\tCurrent url:" + request.getRequestURL());
+                logger.error("[-] Origin check error. " + "Origin: " + sanitizeLogOutput(origin) +
+                        " Current url:" + sanitizeLogOutput(request.getRequestURL().toString()));
                 response.setStatus(HttpServletResponse.SC_FORBIDDEN);
                 response.getWriter().println("Invalid cors config by joychou.");
                 return;

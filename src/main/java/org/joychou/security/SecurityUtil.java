@@ -109,7 +109,7 @@ public class SecurityUtil {
 
             // Resolve DNS and reject internal/private IPs to prevent SSRF via DNS rebinding
             if (SSRFChecker.isInternalIpByUrl(url)) {
-                logger.error("[-] SSRF: whitelisted domain resolves to internal IP: " + host);
+                logger.error("[-] SSRF: whitelisted domain resolves to internal IP: " + sanitizeLogOutput(host));
                 return null;
             }
 
@@ -203,7 +203,7 @@ public class SecurityUtil {
             try {
                 temp = URLDecoder.decode(temp, "utf-8");
             } catch (UnsupportedEncodingException e) {
-                logger.info("Unsupported encoding exception: " + filepath);
+                logger.info("Unsupported encoding exception: " + sanitizeLogOutput(filepath));
                 return null;
             } catch (Exception e) {
                 logger.info(e.toString());
@@ -306,6 +306,21 @@ public class SecurityUtil {
             return "";
         }
         return value.replaceAll("[\\r\\n\\0]", "");
+    }
+
+    /**
+     * Sanitize a value before writing it to a log to prevent log forging/injection (CWE-117).
+     * Strips carriage-return (\r), line-feed (\n), and tab (\t) characters so that
+     * an attacker cannot inject fake log entries via user-controlled data.
+     *
+     * @param value the raw value (may be null)
+     * @return sanitized value safe for logging, or "null" if input is null
+     */
+    public static String sanitizeLogOutput(String value) {
+        if (value == null) {
+            return "null";
+        }
+        return value.replaceAll("[\\r\\n\\t]", "");
     }
 
     public static void main(String[] args) {

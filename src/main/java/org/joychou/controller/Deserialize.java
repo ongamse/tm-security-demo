@@ -2,6 +2,7 @@ package org.joychou.controller;
 
 import org.joychou.config.Constants;
 import org.joychou.security.AntObjectInputStream;
+import static org.joychou.security.SecurityUtil.sanitizeLogOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -51,7 +52,7 @@ public class Deserialize {
             in.readObject();
             in.close();
         } catch (InvalidClassException e) {
-            logger.info(e.toString());
+            logger.info(sanitizeLogOutput(e.toString()));
             return e.toString();
         }
 
@@ -82,7 +83,7 @@ public class Deserialize {
             in.readObject();
             in.close();
         } catch (InvalidClassException e) {
-            logger.info(e.toString());
+            logger.info(sanitizeLogOutput(e.toString()));
             return e.toString();
         }
 

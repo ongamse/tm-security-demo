@@ -10,6 +10,7 @@ import org.apache.commons.lang.StringUtils;
 import org.apache.commons.net.util.SubnetUtils;
 import org.joychou.config.WebConfig;
 import org.joychou.security.SecurityUtil;
+import static org.joychou.security.SecurityUtil.sanitizeLogOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -52,7 +53,7 @@ public class SSRFChecker {
             // Even for whitelisted domains, resolve DNS and reject internal IPs
             // to prevent DNS rebinding and spoofed DNS records
             if (isInternalIpByUrl(url)) {
-                logger.error("[-] SSRF check failed. Whitelisted domain resolves to internal IP: " + host);
+                logger.error("[-] SSRF check failed. Whitelisted domain resolves to internal IP: " + sanitizeLogOutput(host));
                 return false;
             }
 
@@ -86,12 +87,12 @@ public class SSRFChecker {
             do {
                 // Check the URL is HTTP(S) and its resolved IP is not internal
                 if (!SecurityUtil.isHttp(finalUrl)) {
-                    logger.error("[-] SSRF check failed. Non-HTTP redirect: " + finalUrl);
+                    logger.error("[-] SSRF check failed. Non-HTTP redirect: " + sanitizeLogOutput(finalUrl));
                     return false;
                 }
 
                 if (isInternalIpByUrl(finalUrl)) {
-                    logger.error("[-] SSRF check failed. Dangerous url: " + finalUrl);
+                    logger.error("[-] SSRF check failed. Dangerous url: " + sanitizeLogOutput(finalUrl));
                     return false;
                 }
 
@@ -107,7 +108,7 @@ public class SSRFChecker {
                         break;
                     finalUrl = redirectedUrl;
                     i += 1;
-                    logger.info("redirected url: " + finalUrl);
+                    logger.info("redirected url: " + sanitizeLogOutput(finalUrl));
                     if (i == checkTimes) {
                         return false;
                     }
@@ -117,7 +118,7 @@ public class SSRFChecker {
             connection.disconnect();
         } catch (Exception e) {
             // Fail closed: if validation itself errors out, treat as unsafe
-            logger.error("[-] SSRF check exception: " + e.getMessage());
+            logger.error("[-] SSRF check exception: " + sanitizeLogOutput(e.getMessage()));
             return false;
         }
         return true;
@@ -156,7 +157,7 @@ public class SSRFChecker {
      */
     public static boolean isInternalIp(String strIP) {
         if (StringUtils.isEmpty(strIP)) {
-            logger.error("[-] SSRF check failed. IP is empty. " + strIP);
+            logger.error("[-] SSRF check failed. IP is empty. " + sanitizeLogOutput(strIP));
             return true;
         }
 
@@ -166,17 +167,17 @@ public class SSRFChecker {
             // site-local (10/8, 172.16/12, 192.168/16), any-local (0.0.0.0, ::)
             if (addr.isLoopbackAddress() || addr.isLinkLocalAddress()
                     || addr.isSiteLocalAddress() || addr.isAnyLocalAddress()) {
-                logger.error("[-] SSRF check failed. Internal IP: " + strIP);
+                logger.error("[-] SSRF check failed. Internal IP: " + sanitizeLogOutput(strIP));
                 return true;
             }
             // IPv6 Unique Local Addresses (fd00::/8) — not covered by isSiteLocalAddress in Java 8
             byte[] addrBytes = addr.getAddress();
             if (addrBytes.length == 16 && (addrBytes[0] & 0xFF) == 0xFD) {
-                logger.error("[-] SSRF check failed. Internal IP (IPv6 ULA): " + strIP);
+                logger.error("[-] SSRF check failed. Internal IP (IPv6 ULA): " + sanitizeLogOutput(strIP));
                 return true;
             }
         } catch (Exception e) {
-            logger.error("[-] SSRF check failed. Cannot parse IP: " + strIP);
+            logger.error("[-] SSRF check failed. Cannot parse IP: " + sanitizeLogOutput(strIP));
             return true;
         }
 
@@ -187,7 +188,7 @@ public class SSRFChecker {
                 SubnetUtils utils = new SubnetUtils(subnet);
                 utils.setInclusiveHostCount(true);
                 if (utils.getInfo().isInRange(strIP)) {
-                    logger.error("[-] SSRF check failed. Internal IP: " + strIP);
+                    logger.error("[-] SSRF check failed. Internal IP: " + sanitizeLogOutput(strIP));
                     return true;
                 }
             } catch (IllegalArgumentException e) {
@@ -242,7 +243,7 @@ public class SSRFChecker {
             InetAddress IpAddress = InetAddress.getByName(host);
             return IpAddress.getHostAddress();
         } catch (Exception e) {
-            logger.error("host2ip exception " + e.getMessage());
+            logger.error("host2ip exception " + sanitizeLogOutput(e.getMessage()));
             return "";
         }
     }
@@ -263,7 +264,7 @@ public class SSRFChecker {
 
                 // not support ipv6
                 if (ipParts.length > 4) {
-                    logger.error("Illegal ipv4: " + host);
+                    logger.error("Illegal ipv4: " + sanitizeLogOutput(host));
                     return false;
                 }
 
@@ -276,20 +277,20 @@ public class SSRFChecker {
                 // 012.23.78.233
                 for(String ip : ipParts) {
                     if (!isNumber(ip)){
-                        logger.error("Illegal ipv4: " + host);
+                        logger.error("Illegal ipv4: " + sanitizeLogOutput(host));
                         return false;
                     }
                     // start with "0", but not "0"
                     if (ip.startsWith("0") && !ip.equals("0")) {
                         if (Integer.valueOf(ip, 8) >= 256){
-                            logger.error("Illegal ipv4: " + host);
+                            logger.error("Illegal ipv4: " + sanitizeLogOutput(host));
                             return false;
                         }
                         newDecimalIP.append(Integer.valueOf(ip, 8)).append(".");
                         is_octal = true;
                     }else{
                         if (Integer.valueOf(ip, 10) >= 256) {
-                            logger.error("Illegal ipv4: " + host);
+                            logger.error("Illegal ipv4: " + sanitizeLogOutput(host));
                             return false;
                         }
                         newDecimalIP.append(ip).append(".");
@@ -300,7 +301,7 @@ public class SSRFChecker {
             }
             return is_octal;
         } catch (Exception e){
-            logger.error("SSRFChecker isOctalIP exception: " + e.getMessage());
+            logger.error("SSRFChecker isOctalIP exception: " + sanitizeLogOutput(e.getMessage()));
             return false;
         }
 

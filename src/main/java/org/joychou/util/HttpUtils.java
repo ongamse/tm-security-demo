@@ -17,6 +17,7 @@ import org.jsoup.nodes.Document;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.joychou.security.SecurityUtil;
 import org.joychou.security.ssrf.SSRFChecker;
 
 import javax.imageio.ImageIO;
@@ -132,7 +133,7 @@ public class HttpUtils {
             in.close();
             return html.toString();
         } catch (Exception e) {
-            logger.error(e.getMessage());
+            logger.error(SecurityUtil.sanitizeLogOutput(e.getMessage()));
             return e.getMessage();
         }
     }
@@ -161,7 +162,7 @@ public class HttpUtils {
             in.close();
             return html.toString();
         } catch (IOException e) {
-            logger.error(e.getMessage());
+            logger.error(SecurityUtil.sanitizeLogOutput(e.getMessage()));
             return e.getMessage();
         }
     }
@@ -214,7 +215,7 @@ public class HttpUtils {
             URL u = new URL(url);
             ImageIO.read(u); // send request
         } catch (IOException e) {
-            logger.error(e.getMessage());
+            logger.error(SecurityUtil.sanitizeLogOutput(e.getMessage()));
         }
 
     }
@@ -231,7 +232,7 @@ public class HttpUtils {
             validateSSRF(url);
             IOUtils.toByteArray(URI.create(url));
         } catch (IOException e) {
-            logger.error(e.getMessage());
+            logger.error(SecurityUtil.sanitizeLogOutput(e.getMessage()));
         }
     }
 
@@ -251,7 +252,7 @@ public class HttpUtils {
             try {
                 httpclient.close();
             } catch (Exception e) {
-                logger.error(e.getMessage());
+                logger.error(SecurityUtil.sanitizeLogOutput(e.getMessage()));
             }
         }
     }

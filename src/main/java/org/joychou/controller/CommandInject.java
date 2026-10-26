@@ -1,6 +1,7 @@
 package org.joychou.controller;
 
 import org.joychou.security.SecurityUtil;
+import static org.joychou.security.SecurityUtil.sanitizeLogOutput;
 import org.joychou.util.WebUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -48,7 +49,7 @@ public class CommandInject {
     public String codeInjectHost(HttpServletRequest request) throws IOException {
 
         String host = request.getHeader("host");
-        logger.info(host);
+        logger.info(sanitizeLogOutput(host));
         // Validate host against strict allowlist of known hosts
         if (host == null || !ALLOWED_HOSTS.contains(host.toLowerCase())) {
             return "Invalid host header.";
