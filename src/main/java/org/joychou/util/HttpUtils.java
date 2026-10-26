@@ -17,6 +17,9 @@ import org.jsoup.nodes.Document;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.joychou.security.SecurityUtil;
+import org.joychou.security.ssrf.SSRFChecker;
+
 import javax.imageio.ImageIO;
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -35,7 +38,32 @@ public class HttpUtils {
 
     private final static Logger logger = LoggerFactory.getLogger(HttpUtils.class);
 
+    /**
+     * Validate that a URL uses HTTP(S) and does not resolve to an internal/private IP.
+     * Must be called before any outbound HTTP request to prevent SSRF.
+     *
+     * @param url the URL to validate
+     * @throws IOException if the URL is null, non-HTTP, or resolves to an internal IP
+     */
+    private static void validateSSRF(String url) throws IOException {
+        if (url == null) {
+            throw new IOException("URL must not be null");
+        }
+        if (!url.startsWith("http://") && !url.startsWith("https://")) {
+            throw new IOException("Only HTTP and HTTPS protocols are allowed");
+        }
+        if (SSRFChecker.isInternalIpByUrl(url)) {
+            throw new IOException("SSRF rejected: URL resolves to an internal IP address");
+        }
+    }
+
     public static String commonHttpClient(String url) {
+        try {
+            validateSSRF(url);
+        } catch (IOException e) {
+            logger.error("commonHttpClient SSRF validation error", e);
+            return "Request failed";
+        }
 
         HttpClient client = new HttpClient();
         GetMethod method = new GetMethod(url);
@@ -46,7 +74,8 @@ public class HttpUtils {
             return new String(resBody);
 
         } catch (IOException e) {
-            return "Error: " + e.getMessage();
+            logger.error("commonHttpClient request error", e);
+            return "Request failed";
         } finally {
             // Release the connection.
             method.releaseConnection();
@@ -56,9 +85,11 @@ public class HttpUtils {
 
     public static String request(String url) {
         try {
+            validateSSRF(url);
             return Request.Get(url).execute().returnContent().toString();
         } catch (Exception e) {
-            return e.getMessage();
+            logger.error("HTTP request error", e);
+            return "Request failed";
         }
     }
 
@@ -68,6 +99,7 @@ public class HttpUtils {
         StringBuilder result = new StringBuilder();
 
         try {
+            validateSSRF(url);
 
             CloseableHttpClient client = HttpClients.createDefault();
             HttpGet httpGet = new HttpGet(url);
@@ -84,13 +116,15 @@ public class HttpUtils {
             return result.toString();
 
         } catch (Exception e) {
-            return e.getMessage();
+            logger.error("httpClient request error", e);
+            return "Request failed";
         }
     }
 
 
     public static String URLConnection(String url) {
         try {
+            validateSSRF(url);
             URL u = new URL(url);
             URLConnection urlConnection = u.openConnection();
             BufferedReader in = new BufferedReader(new InputStreamReader(urlConnection.getInputStream())); //send request
@@ -103,8 +137,8 @@ public class HttpUtils {
             in.close();
             return html.toString();
         } catch (Exception e) {
-            logger.error(e.getMessage());
-            return e.getMessage();
+            logger.error("URLConnection request error", e);
+            return "Request failed";
         }
     }
 
@@ -115,6 +149,7 @@ public class HttpUtils {
      */
     public static String HttpURLConnection(String url) {
         try {
+            validateSSRF(url);
             URL u = new URL(url);
             URLConnection urlConnection = u.openConnection();
             HttpURLConnection conn = (HttpURLConnection) urlConnection;
@@ -131,8 +166,8 @@ public class HttpUtils {
             in.close();
             return html.toString();
         } catch (IOException e) {
-            logger.error(e.getMessage());
-            return e.getMessage();
+            logger.error("HttpURLConnection request error", e);
+            return "Request failed";
         }
     }
 
@@ -144,6 +179,7 @@ public class HttpUtils {
      */
     public static String Jsoup(String url) {
         try {
+            validateSSRF(url);
             Document doc = Jsoup.connect(url)
 //                    .followRedirects(false)
                     .timeout(3000)
@@ -151,7 +187,8 @@ public class HttpUtils {
                     .execute().parse();
             return doc.outerHtml();
         } catch (IOException e) {
-            return e.getMessage();
+            logger.error("Jsoup request error", e);
+            return "Request failed";
         }
     }
 
@@ -162,6 +199,7 @@ public class HttpUtils {
      * UserAgent is <code>okhttp/2.5.0</code>.
      */
     public static String okhttp(String url) throws IOException {
+        validateSSRF(url);
         OkHttpClient client = new OkHttpClient();
 //         client.setFollowRedirects(false);
         com.squareup.okhttp.Request ok_http = new com.squareup.okhttp.Request.Builder().url(url).build();
@@ -178,10 +216,11 @@ public class HttpUtils {
      */
     public static void imageIO(String url) {
         try {
+            validateSSRF(url);
             URL u = new URL(url);
             ImageIO.read(u); // send request
         } catch (IOException e) {
-            logger.error(e.getMessage());
+            logger.error(SecurityUtil.sanitizeLogOutput(e.getMessage()));
         }
 
     }
@@ -195,9 +234,10 @@ public class HttpUtils {
      */
     public static void IOUtils(String url) {
         try {
+            validateSSRF(url);
             IOUtils.toByteArray(URI.create(url));
         } catch (IOException e) {
-            logger.error(e.getMessage());
+            logger.error(SecurityUtil.sanitizeLogOutput(e.getMessage()));
         }
     }
 
@@ -205,18 +245,20 @@ public class HttpUtils {
     public static String HttpAsyncClients(String url) {
         CloseableHttpAsyncClient httpclient = HttpAsyncClients.createDefault();
         try {
+            validateSSRF(url);
             httpclient.start();
             final HttpGet request = new HttpGet(url);
             Future<HttpResponse> future = httpclient.execute(request, null);
             HttpResponse response = future.get(6000, TimeUnit.MILLISECONDS);
             return EntityUtils.toString(response.getEntity());
         } catch (Exception e) {
-            return e.getMessage();
+            logger.error("HttpAsyncClients request error", e);
+            return "Request failed";
         } finally {
             try {
                 httpclient.close();
             } catch (Exception e) {
-                logger.error(e.getMessage());
+                logger.error(SecurityUtil.sanitizeLogOutput(e.getMessage()));
             }
         }
     }

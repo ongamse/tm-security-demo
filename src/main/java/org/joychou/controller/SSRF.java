@@ -2,6 +2,7 @@ package org.joychou.controller;
 
 import cn.hutool.http.HttpUtil;
 import org.joychou.security.SecurityUtil;
+import static org.joychou.security.SecurityUtil.sanitizeHeaderValue;
 import org.joychou.security.ssrf.SSRFException;
 import org.joychou.service.HttpService;
 import org.joychou.util.HttpUtils;
@@ -16,6 +17,7 @@ import javax.annotation.Resource;
 import javax.servlet.http.HttpServletResponse;
 import java.io.*;
 import java.net.*;
+import org.springframework.web.util.HtmlUtils;
 
 
 /**
@@ -59,7 +61,8 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.URLConnection(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            logger.error("SSRF URLConnection error", e);
+            return "Request failed";
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -77,7 +80,8 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.HttpURLConnection(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            logger.error("SSRF HttpURLConnection error", e);
+            return "Request failed";
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -98,9 +102,10 @@ public class SSRF {
     public String request(@RequestParam String url) {
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.request(url);
+            return HtmlUtils.htmlEscape(HttpUtils.request(url));
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            logger.error("SSRF request error", e);
+            return "Request failed";
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -120,9 +125,19 @@ public class SSRF {
         InputStream inputStream = null;
         OutputStream outputStream = null;
         try {
+            // Validate URL scheme and reject internal IPs before opening stream
+            if (!SecurityUtil.isHttp(url)) {
+                response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Only HTTP and HTTPS protocols are allowed");
+                return;
+            }
+            if (org.joychou.security.ssrf.SSRFChecker.isInternalIpByUrl(url)) {
+                response.sendError(HttpServletResponse.SC_FORBIDDEN, "SSRF rejected: URL resolves to an internal IP");
+                return;
+            }
+
             String downLoadImgFileName = WebUtils.getNameWithoutExtension(url) + "." + WebUtils.getFileExtension(url);
             // download
-            response.setHeader("content-disposition", "attachment;fileName=" + downLoadImgFileName);
+            response.setHeader("content-disposition", "attachment;fileName=" + sanitizeHeaderValue(downLoadImgFileName));
 
             URL u = new URL(url);
             int length;
@@ -156,7 +171,8 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             HttpUtils.imageIO(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            logger.error("SSRF ImageIO error", e);
+            return "Request failed";
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -172,7 +188,8 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.okhttp(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            logger.error("SSRF okhttp error", e);
+            return "Request failed";
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -191,7 +208,8 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.httpClient(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            logger.error("SSRF httpClient error", e);
+            return "Request failed";
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -211,7 +229,8 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.commonHttpClient(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            logger.error("SSRF commonHttpClient error", e);
+            return "Request failed";
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -230,7 +249,8 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.Jsoup(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            logger.error("SSRF Jsoup error", e);
+            return "Request failed";
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -249,7 +269,8 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             HttpUtils.IOUtils(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            logger.error("SSRF IOUtils error", e);
+            return "Request failed";
         } finally {
             SecurityUtil.stopSSRFHook();
         }

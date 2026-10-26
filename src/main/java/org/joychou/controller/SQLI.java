@@ -4,6 +4,7 @@ package org.joychou.controller;
 import org.joychou.mapper.UserMapper;
 import org.joychou.dao.User;
 import org.joychou.security.SecurityUtil;
+import static org.joychou.security.SecurityUtil.sanitizeLogOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -60,18 +61,19 @@ public class SQLI {
             if (!con.isClosed())
                 System.out.println("Connect to database successfully.");
 
-            // sqli vuln code
-            Statement statement = con.createStatement();
-            String sql = "select * from users where username = '" + username + "'";
-            logger.info(sql);
-            ResultSet rs = statement.executeQuery(sql);
+            // Use PreparedStatement with bound parameter to prevent SQL injection
+            String sql = "select * from users where username = ?";
+            PreparedStatement st = con.prepareStatement(sql);
+            st.setString(1, username);
+            logger.info(sanitizeLogOutput(st.toString()));
+            ResultSet rs = st.executeQuery();
 
             while (rs.next()) {
                 String res_name = rs.getString("username");
                 String res_pwd = rs.getString("password");
                 String info = String.format("%s: %s\n", res_name, res_pwd);
                 result.append(info);
-                logger.info(info);
+                logger.info(sanitizeLogOutput(info));
             }
             rs.close();
             con.close();
@@ -80,7 +82,7 @@ public class SQLI {
         } catch (ClassNotFoundException e) {
             logger.error("Sorry, can't find the Driver!");
         } catch (SQLException e) {
-            logger.error(e.toString());
+            logger.error(sanitizeLogOutput(e.toString()));
         }
         return result.toString();
     }
@@ -93,6 +95,9 @@ public class SQLI {
      */
     @RequestMapping("/jdbc/sec")
     public String jdbc_sqli_sec(@RequestParam("username") String username) {
+
+        // Validate username to prevent IDOR — reject malformed input before query
+        username = SecurityUtil.validateUsername(username);
 
         StringBuilder result = new StringBuilder();
         try {
@@ -107,7 +112,7 @@ public class SQLI {
             PreparedStatement st = con.prepareStatement(sql);
             st.setString(1, username);
 
-            logger.info(st.toString());  // sql after prepare statement
+            logger.info(sanitizeLogOutput(st.toString()));  // sql after prepare statement
             ResultSet rs = st.executeQuery();
 
             while (rs.next()) {
@@ -115,7 +120,7 @@ public class SQLI {
                 String res_pwd = rs.getString("password");
                 String info = String.format("%s: %s\n", res_name, res_pwd);
                 result.append(info);
-                logger.info(info);
+                logger.info(sanitizeLogOutput(info));
             }
 
             rs.close();
@@ -125,7 +130,7 @@ public class SQLI {
             logger.error("Sorry, can't find the Driver!");
             e.printStackTrace();
         } catch (SQLException e) {
-            logger.error(e.toString());
+            logger.error(sanitizeLogOutput(e.toString()));
         }
         return result.toString();
     }
@@ -146,10 +151,11 @@ public class SQLI {
             if (!con.isClosed())
                 System.out.println("Connecting to Database successfully.");
 
-            String sql = "select * from users where username = '" + username + "'";
+            String sql = "select * from users where username = ?";
             PreparedStatement st = con.prepareStatement(sql);
+            st.setString(1, username);
 
-            logger.info(st.toString());
+            logger.info(sanitizeLogOutput(st.toString()));
             ResultSet rs = st.executeQuery();
 
             while (rs.next()) {
@@ -157,7 +163,7 @@ public class SQLI {
                 String res_pwd = rs.getString("password");
                 String info = String.format("%s: %s\n", res_name, res_pwd);
                 result.append(info);
-                logger.info(info);
+                logger.info(sanitizeLogOutput(info));
             }
 
             rs.close();
@@ -167,7 +173,7 @@ public class SQLI {
             logger.error("Sorry, can't find the Driver!");
             e.printStackTrace();
         } catch (SQLException e) {
-            logger.error(e.toString());
+            logger.error(sanitizeLogOutput(e.toString()));
         }
         return result.toString();
     }
@@ -180,6 +186,8 @@ public class SQLI {
      */
     @GetMapping("/mybatis/vuln01")
     public List<User> mybatisVuln01(@RequestParam("username") String username) {
+        // Validate username to prevent IDOR — reject malformed input before query
+        username = SecurityUtil.validateUsername(username);
         return userMapper.findByUserNameVuln01(username);
     }
 
@@ -190,6 +198,8 @@ public class SQLI {
      */
     @GetMapping("/mybatis/vuln02")
     public List<User> mybatisVuln02(@RequestParam("username") String username) {
+        // Validate username to prevent IDOR — reject malformed input before query
+        username = SecurityUtil.validateUsername(username);
         return userMapper.findByUserNameVuln02(username);
     }
 
@@ -210,6 +220,8 @@ public class SQLI {
      */
     @GetMapping("/mybatis/sec01")
     public User mybatisSec01(@RequestParam("username") String username) {
+        // Validate username to prevent IDOR — reject malformed input before query
+        username = SecurityUtil.validateUsername(username);
         return userMapper.findByUserName(username);
     }
 
@@ -219,6 +231,10 @@ public class SQLI {
      */
     @GetMapping("/mybatis/sec02")
     public User mybatisSec02(@RequestParam("id") Integer id) {
+        // Validate id to prevent IDOR — reject non-positive identifiers
+        if (id == null || id <= 0) {
+            throw new IllegalArgumentException("Invalid id parameter");
+        }
         return userMapper.findById(id);
     }
 

@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
+import java.net.InetAddress;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLDecoder;
@@ -18,6 +19,8 @@ import java.util.regex.Pattern;
 public class SecurityUtil {
 
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
+    private static final Pattern USERNAME_PATTERN = Pattern.compile("^[a-zA-Z0-9_]+$");
+    private static final int MAX_USERNAME_LENGTH = 64;
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
 
 
@@ -49,8 +52,9 @@ public class SecurityUtil {
 
 
     /**
-     * 同时支持一级域名和多级域名，相关配置在resources目录下url/url_safe_domain.xml文件。
-     * 优先判断黑名单，如果满足黑名单return null。
+     * Check URL against domain whitelist/blacklist and validate resolved IP is not internal.
+     * Only HTTP(S) schemes are allowed. DNS is resolved and checked against private/reserved
+     * IP ranges to prevent SSRF.
      *
      * @param url the url need to check
      * @return Safe url returns original url; Illegal url returns null;
@@ -67,12 +71,12 @@ public class SecurityUtil {
         try {
             String host = gethost(url);
 
-            // 必须http/https
+            // Must be http or https scheme
             if (!isHttp(url)) {
                 return null;
             }
 
-            // 如果满足黑名单返回null
+            // Reject blocklisted domains
             if (blockDomains.contains(host)){
                 return null;
             }
@@ -82,18 +86,34 @@ public class SecurityUtil {
                 }
             }
 
-            // 支持多级域名
+            boolean domainAllowed = false;
+
+            // Support multi-level domains
             if (safeDomains.contains(host)){
-                return url;
+                domainAllowed = true;
             }
 
-            // 支持一级域名
-            for(String safedomain: safeDomains) {
-                if(host.endsWith("." + safedomain)) {
-                    return url;
+            // Support first-level domain matching
+            if (!domainAllowed) {
+                for (String safedomain : safeDomains) {
+                    if (host.endsWith("." + safedomain)) {
+                        domainAllowed = true;
+                        break;
+                    }
                 }
             }
-            return null;
+
+            if (!domainAllowed) {
+                return null;
+            }
+
+            // Resolve DNS and reject internal/private IPs to prevent SSRF via DNS rebinding
+            if (SSRFChecker.isInternalIpByUrl(url)) {
+                logger.error("[-] SSRF: whitelisted domain resolves to internal IP: " + sanitizeLogOutput(host));
+                return null;
+            }
+
+            return url;
         } catch (NullPointerException e) {
             logger.error(e.toString());
             return null;
@@ -183,7 +203,7 @@ public class SecurityUtil {
             try {
                 temp = URLDecoder.decode(temp, "utf-8");
             } catch (UnsupportedEncodingException e) {
-                logger.info("Unsupported encoding exception: " + filepath);
+                logger.info("Unsupported encoding exception: " + sanitizeLogOutput(filepath));
                 return null;
             } catch (Exception e) {
                 logger.info(e.toString());
@@ -200,10 +220,13 @@ public class SecurityUtil {
 
 
     public static String cmdFilter(String input) {
-        if (!FILTER_PATTERN.matcher(input).matches()) {
+        if (input == null || !FILTER_PATTERN.matcher(input).matches()) {
             return null;
         }
-
+        // Reject path traversal sequences
+        if (input.contains("..")) {
+            return null;
+        }
         return input;
     }
 
@@ -220,6 +243,28 @@ public class SecurityUtil {
             return null;
         }
         return sql;
+    }
+
+    /**
+     * Validate username input to prevent IDOR and injection attacks.
+     * Usernames must be non-null, non-empty, alphanumeric (plus underscore),
+     * and no longer than {@value #MAX_USERNAME_LENGTH} characters.
+     *
+     * @param username the username to validate
+     * @return the validated username
+     * @throws IllegalArgumentException if the username is invalid
+     */
+    public static String validateUsername(String username) {
+        if (username == null || username.isEmpty()) {
+            throw new IllegalArgumentException("Username must not be empty");
+        }
+        if (username.length() > MAX_USERNAME_LENGTH) {
+            throw new IllegalArgumentException("Username exceeds maximum length");
+        }
+        if (!USERNAME_PATTERN.matcher(username).matches()) {
+            throw new IllegalArgumentException("Username contains invalid characters");
+        }
+        return username;
     }
 
     /**
@@ -247,6 +292,35 @@ public class SecurityUtil {
         }
 
         return sb.toString();
+    }
+
+    /**
+     * Sanitize a value before use in an HTTP header to prevent CRLF / header injection.
+     * Strips carriage-return (\r), line-feed (\n), and null (\0) characters.
+     *
+     * @param value the raw header value (may be null)
+     * @return sanitized value safe for use in HTTP headers, or empty string if null
+     */
+    public static String sanitizeHeaderValue(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.replaceAll("[\\r\\n\\0]", "");
+    }
+
+    /**
+     * Sanitize a value before writing it to a log to prevent log forging/injection (CWE-117).
+     * Strips carriage-return (\r), line-feed (\n), and tab (\t) characters so that
+     * an attacker cannot inject fake log entries via user-controlled data.
+     *
+     * @param value the raw value (may be null)
+     * @return sanitized value safe for logging, or "null" if input is null
+     */
+    public static String sanitizeLogOutput(String value) {
+        if (value == null) {
+            return "null";
+        }
+        return value.replaceAll("[\\r\\n\\t]", "");
     }
 
     public static void main(String[] args) {

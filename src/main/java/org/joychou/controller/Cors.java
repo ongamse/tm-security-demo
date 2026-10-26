@@ -10,6 +10,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import java.net.URI;
+import java.net.URISyntaxException;
 
 /**
  * @author JoyChou (joychou@joychou.org) @2018.10.24
@@ -25,9 +27,53 @@ public class Cors {
     @GetMapping("/vuln/origin")
     public String vuls1(HttpServletRequest request, HttpServletResponse response) {
         String origin = request.getHeader("origin");
-        response.setHeader("Access-Control-Allow-Origin", origin); // set origin from header
-        response.setHeader("Access-Control-Allow-Credentials", "true");  // allow cookie
+        // Only set CORS headers when origin is present and passes the domain allowlist
+        if (origin != null) {
+            String validatedOrigin = SecurityUtil.checkURL(origin);
+            if (validatedOrigin == null) {
+                response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                return "Origin is not allowed.";
+            }
+            // Reconstruct origin from parsed URI components (scheme + host + port)
+            // to prevent reflecting raw user input into the response header.
+            String safeOrigin = reconstructOrigin(validatedOrigin);
+            if (safeOrigin == null) {
+                response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                return "Origin is not allowed.";
+            }
+            response.setHeader("Access-Control-Allow-Origin", safeOrigin);
+            response.setHeader("Access-Control-Allow-Credentials", "true");
+        }
         return info;
+    }
+
+    /**
+     * Reconstruct a canonical origin string (scheme://host[:port]) from the
+     * validated URL so that only safe, parsed components appear in the
+     * Access-Control-Allow-Origin header -- never raw user input.
+     */
+    private static String reconstructOrigin(String validatedUrl) {
+        try {
+            URI uri = new URI(validatedUrl);
+            String scheme = uri.getScheme();
+            String host = uri.getHost();
+            int port = uri.getPort();
+            if (scheme == null || host == null) {
+                return null;
+            }
+            // Only allow http/https schemes
+            scheme = scheme.toLowerCase();
+            if (!"http".equals(scheme) && !"https".equals(scheme)) {
+                return null;
+            }
+            host = host.toLowerCase();
+            if (port > 0 && port != 80 && port != 443) {
+                return scheme + "://" + host + ":" + port;
+            }
+            return scheme + "://" + host;
+        } catch (URISyntaxException e) {
+            return null;
+        }
     }
 
     @GetMapping("/vuln/setHeader")
@@ -105,13 +151,16 @@ public class Cors {
     public String seccode(HttpServletRequest request, HttpServletResponse response) {
         String origin = request.getHeader("Origin");
 
-        // 如果origin不为空并且origin不在白名单内，认定为不安全。
-        // 如果origin为空，表示是同域过来的请求或者浏览器直接发起的请求。
-        if (origin != null && SecurityUtil.checkURL(origin) == null) {
-            return "Origin is not safe.";
+        // Only set CORS headers when origin is present and validated against the allowlist.
+        // Null origin means same-origin or direct browser request — no CORS headers needed.
+        if (origin != null) {
+            String validatedOrigin = SecurityUtil.checkURL(origin);
+            if (validatedOrigin == null) {
+                return "Origin is not safe.";
+            }
+            response.setHeader("Access-Control-Allow-Origin", SecurityUtil.sanitizeHeaderValue(validatedOrigin));
+            response.setHeader("Access-Control-Allow-Credentials", "true");
         }
-        response.setHeader("Access-Control-Allow-Origin", origin);
-        response.setHeader("Access-Control-Allow-Credentials", "true");
         return LoginUtils.getUserInfo2JsonStr(request);
     }
 

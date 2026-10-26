@@ -2,6 +2,7 @@ package org.joychou.controller;
 
 import org.apache.commons.codec.binary.Base64;
 import org.joychou.security.SecurityUtil;
+import static org.joychou.security.SecurityUtil.sanitizeLogOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -11,12 +12,16 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 
 @RestController
 public class PathTraversal {
 
     protected final Logger logger = LoggerFactory.getLogger(this.getClass());
+
+    // Base directory for serving images
+    private static final String BASE_DIR = System.getProperty("user.dir");
 
     /**
      * http://localhost:8080/path_traversal/vul?filepath=../../../../../etc/passwd
@@ -29,7 +34,7 @@ public class PathTraversal {
     @GetMapping("/path_traversal/sec")
     public String getImageSec(String filepath) throws IOException {
         if (SecurityUtil.pathFilter(filepath) == null) {
-            logger.info("Illegal file path: " + filepath);
+            logger.info("Illegal file path: " + sanitizeLogOutput(filepath));
             return "Bad boy. Illegal file path.";
         }
         return getImgBase64(filepath);
@@ -38,11 +43,19 @@ public class PathTraversal {
     private String getImgBase64(String imgFile) throws IOException {
 
         logger.info("Working directory: " + System.getProperty("user.dir"));
-        logger.info("File path: " + imgFile);
+        logger.info("File path: " + sanitizeLogOutput(imgFile));
 
-        File f = new File(imgFile);
+        // Canonicalize and validate path stays within the base directory
+        Path base = Paths.get(BASE_DIR).toAbsolutePath().normalize();
+        Path resolved = base.resolve(imgFile).normalize();
+        if (!resolved.startsWith(base)) {
+            logger.error("Path traversal attempt blocked: " + sanitizeLogOutput(imgFile));
+            return "Bad boy. Illegal file path.";
+        }
+
+        File f = resolved.toFile();
         if (f.exists() && !f.isDirectory()) {
-            byte[] data = Files.readAllBytes(Paths.get(imgFile));
+            byte[] data = Files.readAllBytes(resolved);
             return new String(Base64.encodeBase64(data));
         } else {
             return "File doesn't exist or is not a file.";

@@ -2,6 +2,7 @@ package org.joychou.controller;
 
 import org.joychou.config.Constants;
 import org.joychou.security.AntObjectInputStream;
+import static org.joychou.security.SecurityUtil.sanitizeLogOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -12,7 +13,7 @@ import javax.servlet.http.HttpServletRequest;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InvalidClassException;
-import java.io.ObjectInputStream;
+
 import java.util.Base64;
 
 import static org.springframework.web.util.WebUtils.getCookie;
@@ -45,9 +46,15 @@ public class Deserialize {
         byte[] decoded = Base64.getDecoder().decode(rememberMe);
 
         ByteArrayInputStream bytes = new ByteArrayInputStream(decoded);
-        ObjectInputStream in = new ObjectInputStream(bytes);
-        in.readObject();
-        in.close();
+
+        try {
+            AntObjectInputStream in = new AntObjectInputStream(bytes);
+            in.readObject();
+            in.close();
+        } catch (InvalidClassException e) {
+            logger.info(sanitizeLogOutput(e.toString()));
+            return "Deserialization rejected";
+        }
 
         return "Are u ok?";
     }
@@ -76,8 +83,8 @@ public class Deserialize {
             in.readObject();
             in.close();
         } catch (InvalidClassException e) {
-            logger.info(e.toString());
-            return e.toString();
+            logger.info(sanitizeLogOutput(e.toString()));
+            return "Deserialization rejected";
         }
 
         return "I'm very OK.";
