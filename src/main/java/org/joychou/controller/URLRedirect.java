@@ -30,11 +30,20 @@ public class URLRedirect {
      */
     @GetMapping("/redirect")
     public String redirect(@RequestParam("url") String url) {
-        String safeUrl = SecurityUtil.checkURL(url);
-        if (safeUrl == null) {
+        // Only allow relative paths (no scheme, no authority) to prevent open redirect.
+        // Reject absolute URLs, protocol-relative URLs, and path traversal.
+        if (url == null || url.isEmpty()) {
             return "redirect:/error?msg=url_forbidden";
         }
-        return "redirect:" + safeUrl;
+        // Block absolute URLs (any scheme), protocol-relative (//), and non-path chars at start
+        if (url.contains("://") || url.startsWith("//") || url.contains("..")) {
+            return "redirect:/error?msg=url_forbidden";
+        }
+        // Ensure it starts with '/' (server-relative path)
+        if (!url.startsWith("/")) {
+            return "redirect:/error?msg=url_forbidden";
+        }
+        return "redirect:" + url;
     }
 
 
