@@ -19,6 +19,8 @@ import java.util.regex.Pattern;
 public class SecurityUtil {
 
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
+    private static final Pattern USERNAME_PATTERN = Pattern.compile("^[a-zA-Z0-9_]+$");
+    private static final int MAX_USERNAME_LENGTH = 64;
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
 
 
@@ -238,6 +240,28 @@ public class SecurityUtil {
             return null;
         }
         return sql;
+    }
+
+    /**
+     * Validate username input to prevent IDOR and injection attacks.
+     * Usernames must be non-null, non-empty, alphanumeric (plus underscore),
+     * and no longer than {@value #MAX_USERNAME_LENGTH} characters.
+     *
+     * @param username the username to validate
+     * @return the validated username
+     * @throws IllegalArgumentException if the username is invalid
+     */
+    public static String validateUsername(String username) {
+        if (username == null || username.isEmpty()) {
+            throw new IllegalArgumentException("Username must not be empty");
+        }
+        if (username.length() > MAX_USERNAME_LENGTH) {
+            throw new IllegalArgumentException("Username exceeds maximum length");
+        }
+        if (!USERNAME_PATTERN.matcher(username).matches()) {
+            throw new IllegalArgumentException("Username contains invalid characters");
+        }
+        return username;
     }
 
     /**
