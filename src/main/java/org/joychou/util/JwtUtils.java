@@ -44,7 +44,8 @@ public class JwtUtils {
             Claims claims = Jwts.parser().setSigningKey(B64_SECRET).parseClaimsJws(token).getBody();
             return (String)claims.get("userid");
         } catch (Exception e) {
-            return e.toString();
+            log.error("JWT token parsing error", e);
+            return null;
         }
     }
 

@@ -92,7 +92,7 @@ public class Jdbc {
             validateJdbcUrl(jdbcUrl);
         } catch (SecurityException e) {
             log.error("JDBC SSRF rejected: " + SecurityUtil.sanitizeLogOutput(e.getMessage()));
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(e.getMessage());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body("JDBC URL rejected");
         }
         DriverManager.getConnection(jdbcUrl);
         return ResponseEntity.ok("OK");
@@ -108,7 +108,7 @@ public class Jdbc {
             validateJdbcUrl(jdbcUrl);
         } catch (SecurityException e) {
             log.error("JDBC SSRF rejected: " + SecurityUtil.sanitizeLogOutput(e.getMessage()));
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(e.getMessage());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body("JDBC URL rejected");
         }
         DriverManager.getConnection(jdbcUrl);
         return ResponseEntity.ok("OK");

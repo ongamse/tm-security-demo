@@ -53,7 +53,7 @@ public class Deserialize {
             in.close();
         } catch (InvalidClassException e) {
             logger.info(sanitizeLogOutput(e.toString()));
-            return e.toString();
+            return "Deserialization rejected";
         }
 
         return "Are u ok?";
@@ -84,7 +84,7 @@ public class Deserialize {
             in.close();
         } catch (InvalidClassException e) {
             logger.info(sanitizeLogOutput(e.toString()));
-            return e.toString();
+            return "Deserialization rejected";
         }
 
         return "I'm very OK.";

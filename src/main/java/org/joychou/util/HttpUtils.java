@@ -61,7 +61,8 @@ public class HttpUtils {
         try {
             validateSSRF(url);
         } catch (IOException e) {
-            return "Error: " + e.getMessage();
+            logger.error("commonHttpClient SSRF validation error", e);
+            return "Request failed";
         }
 
         HttpClient client = new HttpClient();
@@ -73,7 +74,8 @@ public class HttpUtils {
             return new String(resBody);
 
         } catch (IOException e) {
-            return "Error: " + e.getMessage();
+            logger.error("commonHttpClient request error", e);
+            return "Request failed";
         } finally {
             // Release the connection.
             method.releaseConnection();
@@ -86,7 +88,8 @@ public class HttpUtils {
             validateSSRF(url);
             return Request.Get(url).execute().returnContent().toString();
         } catch (Exception e) {
-            return e.getMessage();
+            logger.error("HTTP request error", e);
+            return "Request failed";
         }
     }
 
@@ -113,7 +116,8 @@ public class HttpUtils {
             return result.toString();
 
         } catch (Exception e) {
-            return e.getMessage();
+            logger.error("httpClient request error", e);
+            return "Request failed";
         }
     }
 
@@ -133,8 +137,8 @@ public class HttpUtils {
             in.close();
             return html.toString();
         } catch (Exception e) {
-            logger.error(SecurityUtil.sanitizeLogOutput(e.getMessage()));
-            return e.getMessage();
+            logger.error("URLConnection request error", e);
+            return "Request failed";
         }
     }
 
@@ -162,8 +166,8 @@ public class HttpUtils {
             in.close();
             return html.toString();
         } catch (IOException e) {
-            logger.error(SecurityUtil.sanitizeLogOutput(e.getMessage()));
-            return e.getMessage();
+            logger.error("HttpURLConnection request error", e);
+            return "Request failed";
         }
     }
 
@@ -183,7 +187,8 @@ public class HttpUtils {
                     .execute().parse();
             return doc.outerHtml();
         } catch (IOException e) {
-            return e.getMessage();
+            logger.error("Jsoup request error", e);
+            return "Request failed";
         }
     }
 
@@ -247,7 +252,8 @@ public class HttpUtils {
             HttpResponse response = future.get(6000, TimeUnit.MILLISECONDS);
             return EntityUtils.toString(response.getEntity());
         } catch (Exception e) {
-            return e.getMessage();
+            logger.error("HttpAsyncClients request error", e);
+            return "Request failed";
         } finally {
             try {
                 httpclient.close();

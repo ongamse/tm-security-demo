@@ -77,7 +77,8 @@ public class Rce {
             inBr.close();
             in.close();
         } catch (Exception e) {
-            return HtmlUtils.htmlEscape(e.toString());
+            log.error("Command execution error", e);
+            return "An error occurred";
         }
         return HtmlUtils.htmlEscape(sb.toString());
     }
@@ -106,7 +107,8 @@ public class Rce {
                 sb.append(tmpStr);
             }
         } catch (Exception e) {
-            return HtmlUtils.htmlEscape(e.toString());
+            log.error("ProcessBuilder execution error", e);
+            return "An error occurred";
         }
 
         return HtmlUtils.htmlEscape(sb.toString());
