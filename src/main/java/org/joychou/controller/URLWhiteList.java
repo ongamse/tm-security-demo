@@ -2,6 +2,7 @@ package org.joychou.controller;
 
 
 import org.joychou.security.SecurityUtil;
+import org.joychou.security.ssrf.SSRFChecker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.*;
@@ -134,15 +135,27 @@ public class URLWhiteList {
 
         String host = SecurityUtil.gethost(url);
 
+        boolean domainAllowed = false;
         for (String whiteHost: whiteDomainlists){
             if (whiteHost.startsWith(".") && host.endsWith(whiteHost)) {
-                return HtmlUtils.htmlEscape(url);
+                domainAllowed = true;
+                break;
             } else if (!whiteHost.startsWith(".") && host.equals(whiteHost)) {
-                return HtmlUtils.htmlEscape(url);
+                domainAllowed = true;
+                break;
             }
         }
 
-        return "Bad url.";
+        if (!domainAllowed) {
+            return "Bad url.";
+        }
+
+        // Resolve DNS and reject internal IPs to prevent SSRF via DNS rebinding
+        if (SSRFChecker.isInternalIpByUrl(url)) {
+            return "Bad url: resolves to internal IP.";
+        }
+
+        return HtmlUtils.htmlEscape(url);
     }
 
 

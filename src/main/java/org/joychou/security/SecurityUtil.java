@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
+import java.net.InetAddress;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLDecoder;
@@ -49,8 +50,9 @@ public class SecurityUtil {
 
 
     /**
-     * 同时支持一级域名和多级域名，相关配置在resources目录下url/url_safe_domain.xml文件。
-     * 优先判断黑名单，如果满足黑名单return null。
+     * Check URL against domain whitelist/blacklist and validate resolved IP is not internal.
+     * Only HTTP(S) schemes are allowed. DNS is resolved and checked against private/reserved
+     * IP ranges to prevent SSRF.
      *
      * @param url the url need to check
      * @return Safe url returns original url; Illegal url returns null;
@@ -67,12 +69,12 @@ public class SecurityUtil {
         try {
             String host = gethost(url);
 
-            // 必须http/https
+            // Must be http or https scheme
             if (!isHttp(url)) {
                 return null;
             }
 
-            // 如果满足黑名单返回null
+            // Reject blocklisted domains
             if (blockDomains.contains(host)){
                 return null;
             }
@@ -82,18 +84,34 @@ public class SecurityUtil {
                 }
             }
 
-            // 支持多级域名
+            boolean domainAllowed = false;
+
+            // Support multi-level domains
             if (safeDomains.contains(host)){
-                return url;
+                domainAllowed = true;
             }
 
-            // 支持一级域名
-            for(String safedomain: safeDomains) {
-                if(host.endsWith("." + safedomain)) {
-                    return url;
+            // Support first-level domain matching
+            if (!domainAllowed) {
+                for (String safedomain : safeDomains) {
+                    if (host.endsWith("." + safedomain)) {
+                        domainAllowed = true;
+                        break;
+                    }
                 }
             }
-            return null;
+
+            if (!domainAllowed) {
+                return null;
+            }
+
+            // Resolve DNS and reject internal/private IPs to prevent SSRF via DNS rebinding
+            if (SSRFChecker.isInternalIpByUrl(url)) {
+                logger.error("[-] SSRF: whitelisted domain resolves to internal IP: " + host);
+                return null;
+            }
+
+            return url;
         } catch (NullPointerException e) {
             logger.error(e.toString());
             return null;

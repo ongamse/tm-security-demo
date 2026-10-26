@@ -121,6 +121,16 @@ public class SSRF {
         InputStream inputStream = null;
         OutputStream outputStream = null;
         try {
+            // Validate URL scheme and reject internal IPs before opening stream
+            if (!SecurityUtil.isHttp(url)) {
+                response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Only HTTP and HTTPS protocols are allowed");
+                return;
+            }
+            if (org.joychou.security.ssrf.SSRFChecker.isInternalIpByUrl(url)) {
+                response.sendError(HttpServletResponse.SC_FORBIDDEN, "SSRF rejected: URL resolves to an internal IP");
+                return;
+            }
+
             String downLoadImgFileName = WebUtils.getNameWithoutExtension(url) + "." + WebUtils.getFileExtension(url);
             // download
             response.setHeader("content-disposition", "attachment;fileName=" + downLoadImgFileName);

@@ -28,24 +28,39 @@ public class SSRFChecker {
         try {
             String host = SecurityUtil.gethost(url);
 
-            // 必须http/https
+            // Must be http or https
             if (!SecurityUtil.isHttp(url)) {
                 return false;
             }
 
+            boolean domainAllowed = false;
             if (ssrfSafeDomains.contains(host)) {
-                return true;
-            }
-            for (String ssrfSafeDomain : ssrfSafeDomains) {
-                if (host.endsWith("." + ssrfSafeDomain)) {
-                    return true;
+                domainAllowed = true;
+            } else {
+                for (String ssrfSafeDomain : ssrfSafeDomains) {
+                    if (host.endsWith("." + ssrfSafeDomain)) {
+                        domainAllowed = true;
+                        break;
+                    }
                 }
             }
+
+            if (!domainAllowed) {
+                return false;
+            }
+
+            // Even for whitelisted domains, resolve DNS and reject internal IPs
+            // to prevent DNS rebinding and spoofed DNS records
+            if (isInternalIpByUrl(url)) {
+                logger.error("[-] SSRF check failed. Whitelisted domain resolves to internal IP: " + host);
+                return false;
+            }
+
+            return true;
         } catch (Exception e) {
             logger.error(e.toString());
             return false;
         }
-        return false;
     }
 
     /**
@@ -59,31 +74,39 @@ public class SSRFChecker {
      */
     public static boolean checkSSRF(String url, int checkTimes) {
 
+        if (url == null || !SecurityUtil.isHttp(url)) {
+            return false;
+        }
+
         HttpURLConnection connection;
-        int connectTime = 5 * 1000;  // 设置连接超时时间5s
+        int connectTime = 5 * 1000;
         int i = 1;
         String finalUrl = url;
         try {
             do {
-                // 判断当前请求的URL是否是内网ip
+                // Check the URL is HTTP(S) and its resolved IP is not internal
+                if (!SecurityUtil.isHttp(finalUrl)) {
+                    logger.error("[-] SSRF check failed. Non-HTTP redirect: " + finalUrl);
+                    return false;
+                }
+
                 if (isInternalIpByUrl(finalUrl)) {
                     logger.error("[-] SSRF check failed. Dangerous url: " + finalUrl);
-                    return false;  // 内网ip直接return，非内网ip继续判断是否有重定向
+                    return false;
                 }
 
                 connection = (HttpURLConnection) new URL(finalUrl).openConnection();
                 connection.setInstanceFollowRedirects(false);
-                connection.setUseCaches(false); // 设置为false，手动处理跳转，可以拿到每个跳转的URL
+                connection.setUseCaches(false);
                 connection.setConnectTimeout(connectTime);
-                //connection.setRequestMethod("GET");
-                connection.connect(); // send dns request
-                int responseCode = connection.getResponseCode(); // 发起网络请求
+                connection.connect();
+                int responseCode = connection.getResponseCode();
                 if (responseCode >= 300 && responseCode <= 307 && responseCode != 304 && responseCode != 306) {
                     String redirectedUrl = connection.getHeaderField("Location");
                     if (null == redirectedUrl)
                         break;
                     finalUrl = redirectedUrl;
-                    i += 1;  // 重定向次数加1
+                    i += 1;
                     logger.info("redirected url: " + finalUrl);
                     if (i == checkTimes) {
                         return false;
@@ -93,9 +116,11 @@ public class SSRFChecker {
             } while (connection.getResponseCode() != HttpURLConnection.HTTP_OK);
             connection.disconnect();
         } catch (Exception e) {
-            return true;  // 如果异常了，认为是安全的，防止是超时导致的异常而验证不成功。
+            // Fail closed: if validation itself errors out, treat as unsafe
+            logger.error("[-] SSRF check exception: " + e.getMessage());
+            return false;
         }
-        return true; // 默认返回true
+        return true;
     }
 
 
@@ -121,10 +146,13 @@ public class SSRFChecker {
 
 
     /**
-     * 使用SubnetUtils库判断ip是否在内网网段
+     * Check whether an IP is an internal/private/reserved address.
+     * Covers loopback (127.0.0.0/8, ::1), link-local (169.254.0.0/16, fe80::/10),
+     * site-local / RFC1918 (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16),
+     * IPv6 ULA (fd00::/8), and any-local (0.0.0.0, ::).
      *
-     * @param strIP ip字符串
-     * @return 如果是内网ip，返回true，否则返回false。
+     * @param strIP ip string (IPv4 or IPv6)
+     * @return true if internal/private, false otherwise
      */
     public static boolean isInternalIp(String strIP) {
         if (StringUtils.isEmpty(strIP)) {
@@ -132,12 +160,38 @@ public class SSRFChecker {
             return true;
         }
 
-        ArrayList<String> blackSubnets = WebConfig.getSsrfBlockIps();
-        for (String subnet : blackSubnets) {
-            SubnetUtils utils = new SubnetUtils(subnet);
-            if (utils.getInfo().isInRange(strIP)) {
+        try {
+            InetAddress addr = InetAddress.getByName(strIP);
+            // Reject loopback (127/8, ::1), link-local (169.254/16, fe80::/10),
+            // site-local (10/8, 172.16/12, 192.168/16), any-local (0.0.0.0, ::)
+            if (addr.isLoopbackAddress() || addr.isLinkLocalAddress()
+                    || addr.isSiteLocalAddress() || addr.isAnyLocalAddress()) {
                 logger.error("[-] SSRF check failed. Internal IP: " + strIP);
                 return true;
+            }
+            // IPv6 Unique Local Addresses (fd00::/8) — not covered by isSiteLocalAddress in Java 8
+            byte[] addrBytes = addr.getAddress();
+            if (addrBytes.length == 16 && (addrBytes[0] & 0xFF) == 0xFD) {
+                logger.error("[-] SSRF check failed. Internal IP (IPv6 ULA): " + strIP);
+                return true;
+            }
+        } catch (Exception e) {
+            logger.error("[-] SSRF check failed. Cannot parse IP: " + strIP);
+            return true;
+        }
+
+        // Additionally check against configured block IP subnets (IPv4 CIDR)
+        ArrayList<String> blackSubnets = WebConfig.getSsrfBlockIps();
+        for (String subnet : blackSubnets) {
+            try {
+                SubnetUtils utils = new SubnetUtils(subnet);
+                utils.setInclusiveHostCount(true);
+                if (utils.getInfo().isInRange(strIP)) {
+                    logger.error("[-] SSRF check failed. Internal IP: " + strIP);
+                    return true;
+                }
+            } catch (IllegalArgumentException e) {
+                // Skip entries that SubnetUtils cannot parse (e.g. IPv6 subnets)
             }
         }
 
