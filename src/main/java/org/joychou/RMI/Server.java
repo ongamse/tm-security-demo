@@ -17,6 +17,10 @@ public class Server implements Hello {
         try {
             Server obj = new Server();
             Hello stub = (Hello) UnicastRemoteObject.exportObject(obj, 0);
+            // Restrict the classes the registry may deserialize (JEP 290) before it is created.
+            System.setProperty("sun.rmi.registry.registryFilter",
+                    "java.lang.String;java.lang.Number;java.lang.reflect.Proxy;org.joychou.RMI.Hello;"
+                            + "java.rmi.**;sun.rmi.server.**;sun.rmi.transport.**;!*");
             LocateRegistry.createRegistry(1099);
             Registry registry = LocateRegistry.getRegistry();
             registry.bind("Hello", stub);
