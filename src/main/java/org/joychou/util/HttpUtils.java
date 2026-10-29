@@ -203,7 +203,8 @@ public class HttpUtils {
             return result.toString();
 
         } catch (Exception e) {
-            return e.getMessage();
+            logger.error("Request failed", e);
+            return GENERIC_ERROR;
         }
     }
 
@@ -275,7 +276,8 @@ public class HttpUtils {
             }
             return "Too many redirects";
         } catch (IOException e) {
-            return e.getMessage();
+            logger.error("Request failed", e);
+            return GENERIC_ERROR;
         }
     }
 
@@ -356,7 +358,8 @@ public class HttpUtils {
             HttpResponse response = future.get(6000, TimeUnit.MILLISECONDS);
             return EntityUtils.toString(response.getEntity());
         } catch (Exception e) {
-            return e.getMessage();
+            logger.error("Request failed", e);
+            return GENERIC_ERROR;
         } finally {
             try {
                 httpclient.close();

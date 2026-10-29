@@ -167,7 +167,8 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             HttpUtils.imageIO(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            logger.error("SSRF request failed: {}", SecurityUtil.logSafe(e.toString()));
+            return GENERIC_ERROR;
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -183,7 +184,8 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.okhttp(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            logger.error("SSRF request failed: {}", SecurityUtil.logSafe(e.toString()));
+            return GENERIC_ERROR;
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -202,7 +204,8 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.httpClient(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            logger.error("SSRF request failed: {}", SecurityUtil.logSafe(e.toString()));
+            return GENERIC_ERROR;
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -242,7 +245,8 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.Jsoup(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            logger.error("SSRF request failed: {}", SecurityUtil.logSafe(e.toString()));
+            return GENERIC_ERROR;
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -261,7 +265,8 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             HttpUtils.IOUtils(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            logger.error("SSRF request failed: {}", SecurityUtil.logSafe(e.toString()));
+            return GENERIC_ERROR;
         } finally {
             SecurityUtil.stopSSRFHook();
         }
