@@ -37,7 +37,9 @@ public class OriginFilter implements Filter {
         logger.info("[+] Origin: " + origin + "\tCurrent url:" + request.getRequestURL());
 
         // 以file协议访问html，origin为字符串的null，所以依然会走安全check逻辑
-        if (origin != null && (SecurityUtil.checkURL(origin) == null || SecurityUtil.headerFilter(origin) == null)) {
+        String allowedOrigin = SecurityUtil.matchAllowedOrigin(origin);
+        if (origin != null && (SecurityUtil.checkURL(origin) == null || SecurityUtil.headerFilter(origin) == null
+                || allowedOrigin == null)) {
             logger.error("[-] Origin check error. " + "Origin: " + origin +
                     "\tCurrent url:" + request.getRequestURL());
             response.setStatus(response.SC_FORBIDDEN);
@@ -46,8 +48,8 @@ public class OriginFilter implements Filter {
         }
 
         // Only allowlisted origins (checked above) get CORS headers; no Origin header means same-origin.
-        if (origin != null) {
-            response.setHeader("Access-Control-Allow-Origin", origin);
+        if (allowedOrigin != null) {
+            response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
             response.setHeader("Access-Control-Allow-Credentials", "true");
             response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTION");
             response.addHeader("Vary", "Origin");

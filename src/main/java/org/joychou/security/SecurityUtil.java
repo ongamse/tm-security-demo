@@ -12,6 +12,8 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.Locale;
 import java.util.regex.Pattern;
 
@@ -104,6 +106,44 @@ public class SecurityUtil {
             logger.error(e.toString());
             return null;
         }
+    }
+
+
+    /**
+     * Build the immutable list of exact CORS origins (scheme://host) from the configured safe domains
+     * (url/url_safe_domain.xml). Blocked domains are excluded.
+     */
+    private static List<String> allowedOrigins() {
+        List<String> blockDomains = WebConfig.getBlockDomains();
+        List<String> origins = new ArrayList<>();
+        for (String domain : WebConfig.getSafeDomains()) {
+            if (domain == null || domain.isEmpty() || blockDomains.contains(domain)) {
+                continue;
+            }
+            origins.add("https://" + domain);
+            origins.add("http://" + domain);
+        }
+        return Collections.unmodifiableList(origins);
+    }
+
+
+    /**
+     * Match a request Origin against the exact allowlisted origins derived from the safe domain config.
+     * The returned value is always an element of the allowlist, never the request-supplied string.
+     *
+     * @param requestOrigin value of the request Origin header
+     * @return the matching allowlisted origin; null if the origin is not allowlisted
+     */
+    public static String matchAllowedOrigin(String requestOrigin) {
+        if (requestOrigin == null || headerFilter(requestOrigin) == null) {
+            return null;
+        }
+        for (String allowed : allowedOrigins()) {
+            if (allowed.equals(requestOrigin) && checkURL(allowed) != null) {
+                return allowed;
+            }
+        }
+        return null;
     }
 
 
