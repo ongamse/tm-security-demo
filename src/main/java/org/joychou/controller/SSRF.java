@@ -31,6 +31,8 @@ public class SSRF {
 
     private static final Logger logger = LoggerFactory.getLogger(SSRF.class);
 
+    private static final String GENERIC_ERROR = "Request failed";
+
     @Resource
     private HttpService httpService;
 
@@ -60,7 +62,8 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.URLConnection(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            logger.error("Request failed", e);
+            return GENERIC_ERROR;
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -78,7 +81,8 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.HttpURLConnection(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            logger.error("Request failed", e);
+            return GENERIC_ERROR;
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -101,7 +105,8 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HtmlUtils.htmlEscape(HttpUtils.request(url));
         } catch (SSRFException | IOException e) {
-            return HtmlUtils.htmlEscape(e.getMessage());
+            logger.error("Request failed", e);
+            return GENERIC_ERROR;
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -217,7 +222,8 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.commonHttpClient(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            logger.error("Request failed", e);
+            return GENERIC_ERROR;
         } finally {
             SecurityUtil.stopSSRFHook();
         }

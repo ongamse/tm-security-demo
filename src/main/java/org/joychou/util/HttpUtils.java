@@ -49,6 +49,8 @@ public class HttpUtils {
 
     private final static Logger logger = LoggerFactory.getLogger(HttpUtils.class);
 
+    private static final String GENERIC_ERROR = "Request failed";
+
     private static final int MAX_REDIRECTS = 5;
     private static final int TIMEOUT_MS = 10 * 1000;
 
@@ -145,7 +147,8 @@ public class HttpUtils {
             method.setFollowRedirects(false);
             return executeSafely(client, method);
         } catch (IOException e) {
-            return "Error: " + e.getMessage();
+            logger.error("Request failed", e);
+            return GENERIC_ERROR;
         }
     }
 
@@ -157,7 +160,8 @@ public class HttpUtils {
             return new String(resBody);
 
         } catch (IOException e) {
-            return "Error: " + e.getMessage();
+            logger.error("Request failed", e);
+            return GENERIC_ERROR;
         } finally {
             // Release the connection.
             method.releaseConnection();
@@ -172,7 +176,8 @@ public class HttpUtils {
                 return Executor.newInstance(client).execute(Request.Get(safeUrl)).returnContent().toString();
             }
         } catch (Exception e) {
-            return e.getMessage();
+            logger.error("Request failed", e);
+            return GENERIC_ERROR;
         }
     }
 
@@ -216,8 +221,8 @@ public class HttpUtils {
             in.close();
             return html.toString();
         } catch (Exception e) {
-            logger.error(e.getMessage());
-            return e.getMessage();
+            logger.error("Request failed", e);
+            return GENERIC_ERROR;
         }
     }
 
@@ -241,8 +246,8 @@ public class HttpUtils {
             in.close();
             return html.toString();
         } catch (IOException e) {
-            logger.error(e.getMessage());
-            return e.getMessage();
+            logger.error("Request failed", e);
+            return GENERIC_ERROR;
         }
     }
 
