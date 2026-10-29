@@ -15,7 +15,7 @@
 //    public FilterRegistrationBean corsFilter() {
 //        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
 //        CorsConfiguration config = new CorsConfiguration();
-//        config.setAllowCredentials(true);
+//        config.setAllowCredentials(false);
 //        config.addAllowedOrigin("http://test.joychou.org");
 //        config.addAllowedOrigin("https://test.joychou.org");
 //        config.addAllowedHeader("*");
