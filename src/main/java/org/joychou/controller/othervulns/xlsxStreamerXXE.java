@@ -2,6 +2,7 @@ package org.joychou.controller.othervulns;
 
 import com.monitorjbl.xlsx.StreamingReader;
 
+import org.joychou.security.SecureXml;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
@@ -12,6 +13,7 @@ import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.BufferedInputStream;
+import java.io.ByteArrayInputStream;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -19,7 +21,7 @@ import java.util.Locale;
 
 
 /**
- * Desc:  xlsx-streamer xxe vuln code
+ * Desc:  xlsx-streamer xxe code
  * Usage: xl/workbook.xml
  * Ref:   https://www.itread01.com/hkpcyyp.html
  * Fix:   update xlsx-streamer to 2.1.0 or above
@@ -46,7 +48,10 @@ public class xlsxStreamerXXE {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("invalid upload");
         }
         try (InputStream in = file.getInputStream()) {
-            StreamingReader.builder().open(in);
+            // Size capped; every XML part is rejected on DOCTYPE / ENTITY and parsed with a hardened parser.
+            byte[] bytes = SecureXml.readCapped(in, MAX_UPLOAD_BYTES);
+            SecureXml.requireSafeXlsx(bytes);
+            StreamingReader.builder().open(new ByteArrayInputStream(bytes));
             return ResponseEntity.ok("ok");
         } catch (Exception e) {
             // Generic failure: do not leak parser details to the client.

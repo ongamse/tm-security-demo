@@ -2,7 +2,6 @@ package org.joychou.controller;
 
 import org.joychou.security.LogSanitizer;
 import org.springframework.web.util.HtmlUtils;
-import org.dom4j.io.SAXReader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.web.ProjectedPayload;
@@ -15,25 +14,16 @@ import javax.servlet.http.HttpServletRequest;
 import org.w3c.dom.Document;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
-import org.xml.sax.XMLReader;
 
-import java.io.*;
-
-import org.xml.sax.InputSource;
-
-import javax.xml.parsers.DocumentBuilder;
-import javax.xml.parsers.DocumentBuilderFactory;
-import javax.xml.parsers.SAXParser;
-
-import org.xml.sax.helpers.DefaultHandler;
-import org.apache.commons.digester3.Digester;
-import org.jdom2.input.SAXBuilder;
 import org.joychou.security.SecureXml;
-import org.joychou.util.WebUtils;
 import org.xmlbeam.annotation.XBRead;
 
 /**
  * Java xxe vuln and security code.
+ * <p>
+ * Every endpoint parses the request body through the single hardened entry point
+ * {@link SecureXml#parse(HttpServletRequest, boolean)}: size capped, DOCTYPE / ENTITY rejected,
+ * DTDs and external entities disabled on the parser. Endpoints only consume the parsed DOM.
  *
  * @author JoyChou @2017-12-22
  */
@@ -45,13 +35,19 @@ public class XXE {
     private static final Logger logger = LoggerFactory.getLogger(XXE.class);
     private static final String EXCEPT = "xxe except";
 
+    /** Parse the request body with the hardened parser; an empty body is an error. */
+    private static Document parseBody(HttpServletRequest request, boolean namespaceAware) throws Exception {
+        Document document = SecureXml.parse(request, namespaceAware);
+        if (document == null) {
+            throw new IllegalArgumentException("Empty XML body");
+        }
+        return document;
+    }
+
     @PostMapping("/xmlReader/vuln")
     public String xmlReaderVuln(HttpServletRequest request) {
         try {
-            String body = SecureXml.requireNoDtd(WebUtils.getRequestBody(request));
-            logger.info("Request body: {}", LogSanitizer.clean(body));
-            XMLReader xmlReader = SecureXml.newXMLReader();
-            xmlReader.parse(new InputSource(new StringReader(body)));  // parse xml
+            parseBody(request, false);
             return "xmlReader xxe vuln code";
         } catch (Exception e) {
             logger.error("Operation failed.", e);
@@ -63,14 +59,7 @@ public class XXE {
     @RequestMapping(value = "/xmlReader/sec", method = RequestMethod.POST)
     public String xmlReaderSec(HttpServletRequest request) {
         try {
-            String body = SecureXml.requireNoDtd(WebUtils.getRequestBody(request));
-            logger.info("Request body: {}", LogSanitizer.clean(body));
-
-            XMLReader xmlReader = SecureXml.newXMLReader();
-            // fix code start
-            //fix code end
-            xmlReader.parse(new InputSource(new StringReader(body)));  // parse xml
-
+            parseBody(request, false);
         } catch (Exception e) {
             logger.error("Operation failed.", e);
             return EXCEPT;
@@ -83,12 +72,7 @@ public class XXE {
     @RequestMapping(value = "/SAXBuilder/vuln", method = RequestMethod.POST)
     public String SAXBuilderVuln(HttpServletRequest request) {
         try {
-            String body = SecureXml.requireNoDtd(WebUtils.getRequestBody(request));
-            logger.info("Request body: {}", LogSanitizer.clean(body));
-
-            SAXBuilder builder = SecureXml.newSAXBuilder();
-            // org.jdom2.Document document
-            builder.build(new InputSource(new StringReader(body)));
+            parseBody(request, false);
             return "SAXBuilder xxe vuln code";
         } catch (Exception e) {
             logger.error("Operation failed.", e);
@@ -99,13 +83,7 @@ public class XXE {
     @RequestMapping(value = "/SAXBuilder/sec", method = RequestMethod.POST)
     public String SAXBuilderSec(HttpServletRequest request) {
         try {
-            String body = SecureXml.requireNoDtd(WebUtils.getRequestBody(request));
-            logger.info("Request body: {}", LogSanitizer.clean(body));
-
-            SAXBuilder builder = SecureXml.newSAXBuilder();
-            // org.jdom2.Document document
-            builder.build(new InputSource(new StringReader(body)));
-
+            parseBody(request, false);
         } catch (Exception e) {
             logger.error("Operation failed.", e);
             return EXCEPT;
@@ -117,13 +95,7 @@ public class XXE {
     @RequestMapping(value = "/SAXReader/vuln", method = RequestMethod.POST)
     public String SAXReaderVuln(HttpServletRequest request) {
         try {
-            String body = SecureXml.requireNoDtd(WebUtils.getRequestBody(request));
-            logger.info("Request body: {}", LogSanitizer.clean(body));
-
-            SAXReader reader = SecureXml.newSAXReader();
-            // org.dom4j.Document document
-            reader.read(new InputSource(new StringReader(body))); // cause xxe
-
+            parseBody(request, false);
         } catch (Exception e) {
             logger.error("Operation failed.", e);
             return EXCEPT;
@@ -135,12 +107,7 @@ public class XXE {
     @RequestMapping(value = "/SAXReader/sec", method = RequestMethod.POST)
     public String SAXReaderSec(HttpServletRequest request) {
         try {
-            String body = SecureXml.requireNoDtd(WebUtils.getRequestBody(request));
-            logger.info("Request body: {}", LogSanitizer.clean(body));
-
-            SAXReader reader = SecureXml.newSAXReader();
-            // org.dom4j.Document document
-            reader.read(new InputSource(new StringReader(body)));
+            parseBody(request, false);
         } catch (Exception e) {
             logger.error("Operation failed.", e);
             return EXCEPT;
@@ -151,12 +118,7 @@ public class XXE {
     @RequestMapping(value = "/SAXParser/vuln", method = RequestMethod.POST)
     public String SAXParserVuln(HttpServletRequest request) {
         try {
-            String body = SecureXml.requireNoDtd(WebUtils.getRequestBody(request));
-            logger.info("Request body: {}", LogSanitizer.clean(body));
-
-            SAXParser parser = SecureXml.newSAXParser();
-            parser.parse(new InputSource(new StringReader(body)), new DefaultHandler());  // parse xml
-
+            parseBody(request, false);
             return "SAXParser xxe vuln code";
         } catch (Exception e) {
             logger.error("Operation failed.", e);
@@ -168,11 +130,7 @@ public class XXE {
     @RequestMapping(value = "/SAXParser/sec", method = RequestMethod.POST)
     public String SAXParserSec(HttpServletRequest request) {
         try {
-            String body = SecureXml.requireNoDtd(WebUtils.getRequestBody(request));
-            logger.info("Request body: {}", LogSanitizer.clean(body));
-
-            SAXParser parser = SecureXml.newSAXParser();
-            parser.parse(new InputSource(new StringReader(body)), new DefaultHandler());  // parse xml
+            parseBody(request, false);
         } catch (Exception e) {
             logger.error("Operation failed.", e);
             return EXCEPT;
@@ -184,11 +142,7 @@ public class XXE {
     @RequestMapping(value = "/Digester/vuln", method = RequestMethod.POST)
     public String DigesterVuln(HttpServletRequest request) {
         try {
-            String body = SecureXml.requireNoDtd(WebUtils.getRequestBody(request));
-            logger.info("Request body: {}", LogSanitizer.clean(body));
-
-            Digester digester = SecureXml.newDigester();
-            digester.parse(new StringReader(body));  // parse xml
+            parseBody(request, false);
         } catch (Exception e) {
             logger.error("Operation failed.", e);
             return EXCEPT;
@@ -199,11 +153,7 @@ public class XXE {
     @RequestMapping(value = "/Digester/sec", method = RequestMethod.POST)
     public String DigesterSec(HttpServletRequest request) {
         try {
-            String body = SecureXml.requireNoDtd(WebUtils.getRequestBody(request));
-            logger.info("Request body: {}", LogSanitizer.clean(body));
-
-            Digester digester = SecureXml.newDigester();
-            digester.parse(new StringReader(body));  // parse xml
+            parseBody(request, false);
 
             return "Digester xxe security code";
         } catch (Exception e) {
@@ -214,20 +164,12 @@ public class XXE {
 
 
     /**
-     * Use request.getInputStream to support UTF16 encoding.
+     * The body is read as bytes so UTF-16 encoded documents are handled (and checked) correctly.
      */
     @RequestMapping(value = "/DocumentBuilder/vuln", method = RequestMethod.POST)
     public String DocumentBuilderVuln(HttpServletRequest request) {
         try {
-            DocumentBuilderFactory dbf = SecureXml.newDocumentBuilderFactory();
-            DocumentBuilder db = dbf.newDocumentBuilder();
-            byte[] raw = org.springframework.util.StreamUtils.copyToByteArray(request.getInputStream());
-            // Check the decoded text for DTD/ENTITY declarations (UTF-8 and UTF-16) before parsing.
-            SecureXml.requireNoDtd(new String(raw, java.nio.charset.StandardCharsets.UTF_8));
-            SecureXml.requireNoDtd(new String(raw, java.nio.charset.StandardCharsets.UTF_16));
-            SecureXml.requireNoDtd(new String(raw, java.nio.charset.StandardCharsets.UTF_16LE));
-            InputSource is = new InputSource(new ByteArrayInputStream(raw));
-            Document document = db.parse(is);  // parse xml
+            Document document = parseBody(request, false);
 
             // 遍历xml节点name和value
             StringBuilder buf = new StringBuilder();
@@ -242,7 +184,6 @@ public class XXE {
             }
             return HtmlUtils.htmlEscape(buf.toString());
         } catch (Exception e) {
-            e.printStackTrace();
             logger.error("XML parsing failed.", e);
             return "Request failed.";
         }
@@ -251,15 +192,7 @@ public class XXE {
     @RequestMapping(value = "/DocumentBuilder/Sec", method = RequestMethod.POST)
     public String DocumentBuilderSec(HttpServletRequest request) {
         try {
-            String body = SecureXml.requireNoDtd(WebUtils.getRequestBody(request));
-            logger.info("Request body: {}", LogSanitizer.clean(body));
-
-            DocumentBuilderFactory dbf = SecureXml.newDocumentBuilderFactory();
-            DocumentBuilder db = dbf.newDocumentBuilder();
-            StringReader sr = new StringReader(body);
-            InputSource is = new InputSource(sr);
-            db.parse(is);  // parse xml
-            sr.close();
+            parseBody(request, false);
         } catch (Exception e) {
             logger.error("Operation failed.", e);
             return EXCEPT;
@@ -271,20 +204,11 @@ public class XXE {
     @RequestMapping(value = "/DocumentBuilder/xinclude/vuln", method = RequestMethod.POST)
     public String DocumentBuilderXincludeVuln(HttpServletRequest request) {
         try {
-            String body = SecureXml.requireNoDtd(WebUtils.getRequestBody(request));
-            logger.info("Request body: {}", LogSanitizer.clean(body));
-
-            DocumentBuilderFactory dbf = SecureXml.newDocumentBuilderFactory();
-            dbf.setNamespaceAware(true);
-            DocumentBuilder db = dbf.newDocumentBuilder();
-            StringReader sr = new StringReader(body);
-            InputSource is = new InputSource(sr);
-            Document document = db.parse(is);  // parse xml
+            Document document = parseBody(request, true);
 
             NodeList rootNodeList = document.getChildNodes();
             response(rootNodeList);
 
-            sr.close();
             return "DocumentBuilder xinclude xxe vuln code";
         } catch (Exception e) {
             logger.error("Operation failed.", e);
@@ -296,21 +220,10 @@ public class XXE {
     @RequestMapping(value = "/DocumentBuilder/xinclude/sec", method = RequestMethod.POST)
     public String DocumentBuilderXincludeSec(HttpServletRequest request) {
         try {
-            String body = SecureXml.requireNoDtd(WebUtils.getRequestBody(request));
-            logger.info("Request body: {}", LogSanitizer.clean(body));
-            DocumentBuilderFactory dbf = SecureXml.newDocumentBuilderFactory();
-
-            dbf.setNamespaceAware(true);
-
-            DocumentBuilder db = dbf.newDocumentBuilder();
-            StringReader sr = new StringReader(body);
-            InputSource is = new InputSource(sr);
-            Document document = db.parse(is);  // parse xml
+            Document document = parseBody(request, true);
 
             NodeList rootNodeList = document.getChildNodes();
             response(rootNodeList);
-
-            sr.close();
         } catch (Exception e) {
             logger.error("Operation failed.", e);
             return EXCEPT;
@@ -322,12 +235,7 @@ public class XXE {
     @PostMapping("/XMLReader/vuln")
     public String XMLReaderVuln(HttpServletRequest request) {
         try {
-            String body = SecureXml.requireNoDtd(WebUtils.getRequestBody(request));
-            logger.info("Request body: {}", LogSanitizer.clean(body));
-
-            XMLReader xmlReader = SecureXml.newXMLReader();
-            xmlReader.parse(new InputSource(new StringReader(body)));
-
+            parseBody(request, false);
         } catch (Exception e) {
             logger.error("Operation failed.", e);
             return EXCEPT;
@@ -340,12 +248,7 @@ public class XXE {
     @PostMapping("/XMLReader/sec")
     public String XMLReaderSec(HttpServletRequest request) {
         try {
-            String body = SecureXml.requireNoDtd(WebUtils.getRequestBody(request));
-            logger.info("Request body: {}", LogSanitizer.clean(body));
-
-            XMLReader xmlReader = SecureXml.newXMLReader();
-            xmlReader.parse(new InputSource(new StringReader(body)));
-
+            parseBody(request, false);
         } catch (Exception e) {
             logger.error("Operation failed.", e);
             return EXCEPT;
@@ -361,8 +264,7 @@ public class XXE {
     @PostMapping("/DocumentHelper/vuln")
     public String DocumentHelper(HttpServletRequest req) {
         try {
-            String body = SecureXml.requireNoDtd(WebUtils.getRequestBody(req));
-            SecureXml.newSAXReader().read(new StringReader(body)); // parse xml
+            parseBody(req, false);
         } catch (Exception e) {
             logger.error("Operation failed.", e);
             return EXCEPT;
@@ -395,7 +297,7 @@ public class XXE {
                 logger.info("User: {}", LogSanitizer.clean(user));
                 return ResponseEntity.ok(String.format("hello, %s!", user.getUserName()));
             }catch (Exception e){
-                e.printStackTrace();
+                logger.error("Operation failed.", e);
                 return ResponseEntity.ok("error");
             }
         }

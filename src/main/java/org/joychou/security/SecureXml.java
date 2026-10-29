@@ -1,22 +1,38 @@
 package org.joychou.security;
 
-import org.apache.commons.digester3.Digester;
-import org.dom4j.io.SAXReader;
-import org.jdom2.input.SAXBuilder;
+import org.xml.sax.InputSource;
 import org.xml.sax.SAXException;
 import org.xml.sax.XMLReader;
+import org.xml.sax.helpers.DefaultHandler;
+import org.w3c.dom.Document;
 
+import javax.servlet.http.HttpServletRequest;
 import javax.xml.XMLConstants;
+import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
-import javax.xml.parsers.SAXParser;
 import javax.xml.parsers.SAXParserFactory;
-import javax.xml.stream.XMLInputFactory;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.StringReader;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 /**
- * Factory helpers that build XML parsers hardened against XXE (CWE-611),
- * plus a pre-parse check that rejects DTD / entity declarations.
+ * Single entry point for parsing untrusted XML (CWE-611).
+ *
+ * Every parse here (a) reads the input with a hard size cap, (b) rejects any DOCTYPE / ENTITY
+ * declaration by inspecting the raw bytes decoded in every supported charset (UTF-8, UTF-16 and
+ * UTF-32 variants) before parsing, and (c) parses with a parser that has DTDs, external entities,
+ * XInclude and external DTD/schema access switched off. Callers receive a parsed DOM and read
+ * values out of it; the original request text never reaches a parser as a String.
  */
 public final class SecureXml {
 
@@ -25,46 +41,58 @@ public final class SecureXml {
     private static final String PARAMETER_ENTITIES = "http://xml.org/sax/features/external-parameter-entities";
     private static final String LOAD_EXTERNAL_DTD = "http://apache.org/xml/features/nonvalidating/load-external-dtd";
 
+    /** Hard cap for a request body. */
+    public static final int MAX_BODY_BYTES = 1024 * 1024;
+
+    private static final int MAX_XLSX_ENTRIES = 2000;
+    private static final long MAX_XLSX_PART_BYTES = 10L * 1024 * 1024;
+    private static final long MAX_XLSX_TOTAL_BYTES = 50L * 1024 * 1024;
+
+    private static final List<Charset> DTD_CHECK_CHARSETS = new ArrayList<>();
+
+    static {
+        DTD_CHECK_CHARSETS.add(StandardCharsets.UTF_8);
+        DTD_CHECK_CHARSETS.add(StandardCharsets.UTF_16);
+        DTD_CHECK_CHARSETS.add(StandardCharsets.UTF_16LE);
+        DTD_CHECK_CHARSETS.add(StandardCharsets.UTF_16BE);
+        for (String name : new String[]{"UTF-32", "UTF-32LE", "UTF-32BE"}) {
+            if (Charset.isSupported(name)) {
+                DTD_CHECK_CHARSETS.add(Charset.forName(name));
+            }
+        }
+    }
+
     private SecureXml() {
     }
 
     /**
-     * Reject any XML text that carries a DOCTYPE or ENTITY declaration.
-     * Call this on untrusted input before it reaches a parser.
+     * Read the request body (size capped), reject DOCTYPE / ENTITY, and parse it with the hardened
+     * DOM parser.
      *
-     * @return the same text when it is acceptable
-     * @throws IllegalArgumentException if a DOCTYPE or ENTITY declaration is present
+     * @return the parsed document, or null when the body is empty
+     * @throws IllegalArgumentException if the body is too large or carries a DOCTYPE / ENTITY declaration
      */
-    public static String requireNoDtd(String xml) {
-        if (xml == null) {
+    public static Document parse(HttpServletRequest request, boolean namespaceAware)
+            throws IOException, ParserConfigurationException, SAXException {
+        byte[] raw = readCapped(request.getInputStream(), MAX_BODY_BYTES);
+        if (raw.length == 0) {
             return null;
         }
-        String upper = xml.toUpperCase(Locale.ROOT);
-        if (upper.contains("<!DOCTYPE") || upper.contains("<!ENTITY")) {
-            throw new IllegalArgumentException("DOCTYPE and ENTITY declarations are not allowed");
-        }
-        return xml;
+        requireNoDtd(raw);
+        DocumentBuilder builder = newDocumentBuilderFactory(namespaceAware).newDocumentBuilder();
+        builder.setEntityResolver((publicId, systemId) -> new InputSource(new StringReader("")));
+        return builder.parse(new InputSource(new ByteArrayInputStream(raw)));
     }
 
-    public static DocumentBuilderFactory newDocumentBuilderFactory() throws ParserConfigurationException {
-        DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
-        dbf.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
-        dbf.setFeature(DISALLOW_DOCTYPE, true);
-        dbf.setFeature(GENERAL_ENTITIES, false);
-        dbf.setFeature(PARAMETER_ENTITIES, false);
-        dbf.setFeature(LOAD_EXTERNAL_DTD, false);
-        dbf.setXIncludeAware(false);
-        dbf.setExpandEntityReferences(false);
-        try {
-            dbf.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "");
-            dbf.setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
-        } catch (IllegalArgumentException ignored) {
-            // JAXP implementation without these attributes; the features above still apply.
-        }
-        return dbf;
-    }
-
-    public static SAXParserFactory newSAXParserFactory() throws ParserConfigurationException, SAXException {
+    /**
+     * Validate an uploaded OOXML (xlsx) package before a third-party reader opens it: every XML part
+     * must be free of DOCTYPE / ENTITY declarations and must be well-formed under the hardened SAX
+     * parser. Size, entry-count and total-size caps apply.
+     *
+     * @throws IllegalArgumentException if the package is unsafe or too large
+     */
+    public static void requireSafeXlsx(byte[] zipBytes)
+            throws IOException, ParserConfigurationException, SAXException {
         SAXParserFactory spf = SAXParserFactory.newInstance();
         spf.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
         spf.setFeature(DISALLOW_DOCTYPE, true);
@@ -72,65 +100,71 @@ public final class SecureXml {
         spf.setFeature(PARAMETER_ENTITIES, false);
         spf.setFeature(LOAD_EXTERNAL_DTD, false);
         spf.setXIncludeAware(false);
-        return spf;
-    }
 
-    public static SAXParser newSAXParser() throws ParserConfigurationException, SAXException {
-        SAXParser parser = newSAXParserFactory().newSAXParser();
-        try {
-            parser.setProperty(XMLConstants.ACCESS_EXTERNAL_DTD, "");
-            parser.setProperty(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
-        } catch (SAXException ignored) {
-            // JAXP implementation without these properties; the features above still apply.
+        int entries = 0;
+        long total = 0;
+        try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(zipBytes))) {
+            ZipEntry entry;
+            while ((entry = zip.getNextEntry()) != null) {
+                if (++entries > MAX_XLSX_ENTRIES) {
+                    throw new IllegalArgumentException("Too many entries");
+                }
+                String name = entry.getName().toLowerCase(Locale.ROOT);
+                if (entry.isDirectory() || !(name.endsWith(".xml") || name.endsWith(".rels"))) {
+                    continue;
+                }
+                byte[] part = readCapped(zip, MAX_XLSX_PART_BYTES);
+                total += part.length;
+                if (total > MAX_XLSX_TOTAL_BYTES) {
+                    throw new IllegalArgumentException("Package too large");
+                }
+                requireNoDtd(part);
+                XMLReader reader = spf.newSAXParser().getXMLReader();
+                reader.setEntityResolver((publicId, systemId) -> new InputSource(new StringReader("")));
+                reader.setContentHandler(new DefaultHandler());
+                reader.parse(new InputSource(new ByteArrayInputStream(part)));
+            }
         }
-        return parser;
     }
 
-    public static XMLReader newXMLReader() throws ParserConfigurationException, SAXException {
-        return newSAXParser().getXMLReader();
+    /** Read at most {@code max} bytes; fail closed when the stream is longer. */
+    public static byte[] readCapped(InputStream in, long max) throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        byte[] buf = new byte[8192];
+        long total = 0;
+        int n;
+        while ((n = in.read(buf)) != -1) {
+            total += n;
+            if (total > max) {
+                throw new IllegalArgumentException("XML input too large");
+            }
+            out.write(buf, 0, n);
+        }
+        return out.toByteArray();
     }
 
-    public static XMLInputFactory newXMLInputFactory() {
-        XMLInputFactory xif = XMLInputFactory.newInstance();
-        xif.setProperty(XMLInputFactory.SUPPORT_DTD, false);
-        xif.setProperty(XMLInputFactory.IS_SUPPORTING_EXTERNAL_ENTITIES, false);
-        xif.setProperty(XMLInputFactory.IS_REPLACING_ENTITY_REFERENCES, false);
-        return xif;
+    private static void requireNoDtd(byte[] data) {
+        for (Charset cs : DTD_CHECK_CHARSETS) {
+            String text = new String(data, cs).replace("\0", "").toUpperCase(Locale.ROOT);
+            if (text.contains("<!DOCTYPE") || text.contains("<!ENTITY")) {
+                throw new IllegalArgumentException("DOCTYPE and ENTITY declarations are not allowed");
+            }
+        }
     }
 
-    /** jdom2 builder with DTDs and external entities disabled. */
-    public static SAXBuilder newSAXBuilder() {
-        SAXBuilder builder = new SAXBuilder();
-        builder.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
-        builder.setFeature(DISALLOW_DOCTYPE, true);
-        builder.setFeature(GENERAL_ENTITIES, false);
-        builder.setFeature(PARAMETER_ENTITIES, false);
-        builder.setFeature(LOAD_EXTERNAL_DTD, false);
-        builder.setExpandEntities(false);
-        return builder;
-    }
-
-    /** dom4j reader with DTDs and external entities disabled. */
-    public static SAXReader newSAXReader() throws SAXException {
-        SAXReader reader = new SAXReader();
-        reader.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
-        reader.setFeature(DISALLOW_DOCTYPE, true);
-        reader.setFeature(GENERAL_ENTITIES, false);
-        reader.setFeature(PARAMETER_ENTITIES, false);
-        reader.setFeature(LOAD_EXTERNAL_DTD, false);
-        reader.setIncludeExternalDTDDeclarations(false);
-        reader.setIncludeInternalDTDDeclarations(false);
-        return reader;
-    }
-
-    /** commons-digester3 with DTDs and external entities disabled. */
-    public static Digester newDigester() throws ParserConfigurationException, SAXException {
-        Digester digester = new Digester();
-        digester.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
-        digester.setFeature(DISALLOW_DOCTYPE, true);
-        digester.setFeature(GENERAL_ENTITIES, false);
-        digester.setFeature(PARAMETER_ENTITIES, false);
-        digester.setFeature(LOAD_EXTERNAL_DTD, false);
-        return digester;
+    private static DocumentBuilderFactory newDocumentBuilderFactory(boolean namespaceAware)
+            throws ParserConfigurationException {
+        DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+        dbf.setNamespaceAware(namespaceAware);
+        dbf.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+        dbf.setFeature(DISALLOW_DOCTYPE, true);
+        dbf.setFeature(GENERAL_ENTITIES, false);
+        dbf.setFeature(PARAMETER_ENTITIES, false);
+        dbf.setFeature(LOAD_EXTERNAL_DTD, false);
+        dbf.setXIncludeAware(false);
+        dbf.setExpandEntityReferences(false);
+        dbf.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+        dbf.setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
+        return dbf;
     }
 }

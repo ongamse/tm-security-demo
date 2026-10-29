@@ -4,16 +4,12 @@ import com.thoughtworks.xstream.XStream;
 import com.thoughtworks.xstream.io.xml.DomDriver;
 import org.joychou.dao.User;
 import org.joychou.security.SecureXml;
-import org.joychou.util.WebUtils;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.w3c.dom.Document;
 import org.w3c.dom.NodeList;
-import org.xml.sax.InputSource;
 
 import javax.servlet.http.HttpServletRequest;
-import javax.xml.parsers.DocumentBuilder;
-import java.io.StringReader;
 
 
 @RestController
@@ -28,15 +24,12 @@ public class XStreamRce {
      */
     @PostMapping("/xstream")
     public String parseXml(HttpServletRequest request) throws Exception {
-        // Reject DOCTYPE / ENTITY declarations before the body reaches the parser.
-        String xml = SecureXml.requireNoDtd(WebUtils.getRequestBody(request));
-        if (xml == null || xml.isEmpty()) {
+        // Size capped, DOCTYPE / ENTITY rejected, hardened DOM parse; null means empty body.
+        Document doc = SecureXml.parse(request, false);
+        if (doc == null) {
             return "xstream";
         }
         // Data-only parsing: read simple fields from a hardened DOM, never instantiate types from XML.
-        DocumentBuilder builder = SecureXml.newDocumentBuilderFactory().newDocumentBuilder();
-        Document doc = builder.parse(new InputSource(new StringReader(xml)));
-
         User user = new User();
         String id = textOf(doc, "id");
         if (id != null) {
