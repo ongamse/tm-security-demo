@@ -83,19 +83,37 @@ public class XSS {
      * safe Code.
      * http://localhost:8080/xss/safe
      */
-    @RequestMapping("/safe")
-    @ResponseBody
-    public static String safe(String xss) {
-        return encode(xss);
+    @RequestMapping(value = "/safe", produces = "text/plain;charset=UTF-8")
+    public ResponseEntity<String> safe(String xss) {
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType("text/plain;charset=UTF-8"))
+                .header("X-Content-Type-Options", "nosniff")
+                .body(encode(xss));
     }
 
+    /**
+     * Build a new string in which every character outside [A-Za-z0-9 ._-]
+     * is replaced by a numeric character reference.
+     */
     private static String encode(String origin) {
-        origin = StringUtils.replace(origin, "&", "&amp;");
-        origin = StringUtils.replace(origin, "<", "&lt;");
-        origin = StringUtils.replace(origin, ">", "&gt;");
-        origin = StringUtils.replace(origin, "\"", "&quot;");
-        origin = StringUtils.replace(origin, "'", "&#x27;");
-        origin = StringUtils.replace(origin, "/", "&#x2F;");
-        return origin;
+        if (origin == null) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder(origin.length() * 2);
+        int i = 0;
+        while (i < origin.length()) {
+            int cp = origin.codePointAt(i);
+            i += Character.charCount(cp);
+            boolean letter = (cp >= 'A' && cp <= 'Z') || (cp >= 'a' && cp <= 'z');
+            boolean digit = cp >= '0' && cp <= '9';
+            if (letter || digit) {
+                sb.append((char) cp);
+            } else if (cp == ' ' || cp == '.' || cp == '_' || cp == '-') {
+                sb.append((char) cp);
+            } else {
+                sb.append("&#").append(cp).append(';');
+            }
+        }
+        return sb.toString();
     }
 }

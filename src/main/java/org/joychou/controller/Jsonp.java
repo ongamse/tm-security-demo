@@ -47,18 +47,60 @@ public class Jsonp {
      */
     @RequestMapping(value = "/vuln/referer", produces = "application/javascript")
     public ResponseEntity<String> referer(HttpServletRequest request) {
-        String callback = request.getParameter(this.callback);
-        if (!WebUtils.isValidJsonpCallback(callback)) {
-            return ResponseEntity.badRequest()
-                    .contentType(MediaType.TEXT_PLAIN)
-                    .header("X-Content-Type-Options", "nosniff")
-                    .body("invalid callback");
+        String newCallback = buildCallbackName(request.getParameter(this.callback));
+        if (newCallback == null) {
+            return invalidCallback();
         }
         String json = JSON.toJSONString(JSON.parseObject(LoginUtils.getUserInfo2JsonStr(request)));
+        return jsonpOk(newCallback, json);
+    }
+
+    /**
+     * Build a new callback name from explicitly allowed characters only.
+     *
+     * @return the new callback name, or null if the input is not acceptable
+     */
+    private static String buildCallbackName(String raw) {
+        if (raw == null || raw.isEmpty() || raw.length() > 64) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder(raw.length());
+        for (int i = 0; i < raw.length(); i++) {
+            char c = raw.charAt(i);
+            boolean letter = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
+            boolean digit = c >= '0' && c <= '9';
+            if (i == 0 && !(letter || c == '_' || c == '$')) {
+                return null;
+            }
+            if (letter) {
+                sb.append(c);
+            } else if (digit) {
+                sb.append(c);
+            } else if (c == '_') {
+                sb.append('_');
+            } else if (c == '$') {
+                sb.append('$');
+            } else if (c == '.') {
+                sb.append('.');
+            } else {
+                return null;
+            }
+        }
+        return sb.toString();
+    }
+
+    private static ResponseEntity<String> invalidCallback() {
+        return ResponseEntity.badRequest()
+                .contentType(MediaType.TEXT_PLAIN)
+                .header("X-Content-Type-Options", "nosniff")
+                .body("invalid callback");
+    }
+
+    private static ResponseEntity<String> jsonpOk(String newCallback, String json) {
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType("application/javascript;charset=UTF-8"))
                 .header("X-Content-Type-Options", "nosniff")
-                .body("/**/" + callback + "(" + json + ");");
+                .body("/**/" + newCallback + "(" + json + ");");
     }
 
     /**
@@ -77,18 +119,12 @@ public class Jsonp {
                     .header("X-Content-Type-Options", "nosniff")
                     .body("error");
         }
-        String callback = request.getParameter(this.callback);
-        if (!WebUtils.isValidJsonpCallback(callback)) {
-            return ResponseEntity.badRequest()
-                    .contentType(MediaType.TEXT_PLAIN)
-                    .header("X-Content-Type-Options", "nosniff")
-                    .body("invalid callback");
+        String newCallback = buildCallbackName(request.getParameter(this.callback));
+        if (newCallback == null) {
+            return invalidCallback();
         }
         String json = JSON.toJSONString(JSON.parseObject(LoginUtils.getUserInfo2JsonStr(request)));
-        return ResponseEntity.ok()
-                .contentType(MediaType.parseMediaType("application/javascript;charset=UTF-8"))
-                .header("X-Content-Type-Options", "nosniff")
-                .body("/**/" + callback + "(" + json + ");");
+        return jsonpOk(newCallback, json);
     }
 
     /**
@@ -135,18 +171,12 @@ public class Jsonp {
                     .header("X-Content-Type-Options", "nosniff")
                     .body("error");
         }
-        String callback = request.getParameter(this.callback);
-        if (!WebUtils.isValidJsonpCallback(callback)) {
-            return ResponseEntity.badRequest()
-                    .contentType(MediaType.TEXT_PLAIN)
-                    .header("X-Content-Type-Options", "nosniff")
-                    .body("invalid callback");
+        String newCallback = buildCallbackName(request.getParameter(this.callback));
+        if (newCallback == null) {
+            return invalidCallback();
         }
         String json = JSON.toJSONString(JSON.parseObject(LoginUtils.getUserInfo2JsonStr(request)));
-        return ResponseEntity.ok()
-                .contentType(MediaType.parseMediaType("application/javascript;charset=UTF-8"))
-                .header("X-Content-Type-Options", "nosniff")
-                .body("/**/" + callback + "(" + json + ");");
+        return jsonpOk(newCallback, json);
     }
 
     /**
@@ -168,18 +198,9 @@ public class Jsonp {
     public ResponseEntity<String> getCsrfToken2(HttpServletRequest request) {
         CsrfToken csrfToken = cookieCsrfTokenRepository.loadToken(request); // get csrf token
 
-        String callback = request.getParameter("fastjsonpCallback");
-        if (!StringUtils.isNotBlank(callback)) {
-            return ResponseEntity.badRequest()
-                    .contentType(MediaType.TEXT_PLAIN)
-                    .header("X-Content-Type-Options", "nosniff")
-                    .body("invalid callback");
-        }
-        if (!WebUtils.isValidJsonpCallback(callback)) {
-            return ResponseEntity.badRequest()
-                    .contentType(MediaType.TEXT_PLAIN)
-                    .header("X-Content-Type-Options", "nosniff")
-                    .body("invalid callback");
+        String newCallback = buildCallbackName(request.getParameter("fastjsonpCallback"));
+        if (newCallback == null) {
+            return invalidCallback();
         }
         Map<String, String> tokenMap = new LinkedHashMap<>();
         if (csrfToken != null) {
@@ -188,10 +209,7 @@ public class Jsonp {
             tokenMap.put("token", csrfToken.getToken());
         }
         String json = JSON.toJSONString(tokenMap);
-        return ResponseEntity.ok()
-                .contentType(MediaType.parseMediaType("application/javascript;charset=UTF-8"))
-                .header("X-Content-Type-Options", "nosniff")
-                .body("/**/" + callback + "(" + json + ");");
+        return jsonpOk(newCallback, json);
     }
 
 }

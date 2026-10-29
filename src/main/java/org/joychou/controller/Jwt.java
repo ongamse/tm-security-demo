@@ -4,6 +4,8 @@ import org.joychou.security.LogSanitizer;
 import lombok.extern.slf4j.Slf4j;
 import org.joychou.util.CookieUtils;
 import org.joychou.util.JwtUtils;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -56,9 +58,39 @@ public class Jwt {
      * @return nickname
      */
     @GetMapping("/getName")
-    public String getNickname(@CookieValue(COOKIE_NAME) String user_cookie) {
+    public ResponseEntity<String> getNickname(@CookieValue(COOKIE_NAME) String user_cookie) {
         String nickname = JwtUtils.getNicknameByJavaJwt(user_cookie);
-        return "Current jwt user is " + nickname;
+        String encoded = encodeEntities(nickname);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType("text/plain;charset=UTF-8"))
+                .header("X-Content-Type-Options", "nosniff")
+                .body("Current jwt user is " + encoded);
+    }
+
+    /**
+     * Build a new string in which every character outside [A-Za-z0-9 ._-]
+     * is replaced by a numeric character reference.
+     */
+    private static String encodeEntities(String origin) {
+        if (origin == null) {
+            return "null";
+        }
+        StringBuilder sb = new StringBuilder(origin.length() * 2);
+        int i = 0;
+        while (i < origin.length()) {
+            int cp = origin.codePointAt(i);
+            i += Character.charCount(cp);
+            boolean letter = (cp >= 'A' && cp <= 'Z') || (cp >= 'a' && cp <= 'z');
+            boolean digit = cp >= '0' && cp <= '9';
+            if (letter || digit) {
+                sb.append((char) cp);
+            } else if (cp == ' ' || cp == '.' || cp == '_' || cp == '-') {
+                sb.append((char) cp);
+            } else {
+                sb.append("&#").append(cp).append(';');
+            }
+        }
+        return sb.toString();
     }
 
 }
