@@ -139,7 +139,7 @@ public class SSRF {
                 return;
             }
             // download
-            response.setHeader("content-disposition", "attachment;fileName=" + downLoadImgFileName);
+            response.setHeader("content-disposition", "attachment; filename=\"" + SecurityUtil.toHeaderSafe(downLoadImgFileName) + "\"");
 
             int length;
             byte[] bytes = new byte[1024];

@@ -350,6 +350,31 @@ public class SecurityUtil {
     }
 
 
+    /**
+     * Build a header-safe copy of a request-derived value (CWE-113). A NEW string is assembled character by
+     * character: only ASCII letters, digits and the characters {@code " -_.:/,;=+@"} are kept, everything else
+     * (CR, LF, other control characters, non-ASCII) is dropped, and the result is capped at 200 characters.
+     *
+     * @param value request-derived value
+     * @return newly built, header-safe string; empty string if value is null
+     */
+    public static String toHeaderSafe(String value) {
+        StringBuilder sb = new StringBuilder();
+        if (value == null) {
+            return sb.toString();
+        }
+        final String extra = " -_.:/,;=+@";
+        for (int i = 0; i < value.length() && sb.length() < 200; i++) {
+            char c = value.charAt(i);
+            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+                    || extra.indexOf(c) != -1) {
+                sb.append(c);
+            }
+        }
+        return sb.toString();
+    }
+
+
     private static boolean containsControlChar(String str) {
         for (int i = 0; i < str.length(); i++) {
             char ch = str.charAt(i);

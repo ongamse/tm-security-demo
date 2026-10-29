@@ -29,8 +29,12 @@ public class CRLFInjection {
             response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
             return;
         }
-        response.addHeader("test1", test1);
-        response.setHeader("test2", test2);
+        if (test1 != null) {
+            response.addHeader("test1", SecurityUtil.toHeaderSafe(test1));
+        }
+        if (test2 != null) {
+            response.setHeader("test2", SecurityUtil.toHeaderSafe(test2));
+        }
         String author = request.getParameter("test3");
         Cookie cookie = new Cookie("test3", author);
         response.addCookie(cookie);
