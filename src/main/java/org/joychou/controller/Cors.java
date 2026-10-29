@@ -26,9 +26,9 @@ public class Cors {
     public String vuls1(HttpServletRequest request, HttpServletResponse response) {
         String origin = request.getHeader("origin");
         // only reflect an origin that is in the safe-domain allowlist
-        String safeOrigin = SecurityUtil.checkURL(origin);
+        String safeOrigin = SecurityUtil.allowedOrigin(origin);
         if (safeOrigin != null) {
-            response.setHeader("Access-Control-Allow-Origin", SecurityUtil.cleanCRLF(safeOrigin));
+            response.setHeader("Access-Control-Allow-Origin", safeOrigin);
             response.setHeader("Access-Control-Allow-Credentials", "true");  // allow cookie
         }
         return info;
@@ -37,9 +37,9 @@ public class Cors {
     @GetMapping("/vuln/setHeader")
     public String vuls2(HttpServletRequest request, HttpServletResponse response) {
         // 不再返回通配符*，仅对白名单内的origin设置Access-Control-Allow-Origin
-        String safeOrigin = SecurityUtil.checkURL(request.getHeader("Origin"));
+        String safeOrigin = SecurityUtil.allowedOrigin(request.getHeader("Origin"));
         if (safeOrigin != null) {
-            response.setHeader("Access-Control-Allow-Origin", SecurityUtil.cleanCRLF(safeOrigin));
+            response.setHeader("Access-Control-Allow-Origin", safeOrigin);
         }
         return info;
     }
@@ -117,8 +117,9 @@ public class Cors {
         if (origin != null && SecurityUtil.checkURL(origin) == null) {
             return "Origin is not safe.";
         }
-        if (origin != null) {
-            response.setHeader("Access-Control-Allow-Origin", SecurityUtil.cleanCRLF(SecurityUtil.checkURL(origin)));
+        String allowedOrigin = SecurityUtil.allowedOrigin(origin);
+        if (allowedOrigin != null) {
+            response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
             response.setHeader("Access-Control-Allow-Credentials", "true");
         }
         return LoginUtils.getUserInfo2JsonStr(request);

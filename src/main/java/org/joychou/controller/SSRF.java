@@ -123,7 +123,13 @@ public class SSRF {
         try {
             String downLoadImgFileName = WebUtils.getNameWithoutExtension(url) + "." + WebUtils.getFileExtension(url);
             // download
-            response.setHeader("content-disposition", "attachment;fileName=" + SecurityUtil.cleanCRLF(downLoadImgFileName));
+            // percent-encode, then require the strict header allowlist; emit a freshly built copy
+            String headerFileName = SecurityUtil.safeHeaderValue(URLEncoder.encode(downLoadImgFileName, "UTF-8"));
+            if (headerFileName == null) {
+                response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+                return;
+            }
+            response.setHeader("content-disposition", "attachment;fileName=" + headerFileName);
 
             int length;
             byte[] bytes = new byte[1024];

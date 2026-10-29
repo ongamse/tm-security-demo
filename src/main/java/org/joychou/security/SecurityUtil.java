@@ -261,24 +261,54 @@ public class SecurityUtil {
     }
 
     /**
-     * Remove CR, LF and other ISO control characters so that a value
-     * can be safely placed into an HTTP response header (CRLF injection).
-     *
-     * @param str untrusted header value, may be null
-     * @return the value without control characters, or null if input is null
+     * The only characters that may appear in a header value derived from request data. It contains
+     * no CR, LF or any other control character, no space, backslash or double quote.
      */
-    public static String cleanCRLF(String str) {
-        if (str == null) {
+    private static final String HEADER_ALPHABET =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._~:/?#[]@!$&'()*+,;=%-";
+    private static final Pattern HEADER_VALUE_PATTERN =
+            Pattern.compile("[A-Za-z0-9._~:/?#\\[\\]@!$&'()*+,;=%-]{0,512}");
+
+    /**
+     * Turn request derived data into a value that is safe for an HTTP response header
+     * (CRLF injection / response splitting).
+     *
+     * <p>The value must fully match a strict allowlist (at most 512 characters, no CR, LF or any other
+     * control character). If it does, the returned string is built character by character from the
+     * server side constant {@link #HEADER_ALPHABET}; the request string itself is never returned.
+     * Anything else is rejected.</p>
+     *
+     * @param value untrusted header value, may be null
+     * @return a freshly constructed copy of the value, or null if the value is null or not allowed
+     */
+    public static String safeHeaderValue(String value) {
+        if (value == null || !HEADER_VALUE_PATTERN.matcher(value).matches()) {
             return null;
         }
-        StringBuilder sb = new StringBuilder(str.length());
-        for (int i = 0; i < str.length(); i++) {
-            char ch = str.charAt(i);
-            if (!Character.isISOControl(ch)) {
-                sb.append(ch);
+        StringBuilder sb = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            int idx = HEADER_ALPHABET.indexOf(value.charAt(i));
+            if (idx < 0) {
+                return null;
             }
+            sb.append(HEADER_ALPHABET.charAt(idx));
         }
         return sb.toString();
+    }
+
+    /**
+     * Allowlist check of a request Origin (same safe-domain policy as {@link #checkURL(String)})
+     * for use as Access-Control-Allow-Origin.
+     *
+     * @param origin the Origin request header
+     * @return a server built header value for an allowlisted origin, otherwise null
+     */
+    public static String allowedOrigin(String origin) {
+        String safe = checkURL(origin);
+        if (safe == null) {
+            return null;
+        }
+        return safeHeaderValue(safe);
     }
 
     public static void main(String[] args) {
