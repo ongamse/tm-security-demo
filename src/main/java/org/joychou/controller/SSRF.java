@@ -135,14 +135,29 @@ public class SSRF {
                 return;
             }
 
-            String downLoadImgFileName = WebUtils.getNameWithoutExtension(url) + "." + WebUtils.getFileExtension(url);
-            // Reject CR/LF and other control characters (also url-encoded) to prevent header injection.
-            if (SecurityUtil.headerFilter(downLoadImgFileName) == null) {
-                logger.error("[-] Illegal file name");
-                return;
+            // Response headers only ever carry server-side constants; the url extension just selects one.
+            String ext = WebUtils.getFileExtension(u.getPath()).toLowerCase(java.util.Locale.ROOT);
+            switch (ext) {
+                case "png":
+                    response.setContentType("image/png");
+                    break;
+                case "jpg":
+                case "jpeg":
+                    response.setContentType("image/jpeg");
+                    break;
+                case "gif":
+                    response.setContentType("image/gif");
+                    break;
+                case "txt":
+                    response.setContentType("text/plain");
+                    break;
+                default:
+                    response.setContentType("application/octet-stream");
+                    break;
             }
+            response.setHeader("X-Content-Type-Options", "nosniff");
             // download
-            response.setHeader("content-disposition", "attachment; filename=\"" + SecurityUtil.toHeaderSafe(downLoadImgFileName) + "\"");
+            response.setHeader("Content-Disposition", "attachment; filename=\"download\"");
 
             int length;
             byte[] bytes = new byte[1024];
