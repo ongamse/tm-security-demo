@@ -4,6 +4,7 @@ import org.springframework.web.util.HtmlUtils;
 import cn.hutool.http.HttpUtil;
 import org.joychou.security.SecurityUtil;
 import org.joychou.security.ssrf.SSRFException;
+import org.joychou.security.ssrf.SafeUrl;
 import org.joychou.service.HttpService;
 import org.joychou.util.HttpUtils;
 import org.joychou.util.WebUtils;
@@ -122,7 +123,11 @@ public class SSRF {
         OutputStream outputStream = null;
         try {
             // Only http/https urls that do not resolve to an internal ip are allowed.
-            if (!SecurityUtil.checkSSRFWithoutRedirect(url)) {
+            // The rebuilt url is the only value that reaches the connection.
+            final URL u;
+            try {
+                u = SafeUrl.resolve(url);
+            } catch (IOException e) {
                 logger.error("[-] SSRF check failed");
                 return;
             }
@@ -136,7 +141,6 @@ public class SSRF {
             // download
             response.setHeader("content-disposition", "attachment;fileName=" + downLoadImgFileName);
 
-            URL u = new URL(url);
             int length;
             byte[] bytes = new byte[1024];
             URLConnection connection = u.openConnection();
@@ -325,10 +329,13 @@ public class SSRF {
     @GetMapping("/dnsrebind/vuln")
     public String DnsRebind(String url) {
         java.security.Security.setProperty("networkaddress.cache.negative.ttl" , "0");
-        if (!SecurityUtil.checkSSRFWithoutRedirect(url)) {
+        final URL target;
+        try {
+            target = SafeUrl.resolve(url);
+        } catch (IOException e) {
             return "Dangerous url";
         }
-        return HttpUtil.get(url);
+        return HttpUtil.get(target.toString());
     }
 
 

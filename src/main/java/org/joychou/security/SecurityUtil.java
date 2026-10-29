@@ -12,12 +12,14 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
+import java.util.Locale;
 import java.util.regex.Pattern;
 
 
 public class SecurityUtil {
 
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
+    private static final Pattern HOST_PATTERN = Pattern.compile("^[A-Za-z0-9._:\\[\\]-]+$");
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
 
 
@@ -40,8 +42,12 @@ public class SecurityUtil {
      */
     public static String gethost(String url) {
         try {
-            URI uri = new URI(url);
-            return uri.getHost().toLowerCase();
+            String host = new URI(url).getHost();
+            if (host == null || !HOST_PATTERN.matcher(host).matches()) {
+                return "";
+            }
+            // canonical (lower case) host rebuilt from the validated characters
+            return host.toLowerCase(Locale.ROOT);
         } catch (URISyntaxException e) {
             return "";
         }
@@ -108,7 +114,7 @@ public class SecurityUtil {
      * must pass the safe/block domain lists checked by {@link #checkURL(String)}.
      *
      * @param url request-derived redirect target
-     * @return the original url if it is a trusted redirect target; null otherwise
+     * @return the canonical url rebuilt from the validated components if it is a trusted redirect target; null otherwise
      */
     public static String checkRedirectURL(String url) {
         if (headerFilter(url) == null) {
@@ -131,20 +137,38 @@ public class SecurityUtil {
             }
         }
 
+        // Parse once and rebuild a canonical url from the validated components.
+        final String rebuilt;
         try {
             URI uri = new URI(url);
-            String scheme = uri.getScheme();
-            if (scheme == null || !(scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"))) {
+            final String scheme;
+            if ("http".equalsIgnoreCase(uri.getScheme())) {
+                scheme = "http";
+            } else if ("https".equalsIgnoreCase(uri.getScheme())) {
+                scheme = "https";
+            } else {
                 return null;
             }
-            if (uri.getRawUserInfo() != null || uri.getHost() == null || uri.getHost().isEmpty()) {
+            String host = gethost(url);
+            if (uri.getRawUserInfo() != null || host.isEmpty()) {
                 return null;
             }
+            StringBuilder sb = new StringBuilder(scheme).append("://").append(host);
+            if (uri.getPort() != -1) {
+                sb.append(':').append(uri.getPort());
+            }
+            if (uri.getRawPath() != null) {
+                sb.append(uri.getRawPath());
+            }
+            if (uri.getRawQuery() != null) {
+                sb.append('?').append(uri.getRawQuery());
+            }
+            rebuilt = sb.toString();
         } catch (URISyntaxException e) {
             return null;
         }
 
-        return checkURL(url);
+        return checkURL(rebuilt);
     }
 
 

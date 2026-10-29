@@ -14,7 +14,7 @@ import org.apache.http.impl.client.HttpClients;
 import org.apache.http.impl.nio.client.CloseableHttpAsyncClient;
 import org.apache.http.impl.nio.client.HttpAsyncClients;
 import org.apache.http.util.EntityUtils;
-import org.joychou.security.SecurityUtil;
+import org.joychou.security.ssrf.SafeUrl;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.slf4j.Logger;
@@ -40,16 +40,18 @@ public class HttpUtils {
     private final static String SSRF_CHECK_FAILED = "[-] SSRF check failed";
 
     /**
+     * Validate the request-derived url and return a url rebuilt from validated components.
      * Only http/https urls whose host does not resolve to an internal/blocked IP are allowed.
-     * The scheme check and the IP blocklist (url/ssrf_safe_domain.xml) are done by
-     * {@link SecurityUtil#checkSSRFWithoutRedirect(String)}. Fails closed on any error.
+     * The request string itself is never handed to an http client. Fails closed on any error.
      */
-    private static boolean isSafeUrl(String url) {
+    private static URL safeUrl(String url) throws IOException {
         try {
-            return SecurityUtil.checkSSRFWithoutRedirect(url);
+            return SafeUrl.resolve(url);
+        } catch (IOException e) {
+            throw e;
         } catch (Exception e) {
             logger.error("SSRF check exception: " + e.getMessage());
-            return false;
+            throw new IOException(SSRF_CHECK_FAILED);
         }
     }
 
@@ -58,10 +60,7 @@ public class HttpUtils {
      * because the redirect target would not be validated.
      */
     private static URLConnection openValidatedConnection(String url) throws IOException {
-        if (!isSafeUrl(url)) {
-            throw new IOException(SSRF_CHECK_FAILED);
-        }
-        URLConnection connection = new URL(url).openConnection();
+        URLConnection connection = safeUrl(url).openConnection();
         if (connection instanceof HttpURLConnection) {
             ((HttpURLConnection) connection).setInstanceFollowRedirects(false);
         }
@@ -70,12 +69,15 @@ public class HttpUtils {
 
     public static String commonHttpClient(String url) {
 
-        if (!isSafeUrl(url)) {
+        final URL target;
+        try {
+            target = safeUrl(url);
+        } catch (IOException e) {
             return SSRF_CHECK_FAILED;
         }
 
         HttpClient client = new HttpClient();
-        GetMethod method = new GetMethod(url);
+        GetMethod method = new GetMethod(target.toString());
         method.setFollowRedirects(false);
 
         try {
@@ -93,13 +95,11 @@ public class HttpUtils {
 
 
     public static String request(String url) {
-        if (!isSafeUrl(url)) {
-            return SSRF_CHECK_FAILED;
-        }
         try {
+            final URL target = safeUrl(url);
             // redirects are disabled because the redirect target would not be validated
             Executor executor = Executor.newInstance(HttpClients.custom().disableRedirectHandling().build());
-            return executor.execute(Request.Get(url)).returnContent().toString();
+            return executor.execute(Request.Get(target.toString())).returnContent().toString();
         } catch (Exception e) {
             return e.getMessage();
         }
@@ -108,16 +108,13 @@ public class HttpUtils {
 
     public static String httpClient(String url) {
 
-        if (!isSafeUrl(url)) {
-            return SSRF_CHECK_FAILED;
-        }
-
         StringBuilder result = new StringBuilder();
 
         try {
+            final URL target = safeUrl(url);
 
             CloseableHttpClient client = HttpClients.createDefault();
-            HttpGet httpGet = new HttpGet(url);
+            HttpGet httpGet = new HttpGet(target.toString());
             // set redirect enable false
             httpGet.setConfig(RequestConfig.custom().setRedirectsEnabled(false).build());
             HttpResponse httpResponse = client.execute(httpGet); // send request
@@ -187,11 +184,9 @@ public class HttpUtils {
      * @param url http request url
      */
     public static String Jsoup(String url) {
-        if (!isSafeUrl(url)) {
-            return SSRF_CHECK_FAILED;
-        }
         try {
-            Document doc = Jsoup.connect(url)
+            final URL target = safeUrl(url);
+            Document doc = Jsoup.connect(target.toString())
                     .followRedirects(false)
                     .timeout(3000)
                     .cookie("name", "joychou") // request cookies
@@ -209,13 +204,11 @@ public class HttpUtils {
      * UserAgent is <code>okhttp/2.5.0</code>.
      */
     public static String okhttp(String url) throws IOException {
-        if (!isSafeUrl(url)) {
-            throw new IOException(SSRF_CHECK_FAILED);
-        }
+        final URL target = safeUrl(url);
         OkHttpClient client = new OkHttpClient();
         client.setFollowRedirects(false);
         client.setFollowSslRedirects(false);
-        com.squareup.okhttp.Request ok_http = new com.squareup.okhttp.Request.Builder().url(url).build();
+        com.squareup.okhttp.Request ok_http = new com.squareup.okhttp.Request.Builder().url(target).build();
         return client.newCall(ok_http).execute().body().string();
     }
 
@@ -256,13 +249,16 @@ public class HttpUtils {
 
 
     public static String HttpAsyncClients(String url) {
-        if (!isSafeUrl(url)) {
+        final URL target;
+        try {
+            target = safeUrl(url);
+        } catch (IOException e) {
             return SSRF_CHECK_FAILED;
         }
         CloseableHttpAsyncClient httpclient = HttpAsyncClients.createDefault();
         try {
             httpclient.start();
-            final HttpGet request = new HttpGet(url);
+            final HttpGet request = new HttpGet(target.toString());
             request.setConfig(RequestConfig.custom().setRedirectsEnabled(false).build());
             Future<HttpResponse> future = httpclient.execute(request, null);
             HttpResponse response = future.get(6000, TimeUnit.MILLISECONDS);

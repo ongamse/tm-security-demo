@@ -30,11 +30,33 @@ public class Jdbc {
      */
     private static String validateJdbcUrl(String jdbcUrl, String expectedSubprotocol) {
         Matcher m = JDBC_URL_PATTERN.matcher(jdbcUrl);
-        if (!m.matches() || !expectedSubprotocol.equals(m.group(1))
-                || !ALLOWED_JDBC_HOSTS.contains(m.group(2).toLowerCase())) {
+        if (!m.matches() || !expectedSubprotocol.equals(m.group(1))) {
             throw new IllegalArgumentException("Illegal jdbc url");
         }
-        return jdbcUrl;
+        // Pick the host from the constant allowlist instead of using the request value.
+        String requestedHost = m.group(2).toLowerCase(java.util.Locale.ROOT);
+        String host = null;
+        for (String allowed : ALLOWED_JDBC_HOSTS) {
+            if (allowed.equals(requestedHost)) {
+                host = allowed;
+                break;
+            }
+        }
+        if (host == null) {
+            throw new IllegalArgumentException("Illegal jdbc url");
+        }
+        // The prefix is a constant chosen by the endpoint, never taken from the request.
+        final String prefix = "postgresql".equals(expectedSubprotocol) ? "jdbc:postgresql://" : "jdbc:db2://";
+        StringBuilder rebuilt = new StringBuilder(prefix).append(host);
+        if (m.group(3) != null) {
+            int port = Integer.parseInt(m.group(3));
+            if (port < 1 || port > 65535) {
+                throw new IllegalArgumentException("Illegal jdbc url");
+            }
+            rebuilt.append(':').append(port);
+        }
+        rebuilt.append('/').append(m.group(4));
+        return rebuilt.toString();
     }
 
     /**
