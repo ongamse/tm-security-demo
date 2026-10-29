@@ -454,6 +454,36 @@ public class SecurityUtil {
         return sb.toString();
     }
 
+    private static final String COOKIE_ALPHABET =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.-";
+    private static final Pattern COOKIE_VALUE_PATTERN = Pattern.compile("^[A-Za-z0-9_.-]{1,64}$");
+
+    /**
+     * Turn request derived data into a value that is safe for an HTTP cookie value
+     * (CRLF injection / response splitting).
+     *
+     * <p>The value must fully match {@code ^[A-Za-z0-9_.-]{1,64}$}. If it does, the returned string is
+     * built character by character from the server side constant {@link #COOKIE_ALPHABET}; the request
+     * string itself is never returned, so the result cannot carry CR, LF, ';', ',' or whitespace.</p>
+     *
+     * @param value untrusted cookie value, may be null
+     * @return a freshly constructed copy of the value, or null if the value is null or not allowed
+     */
+    public static String safeCookieValue(String value) {
+        if (value == null || !COOKIE_VALUE_PATTERN.matcher(value).matches()) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            int idx = COOKIE_ALPHABET.indexOf(value.charAt(i));
+            if (idx < 0) {
+                return null;
+            }
+            sb.append(COOKIE_ALPHABET.charAt(idx));
+        }
+        return sb.toString();
+    }
+
     /**
      * Exact-match lookup of a request Origin in the fixed server side CORS origin allowlist
      * ({@link WebConfig#getCorsAllowedOrigins()}, full scheme://host[:port] strings).

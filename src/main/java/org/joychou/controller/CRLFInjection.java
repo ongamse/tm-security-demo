@@ -8,8 +8,6 @@ import org.springframework.web.bind.annotation.ResponseBody;
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
-import java.io.UnsupportedEncodingException;
-import java.net.URLEncoder;
 
 /**
  * Java 1.7/1.8 no CRLF vulns (test in Java 1.7/1.8)
@@ -22,12 +20,11 @@ public class CRLFInjection {
 
     @RequestMapping("/safecode")
     @ResponseBody
-    public void crlf(HttpServletRequest request, HttpServletResponse response)
-            throws UnsupportedEncodingException {
+    public void crlf(HttpServletRequest request, HttpServletResponse response) {
         // header values must match a strict allowlist and are rebuilt from a server side alphabet
         String test1 = SecurityUtil.safeHeaderValue(request.getParameter("test1"));
         String test2 = SecurityUtil.safeHeaderValue(request.getParameter("test2"));
-        String author = SecurityUtil.safeHeaderValue(request.getParameter("test3"));
+        String author = SecurityUtil.safeCookieValue(request.getParameter("test3"));
         if (test1 == null && request.getParameter("test1") != null
                 || test2 == null && request.getParameter("test2") != null
                 || author == null && request.getParameter("test3") != null) {
@@ -41,7 +38,7 @@ public class CRLFInjection {
             response.setHeader("test2", test2);
         }
         if (author != null) {
-            Cookie cookie = new Cookie("test3", URLEncoder.encode(author, "UTF-8"));
+            Cookie cookie = new Cookie("test3", author);
             cookie.setHttpOnly(true);
             cookie.setSecure(true);
             cookie.setPath("/");
