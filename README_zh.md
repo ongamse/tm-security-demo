@@ -80,8 +80,10 @@ joychou/joychou123
 ``` 
 spring.datasource.url=jdbc:mysql://127.0.0.1:3306/java_sec_code
 spring.datasource.username=root
-spring.datasource.password=woshishujukumima
+spring.datasource.password=<your-mysql-password>
 ```
+
+也可以通过环境变量 `SPRING_DATASOURCE_PASSWORD` 提供密码(`application.properties` 中不再提交密码)。
 
 - Docker
 - IDEA
