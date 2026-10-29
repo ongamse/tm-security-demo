@@ -6,6 +6,7 @@ import com.thoughtworks.xstream.security.NoTypePermission;
 import com.thoughtworks.xstream.security.NullPermission;
 import com.thoughtworks.xstream.security.PrimitiveTypePermission;
 import org.joychou.dao.User;
+import org.joychou.security.SecureXml;
 import org.joychou.util.WebUtils;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -25,8 +26,10 @@ public class XStreamRce {
      */
     @PostMapping("/xstream")
     public String parseXml(HttpServletRequest request) throws Exception {
-        String xml = WebUtils.getRequestBody(request);
+        // Reject DOCTYPE / ENTITY declarations before the body reaches the parser.
+        String xml = SecureXml.requireNoDtd(WebUtils.getRequestBody(request));
         XStream xstream = new XStream(new DomDriver());
+        xstream.setMode(XStream.NO_REFERENCES);
         // Deny everything by default, then allow only the expected types.
         xstream.addPermission(NoTypePermission.NONE);
         xstream.addPermission(NullPermission.NULL);

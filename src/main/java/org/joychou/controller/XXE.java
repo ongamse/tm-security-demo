@@ -1,7 +1,6 @@
 package org.joychou.controller;
 
 import org.springframework.web.util.HtmlUtils;
-import org.dom4j.DocumentHelper;
 import org.dom4j.io.SAXReader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,7 +14,6 @@ import javax.servlet.http.HttpServletRequest;
 import org.w3c.dom.Document;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
-import org.xml.sax.helpers.XMLReaderFactory;
 import org.xml.sax.XMLReader;
 
 import java.io.*;
@@ -24,12 +22,12 @@ import org.xml.sax.InputSource;
 
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
-import javax.xml.parsers.SAXParserFactory;
 import javax.xml.parsers.SAXParser;
 
 import org.xml.sax.helpers.DefaultHandler;
 import org.apache.commons.digester3.Digester;
 import org.jdom2.input.SAXBuilder;
+import org.joychou.security.SecureXml;
 import org.joychou.util.WebUtils;
 import org.xmlbeam.annotation.XBRead;
 
@@ -49,12 +47,9 @@ public class XXE {
     @PostMapping("/xmlReader/vuln")
     public String xmlReaderVuln(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
+            String body = SecureXml.requireNoDtd(WebUtils.getRequestBody(request));
             logger.info(body);
-            XMLReader xmlReader = XMLReaderFactory.createXMLReader();
-            xmlReader.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            xmlReader.setFeature("http://xml.org/sax/features/external-general-entities", false);
-            xmlReader.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            XMLReader xmlReader = SecureXml.newXMLReader();
             xmlReader.parse(new InputSource(new StringReader(body)));  // parse xml
             return "xmlReader xxe vuln code";
         } catch (Exception e) {
@@ -67,14 +62,11 @@ public class XXE {
     @RequestMapping(value = "/xmlReader/sec", method = RequestMethod.POST)
     public String xmlReaderSec(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
+            String body = SecureXml.requireNoDtd(WebUtils.getRequestBody(request));
             logger.info(body);
 
-            XMLReader xmlReader = XMLReaderFactory.createXMLReader();
+            XMLReader xmlReader = SecureXml.newXMLReader();
             // fix code start
-            xmlReader.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            xmlReader.setFeature("http://xml.org/sax/features/external-general-entities", false);
-            xmlReader.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             //fix code end
             xmlReader.parse(new InputSource(new StringReader(body)));  // parse xml
 
@@ -90,13 +82,10 @@ public class XXE {
     @RequestMapping(value = "/SAXBuilder/vuln", method = RequestMethod.POST)
     public String SAXBuilderVuln(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
+            String body = SecureXml.requireNoDtd(WebUtils.getRequestBody(request));
             logger.info(body);
 
-            SAXBuilder builder = new SAXBuilder();
-            builder.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            builder.setFeature("http://xml.org/sax/features/external-general-entities", false);
-            builder.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            SAXBuilder builder = SecureXml.newSAXBuilder();
             // org.jdom2.Document document
             builder.build(new InputSource(new StringReader(body)));
             return "SAXBuilder xxe vuln code";
@@ -109,13 +98,10 @@ public class XXE {
     @RequestMapping(value = "/SAXBuilder/sec", method = RequestMethod.POST)
     public String SAXBuilderSec(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
+            String body = SecureXml.requireNoDtd(WebUtils.getRequestBody(request));
             logger.info(body);
 
-            SAXBuilder builder = new SAXBuilder();
-            builder.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            builder.setFeature("http://xml.org/sax/features/external-general-entities", false);
-            builder.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            SAXBuilder builder = SecureXml.newSAXBuilder();
             // org.jdom2.Document document
             builder.build(new InputSource(new StringReader(body)));
 
@@ -130,10 +116,10 @@ public class XXE {
     @RequestMapping(value = "/SAXReader/vuln", method = RequestMethod.POST)
     public String SAXReaderVuln(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
+            String body = SecureXml.requireNoDtd(WebUtils.getRequestBody(request));
             logger.info(body);
 
-            SAXReader reader = new SAXReader();
+            SAXReader reader = SecureXml.newSAXReader();
             // org.dom4j.Document document
             reader.read(new InputSource(new StringReader(body))); // cause xxe
 
@@ -148,13 +134,10 @@ public class XXE {
     @RequestMapping(value = "/SAXReader/sec", method = RequestMethod.POST)
     public String SAXReaderSec(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
+            String body = SecureXml.requireNoDtd(WebUtils.getRequestBody(request));
             logger.info(body);
 
-            SAXReader reader = new SAXReader();
-            reader.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            reader.setFeature("http://xml.org/sax/features/external-general-entities", false);
-            reader.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            SAXReader reader = SecureXml.newSAXReader();
             // org.dom4j.Document document
             reader.read(new InputSource(new StringReader(body)));
         } catch (Exception e) {
@@ -167,14 +150,10 @@ public class XXE {
     @RequestMapping(value = "/SAXParser/vuln", method = RequestMethod.POST)
     public String SAXParserVuln(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
+            String body = SecureXml.requireNoDtd(WebUtils.getRequestBody(request));
             logger.info(body);
 
-            SAXParserFactory spf = SAXParserFactory.newInstance();
-            spf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            spf.setFeature("http://xml.org/sax/features/external-general-entities", false);
-            spf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
-            SAXParser parser = spf.newSAXParser();
+            SAXParser parser = SecureXml.newSAXParser();
             parser.parse(new InputSource(new StringReader(body)), new DefaultHandler());  // parse xml
 
             return "SAXParser xxe vuln code";
@@ -188,14 +167,10 @@ public class XXE {
     @RequestMapping(value = "/SAXParser/sec", method = RequestMethod.POST)
     public String SAXParserSec(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
+            String body = SecureXml.requireNoDtd(WebUtils.getRequestBody(request));
             logger.info(body);
 
-            SAXParserFactory spf = SAXParserFactory.newInstance();
-            spf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            spf.setFeature("http://xml.org/sax/features/external-general-entities", false);
-            spf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
-            SAXParser parser = spf.newSAXParser();
+            SAXParser parser = SecureXml.newSAXParser();
             parser.parse(new InputSource(new StringReader(body)), new DefaultHandler());  // parse xml
         } catch (Exception e) {
             logger.error(e.toString());
@@ -208,13 +183,10 @@ public class XXE {
     @RequestMapping(value = "/Digester/vuln", method = RequestMethod.POST)
     public String DigesterVuln(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
+            String body = SecureXml.requireNoDtd(WebUtils.getRequestBody(request));
             logger.info(body);
 
-            Digester digester = new Digester();
-            digester.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            digester.setFeature("http://xml.org/sax/features/external-general-entities", false);
-            digester.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            Digester digester = SecureXml.newDigester();
             digester.parse(new StringReader(body));  // parse xml
         } catch (Exception e) {
             logger.error(e.toString());
@@ -226,13 +198,10 @@ public class XXE {
     @RequestMapping(value = "/Digester/sec", method = RequestMethod.POST)
     public String DigesterSec(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
+            String body = SecureXml.requireNoDtd(WebUtils.getRequestBody(request));
             logger.info(body);
 
-            Digester digester = new Digester();
-            digester.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            digester.setFeature("http://xml.org/sax/features/external-general-entities", false);
-            digester.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            Digester digester = SecureXml.newDigester();
             digester.parse(new StringReader(body));  // parse xml
 
             return "Digester xxe security code";
@@ -249,12 +218,14 @@ public class XXE {
     @RequestMapping(value = "/DocumentBuilder/vuln", method = RequestMethod.POST)
     public String DocumentBuilderVuln(HttpServletRequest request) {
         try {
-            DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
-            dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            dbf.setFeature("http://xml.org/sax/features/external-general-entities", false);
-            dbf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            DocumentBuilderFactory dbf = SecureXml.newDocumentBuilderFactory();
             DocumentBuilder db = dbf.newDocumentBuilder();
-            InputSource is = new InputSource(request.getInputStream());
+            byte[] raw = org.springframework.util.StreamUtils.copyToByteArray(request.getInputStream());
+            // Check the decoded text for DTD/ENTITY declarations (UTF-8 and UTF-16) before parsing.
+            SecureXml.requireNoDtd(new String(raw, java.nio.charset.StandardCharsets.UTF_8));
+            SecureXml.requireNoDtd(new String(raw, java.nio.charset.StandardCharsets.UTF_16));
+            SecureXml.requireNoDtd(new String(raw, java.nio.charset.StandardCharsets.UTF_16LE));
+            InputSource is = new InputSource(new ByteArrayInputStream(raw));
             Document document = db.parse(is);  // parse xml
 
             // 遍历xml节点name和value
@@ -279,13 +250,10 @@ public class XXE {
     @RequestMapping(value = "/DocumentBuilder/Sec", method = RequestMethod.POST)
     public String DocumentBuilderSec(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
+            String body = SecureXml.requireNoDtd(WebUtils.getRequestBody(request));
             logger.info(body);
 
-            DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
-            dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            dbf.setFeature("http://xml.org/sax/features/external-general-entities", false);
-            dbf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            DocumentBuilderFactory dbf = SecureXml.newDocumentBuilderFactory();
             DocumentBuilder db = dbf.newDocumentBuilder();
             StringReader sr = new StringReader(body);
             InputSource is = new InputSource(sr);
@@ -302,15 +270,11 @@ public class XXE {
     @RequestMapping(value = "/DocumentBuilder/xinclude/vuln", method = RequestMethod.POST)
     public String DocumentBuilderXincludeVuln(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
+            String body = SecureXml.requireNoDtd(WebUtils.getRequestBody(request));
             logger.info(body);
 
-            DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
-            dbf.setXIncludeAware(false);  // XInclude disabled: it can pull in external resources
+            DocumentBuilderFactory dbf = SecureXml.newDocumentBuilderFactory();
             dbf.setNamespaceAware(true);
-            dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            dbf.setFeature("http://xml.org/sax/features/external-general-entities", false);
-            dbf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             DocumentBuilder db = dbf.newDocumentBuilder();
             StringReader sr = new StringReader(body);
             InputSource is = new InputSource(sr);
@@ -331,15 +295,11 @@ public class XXE {
     @RequestMapping(value = "/DocumentBuilder/xinclude/sec", method = RequestMethod.POST)
     public String DocumentBuilderXincludeSec(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
+            String body = SecureXml.requireNoDtd(WebUtils.getRequestBody(request));
             logger.info(body);
-            DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+            DocumentBuilderFactory dbf = SecureXml.newDocumentBuilderFactory();
 
-            dbf.setXIncludeAware(true);   // 支持XInclude
-            dbf.setNamespaceAware(true);  // 支持XInclude
-            dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            dbf.setFeature("http://xml.org/sax/features/external-general-entities", false);
-            dbf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            dbf.setNamespaceAware(true);
 
             DocumentBuilder db = dbf.newDocumentBuilder();
             StringReader sr = new StringReader(body);
@@ -361,15 +321,10 @@ public class XXE {
     @PostMapping("/XMLReader/vuln")
     public String XMLReaderVuln(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
+            String body = SecureXml.requireNoDtd(WebUtils.getRequestBody(request));
             logger.info(body);
 
-            SAXParserFactory spf = SAXParserFactory.newInstance();
-            SAXParser saxParser = spf.newSAXParser();
-            XMLReader xmlReader = saxParser.getXMLReader();
-            xmlReader.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            xmlReader.setFeature("http://xml.org/sax/features/external-general-entities", false);
-            xmlReader.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            XMLReader xmlReader = SecureXml.newXMLReader();
             xmlReader.parse(new InputSource(new StringReader(body)));
 
         } catch (Exception e) {
@@ -384,15 +339,10 @@ public class XXE {
     @PostMapping("/XMLReader/sec")
     public String XMLReaderSec(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
+            String body = SecureXml.requireNoDtd(WebUtils.getRequestBody(request));
             logger.info(body);
 
-            SAXParserFactory spf = SAXParserFactory.newInstance();
-            SAXParser saxParser = spf.newSAXParser();
-            XMLReader xmlReader = saxParser.getXMLReader();
-            xmlReader.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            xmlReader.setFeature("http://xml.org/sax/features/external-general-entities", false);
-            xmlReader.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            XMLReader xmlReader = SecureXml.newXMLReader();
             xmlReader.parse(new InputSource(new StringReader(body)));
 
         } catch (Exception e) {
@@ -410,8 +360,8 @@ public class XXE {
     @PostMapping("/DocumentHelper/vuln")
     public String DocumentHelper(HttpServletRequest req) {
         try {
-            String body = WebUtils.getRequestBody(req);
-            DocumentHelper.parseText(body); // parse xml
+            String body = SecureXml.requireNoDtd(WebUtils.getRequestBody(req));
+            SecureXml.newSAXReader().read(new StringReader(body)); // parse xml
         } catch (Exception e) {
             logger.error(e.toString());
             return EXCEPT;
