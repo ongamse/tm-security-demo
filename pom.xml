@@ -25,6 +25,12 @@
     <dependencies>
         <!-- DEMO: vulnerable but never called, used to show reachability filtering -->
         <dependency>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>kafka-clients</artifactId>
+            <version>4.3.1</version>
+        </dependency>
+             
+        <dependency>
             <groupId>org.apache.commons</groupId>
             <artifactId>commons-text</artifactId>
             <version>1.9</version>
