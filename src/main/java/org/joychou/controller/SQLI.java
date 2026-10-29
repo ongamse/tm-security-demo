@@ -8,6 +8,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
@@ -73,6 +77,51 @@ public class SQLI {
         return id;
     }
 
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    private static class ForbiddenReferenceException extends RuntimeException {
+        ForbiddenReferenceException(String message) {
+            super(message);
+        }
+    }
+
+    /**
+     * Name of the authenticated caller. Fails closed (403) when there is no authenticated principal.
+     */
+    private static String currentUsername() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated() || auth instanceof AnonymousAuthenticationToken
+                || auth.getName() == null) {
+            throw new ForbiddenReferenceException("Access denied");
+        }
+        return auth.getName();
+    }
+
+    private static boolean isAdmin() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || auth.getAuthorities() == null) {
+            return false;
+        }
+        for (GrantedAuthority authority : auth.getAuthorities()) {
+            if ("ROLE_ADMIN".equals(authority.getAuthority())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Validate a requested username and authorize the caller for that user record: the caller must be
+     * the record owner or hold ROLE_ADMIN. Fails closed with 403.
+     */
+    private static String requireAuthorizedUsername(String username) {
+        String valid = requireValidUsername(username);
+        String caller = currentUsername();
+        if (!isAdmin() && !caller.equals(valid)) {
+            throw new ForbiddenReferenceException("Access denied");
+        }
+        return valid;
+    }
+
 
     /**
      * <p>Sql injection jbdc vuln code.</p><br>
@@ -94,7 +143,7 @@ public class SQLI {
             // sqli vuln code
             String sql = "select * from users where username = ?";
             PreparedStatement statement = con.prepareStatement(sql);
-            statement.setString(1, username);
+            statement.setString(1, requireAuthorizedUsername(username));
             logger.info(statement.toString());
             ResultSet rs = statement.executeQuery();
 
@@ -137,7 +186,7 @@ public class SQLI {
             // fix code
             String sql = "select * from users where username = ?";
             PreparedStatement st = con.prepareStatement(sql);
-            st.setString(1, requireValidUsername(username));
+            st.setString(1, requireAuthorizedUsername(username));
 
             logger.info(st.toString());  // sql after prepare statement
             ResultSet rs = st.executeQuery();
@@ -180,7 +229,7 @@ public class SQLI {
 
             String sql = "select * from users where username = ?";
             PreparedStatement st = con.prepareStatement(sql);
-            st.setString(1, username);
+            st.setString(1, requireAuthorizedUsername(username));
 
             logger.info(st.toString());
             ResultSet rs = st.executeQuery();
@@ -213,7 +262,7 @@ public class SQLI {
      */
     @GetMapping("/mybatis/vuln01")
     public List<User> mybatisVuln01(@RequestParam("username") String username) {
-        return userMapper.findByUserNameVuln01(requireValidUsername(username));
+        return userMapper.findByUserNameVuln01(requireAuthorizedUsername(username));
     }
 
     /**
@@ -223,7 +272,7 @@ public class SQLI {
      */
     @GetMapping("/mybatis/vuln02")
     public List<User> mybatisVuln02(@RequestParam("username") String username) {
-        return userMapper.findByUserNameVuln02(requireValidUsername(username));
+        return userMapper.findByUserNameVuln02(requireAuthorizedUsername(username));
     }
 
     /**
@@ -243,7 +292,7 @@ public class SQLI {
      */
     @GetMapping("/mybatis/sec01")
     public User mybatisSec01(@RequestParam("username") String username) {
-        return userMapper.findByUserName(requireValidUsername(username));
+        return userMapper.findByUserName(requireAuthorizedUsername(username));
     }
 
     /**
@@ -252,7 +301,13 @@ public class SQLI {
      */
     @GetMapping("/mybatis/sec02")
     public User mybatisSec02(@RequestParam("id") Integer id) {
-        return userMapper.findById(requireValidId(id));
+        Integer validId = requireValidId(id);
+        String caller = currentUsername();
+        if (isAdmin()) {
+            return userMapper.findById(validId);
+        }
+        // Indirect, caller-scoped lookup: a record owned by another user can never be returned.
+        return userMapper.findByIdAndUsername(validId, caller);
     }
 
 

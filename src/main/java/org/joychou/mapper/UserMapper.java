@@ -25,6 +25,9 @@ public interface UserMapper {
 
     User findById(Integer id);
 
+    @Select("select * from users where id = #{id} and username = #{username}")
+    User findByIdAndUsername(@Param("id") Integer id, @Param("username") String username);
+
     User OrderByUsername();
 
 }
