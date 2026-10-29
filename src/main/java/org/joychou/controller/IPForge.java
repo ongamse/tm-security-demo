@@ -1,6 +1,7 @@
 package org.joychou.controller;
 
 import org.apache.commons.lang.StringUtils;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.RestController;
@@ -17,6 +18,10 @@ import javax.servlet.http.HttpServletRequest;
 @RequestMapping("/ip")
 public class IPForge {
 
+    // Comma-separated list of trusted reverse proxy IPs; empty by default (trust no forwarded headers).
+    @Value("${joychou.security.trusted-proxies:}")
+    private String trustedProxies;
+
     // no any proxy
     @RequestMapping("/noproxy")
     public static String noProxy(HttpServletRequest request) {
@@ -31,17 +36,32 @@ public class IPForge {
      */
     @RequestMapping("/proxy")
     @ResponseBody
-    public static String proxy(HttpServletRequest request) {
-        String ip = request.getHeader("X-Real-IP");
-        if (StringUtils.isNotBlank(ip)) {
-            return HtmlUtils.htmlEscape(ip);
-        } else {
-            String remoteAddr = request.getRemoteAddr();
-            if (StringUtils.isNotBlank(remoteAddr)) {
-                return HtmlUtils.htmlEscape(remoteAddr);
+    public String proxy(HttpServletRequest request) {
+        String remoteAddr = request.getRemoteAddr();
+        // Forwarded headers are client-controllable; only honour them when the
+        // direct peer is an explicitly configured trusted proxy (default: none).
+        if (StringUtils.isNotBlank(remoteAddr) && isTrustedProxy(remoteAddr)) {
+            String ip = request.getHeader("X-Real-IP");
+            if (StringUtils.isNotBlank(ip)) {
+                return HtmlUtils.htmlEscape(ip);
             }
         }
+        if (StringUtils.isNotBlank(remoteAddr)) {
+            return HtmlUtils.htmlEscape(remoteAddr);
+        }
         return "";
+    }
+
+    private boolean isTrustedProxy(String remoteAddr) {
+        if (StringUtils.isBlank(trustedProxies)) {
+            return false;
+        }
+        for (String proxy : trustedProxies.split(",")) {
+            if (remoteAddr.equals(proxy.trim())) {
+                return true;
+            }
+        }
+        return false;
     }
 
 
