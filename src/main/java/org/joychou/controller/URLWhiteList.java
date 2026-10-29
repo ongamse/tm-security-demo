@@ -110,9 +110,13 @@ public class URLWhiteList {
         logger.info("host:  " + host);
 
         // endsWith .
+        // The request url only selects an entry of the server side domain allowlist. The redirect
+        // target is composed of a constant scheme and the allowlist's own entry (path and query of the
+        // request are not carried over), so it is never derived from the request string.
+        final String scheme = safeUrl.startsWith("https://") ? "https" : "http";
         for (String domain : domainwhitelist) {
             if (host.endsWith("." + domain)) {
-                res.sendRedirect(safeUrl);
+                res.sendRedirect(scheme + "://" + domain + "/");
                 return;
             }
         }
