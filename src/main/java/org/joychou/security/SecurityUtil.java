@@ -10,7 +10,9 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.regex.Pattern;
 
 
@@ -143,7 +145,7 @@ public class SecurityUtil {
             }
             return null;
         } catch (NullPointerException e) {
-            logger.error("{}", logSafe(e.toString()));
+            logger.error("Safe url check exception: {}", e.getClass().getSimpleName());
             return null;
         }
     }
@@ -377,10 +379,10 @@ public class SecurityUtil {
             try {
                 temp = URLDecoder.decode(temp, "utf-8");
             } catch (UnsupportedEncodingException e) {
-                logger.info("Unsupported encoding exception: {}", logSafe(filepath));
+                logger.info("Unsupported encoding for file path");
                 return null;
             } catch (Exception e) {
-                logger.info("{}", logSafe(e.toString()));
+                logger.info("File path decode exception: {}", e.getClass().getSimpleName());
                 return null;
             }
         }
@@ -479,32 +481,54 @@ public class SecurityUtil {
     }
 
     private static final String COOKIE_ALPHABET = buildAlphabet(true, "_.-");
-    private static final Pattern COOKIE_VALUE_PATTERN = Pattern.compile("^[A-Za-z0-9_.-]{1,64}$");
+    private static final int COOKIE_INPUT_MAX_LENGTH = 256;
 
     /**
      * Turn request derived data into a value that is safe for an HTTP cookie value
-     * (CRLF injection / response splitting).
+     * (CRLF injection / response splitting, cookie attribute injection).
      *
-     * <p>The value must fully match {@code ^[A-Za-z0-9_.-]{1,64}$}. If it does, the returned string is
-     * built character by character from the server side constant {@link #COOKIE_ALPHABET}; the request
-     * string itself is never returned, so the result cannot carry CR, LF, ';', ',' or whitespace.</p>
+     * <p>The input is capped at 256 characters, encoded as URL-safe Base64 (no padding) and the encoded
+     * text is then built character by character from the server side constant {@link #COOKIE_ALPHABET}.
+     * The request string itself is never returned, and the result can only contain
+     * {@code A-Z a-z 0-9 - _}, so it cannot carry CR, LF, ';', ',' or whitespace. Use
+     * {@link #decodeCookieValue(String)} to read the original text back.</p>
      *
      * @param value untrusted cookie value, may be null
-     * @return a freshly constructed copy of the value, or null if the value is null or not allowed
+     * @return a freshly constructed encoded value, or null if the value is null
      */
     public static String safeCookieValue(String value) {
-        if (value == null || !COOKIE_VALUE_PATTERN.matcher(value).matches()) {
+        if (value == null) {
             return null;
         }
-        StringBuilder sb = new StringBuilder(value.length());
-        for (int i = 0; i < value.length(); i++) {
-            int idx = COOKIE_ALPHABET.indexOf(value.charAt(i));
-            if (idx < 0) {
-                return null;
+        String capped = value.length() > COOKIE_INPUT_MAX_LENGTH ? value.substring(0, COOKIE_INPUT_MAX_LENGTH) : value;
+        String encoded = Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(capped.getBytes(StandardCharsets.UTF_8));
+        StringBuilder sb = new StringBuilder(encoded.length());
+        for (int i = 0; i < encoded.length(); i++) {
+            int idx = COOKIE_ALPHABET.indexOf(encoded.charAt(i));
+            if (idx >= 0) {
+                sb.append(COOKIE_ALPHABET.charAt(idx));
             }
-            sb.append(COOKIE_ALPHABET.charAt(idx));
         }
         return sb.toString();
+    }
+
+    /**
+     * Reverse of {@link #safeCookieValue(String)}.
+     * The result is plain, unescaped text: callers must encode it for the output context (e.g. HTML).
+     *
+     * @param cookieValue a cookie value produced by {@link #safeCookieValue(String)}, may be null
+     * @return the original text, or an empty string if the value is null or not valid encoded data
+     */
+    public static String decodeCookieValue(String cookieValue) {
+        if (cookieValue == null || cookieValue.isEmpty()) {
+            return "";
+        }
+        try {
+            return new String(Base64.getUrlDecoder().decode(cookieValue), StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException e) {
+            return "";
+        }
     }
 
     /**

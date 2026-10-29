@@ -1,5 +1,6 @@
 package org.joychou.controller;
 
+import org.joychou.security.SecurityUtil;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -40,7 +41,9 @@ public class XSS {
     @RequestMapping("/stored/store")
     @ResponseBody
     public String store(String xss, HttpServletResponse response) {
-        Cookie cookie = new Cookie("xss", xss);
+        // the cookie value is Base64url encoded and rebuilt from a constant alphabet (see SecurityUtil)
+        String encoded = SecurityUtil.safeCookieValue(xss == null ? "" : xss);
+        Cookie cookie = new Cookie("xss", encoded);
         cookie.setHttpOnly(true);
         cookie.setSecure(true);
         cookie.setPath("/");
@@ -59,7 +62,7 @@ public class XSS {
     @RequestMapping("/stored/show")
     @ResponseBody
     public String show(@CookieValue("xss") String xss) {
-        return xss == null ? "" : HtmlUtils.htmlEscape(xss);
+        return xss == null ? "" : HtmlUtils.htmlEscape(SecurityUtil.decodeCookieValue(xss));
     }
 
     /**
