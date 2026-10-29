@@ -39,6 +39,8 @@ public class HttpUtils {
 
     private final static String SSRF_CHECK_FAILED = "[-] SSRF check failed";
 
+    private final static String REQUEST_FAILED = "Request failed.";
+
     /**
      * Validate the request-derived url and return a url rebuilt from validated components.
      * Only http/https urls whose host does not resolve to an internal/blocked IP are allowed.
@@ -86,7 +88,8 @@ public class HttpUtils {
             return new String(resBody);
 
         } catch (IOException e) {
-            return "Error: " + e.getMessage();
+            logger.error("Request failed.", e);
+            return REQUEST_FAILED;
         } finally {
             // Release the connection.
             method.releaseConnection();
@@ -101,7 +104,8 @@ public class HttpUtils {
             Executor executor = Executor.newInstance(HttpClients.custom().disableRedirectHandling().build());
             return executor.execute(Request.Get(target.toString())).returnContent().toString();
         } catch (Exception e) {
-            return e.getMessage();
+            logger.error("Request failed.", e);
+            return REQUEST_FAILED;
         }
     }
 
@@ -128,7 +132,8 @@ public class HttpUtils {
             return result.toString();
 
         } catch (Exception e) {
-            return e.getMessage();
+            logger.error("Request failed.", e);
+            return REQUEST_FAILED;
         }
     }
 
@@ -146,8 +151,8 @@ public class HttpUtils {
             in.close();
             return html.toString();
         } catch (Exception e) {
-            logger.error(e.getMessage());
-            return e.getMessage();
+            logger.error("Request failed.", e);
+            return REQUEST_FAILED;
         }
     }
 
@@ -172,8 +177,8 @@ public class HttpUtils {
             in.close();
             return html.toString();
         } catch (IOException e) {
-            logger.error(e.getMessage());
-            return e.getMessage();
+            logger.error("Request failed.", e);
+            return REQUEST_FAILED;
         }
     }
 
@@ -193,7 +198,8 @@ public class HttpUtils {
                     .execute().parse();
             return doc.outerHtml();
         } catch (IOException e) {
-            return e.getMessage();
+            logger.error("Request failed.", e);
+            return REQUEST_FAILED;
         }
     }
 
@@ -264,7 +270,8 @@ public class HttpUtils {
             HttpResponse response = future.get(6000, TimeUnit.MILLISECONDS);
             return EntityUtils.toString(response.getEntity());
         } catch (Exception e) {
-            return e.getMessage();
+            logger.error("Request failed.", e);
+            return REQUEST_FAILED;
         } finally {
             try {
                 httpclient.close();

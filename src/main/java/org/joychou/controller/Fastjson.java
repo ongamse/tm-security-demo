@@ -3,6 +3,8 @@ package org.joychou.controller;
 import org.springframework.web.util.HtmlUtils;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -14,6 +16,8 @@ import org.springframework.web.bind.annotation.ResponseBody;
 @RequestMapping("/fastjson")
 public class Fastjson {
 
+    private static final Logger logger = LoggerFactory.getLogger(Fastjson.class);
+
     @RequestMapping(value = "/deserialize", method = {RequestMethod.POST})
     @ResponseBody
     public String Deserialize(@RequestBody String params) {
@@ -23,7 +27,8 @@ public class Fastjson {
             JSONObject ob = JSON.parseObject(params);
             return HtmlUtils.htmlEscape(String.valueOf(ob.get("name")));
         } catch (Exception e) {
-            return HtmlUtils.htmlEscape(e.toString());
+            logger.error("JSON parsing failed.", e);
+            return "Request failed.";
         }
     }
 }
