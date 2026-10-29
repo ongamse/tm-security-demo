@@ -3,18 +3,16 @@ package org.joychou.security;
 import org.joychou.config.WebConfig;
 import org.joychou.security.ssrf.SSRFChecker;
 import org.joychou.security.ssrf.SocketHook;
+import org.joychou.security.ssrf.UrlParts;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Locale;
 import java.util.regex.Pattern;
 
 
@@ -44,13 +42,13 @@ public class SecurityUtil {
      */
     public static String gethost(String url) {
         try {
-            String host = new URI(url).getHost();
-            if (host == null || !HOST_PATTERN.matcher(host).matches()) {
+            // Strict hand-written parser: the host is rebuilt char by char from a constant alphabet.
+            String host = UrlParts.parse(url).host();
+            if (!HOST_PATTERN.matcher(host).matches()) {
                 return "";
             }
-            // canonical (lower case) host rebuilt from the validated characters
-            return host.toLowerCase(Locale.ROOT);
-        } catch (URISyntaxException e) {
+            return host;
+        } catch (UrlParts.InvalidUrlException e) {
             return "";
         }
     }
@@ -73,12 +71,21 @@ public class SecurityUtil {
         ArrayList<String> blockDomains = WebConfig.getBlockDomains();
 
         try {
-            String host = gethost(url);
-
             // 必须http/https
             if (!isHttp(url)) {
                 return null;
             }
+
+            // Strict hand-written parser: no URI/URL is created from the request-derived string.
+            final UrlParts parts;
+            try {
+                parts = UrlParts.parse(url);
+            } catch (UrlParts.InvalidUrlException e) {
+                return null;
+            }
+            final String host = parts.host();
+            // canonical url assembled from the validated components
+            final String canonical = parts.toCanonicalString();
 
             // 如果满足黑名单返回null
             if (blockDomains.contains(host)){
@@ -92,13 +99,13 @@ public class SecurityUtil {
 
             // 支持多级域名
             if (safeDomains.contains(host)){
-                return url;
+                return canonical;
             }
 
             // 支持一级域名
             for(String safedomain: safeDomains) {
                 if(host.endsWith("." + safedomain)) {
-                    return url;
+                    return canonical;
                 }
             }
             return null;
@@ -155,7 +162,7 @@ public class SecurityUtil {
     /**
      * Validate a request-derived url before it is used as an HTTP redirect target (open redirect, CWE-601).
      * The url must be an absolute http/https url without user info, must not contain control characters
-     * or backslashes (also url-encoded), its real host (parsed by {@link URI}) must be non-empty and
+     * or backslashes (also url-encoded), its real host (parsed by {@link UrlParts}) must be non-empty and
      * must pass the safe/block domain lists checked by {@link #checkURL(String)}.
      *
      * @param url request-derived redirect target
@@ -185,31 +192,8 @@ public class SecurityUtil {
         // Parse once and rebuild a canonical url from the validated components.
         final String rebuilt;
         try {
-            URI uri = new URI(url);
-            final String scheme;
-            if ("http".equalsIgnoreCase(uri.getScheme())) {
-                scheme = "http";
-            } else if ("https".equalsIgnoreCase(uri.getScheme())) {
-                scheme = "https";
-            } else {
-                return null;
-            }
-            String host = gethost(url);
-            if (uri.getRawUserInfo() != null || host.isEmpty()) {
-                return null;
-            }
-            StringBuilder sb = new StringBuilder(scheme).append("://").append(host);
-            if (uri.getPort() != -1) {
-                sb.append(':').append(uri.getPort());
-            }
-            if (uri.getRawPath() != null) {
-                sb.append(uri.getRawPath());
-            }
-            if (uri.getRawQuery() != null) {
-                sb.append('?').append(uri.getRawQuery());
-            }
-            rebuilt = sb.toString();
-        } catch (URISyntaxException e) {
+            rebuilt = UrlParts.parse(url).toCanonicalString();
+        } catch (UrlParts.InvalidUrlException e) {
             return null;
         }
 

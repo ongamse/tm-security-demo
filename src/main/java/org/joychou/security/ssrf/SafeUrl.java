@@ -2,12 +2,9 @@ package org.joychou.security.ssrf;
 
 import java.io.IOException;
 import java.net.InetAddress;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.net.URL;
 import java.util.Collections;
 import java.util.List;
-import java.util.Locale;
 import java.util.regex.Pattern;
 
 /**
@@ -47,31 +44,20 @@ public final class SafeUrl {
             throw new IOException(SSRF_CHECK_FAILED);
         }
 
-        final URI uri;
+        // Strict hand-written parser: no URI/URL is created from the request-derived string.
+        final UrlParts parts;
         try {
-            uri = new URI(requested);
-        } catch (URISyntaxException e) {
+            parts = UrlParts.parse(requested);
+        } catch (UrlParts.InvalidUrlException e) {
             throw new IOException(SSRF_CHECK_FAILED);
         }
 
-        // The scheme of the rebuilt url is always one of these literals.
-        final String scheme;
-        if ("http".equalsIgnoreCase(uri.getScheme())) {
-            scheme = "http";
-        } else if ("https".equalsIgnoreCase(uri.getScheme())) {
-            scheme = "https";
-        } else {
+        // The scheme of the rebuilt url is always one of the literals "http" / "https".
+        final String scheme = parts.scheme();
+        final String host = parts.host();
+        if (host.isEmpty() || !SAFE_HOST.matcher(host).matches()) {
             throw new IOException(SSRF_CHECK_FAILED);
         }
-
-        if (uri.getRawUserInfo() != null) {
-            throw new IOException(SSRF_CHECK_FAILED);
-        }
-        String host = uri.getHost();
-        if (host == null || host.isEmpty() || !SAFE_HOST.matcher(host).matches()) {
-            throw new IOException(SSRF_CHECK_FAILED);
-        }
-        host = host.toLowerCase(Locale.ROOT);
 
         // Octal ip literals are parsed differently by different components: reject them.
         if (SSRFChecker.isOctalIP(host)) {
@@ -101,18 +87,12 @@ public final class SafeUrl {
             }
         }
 
-        int port = uri.getPort();
+        final int port = parts.port();
         if (port != -1 && (port < 1 || port > 65535)) {
             throw new IOException(SSRF_CHECK_FAILED);
         }
 
-        String path = uri.getRawPath();
-        StringBuilder file = new StringBuilder(null == path || path.isEmpty() ? "/" : path);
-        if (uri.getRawQuery() != null) {
-            file.append('?').append(uri.getRawQuery());
-        }
-
-        return new URL(scheme, host, port, file.toString());
+        return new URL(scheme, host, port, parts.pathAndQuery());
     }
 
     /**
