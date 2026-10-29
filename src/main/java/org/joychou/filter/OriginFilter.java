@@ -51,8 +51,7 @@ public class OriginFilter implements Filter {
         // Only allowlisted origins (checked above) get CORS headers; no Origin header means same-origin.
         if (allowedOrigin != null) {
             response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
-            response.setHeader("Access-Control-Allow-Credentials", "true");
-            response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTION");
+            response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
             response.addHeader("Vary", "Origin");
         }
 

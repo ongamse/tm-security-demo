@@ -34,7 +34,6 @@ public class Cors {
         if (allowedOrigin != null) {
             // only the matching allowlist element is sent back; the "null" origin is rejected above
             response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
-            response.setHeader("Access-Control-Allow-Credentials", "true");  // allow cookie
             response.addHeader("Vary", "Origin");
         }
         return info;
@@ -128,11 +127,9 @@ public class Cors {
                 || allowedOrigin == null)) {
             return "Origin is not safe.";
         }
-        if (allowedOrigin != null) {
-            response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
-            response.setHeader("Access-Control-Allow-Credentials", "true");
-            response.addHeader("Vary", "Origin");
-        }
+        // The response depends on the caller's session/cookies, so it stays same-origin only:
+        // no CORS headers are sent here (allowlisted origins are still validated above).
+        response.addHeader("Vary", "Origin");
         return LoginUtils.getUserInfo2JsonStr(request);
     }
 
