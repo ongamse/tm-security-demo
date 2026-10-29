@@ -125,10 +125,9 @@ public class SSRF {
             // download
             response.setHeader("content-disposition", "attachment;fileName=" + downLoadImgFileName);
 
-            URL u = new URL(url);
             int length;
             byte[] bytes = new byte[1024];
-            inputStream = u.openStream(); // send request
+            inputStream = HttpUtils.openStream(url); // send request
             outputStream = response.getOutputStream();
             while ((length = inputStream.read(bytes)) > 0) {
                 outputStream.write(bytes, 0, length);

@@ -82,7 +82,14 @@ public class SSRFChecker {
                     String redirectedUrl = connection.getHeaderField("Location");
                     if (null == redirectedUrl)
                         break;
-                    finalUrl = redirectedUrl;
+                    // Location may be relative; resolve it against the current url
+                    // so that the next iteration validates the real destination.
+                    try {
+                        finalUrl = new URI(finalUrl).resolve(redirectedUrl.trim()).toString();
+                    } catch (IllegalArgumentException | java.net.URISyntaxException e) {
+                        logger.error("[-] SSRF check failed. Illegal redirect url: " + redirectedUrl);
+                        return false;
+                    }
                     i += 1;  // 重定向次数加1
                     logger.info("redirected url: " + finalUrl);
                     if (i == checkTimes) {
@@ -106,8 +113,17 @@ public class SSRFChecker {
      */
     public static boolean isInternalIpByUrl(String url) {
 
-        String host = url2host(url);
-        if (host.equals("")) {
+        return isInternalHost(url2host(url));
+    }
+
+
+    /**
+     * 判断一个host的IP是否是内网IP。host为空或者无法解析，当成非法host处理。
+     *
+     * @return 如果是内网IP或非法host，返回true；非内网IP，返回false。
+     */
+    public static boolean isInternalHost(String host) {
+        if (host == null || host.equals("")) {
             return true; // 异常URL当成内网IP等非法URL处理
         }
 
@@ -132,17 +148,50 @@ public class SSRFChecker {
             return true;
         }
 
-        ArrayList<String> blackSubnets = WebConfig.getSsrfBlockIps();
-        for (String subnet : blackSubnets) {
-            SubnetUtils utils = new SubnetUtils(subnet);
-            if (utils.getInfo().isInRange(strIP)) {
-                logger.error("[-] SSRF check failed. Internal IP: " + strIP);
-                return true;
+        InetAddress addr;
+        try {
+            // strIP is an IP literal here, so this does not send a dns request.
+            addr = InetAddress.getByName(strIP);
+        } catch (Exception e) {
+            logger.error("[-] SSRF check failed. Illegal IP: " + strIP);
+            return true;
+        }
+
+        // Special-purpose ranges (loopback, link-local incl. cloud metadata 169.254.169.254,
+        // site-local, multicast, wildcard, IPv6 unique local, carrier-grade NAT 100.64.0.0/10).
+        if (isSpecialPurposeAddress(addr)) {
+            logger.error("[-] SSRF check failed. Internal IP: " + strIP);
+            return true;
+        }
+
+        // The configured subnets are IPv4 only.
+        if (addr.getAddress().length == 4) {
+            String ipv4 = addr.getHostAddress();
+            ArrayList<String> blackSubnets = WebConfig.getSsrfBlockIps();
+            for (String subnet : blackSubnets) {
+                SubnetUtils utils = new SubnetUtils(subnet);
+                if (utils.getInfo().isInRange(ipv4)) {
+                    logger.error("[-] SSRF check failed. Internal IP: " + strIP);
+                    return true;
+                }
             }
         }
 
         return false;
 
+    }
+
+
+    private static boolean isSpecialPurposeAddress(InetAddress addr) {
+        if (addr.isAnyLocalAddress() || addr.isLoopbackAddress() || addr.isLinkLocalAddress()
+                || addr.isSiteLocalAddress() || addr.isMulticastAddress()) {
+            return true;
+        }
+        byte[] b = addr.getAddress();
+        if (b.length == 16) {
+            return (b[0] & 0xfe) == 0xfc; // fc00::/7
+        }
+        return (b[0] & 0xff) == 100 && (b[1] & 0xc0) == 64; // 100.64.0.0/10
     }
 
 
@@ -290,11 +339,17 @@ public class SSRFChecker {
     private static String url2host(String url) {
         try {
             // use URI instead of URL
-            URI u = new URI(url);
-            if (SecurityUtil.isHttp(url)) {
-                return u.getHost();
+            if (!SecurityUtil.isHttp(url)) {
+                return "";
             }
-            return "";
+            URI u = new URI(url);
+            String scheme = u.getScheme();
+            String host = u.getHost();
+            if (host == null || scheme == null
+                    || !("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme))) {
+                return "";
+            }
+            return host;
         } catch (Exception e) {
             return "";
         }
