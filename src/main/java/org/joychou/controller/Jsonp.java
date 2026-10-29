@@ -36,6 +36,11 @@ import java.util.Map;
 @RequestMapping("/jsonp")
 public class Jsonp {
 
+    /** Constant alphabet: 52 letters first, then digits, then '_', '$' and '.'. */
+    private static final String CALLBACK_ALPHABET =
+            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_$.";
+    private static final int CALLBACK_LETTER_COUNT = 52;
+
     private String callback = WebConfig.getBusinessCallback();
 
     @Autowired
@@ -65,26 +70,34 @@ public class Jsonp {
             return null;
         }
         StringBuilder sb = new StringBuilder(raw.length());
+        int segments = 1;
+        int segmentLength = 0;
         for (int i = 0; i < raw.length(); i++) {
-            char c = raw.charAt(i);
-            boolean letter = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
-            boolean digit = c >= '0' && c <= '9';
-            if (i == 0 && !(letter || c == '_' || c == '$')) {
+            int idx = CALLBACK_ALPHABET.indexOf(raw.charAt(i));
+            if (idx < 0) {
                 return null;
             }
-            if (letter) {
-                sb.append(c);
-            } else if (digit) {
-                sb.append(c);
-            } else if (c == '_') {
-                sb.append('_');
-            } else if (c == '$') {
-                sb.append('$');
-            } else if (c == '.') {
-                sb.append('.');
+            // Only characters taken from the constant alphabet are ever appended.
+            char safe = CALLBACK_ALPHABET.charAt(idx);
+            if (safe == '.') {
+                if (segmentLength == 0) {
+                    return null; // empty segment (leading or consecutive dot)
+                }
+                segments++;
+                segmentLength = 0;
+                if (segments > 4) {
+                    return null;
+                }
             } else {
-                return null;
+                if (i == 0 && idx >= CALLBACK_LETTER_COUNT && safe != '_' && safe != '$') {
+                    return null; // first char must be a letter, '_' or '$'
+                }
+                segmentLength++;
             }
+            sb.append(safe);
+        }
+        if (segmentLength == 0) {
+            return null; // trailing dot
         }
         return sb.toString();
     }
