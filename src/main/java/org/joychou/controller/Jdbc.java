@@ -1,158 +1,120 @@
 package org.joychou.controller;
 
 import lombok.extern.slf4j.Slf4j;
-import org.joychou.security.ssrf.SafeUrl;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.net.Inet6Address;
-import java.net.InetAddress;
-import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.sql.DriverManager;
-import java.util.HashMap;
-import java.util.Locale;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Properties;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * Jdbc Attack @2023.04
+ *
+ * <p>The request never supplies (any part of) the jdbc url or the credentials. It only supplies the
+ * name of a server side configured target; the connection url is always the configured value and
+ * the credentials come from the server side configuration.</p>
  */
 @Slf4j
 @RestController
 @RequestMapping("/jdbc")
 public class Jdbc {
 
-    private static final String POSTGRESQL_PREFIX = "jdbc:postgresql://";
-    private static final String DB2_PREFIX = "jdbc:db2://";
+    @Value("${joychou.jdbc.postgresql.targets:default=jdbc:postgresql://localhost:5432/postgres}")
+    private String[] postgresqlTargets;
 
-    // Selector: host[:port]/database. Anything after the database name is treated as connection
-    // properties and only allowlisted, plain properties are accepted (no socketFactory, sslfactory,
-    // authenticationPluginClassName, loggerFile, clientRerouteServerListJNDIName, pluginName, ...).
-    private static final Pattern SELECTOR = Pattern.compile(
-            "(\\[[0-9A-Fa-f:.]+\\]|[A-Za-z0-9.-]+)(?::([0-9]{1,5}))?/([A-Za-z0-9_]{1,63})([?;:].*)?",
-            Pattern.DOTALL);
+    @Value("${joychou.jdbc.db2.targets:default=jdbc:db2://localhost:50000/sample}")
+    private String[] db2Targets;
 
-    // lower case request key -> canonical driver property name
-    private static final Map<String, String> POSTGRESQL_ALLOWED_PARAMS = allowed(
-            "user", "password", "ssl", "sslmode", "connectTimeout", "loginTimeout",
-            "socketTimeout", "ApplicationName", "currentSchema");
-    private static final Map<String, String> DB2_ALLOWED_PARAMS = allowed(
-            "user", "password", "sslConnection", "loginTimeout", "connectTimeout", "readOnly");
+    @Value("${joychou.jdbc.username:}")
+    private String jdbcUsername;
 
-    private static final int POSTGRESQL_DEFAULT_PORT = 5432;
-    private static final int DB2_DEFAULT_PORT = 50000;
+    @Value("${joychou.jdbc.password:}")
+    private String jdbcPassword;
 
-    private static Map<String, String> allowed(String... names) {
-        Map<String, String> m = new HashMap<>();
-        for (String n : names) {
-            m.put(n.toLowerCase(Locale.ROOT), n);
+    /**
+     * Parse the configured "name=jdbc-url" entries (server side configuration only).
+     */
+    private static Map<String, String> configuredTargets(String[] entries, String prefix) {
+        Map<String, String> targets = new LinkedHashMap<>();
+        if (entries == null) {
+            return targets;
         }
-        return m;
+        for (String e : entries) {
+            String entry = e.trim();
+            int eq = entry.indexOf('=');
+            if (eq <= 0) {
+                continue;
+            }
+            String name = entry.substring(0, eq).trim();
+            String url = entry.substring(eq + 1).trim();
+            // only accept the expected driver for this endpoint
+            if (!name.isEmpty() && url.startsWith(prefix)) {
+                targets.put(name, url);
+            }
+        }
+        return targets;
     }
 
     /**
-     * A jdbc target that is built server side: the driver prefix is a constant, the host is the
-     * validated (public) resolved address, the port and database name are validated, and the
-     * connection properties are allowlisted and passed as {@link Properties}, never concatenated
-     * into the url.
+     * Select a configured jdbc url by the name that the user requested. The returned string is the
+     * configured map value, never the request string.
      */
-    static final class JdbcTarget {
-        final String url;
-        final Properties props;
-
-        JdbcTarget(String url, Properties props) {
-            this.url = url;
-            this.props = props;
+    private static String selectTarget(Map<String, String> targets, String requestedName) {
+        if (requestedName != null) {
+            for (Map.Entry<String, String> target : targets.entrySet()) {
+                if (target.getKey().equals(requestedName.trim())) {
+                    return target.getValue();
+                }
+            }
         }
+        throw new IllegalArgumentException("Illegal jdbc target");
     }
 
     /**
-     * Validate a jdbc selector from the user and build the jdbc url from constants.
+     * Credentials come from the server side configuration only.
      */
-    static JdbcTarget buildJdbcTarget(String requested, String prefix, int defaultPort,
-                                      Map<String, String> allowedParams) {
-        if (requested == null) {
-            throw new IllegalArgumentException("Illegal jdbc url");
-        }
-        String selector = requested;
-        if (selector.regionMatches(true, 0, prefix, 0, prefix.length())) {
-            selector = selector.substring(prefix.length());
-        }
-        Matcher m = SELECTOR.matcher(selector);
-        if (!m.matches()) {
-            throw new IllegalArgumentException("Illegal jdbc url");
-        }
-
-        int port = defaultPort;
-        if (m.group(2) != null) {
-            port = Integer.parseInt(m.group(2));
-            if (port < 1 || port > 65535) {
-                throw new IllegalArgumentException("Illegal jdbc url port");
-            }
-        }
-
-        // Resolve once and connect to the validated address, so there is no second DNS lookup.
-        String hostLiteral;
-        try {
-            InetAddress address = SafeUrl.resolveExternal(m.group(1))[0];
-            hostLiteral = address.getHostAddress();
-            if (address instanceof Inet6Address) {
-                int scope = hostLiteral.indexOf('%');
-                hostLiteral = "[" + (scope < 0 ? hostLiteral : hostLiteral.substring(0, scope)) + "]";
-            }
-        } catch (java.io.IOException e) {
-            throw new IllegalArgumentException("Illegal jdbc url host");
-        }
-
+    private Properties serverSideCredentials() {
         Properties props = new Properties();
-        String rawParams = m.group(4);
-        if (rawParams != null && rawParams.length() > 1) {
-            String[] pairs = rawParams.substring(1).split(prefix.equals(DB2_PREFIX) ? "[;:]" : "&");
-            for (String pair : pairs) {
-                if (pair.isEmpty()) {
-                    continue;
-                }
-                int eq = pair.indexOf('=');
-                try {
-                    String key = URLDecoder.decode(eq < 0 ? pair : pair.substring(0, eq), "UTF-8");
-                    String value = eq < 0 ? "" : URLDecoder.decode(pair.substring(eq + 1), "UTF-8");
-                    String canonical = allowedParams.get(key.trim().toLowerCase(Locale.ROOT));
-                    if (canonical == null) {
-                        throw new IllegalArgumentException("Illegal jdbc url parameter");
-                    }
-                    props.setProperty(canonical, value);
-                } catch (java.io.UnsupportedEncodingException | IllegalArgumentException e) {
-                    throw new IllegalArgumentException("Illegal jdbc url parameter");
-                }
-            }
+        if (jdbcUsername != null && !jdbcUsername.isEmpty()) {
+            props.setProperty("user", jdbcUsername);
         }
+        if (jdbcPassword != null && !jdbcPassword.isEmpty()) {
+            props.setProperty("password", jdbcPassword);
+        }
+        return props;
+    }
 
-        String url = prefix + hostLiteral + ":" + port + "/" + m.group(3);
-        return new JdbcTarget(url, props);
+    private static String decodeSelector(String jdbcUrlBase64) {
+        if (jdbcUrlBase64 == null) {
+            throw new IllegalArgumentException("Illegal jdbc target");
+        }
+        byte[] b = java.util.Base64.getDecoder().decode(jdbcUrlBase64);
+        return new String(b, StandardCharsets.UTF_8);
     }
 
     /**
      * <a href="https://github.com/JoyChou93/java-sec-code/wiki/CVE-2022-21724">CVE-2022-21724</a>
+     *
+     * @param jdbcUrlBase64 base64 of the name of a configured target
      */
     @RequestMapping("/postgresql")
     public void postgresql(String jdbcUrlBase64) throws Exception{
-        byte[] b = java.util.Base64.getDecoder().decode(jdbcUrlBase64);
-        JdbcTarget target = buildJdbcTarget(new String(b, StandardCharsets.UTF_8), POSTGRESQL_PREFIX,
-                POSTGRESQL_DEFAULT_PORT, POSTGRESQL_ALLOWED_PARAMS);
-        log.info("Opening validated jdbc connection");
-        DriverManager.getConnection(target.url, target.props);
+        String url = selectTarget(configuredTargets(postgresqlTargets, "jdbc:postgresql://"),
+                decodeSelector(jdbcUrlBase64));
+        log.info("Opening configured jdbc connection");
+        DriverManager.getConnection(url, serverSideCredentials());
     }
 
     @RequestMapping("/db2")
     public void db2(String jdbcUrlBase64) throws Exception{
         Class.forName("com.ibm.db2.jcc.DB2Driver");
-        byte[] b = java.util.Base64.getDecoder().decode(jdbcUrlBase64);
-        JdbcTarget target = buildJdbcTarget(new String(b, StandardCharsets.UTF_8), DB2_PREFIX,
-                DB2_DEFAULT_PORT, DB2_ALLOWED_PARAMS);
-        log.info("Opening validated jdbc connection");
-        DriverManager.getConnection(target.url, target.props);
+        String url = selectTarget(configuredTargets(db2Targets, "jdbc:db2://"),
+                decodeSelector(jdbcUrlBase64));
+        log.info("Opening configured jdbc connection");
+        DriverManager.getConnection(url, serverSideCredentials());
     }
 }

@@ -1,5 +1,7 @@
 package org.joychou.security.ssrf;
 
+import org.joychou.config.WebConfig;
+
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.URL;
@@ -91,11 +93,107 @@ public final class SafeUrl {
         if (parsed == null) {
             throw new IOException("[-] SSRF check failed. Illegal url");
         }
-        if (!"http".equals(parsed.scheme) && !"https".equals(parsed.scheme)) {
+
+        // The scheme is mapped to a constant.
+        String scheme;
+        if ("https".equals(parsed.scheme)) {
+            scheme = "https";
+        } else if ("http".equals(parsed.scheme)) {
+            scheme = "http";
+        } else {
             throw new IOException("[-] SSRF check failed. Illegal url protocol");
         }
-        resolveExternal(parsed.host);
-        return parsed;
+
+        // The request host only selects an entry of the server side outbound host allowlist; the
+        // allowlist's own string is what is used from here on, never the request's string.
+        String host = null;
+        for (String entry : WebConfig.getSsrfOutboundHosts()) {
+            if (entry.equalsIgnoreCase(parsed.host)) {
+                host = entry;
+                break;
+            }
+        }
+        if (host == null) {
+            throw new IOException("[-] SSRF check failed. Host is not allowed");
+        }
+
+        // The port is mapped to a constant; unsupported ports are refused.
+        int port = constantPort(parsed.port);
+        if (port == INVALID_PORT) {
+            throw new IOException("[-] SSRF check failed. Illegal url port");
+        }
+
+        // Path and query are rebuilt character by character from a constant alphabet.
+        String path = "";
+        if (!parsed.path.isEmpty()) {
+            if (parsed.path.startsWith("//") || BAD_PERCENT_PATTERN.matcher(parsed.path).find()) {
+                throw new IOException("[-] SSRF check failed. Illegal url path");
+            }
+            path = rebuild(parsed.path, PATH_ALPHABET);
+            if (path == null) {
+                throw new IOException("[-] SSRF check failed. Illegal url path");
+            }
+        }
+        String query = null;
+        if (parsed.query != null) {
+            if (BAD_PERCENT_PATTERN.matcher(parsed.query).find()) {
+                throw new IOException("[-] SSRF check failed. Illegal url query");
+            }
+            query = rebuild(parsed.query, QUERY_ALPHABET);
+            if (query == null) {
+                throw new IOException("[-] SSRF check failed. Illegal url query");
+            }
+        }
+
+        // The allowlisted host must resolve to public addresses only (private, loopback and
+        // link-local addresses are refused); the address does not come from the request.
+        resolveExternal(host);
+        return new SafeUrl(scheme, host, port, path, query);
+    }
+
+
+    private static final int INVALID_PORT = -2;
+
+    private static final String PATH_ALPHABET =
+            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~!$&'()*+,;=:@%/";
+    private static final String QUERY_ALPHABET = PATH_ALPHABET + "?";
+    private static final Pattern BAD_PERCENT_PATTERN = Pattern.compile("%(?![0-9A-Fa-f]{2})");
+
+    /**
+     * Map a requested port to a constant. -1 means the scheme default.
+     */
+    private static int constantPort(int requested) {
+        switch (requested) {
+            case -1:
+                return -1;
+            case 80:
+                return 80;
+            case 443:
+                return 443;
+            case 8080:
+                return 8080;
+            case 8443:
+                return 8443;
+            default:
+                return INVALID_PORT;
+        }
+    }
+
+    /**
+     * Rebuild a string character by character from a constant alphabet.
+     *
+     * @return a freshly constructed copy, or null if a character is not in the alphabet
+     */
+    private static String rebuild(String value, String alphabet) {
+        StringBuilder sb = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            int idx = alphabet.indexOf(value.charAt(i));
+            if (idx < 0) {
+                return null;
+            }
+            sb.append(alphabet.charAt(idx));
+        }
+        return sb.toString();
     }
 
 
