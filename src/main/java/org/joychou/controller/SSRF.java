@@ -1,8 +1,10 @@
 package org.joychou.controller;
 
-import cn.hutool.http.HttpUtil;
+import cn.hutool.http.HttpRequest;
+import cn.hutool.http.HttpResponse;
 import org.joychou.security.SecurityUtil;
 import org.joychou.security.ssrf.SSRFException;
+import org.joychou.security.ssrf.SafeUrl;
 import org.joychou.service.HttpService;
 import org.joychou.util.HttpUtils;
 import org.joychou.util.WebUtils;
@@ -32,6 +34,8 @@ public class SSRF {
     private static final Logger logger = LoggerFactory.getLogger(SSRF.class);
 
     private static final String GENERIC_ERROR = "Request failed";
+
+    private static final int HUTOOL_TIMEOUT_MS = 5000;
 
     @Resource
     private HttpService httpService;
@@ -293,17 +297,32 @@ public class SSRF {
      */
     @GetMapping("/restTemplate/vuln1")
     public String RestTemplateUrlBanRedirects(String url){
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON_UTF8);
-        return httpService.RequestHttpBanRedirects(url, headers);
+        try {
+            // The request url is rebuilt from the validated components, not taken from the raw string.
+            String safeUrl = SafeUrl.parse(url).toExternalForm();
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON_UTF8);
+            return httpService.RequestHttpBanRedirects(safeUrl, headers);
+        } catch (Exception e) {
+            logger.error("SSRF request failed: {}", SecurityUtil.logSafe(e.toString()));
+            return GENERIC_ERROR;
+        }
     }
 
 
     @GetMapping("/restTemplate/vuln2")
     public String RestTemplateUrl(String url){
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON_UTF8);
-        return httpService.RequestHttp(url, headers);
+        try {
+            // The request url is rebuilt from the validated components, not taken from the raw string.
+            String safeUrl = SafeUrl.parse(url).toExternalForm();
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON_UTF8);
+            // Redirects are not followed, so a validated url cannot be redirected to an internal one.
+            return httpService.RequestHttpBanRedirects(safeUrl, headers);
+        } catch (Exception e) {
+            logger.error("SSRF request failed: {}", SecurityUtil.logSafe(e.toString()));
+            return GENERIC_ERROR;
+        }
     }
 
 
@@ -314,7 +333,26 @@ public class SSRF {
      */
     @GetMapping("/hutool/vuln")
     public String hutoolHttp(String url){
-        return HttpUtil.get(url);
+        return safeHutoolGet(url);
+    }
+
+
+    /**
+     * Hutool GET of a url that is rebuilt from the validated components. Redirects are not followed.
+     */
+    private String safeHutoolGet(String url) {
+        try {
+            String safeUrl = SafeUrl.parse(url).toExternalForm();
+            try (HttpResponse response = HttpRequest.get(safeUrl)
+                    .setFollowRedirects(false)
+                    .timeout(HUTOOL_TIMEOUT_MS)
+                    .execute()) {
+                return response.body();
+            }
+        } catch (Exception e) {
+            logger.error("SSRF request failed: {}", SecurityUtil.logSafe(e.toString()));
+            return GENERIC_ERROR;
+        }
     }
 
 
@@ -328,7 +366,7 @@ public class SSRF {
         if (!SecurityUtil.checkSSRFWithoutRedirect(url)) {
             return "Dangerous url";
         }
-        return HttpUtil.get(url);
+        return safeHutoolGet(url);
     }
 
 
