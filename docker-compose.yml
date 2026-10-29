@@ -6,6 +6,9 @@ services:
         ports:
             - "8080:8080"
             - "8000:8000"
+        environment:
+            - JSC_DB_PASSWORD=${JSC_DB_PASSWORD:-}
+            - JSC_ACCESS_KEY_SECRET=${JSC_ACCESS_KEY_SECRET:-}
         links:
             - j_mysql
 

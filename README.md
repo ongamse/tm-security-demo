@@ -86,8 +86,10 @@ The application will use mybatis auto-injection. Please run mysql server ahead o
 ``` 
 spring.datasource.url=jdbc:mysql://127.0.0.1:3306/java_sec_code
 spring.datasource.username=root
-spring.datasource.password=woshishujukumima
+spring.datasource.password=${JSC_DB_PASSWORD}
 ```
+
+Set the `JSC_DB_PASSWORD` environment variable to your MySQL password (it is no longer committed in `application.properties`).
 
 - Docker
 - IDEA
