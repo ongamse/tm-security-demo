@@ -6,7 +6,6 @@ import java.io.*;
 
 import com.google.common.base.Preconditions;
 
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class WebUtils {
@@ -36,17 +35,29 @@ public class WebUtils {
         return callback != null && JSONP_CALLBACK_PATTERN.matcher(callback).matches();
     }
 
+    // Constant alphabet used to rebuild callback names; emitted characters always come from here.
+    private static final String JSONP_CALLBACK_ALPHABET =
+            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_$.";
+
     /**
-     * Returns a fresh copy of the callback name taken from the regex match, or null when the
-     * request value is not a plain JavaScript identifier path. Callers must use only the
-     * returned value, never the raw request parameter.
+     * Returns a callback name rebuilt character by character from a server-side constant
+     * alphabet, or null when the request value is not a plain JavaScript identifier path.
+     * No character of the request string is copied into the returned value. Callers must use
+     * only the returned value, never the raw request parameter.
      */
     public static String validatedJsonpCallback(String callback) {
-        if (callback == null) {
+        if (!isValidJsonpCallback(callback)) {
             return null;
         }
-        Matcher matcher = JSONP_CALLBACK_PATTERN.matcher(callback);
-        return matcher.matches() ? matcher.group() : null;
+        StringBuilder rebuilt = new StringBuilder(callback.length());
+        for (int i = 0; i < callback.length(); i++) {
+            int idx = JSONP_CALLBACK_ALPHABET.indexOf(callback.charAt(i));
+            if (idx < 0) {
+                return null;
+            }
+            rebuilt.append(JSONP_CALLBACK_ALPHABET.charAt(idx));
+        }
+        return rebuilt.toString();
     }
 
     public static String json2Jsonp(String callback, String jsonStr) {

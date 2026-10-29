@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.util.HtmlUtils;
 
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
@@ -57,7 +58,10 @@ public class Jwt {
     @GetMapping("/getName")
     public String getNickname(@CookieValue(COOKIE_NAME) String user_cookie) {
         String nickname = JwtUtils.getNicknameByJavaJwt(user_cookie);
-        return "Current jwt user is " + nickname;
+        if (nickname == null) {
+            return "Invalid jwt token";
+        }
+        return "Current jwt user is " + HtmlUtils.htmlEscape(nickname);
     }
 
 }
