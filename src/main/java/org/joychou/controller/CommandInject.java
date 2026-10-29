@@ -1,8 +1,6 @@
 package org.joychou.controller;
 
 import org.springframework.web.util.HtmlUtils;
-import org.joychou.security.SecurityUtil;
-import org.joychou.util.WebUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -10,6 +8,13 @@ import org.springframework.web.bind.annotation.RestController;
 
 import javax.servlet.http.HttpServletRequest;
 import java.io.IOException;
+import java.nio.file.DirectoryStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.regex.Pattern;
 
 @RestController
@@ -20,58 +25,65 @@ public class CommandInject {
     private static final Pattern HOST_PATTERN = Pattern.compile("^[a-zA-Z0-9][a-zA-Z0-9.-]*(:[0-9]{1,5})?$");
 
     /**
-     * http://localhost:8080/codeinject?filepath=/tmp;cat /etc/passwd
+     * Fixed base directory; only directories inside it can be listed.
+     */
+    private static final Path BASE_DIR = Paths.get(System.getProperty("java.io.tmpdir"))
+            .toAbsolutePath().normalize();
+
+    /**
+     * http://localhost:8080/codeinject?filepath=/tmp
      *
      * @param filepath filepath
      * @return result
      */
     @GetMapping("/codeinject")
     public String codeInject(String filepath) throws IOException {
-
-        String safePath = null == filepath ? null : SecurityUtil.cmdFilter(filepath);
-        if (null == safePath) {
-            return "Bad boy. I got u.";
-        }
-        // No shell: the path is a single argv element and "--" stops option parsing.
-        String[] cmdList = new String[]{"ls", "-la", "--", safePath};
-        ProcessBuilder builder = new ProcessBuilder(cmdList);
-        builder.redirectErrorStream(true);
-        Process process = builder.start();
-        return HtmlUtils.htmlEscape(WebUtils.convertStreamToString(process.getInputStream()));
+        return listDirectory(filepath);
     }
 
     /**
      * Host Injection
-     * Host: hacked by joychou;cat /etc/passwd
      * http://localhost:8080/codeinject/host
      */
     @GetMapping("/codeinject/host")
-    public String codeInjectHost(HttpServletRequest request) throws IOException {
+    public String codeInjectHost(HttpServletRequest request) {
 
         String host = request.getHeader("host");
-        logger.info(host);
         if (null == host || !HOST_PATTERN.matcher(host).matches()) {
             return "Bad boy. I got u.";
         }
-        // No shell: the host is a single argv element and "--" stops option parsing.
-        String[] cmdList = new String[]{"curl", "--", host};
-        ProcessBuilder builder = new ProcessBuilder(cmdList);
-        builder.redirectErrorStream(true);
-        Process process = builder.start();
-        return HtmlUtils.htmlEscape(WebUtils.convertStreamToString(process.getInputStream()));
+        // No process is started; the validated host is only echoed back, escaped.
+        return HtmlUtils.htmlEscape(host);
     }
 
     @GetMapping("/codeinject/sec")
     public String codeInjectSec(String filepath) throws IOException {
-        String filterFilePath = null == filepath ? null : SecurityUtil.cmdFilter(filepath);
-        if (null == filterFilePath) {
+        return listDirectory(filepath);
+    }
+
+    /**
+     * Pure Java directory listing confined to BASE_DIR. No process is started.
+     */
+    private static String listDirectory(String filepath) throws IOException {
+        if (null == filepath || filepath.indexOf('\0') >= 0) {
             return "Bad boy. I got u.";
         }
-        // No shell: the path is a single argv element and "--" stops option parsing.
-        String[] cmdList = new String[]{"ls", "-la", "--", filterFilePath};
-        ProcessBuilder builder = new ProcessBuilder(cmdList);
-        builder.redirectErrorStream(true);
-        Process process = builder.start();
-        return HtmlUtils.htmlEscape(WebUtils.convertStreamToString(process.getInputStream()));
+        Path target;
+        try {
+            target = BASE_DIR.resolve(filepath).normalize();
+        } catch (java.nio.file.InvalidPathException e) {
+            return "Bad boy. I got u.";
+        }
+        if (!target.startsWith(BASE_DIR) || !Files.isDirectory(target)) {
+            return "Bad boy. I got u.";
+        }
+        List<String> names = new ArrayList<>();
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(target)) {
+            for (Path p : stream) {
+                names.add(p.getFileName().toString());
+            }
+        }
+        Collections.sort(names);
+        return HtmlUtils.htmlEscape(String.join("\n", names));
     }
 }

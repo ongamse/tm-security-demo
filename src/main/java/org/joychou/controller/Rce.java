@@ -1,9 +1,7 @@
 package org.joychou.controller;
 
 import org.springframework.web.util.HtmlUtils;
-import groovy.lang.GroovyShell;
 import lombok.extern.slf4j.Slf4j;
-import org.joychou.security.CommandAllowlist;
 import org.joychou.security.SecurityUtil;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -19,6 +17,10 @@ import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.sql.DriverManager;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 
@@ -32,14 +34,27 @@ import java.util.regex.Pattern;
 @RequestMapping("/rce")
 public class Rce {
 
-    private static final Pattern SAFE_GROOVY_EXPR = Pattern.compile("^(?!.*\\*\\*)[0-9\\s+\\-*/%()]{1,100}$");
+    private static final Pattern ARITHMETIC = Pattern.compile("^\\s*(-?[0-9]{1,18})\\s*([-+*/%])\\s*(-?[0-9]{1,18})\\s*$");
+
+    /**
+     * Fixed commands selectable by key. The executed argv comes only from these constants.
+     */
+    private static final Map<String, String[]> COMMANDS;
+
+    static {
+        Map<String, String[]> m = new HashMap<>();
+        m.put("whoami", new String[]{"whoami"});
+        m.put("date", new String[]{"date"});
+        m.put("uname", new String[]{"uname", "-a"});
+        COMMANDS = Collections.unmodifiableMap(m);
+    }
 
     @GetMapping("/runtime/exec")
     public String CommandExec(String cmd) {
         Runtime run = Runtime.getRuntime();
         StringBuilder sb = new StringBuilder();
 
-        String[] argv = CommandAllowlist.parse(cmd);
+        String[] argv = cmd == null ? null : COMMANDS.get(cmd);
         if (argv == null) {
             return "Bad boy. I got u.";
         }
@@ -76,8 +91,8 @@ public class Rce {
 
         StringBuilder sb = new StringBuilder();
 
-        // No shell: allowlisted executable + validated argv only.
-        String[] arrCmd = CommandAllowlist.parse(cmd);
+        // The request value is only a lookup key; argv comes from constants.
+        String[] arrCmd = cmd == null ? null : COMMANDS.get(cmd);
         if (arrCmd == null) {
             return "Bad boy. I got u.";
         }
@@ -142,21 +157,36 @@ public class Rce {
     }
 
     /**
-     * http://localhost:8080/rce/groovy?content="open -a Calculator".execute()
-     * @param content groovy shell
+     * http://localhost:8080/rce/groovy?content=1+2
+     * Request data is never evaluated as code; a fixed arithmetic grammar is parsed in Java.
+     * @param content arithmetic expression: integer operator integer
      */
     @GetMapping("groovy")
-    public void groovyshell(String content) {
-        // Only a plain integer arithmetic expression (digits, whitespace, + - * / % and
-        // parentheses) is accepted; no identifiers, strings or method calls can be expressed.
-        if (content == null || !SAFE_GROOVY_EXPR.matcher(content).matches()) {
-            throw new IllegalArgumentException("content is not allowed");
+    public String groovyshell(String content) {
+        if (content == null) {
+            return "Bad boy. I got u.";
         }
-        GroovyShell groovyShell = new GroovyShell();
-        groovyShell.evaluate(content);
+        Matcher m = ARITHMETIC.matcher(content);
+        if (!m.matches()) {
+            return "Bad boy. I got u.";
+        }
+        long a = Long.parseLong(m.group(1));
+        long b = Long.parseLong(m.group(3));
+        try {
+            long result;
+            switch (m.group(2)) {
+                case "+": result = Math.addExact(a, b); break;
+                case "-": result = Math.subtractExact(a, b); break;
+                case "*": result = Math.multiplyExact(a, b); break;
+                case "/": result = a / b; break;
+                case "%": result = a % b; break;
+                default: return "Bad boy. I got u.";
+            }
+            return String.valueOf(result);
+        } catch (ArithmeticException e) {
+            return "Bad boy. I got u.";
+        }
     }
-
-
 
     public static void main(String[] args) throws Exception{
         Runtime.getRuntime().exec("touch /tmp/x");
