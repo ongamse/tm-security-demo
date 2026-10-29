@@ -43,9 +43,13 @@ public class Jsonp {
      * http://localhost:8080/jsonp/vuln/referer?callback_=test
      */
     @RequestMapping(value = "/vuln/referer", produces = "application/javascript")
-    public String referer(HttpServletRequest request) {
-        String callback = request.getParameter(this.callback);
-        return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
+    public String referer(HttpServletRequest request, HttpServletResponse response) {
+        response.setHeader("X-Content-Type-Options", "nosniff");
+        String callback = WebUtils.validatedJsonpCallback(request.getParameter(this.callback));
+        if (callback == null) {
+            return "error";
+        }
+        return callback + "(" + LoginUtils.getUserInfo2JsonStr(request) + ")";
     }
 
     /**
@@ -55,14 +59,18 @@ public class Jsonp {
      * http://localhost:8080/jsonp/vuln/emptyReferer?callback_=test
      */
     @RequestMapping(value = "/vuln/emptyReferer", produces = "application/javascript")
-    public String emptyReferer(HttpServletRequest request) {
+    public String emptyReferer(HttpServletRequest request, HttpServletResponse response) {
+        response.setHeader("X-Content-Type-Options", "nosniff");
         String referer = request.getHeader("referer");
 
         if (null != referer && SecurityUtil.checkURL(referer) == null) {
             return "error";
         }
-        String callback = request.getParameter(this.callback);
-        return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
+        String callback = WebUtils.validatedJsonpCallback(request.getParameter(this.callback));
+        if (callback == null) {
+            return "error";
+        }
+        return callback + "(" + LoginUtils.getUserInfo2JsonStr(request) + ")";
     }
 
     /**
@@ -100,14 +108,18 @@ public class Jsonp {
      * http://localhost:8080/jsonp/sec?callback_=test
      */
     @RequestMapping(value = "/sec/checkReferer", produces = "application/javascript")
-    public String safecode(HttpServletRequest request) {
+    public String safecode(HttpServletRequest request, HttpServletResponse response) {
+        response.setHeader("X-Content-Type-Options", "nosniff");
         String referer = request.getHeader("referer");
 
         if (SecurityUtil.checkURL(referer) == null) {
             return "error";
         }
-        String callback = request.getParameter(this.callback);
-        return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
+        String callback = WebUtils.validatedJsonpCallback(request.getParameter(this.callback));
+        if (callback == null) {
+            return "error";
+        }
+        return callback + "(" + LoginUtils.getUserInfo2JsonStr(request) + ")";
     }
 
     /**
@@ -115,8 +127,9 @@ public class Jsonp {
      *
      * object to jsonp
      */
-    @GetMapping("/getToken")
-    public CsrfToken getCsrfToken1(CsrfToken token) {
+    @GetMapping(value = "/getToken", produces = MediaType.APPLICATION_JSON_VALUE)
+    public CsrfToken getCsrfToken1(CsrfToken token, HttpServletResponse response) {
+        response.setHeader("X-Content-Type-Options", "nosniff");
         return token;
     }
 
@@ -126,19 +139,22 @@ public class Jsonp {
      * fastjsonp to jsonp
      */
     @GetMapping(value = "/fastjsonp/getToken", produces = "application/javascript")
-    public String getCsrfToken2(HttpServletRequest request) {
+    public String getCsrfToken2(HttpServletRequest request, HttpServletResponse response) {
+        response.setHeader("X-Content-Type-Options", "nosniff");
         CsrfToken csrfToken = cookieCsrfTokenRepository.loadToken(request); // get csrf token
 
-        String callback = request.getParameter("fastjsonpCallback");
-        if (StringUtils.isNotBlank(callback)) {
-            if (!WebUtils.isValidJsonpCallback(callback)) {
+        String rawCallback = request.getParameter("fastjsonpCallback");
+        if (StringUtils.isNotBlank(rawCallback)) {
+            String callback = WebUtils.validatedJsonpCallback(rawCallback);
+            if (callback == null) {
                 return "error";
             }
             JSONPObject jsonpObj = new JSONPObject(callback);
             jsonpObj.addParameter(csrfToken);
             return jsonpObj.toString();
         } else {
-            return csrfToken.toString();
+            // Serialize as JSON so the cookie-derived token is never emitted as raw script text.
+            return JSON.toJSONString(csrfToken);
         }
     }
 

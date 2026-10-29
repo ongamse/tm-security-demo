@@ -6,6 +6,7 @@ import java.io.*;
 
 import com.google.common.base.Preconditions;
 
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class WebUtils {
@@ -29,17 +30,31 @@ public class WebUtils {
 
 
     // A JSONP callback must be a plain JavaScript identifier path such as "cb" or "window.cb".
-    private static final Pattern JSONP_CALLBACK_PATTERN = Pattern.compile("^[A-Za-z_$][A-Za-z0-9_$.]{0,127}$");
+    private static final Pattern JSONP_CALLBACK_PATTERN = Pattern.compile("^[A-Za-z_$][A-Za-z0-9_$.]{0,63}$");
 
     public static boolean isValidJsonpCallback(String callback) {
         return callback != null && JSONP_CALLBACK_PATTERN.matcher(callback).matches();
     }
 
+    /**
+     * Returns a fresh copy of the callback name taken from the regex match, or null when the
+     * request value is not a plain JavaScript identifier path. Callers must use only the
+     * returned value, never the raw request parameter.
+     */
+    public static String validatedJsonpCallback(String callback) {
+        if (callback == null) {
+            return null;
+        }
+        Matcher matcher = JSONP_CALLBACK_PATTERN.matcher(callback);
+        return matcher.matches() ? matcher.group() : null;
+    }
+
     public static String json2Jsonp(String callback, String jsonStr) {
-        if (!isValidJsonpCallback(callback)) {
+        String safeCallback = validatedJsonpCallback(callback);
+        if (safeCallback == null) {
             return "error";
         }
-        return callback + "(" + jsonStr + ")";
+        return safeCallback + "(" + jsonStr + ")";
     }
 
 

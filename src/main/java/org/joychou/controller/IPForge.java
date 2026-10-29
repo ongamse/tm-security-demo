@@ -1,6 +1,8 @@
 package org.joychou.controller;
 
+import com.google.common.net.InetAddresses;
 import org.apache.commons.lang.StringUtils;
+import org.springframework.http.MediaType;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseBody;
@@ -23,9 +25,13 @@ public class IPForge {
     private String trustedProxies;
 
     // no any proxy
-    @RequestMapping("/noproxy")
+    @RequestMapping(value = "/noproxy", produces = MediaType.TEXT_PLAIN_VALUE)
     public static String noProxy(HttpServletRequest request) {
-        return request.getRemoteAddr();
+        String remoteAddr = request.getRemoteAddr();
+        if (remoteAddr != null && InetAddresses.isInetAddress(remoteAddr)) {
+            return HtmlUtils.htmlEscape(remoteAddr);
+        }
+        return "";
     }
 
 
@@ -34,7 +40,7 @@ public class IPForge {
      * proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for
      * if code used X-Forwarded-For to get ip, the code must be vulnerable.
      */
-    @RequestMapping("/proxy")
+    @RequestMapping(value = "/proxy", produces = MediaType.TEXT_PLAIN_VALUE)
     @ResponseBody
     public String proxy(HttpServletRequest request) {
         String remoteAddr = request.getRemoteAddr();
@@ -42,11 +48,11 @@ public class IPForge {
         // direct peer is an explicitly configured trusted proxy (default: none).
         if (StringUtils.isNotBlank(remoteAddr) && isTrustedProxy(remoteAddr)) {
             String ip = request.getHeader("X-Real-IP");
-            if (StringUtils.isNotBlank(ip)) {
-                return HtmlUtils.htmlEscape(ip);
+            if (StringUtils.isNotBlank(ip) && InetAddresses.isInetAddress(ip.trim())) {
+                return HtmlUtils.htmlEscape(ip.trim());
             }
         }
-        if (StringUtils.isNotBlank(remoteAddr)) {
+        if (StringUtils.isNotBlank(remoteAddr) && InetAddresses.isInetAddress(remoteAddr)) {
             return HtmlUtils.htmlEscape(remoteAddr);
         }
         return "";
