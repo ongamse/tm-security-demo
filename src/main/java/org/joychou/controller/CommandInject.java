@@ -10,6 +10,8 @@ import javax.servlet.http.HttpServletRequest;
 import java.io.IOException;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
+import java.nio.file.NotDirectoryException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -74,14 +76,25 @@ public class CommandInject {
         } catch (java.nio.file.InvalidPathException e) {
             return "Bad boy. I got u.";
         }
-        if (!target.startsWith(BASE_DIR) || !Files.isDirectory(target)) {
+        if (!target.startsWith(BASE_DIR)) {
             return "Bad boy. I got u.";
         }
         List<String> names = new ArrayList<>();
-        try (DirectoryStream<Path> stream = Files.newDirectoryStream(target)) {
-            for (Path p : stream) {
-                names.add(p.getFileName().toString());
+        try {
+            // Resolve symlinks so a link inside the base cannot escape it.
+            Path realTarget = target.toRealPath();
+            if (!realTarget.startsWith(BASE_DIR.toRealPath())) {
+                return "Bad boy. I got u.";
             }
+            try (DirectoryStream<Path> stream = Files.newDirectoryStream(realTarget)) {
+                for (Path p : stream) {
+                    names.add(p.getFileName().toString());
+                }
+            }
+        } catch (NotDirectoryException | NoSuchFileException e) {
+            return "Bad boy. I got u.";
+        } catch (IOException e) {
+            return "Bad boy. I got u.";
         }
         Collections.sort(names);
         return HtmlUtils.htmlEscape(String.join("\n", names));
