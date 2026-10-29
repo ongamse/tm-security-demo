@@ -12,11 +12,12 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
+import java.util.Locale;
 import java.util.UUID;
 
 import org.joychou.security.SecurityUtil;
@@ -34,7 +35,6 @@ public class FileUpload {
     // Save the uploaded file to this folder
     private static final String UPLOADED_FOLDER = "/tmp/";
     private final Logger logger = LoggerFactory.getLogger(this.getClass());
-    private static String randomFilePath = "";
 
     // uplaod any file
     @GetMapping("/any")
@@ -99,24 +99,14 @@ public class FileUpload {
             logger.error("[-] Illegal file name");
             return "Upload failed. Illeagl picture.";
         }
-        String Suffix = fileName.substring(fileName.lastIndexOf(".")); // 获取文件后缀名
         String mimeType = multifile.getContentType(); // 获取MIME类型
         String filePath = UPLOADED_FOLDER + fileName;
-        File excelFile = convert(multifile);
-
 
         // 判断文件后缀名是否在白名单内  校验1
-        String[] picSuffixList = {".jpg", ".png", ".jpeg", ".gif", ".bmp", ".ico"};
-        boolean suffixFlag = false;
-        for (String white_suffix : picSuffixList) {
-            if (Suffix.toLowerCase().equals(white_suffix)) {
-                suffixFlag = true;
-                break;
-            }
-        }
-        if (!suffixFlag) {
-            logger.error("[-] Suffix error: " + Suffix);
-            deleteFile(filePath);
+        // The suffix is a server-side constant chosen from the allowlist, never a substring of the request name.
+        String suffix = allowedImageSuffix(fileName);
+        if (suffix == null) {
+            logger.error("[-] Suffix error");
             return "Upload failed. Illeagl picture.";
         }
 
@@ -134,18 +124,23 @@ public class FileUpload {
             // 用contains是为了防止text/html;charset=UTF-8绕过
             if (SecurityUtil.replaceSpecialStr(mimeType).toLowerCase().contains(blackMimeType)) {
                 logger.error("[-] Mime type error: " + mimeType);
-                deleteFile(filePath);
                 return "Upload failed. Illeagl picture.";
             }
         }
 
         // 判断文件内容是否是图片 校验3
-        boolean isImageFlag = isImage(excelFile);
-        deleteFile(randomFilePath);
+        // The temporary copy has a fully server-generated name and is always removed.
+        File tempFile = null;
+        boolean isImageFlag;
+        try {
+            tempFile = convert(multifile, suffix);
+            isImageFlag = isImage(tempFile);
+        } finally {
+            deleteQuietly(tempFile);
+        }
 
         if (!isImageFlag) {
             logger.error("[-] File is not Image");
-            deleteFile(filePath);
             return "Upload failed. Illeagl picture.";
         }
 
@@ -156,11 +151,10 @@ public class FileUpload {
             Files.write(savePath, bytes);
         } catch (IOException e) {
             logger.error(e.toString());
-            deleteFile(filePath);
             return "Upload failed";
         }
 
-        logger.info("[+] Safe file. Suffix: {}, MIME: {}", Suffix, mimeType);
+        logger.info("[+] Safe file. Suffix: {}, MIME: {}", suffix, mimeType);
         logger.info("[+] Successfully uploaded {}", filePath);
         return String.format("You successfully uploaded '%s'", HtmlUtils.htmlEscape(filePath));
     }
@@ -199,21 +193,52 @@ public class FileUpload {
         return target;
     }
 
-    private void deleteFile(String filePath) {
-        Path safePath = filePath == null ? null : Paths.get(filePath).toAbsolutePath().normalize();
-        Path base = Paths.get(UPLOADED_FOLDER).toAbsolutePath().normalize();
-        if (safePath == null || !safePath.startsWith(base)) {
-            logger.info("Refusing to delete file outside upload folder");
+    /**
+     * Map a file name to an allowlisted image suffix. The returned value is always one of the
+     * constant literals below, never a substring of the (request supplied) name.
+     *
+     * @return the constant suffix, or null if the name does not end with an allowed one
+     */
+    private static String allowedImageSuffix(String fileName) {
+        if (fileName == null) {
+            return null;
+        }
+        int dot = fileName.lastIndexOf('.');
+        if (dot < 0) {
+            return null;
+        }
+        switch (fileName.substring(dot).toLowerCase(Locale.ROOT)) {
+            case ".jpg":
+                return ".jpg";
+            case ".jpeg":
+                return ".jpeg";
+            case ".png":
+                return ".png";
+            case ".gif":
+                return ".gif";
+            case ".bmp":
+                return ".bmp";
+            case ".ico":
+                return ".ico";
+            default:
+                return null;
+        }
+    }
+
+    /**
+     * Delete a server-generated temporary file. Failures are logged, never thrown.
+     */
+    private void deleteQuietly(File file) {
+        if (file == null) {
             return;
         }
-        File delFile = safePath.toFile();
-        if(delFile.isFile() && delFile.exists()) {
-            if (delFile.delete()) {
-                logger.info("[+] " + filePath + " delete successfully!");
-                return;
+        try {
+            if (Files.deleteIfExists(file.toPath())) {
+                logger.info("[+] temporary file delete successfully!");
             }
+        } catch (IOException e) {
+            logger.info("temporary file delete failed: {}", e.toString());
         }
-        logger.info(filePath + " delete failed!");
     }
 
     /**
@@ -221,29 +246,18 @@ public class FileUpload {
      *
      * 不建议使用transferTo，因为原始的MultipartFile会被覆盖
      * https://stackoverflow.com/questions/24339990/how-to-convert-a-multipart-file-to-file
+     *
+     * The file name is fully server generated: UUID + an allowlisted constant suffix.
      */
-    private File convert(MultipartFile multiFile) throws Exception {
-        String fileName = sanitizeFileName(multiFile.getOriginalFilename());
-        if (fileName == null) {
-            throw new IllegalArgumentException("Illegal file name");
-        }
-        String suffix = fileName.substring(fileName.lastIndexOf("."));
+    private File convert(MultipartFile multiFile, String allowedSuffix) throws Exception {
         UUID uuid = Generators.timeBasedGenerator().generate();
-        Path convPath = resolveInUploadFolder(uuid + suffix);
+        // 随机生成一个同后缀名的文件
+        Path convPath = resolveInUploadFolder(uuid + allowedSuffix);
         if (convPath == null) {
             throw new IllegalArgumentException("Illegal file name");
         }
-        randomFilePath = convPath.toString();
-        // 随机生成一个同后缀名的文件
-        File convFile = convPath.toFile();
-        boolean ret = convFile.createNewFile();
-        if (!ret) {
-            return null;
-        }
-        FileOutputStream fos = new FileOutputStream(convFile);
-        fos.write(multiFile.getBytes());
-        fos.close();
-        return convFile;
+        Files.write(convPath, multiFile.getBytes(), StandardOpenOption.CREATE_NEW);
+        return convPath.toFile();
     }
 
     /**
