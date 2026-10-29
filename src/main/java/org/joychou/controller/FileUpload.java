@@ -255,7 +255,12 @@ public class FileUpload {
      * Check if the file is a picture.
      */
     private static boolean isImage(File file) throws IOException {
-        BufferedImage bi = ImageIO.read(file);
-        return bi != null;
+        // Open the path directly (no separate existence/readability check).
+        try (java.io.InputStream in = Files.newInputStream(file.toPath(), LinkOption.NOFOLLOW_LINKS)) {
+            BufferedImage bi = ImageIO.read(in);
+            return bi != null;
+        } catch (java.nio.file.NoSuchFileException e) {
+            return false;
+        }
     }
 }
