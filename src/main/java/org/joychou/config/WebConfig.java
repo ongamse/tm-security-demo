@@ -4,6 +4,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Locale;
 
 
 /**
@@ -27,6 +29,8 @@ public class WebConfig {
     private static ArrayList<String> ssrfSafeDomains = new ArrayList<>();
     private static ArrayList<String> ssrfBlockDomains = new ArrayList<>();
     private static ArrayList<String> ssrfBlockIps = new ArrayList<>();
+    private static ArrayList<String> ssrfOutboundHosts = new ArrayList<>(Arrays.asList(
+            "img.alicdn.com", "www.baidu.com", "joychou.org", "www.joychou.org", "test.joychou.org"));
 
     /**
      * application.properties里object自动转jsonp的referer校验开关
@@ -113,6 +117,29 @@ public class WebConfig {
 
     public static ArrayList<String> getCorsAllowedOrigins() {
         return corsAllowedOrigins;
+    }
+
+
+    /**
+     * Fixed server side allowlist of hosts that the application may request (SSRF protection).
+     * Entries are plain host names (lower cased); wildcards and empty entries are never accepted.
+     */
+    @Value("${joychou.security.ssrf.outbound.hosts:img.alicdn.com,www.baidu.com,joychou.org,www.joychou.org,test.joychou.org}")
+    public void setSsrfOutboundHosts(String[] hosts) {
+        ArrayList<String> allowed = new ArrayList<>();
+        if (hosts != null) {
+            for (String h : hosts) {
+                String trimmed = h.trim().toLowerCase(Locale.ROOT);
+                if (!trimmed.isEmpty() && !trimmed.contains("*")) {
+                    allowed.add(trimmed);
+                }
+            }
+        }
+        WebConfig.ssrfOutboundHosts = allowed;
+    }
+
+    public static ArrayList<String> getSsrfOutboundHosts() {
+        return ssrfOutboundHosts;
     }
 
 
