@@ -1,5 +1,6 @@
 package org.joychou.config;
 
+import org.joychou.security.LogSanitizer;
 import org.apache.commons.lang.StringUtils;
 import org.joychou.security.SecurityUtil;
 import org.slf4j.Logger;
@@ -84,7 +85,7 @@ public class Object2Jsonp extends AbstractJsonpResponseBodyAdvice {
 
         // 校验jsonp逻辑，如果不安全，返回forbidden
         if (SecurityUtil.checkURL(refer) == null ){
-            logger.error("[-] URL: " + url + "?" + query + "\t" + "Referer: " + refer);
+            logger.error("[-] URL: {}?{}\tReferer: {}", LogSanitizer.clean(url), LogSanitizer.clean(query), LogSanitizer.clean(refer));
             try{
                 // 使用response.getWriter().write后，后续写入jsonp后还会继续使用response.getWriteer()，导致报错
 //                response.setStatus(HttpServletResponse.SC_FORBIDDEN);
@@ -92,7 +93,7 @@ public class Object2Jsonp extends AbstractJsonpResponseBodyAdvice {
 //                response.flushBuffer();
                 response.sendRedirect(Constants.ERROR_PAGE);
             } catch (Exception e){
-                logger.error(e.toString());
+                logger.error("Operation failed.", e);
             }
 
         }

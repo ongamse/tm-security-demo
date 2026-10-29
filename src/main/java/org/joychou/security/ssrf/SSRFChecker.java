@@ -1,8 +1,9 @@
 package org.joychou.security.ssrf;
 
+import org.joychou.security.LogSanitizer;
+import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.InetAddress;
-import java.net.URI;
 import java.net.URL;
 import java.util.ArrayList;
 
@@ -42,7 +43,7 @@ public class SSRFChecker {
                 }
             }
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("Operation failed.", e);
             return false;
         }
         return false;
@@ -65,13 +66,18 @@ public class SSRFChecker {
         String finalUrl = url;
         try {
             do {
-                // 判断当前请求的URL是否是内网ip
-                if (isInternalIpByUrl(finalUrl)) {
-                    logger.error("[-] SSRF check failed. Dangerous url: " + finalUrl);
-                    return false;  // 内网ip直接return，非内网ip继续判断是否有重定向
+                // Only http/https may be requested and the host must not be an internal ip
+                // (also applies to every redirect target). The connection is opened to the
+                // url rebuilt from the validated components, not to the request string.
+                final URL checkedUrl;
+                try {
+                    checkedUrl = SafeUrl.resolve(finalUrl);
+                } catch (IOException e) {
+                    logger.error("[-] SSRF check failed. Dangerous or illegal url: {}", LogSanitizer.clean(e.getMessage()));
+                    return false;  // 内网ip或非http/https直接return，其余继续判断是否有重定向
                 }
 
-                connection = (HttpURLConnection) new URL(finalUrl).openConnection();
+                connection = (HttpURLConnection) checkedUrl.openConnection();
                 connection.setInstanceFollowRedirects(false);
                 connection.setUseCaches(false); // 设置为false，手动处理跳转，可以拿到每个跳转的URL
                 connection.setConnectTimeout(connectTime);
@@ -84,7 +90,7 @@ public class SSRFChecker {
                         break;
                     finalUrl = redirectedUrl;
                     i += 1;  // 重定向次数加1
-                    logger.info("redirected url: " + finalUrl);
+                    logger.info("redirected url: {}", LogSanitizer.clean(finalUrl));
                     if (i == checkTimes) {
                         return false;
                     }
@@ -106,17 +112,14 @@ public class SSRFChecker {
      */
     public static boolean isInternalIpByUrl(String url) {
 
-        String host = url2host(url);
-        if (host.equals("")) {
-            return true; // 异常URL当成内网IP等非法URL处理
+        // Illegal urls, non http/https urls, hosts that cannot be resolved and hosts resolving to
+        // an internal ip are all treated as internal (fail closed).
+        try {
+            SafeUrl.resolve(url);
+            return false;
+        } catch (Exception e) {
+            return true;
         }
-
-        String ip = host2ip(host);
-        if (ip.equals("")) {
-            return true; // 如果域名转换为IP异常，则认为是非法URL
-        }
-
-        return isInternalIp(ip);
     }
 
 
@@ -128,7 +131,7 @@ public class SSRFChecker {
      */
     public static boolean isInternalIp(String strIP) {
         if (StringUtils.isEmpty(strIP)) {
-            logger.error("[-] SSRF check failed. IP is empty. " + strIP);
+            logger.error("[-] SSRF check failed. IP is empty. {}", LogSanitizer.clean(strIP));
             return true;
         }
 
@@ -136,7 +139,7 @@ public class SSRFChecker {
         for (String subnet : blackSubnets) {
             SubnetUtils utils = new SubnetUtils(subnet);
             if (utils.getInfo().isInRange(strIP)) {
-                logger.error("[-] SSRF check failed. Internal IP: " + strIP);
+                logger.error("[-] SSRF check failed. Internal IP: {}", LogSanitizer.clean(strIP));
                 return true;
             }
         }
@@ -188,7 +191,7 @@ public class SSRFChecker {
             InetAddress IpAddress = InetAddress.getByName(host);
             return IpAddress.getHostAddress();
         } catch (Exception e) {
-            logger.error("host2ip exception " + e.getMessage());
+            logger.error("host2ip exception {}", LogSanitizer.clean(e.getMessage()));
             return "";
         }
     }
@@ -209,7 +212,7 @@ public class SSRFChecker {
 
                 // not support ipv6
                 if (ipParts.length > 4) {
-                    logger.error("Illegal ipv4: " + host);
+                    logger.error("Illegal ipv4: {}", LogSanitizer.clean(host));
                     return false;
                 }
 
@@ -222,20 +225,20 @@ public class SSRFChecker {
                 // 012.23.78.233
                 for(String ip : ipParts) {
                     if (!isNumber(ip)){
-                        logger.error("Illegal ipv4: " + host);
+                        logger.error("Illegal ipv4: {}", LogSanitizer.clean(host));
                         return false;
                     }
                     // start with "0", but not "0"
                     if (ip.startsWith("0") && !ip.equals("0")) {
                         if (Integer.valueOf(ip, 8) >= 256){
-                            logger.error("Illegal ipv4: " + host);
+                            logger.error("Illegal ipv4: {}", LogSanitizer.clean(host));
                             return false;
                         }
                         newDecimalIP.append(Integer.valueOf(ip, 8)).append(".");
                         is_octal = true;
                     }else{
                         if (Integer.valueOf(ip, 10) >= 256) {
-                            logger.error("Illegal ipv4: " + host);
+                            logger.error("Illegal ipv4: {}", LogSanitizer.clean(host));
                             return false;
                         }
                         newDecimalIP.append(ip).append(".");
@@ -246,7 +249,7 @@ public class SSRFChecker {
             }
             return is_octal;
         } catch (Exception e){
-            logger.error("SSRFChecker isOctalIP exception: " + e.getMessage());
+            logger.error("SSRFChecker isOctalIP exception: {}", LogSanitizer.clean(e.getMessage()));
             return false;
         }
 
@@ -282,22 +285,6 @@ public class SSRFChecker {
             }
         }
         return true;
-    }
-
-    /**
-     * Get host from URL which the protocol must be http:// or https:// and not be //.
-     */
-    private static String url2host(String url) {
-        try {
-            // use URI instead of URL
-            URI u = new URI(url);
-            if (SecurityUtil.isHttp(url)) {
-                return u.getHost();
-            }
-            return "";
-        } catch (Exception e) {
-            return "";
-        }
     }
 
 }

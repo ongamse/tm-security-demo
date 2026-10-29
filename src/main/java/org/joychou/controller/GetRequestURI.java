@@ -1,5 +1,6 @@
 package org.joychou.controller;
 
+import org.joychou.security.LogSanitizer;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,8 +39,8 @@ public class GetRequestURI {
         String uri = request.getRequestURI(); // Security: request.getServletPath()
         PathMatcher matcher = new AntPathMatcher();
 
-        logger.info("getRequestURI: " + uri);
-        logger.info("getServletPath: " + request.getServletPath());
+        logger.info("getRequestURI: {}", LogSanitizer.clean(uri));
+        logger.info("getServletPath: {}", LogSanitizer.clean(request.getServletPath()));
 
         for (String path : excluedPath) {
             if (matcher.match(path, uri)) {

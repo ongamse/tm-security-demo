@@ -5,21 +5,11 @@ import javax.servlet.http.HttpServletRequest;
 import java.io.*;
 
 import com.google.common.base.Preconditions;
-import org.springframework.web.util.HtmlUtils;
+import java.util.regex.Pattern;
 
 public class WebUtils {
 
-    // Get request body.
-    public static String getRequestBody(HttpServletRequest request) throws IOException {
-        InputStream in = request.getInputStream();
-        return convertStreamToString(in);
-    }
-
-    // https://stackoverflow.com/questions/309424/how-do-i-read-convert-an-inputstream-into-a-string-in-java
-    public static String convertStreamToString(java.io.InputStream is) {
-        java.util.Scanner s = new java.util.Scanner(is).useDelimiter("\\A");
-        return s.hasNext() ? s.next() : "";
-    }
+    // Request bodies containing XML must be read through org.joychou.security.SecureXml.parse (size capped, DTD rejected).
 
     public static String getCookieValueByName(HttpServletRequest request, String cookieName) {
         Cookie cookie = org.springframework.web.util.WebUtils.getCookie(request, cookieName);
@@ -27,8 +17,18 @@ public class WebUtils {
     }
 
 
+    // JSONP callback must be a plain (dotted) JavaScript identifier, nothing else can reach script context.
+    private static final Pattern JSONP_CALLBACK_PATTERN = Pattern.compile("^[A-Za-z_$][A-Za-z0-9_$]{0,63}(\\.[A-Za-z_$][A-Za-z0-9_$]{0,63}){0,3}$");
+
+    public static boolean isValidJsonpCallback(String callback) {
+        return callback != null && JSONP_CALLBACK_PATTERN.matcher(callback).matches();
+    }
+
     public static String json2Jsonp(String callback, String jsonStr) {
-        return HtmlUtils.htmlEscape(callback) + "(" + jsonStr + ")";
+        if (!isValidJsonpCallback(callback)) {
+            return "error";
+        }
+        return callback + "(" + jsonStr + ")";
     }
 
 

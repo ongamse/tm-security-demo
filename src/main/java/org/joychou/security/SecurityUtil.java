@@ -3,21 +3,23 @@ package org.joychou.security;
 import org.joychou.config.WebConfig;
 import org.joychou.security.ssrf.SSRFChecker;
 import org.joychou.security.ssrf.SocketHook;
+import org.joychou.security.ssrf.UrlParts;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.regex.Pattern;
 
 
 public class SecurityUtil {
 
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
+    private static final Pattern HOST_PATTERN = Pattern.compile("^[A-Za-z0-9._:\\[\\]-]+$");
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
 
 
@@ -40,9 +42,13 @@ public class SecurityUtil {
      */
     public static String gethost(String url) {
         try {
-            URI uri = new URI(url);
-            return uri.getHost().toLowerCase();
-        } catch (URISyntaxException e) {
+            // Strict hand-written parser: the host is rebuilt char by char from a constant alphabet.
+            String host = UrlParts.parse(url).host();
+            if (!HOST_PATTERN.matcher(host).matches()) {
+                return "";
+            }
+            return host;
+        } catch (UrlParts.InvalidUrlException e) {
             return "";
         }
     }
@@ -65,12 +71,21 @@ public class SecurityUtil {
         ArrayList<String> blockDomains = WebConfig.getBlockDomains();
 
         try {
-            String host = gethost(url);
-
             // 必须http/https
             if (!isHttp(url)) {
                 return null;
             }
+
+            // Strict hand-written parser: no URI/URL is created from the request-derived string.
+            final UrlParts parts;
+            try {
+                parts = UrlParts.parse(url);
+            } catch (UrlParts.InvalidUrlException e) {
+                return null;
+            }
+            final String host = parts.host();
+            // canonical url assembled from the validated components
+            final String canonical = parts.toCanonicalString();
 
             // 如果满足黑名单返回null
             if (blockDomains.contains(host)){
@@ -84,20 +99,105 @@ public class SecurityUtil {
 
             // 支持多级域名
             if (safeDomains.contains(host)){
-                return url;
+                return canonical;
             }
 
             // 支持一级域名
             for(String safedomain: safeDomains) {
                 if(host.endsWith("." + safedomain)) {
-                    return url;
+                    return canonical;
                 }
             }
             return null;
         } catch (NullPointerException e) {
-            logger.error(e.toString());
+            logger.error("Operation failed.", e);
             return null;
         }
+    }
+
+
+    /**
+     * Build the immutable list of exact CORS origins (scheme://host) from the configured safe domains
+     * (url/url_safe_domain.xml). Blocked domains are excluded.
+     */
+    private static List<String> allowedOrigins() {
+        List<String> blockDomains = WebConfig.getBlockDomains();
+        List<String> origins = new ArrayList<>();
+        for (String domain : WebConfig.getSafeDomains()) {
+            if (domain == null || domain.isEmpty() || blockDomains.contains(domain)) {
+                continue;
+            }
+            origins.add("https://" + domain);
+            // Plain HTTP is only acceptable for local development.
+            if (domain.equals("localhost")) {
+                origins.add("http://localhost");
+            } else if (domain.equals("127.0.0.1")) {
+                origins.add("http://127.0.0.1");
+            }
+        }
+        return Collections.unmodifiableList(origins);
+    }
+
+
+    /**
+     * Match a request Origin against the exact allowlisted origins derived from the safe domain config.
+     * The returned value is always an element of the allowlist, never the request-supplied string.
+     *
+     * @param requestOrigin value of the request Origin header
+     * @return the matching allowlisted origin; null if the origin is not allowlisted
+     */
+    public static String matchAllowedOrigin(String requestOrigin) {
+        if (requestOrigin == null || headerFilter(requestOrigin) == null) {
+            return null;
+        }
+        for (String allowed : allowedOrigins()) {
+            if (allowed.equals(requestOrigin) && checkURL(allowed) != null) {
+                return allowed;
+            }
+        }
+        return null;
+    }
+
+
+    /**
+     * Validate a request-derived url before it is used as an HTTP redirect target (open redirect, CWE-601).
+     * The url must be an absolute http/https url without user info, must not contain control characters
+     * or backslashes (also url-encoded), its real host (parsed by {@link UrlParts}) must be non-empty and
+     * must pass the safe/block domain lists checked by {@link #checkURL(String)}.
+     *
+     * @param url request-derived redirect target
+     * @return the canonical url rebuilt from the validated components if it is a trusted redirect target; null otherwise
+     */
+    public static String checkRedirectURL(String url) {
+        if (headerFilter(url) == null) {
+            return null;
+        }
+
+        // Reject backslashes, also when hidden by (multi) urlencode, e.g. http://evil.com%5c@www.joychou.org
+        String temp = url;
+        for (int i = 0; i < 10; i++) {
+            if (temp.indexOf('\\') != -1) {
+                return null;
+            }
+            if (temp.indexOf('%') == -1) {
+                break;
+            }
+            try {
+                temp = URLDecoder.decode(temp, "utf-8");
+            } catch (UnsupportedEncodingException | IllegalArgumentException e) {
+                return null;
+            }
+        }
+
+        // Parse once and rebuild a canonical url from the validated components.
+        final String rebuilt;
+        try {
+            rebuilt = UrlParts.parse(url).toCanonicalString();
+        } catch (UrlParts.InvalidUrlException e) {
+            return null;
+        }
+
+        return checkURL(rebuilt);
     }
 
 
@@ -183,10 +283,10 @@ public class SecurityUtil {
             try {
                 temp = URLDecoder.decode(temp, "utf-8");
             } catch (UnsupportedEncodingException e) {
-                logger.info("Unsupported encoding exception: " + filepath);
+                logger.info("Unsupported encoding exception: {}", LogSanitizer.clean(filepath));
                 return null;
             } catch (Exception e) {
-                logger.info(e.toString());
+                logger.info("Operation failed.", e);
                 return null;
             }
         }
@@ -196,6 +296,82 @@ public class SecurityUtil {
         }
 
         return filepath;
+    }
+
+
+    /**
+     * Prevent HTTP header injection (CRLF injection, CWE-113).
+     * The value is rejected if it, or any (multi-)URL-decoded form of it, contains CR, LF
+     * or any other control character.
+     *
+     * @param value request-derived value that is going to be written into a response header
+     * @return the original value if it is safe; null if the value is null or unsafe
+     */
+    public static String headerFilter(String value) {
+        if (value == null) {
+            return null;
+        }
+
+        String temp = value;
+        if (containsControlChar(temp)) {
+            return null;
+        }
+
+        // Handle multi urlencode, e.g. %250d%250a
+        for (int i = 0; i < 10 && temp.indexOf('%') != -1; i++) {
+            String decoded;
+            try {
+                decoded = URLDecoder.decode(temp, "utf-8");
+            } catch (UnsupportedEncodingException | IllegalArgumentException e) {
+                // Not decodable, so no encoded control character can be hidden in it.
+                break;
+            }
+            if (containsControlChar(decoded)) {
+                return null;
+            }
+            if (decoded.equals(temp)) {
+                break;
+            }
+            temp = decoded;
+        }
+
+        return value;
+    }
+
+
+    /**
+     * Build a header-safe copy of a request-derived value (CWE-113). A NEW string is assembled character by
+     * character: only ASCII letters, digits and the characters {@code " -_.:/,;=+@"} are kept, everything else
+     * (CR, LF, other control characters, non-ASCII) is dropped, and the result is capped at 200 characters.
+     *
+     * @param value request-derived value
+     * @return newly built, header-safe string; empty string if value is null
+     */
+    public static String toHeaderSafe(String value) {
+        StringBuilder sb = new StringBuilder();
+        if (value == null) {
+            return sb.toString();
+        }
+        final String extra = " -_.:/,;=+@";
+        for (int i = 0; i < value.length() && sb.length() < 200; i++) {
+            char c = value.charAt(i);
+            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+                    || extra.indexOf(c) != -1) {
+                sb.append(c);
+            }
+        }
+        return sb.toString();
+    }
+
+
+    private static boolean containsControlChar(String str) {
+        for (int i = 0; i < str.length(); i++) {
+            char ch = str.charAt(i);
+            if (ch < 0x20 || ch == 0x7f || ch == 0x85 || ch == 0x2028 || ch == 0x2029) {
+                return true;
+            }
+        }
+        return false;
     }
 
 

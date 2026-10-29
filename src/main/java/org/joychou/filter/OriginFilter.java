@@ -1,5 +1,6 @@
 package org.joychou.filter;
 
+import org.joychou.security.LogSanitizer;
 
 import javax.servlet.*;
 import javax.servlet.annotation.WebFilter;
@@ -34,20 +35,25 @@ public class OriginFilter implements Filter {
         HttpServletResponse response = (HttpServletResponse) res;
 
         String origin = request.getHeader("Origin");
-        logger.info("[+] Origin: " + origin + "\tCurrent url:" + request.getRequestURL());
+        logger.info("[+] Origin: {}\tCurrent url:{}", LogSanitizer.clean(origin), LogSanitizer.clean(request.getRequestURL()));
 
         // 以file协议访问html，origin为字符串的null，所以依然会走安全check逻辑
-        if (origin != null && SecurityUtil.checkURL(origin) == null) {
-            logger.error("[-] Origin check error. " + "Origin: " + origin +
-                    "\tCurrent url:" + request.getRequestURL());
+        String allowedOrigin = SecurityUtil.matchAllowedOrigin(origin);
+        if (origin != null && (SecurityUtil.checkURL(origin) == null || SecurityUtil.headerFilter(origin) == null
+                || allowedOrigin == null)) {
+            logger.error("[-] Origin check error. Origin: {}\tCurrent url:{}", LogSanitizer.clean(origin),
+                    LogSanitizer.clean(request.getRequestURL()));
             response.setStatus(response.SC_FORBIDDEN);
             response.getWriter().println("Invaid cors config by joychou.");
             return;
         }
 
-        response.setHeader("Access-Control-Allow-Origin", origin);
-        response.setHeader("Access-Control-Allow-Credentials", "true");
-        response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTION");
+        // Only allowlisted origins (checked above) get CORS headers; no Origin header means same-origin.
+        if (allowedOrigin != null) {
+            response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
+            response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+            response.addHeader("Vary", "Origin");
+        }
 
         filterChain.doFilter(req, res);
     }

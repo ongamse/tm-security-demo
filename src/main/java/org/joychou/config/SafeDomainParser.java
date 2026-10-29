@@ -1,5 +1,6 @@
 package org.joychou.config;
 
+import org.joychou.security.LogSanitizer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.ClassPathResource;
@@ -61,12 +62,12 @@ public class SafeDomainParser {
                 }
             }
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("Operation failed.", e);
         }
 
         WebConfig wc = new WebConfig();
         wc.setSafeDomains(safeDomains);
-        logger.info(safeDomains.toString());
+        logger.info("Safe domains: {}", LogSanitizer.clean(safeDomains));
         wc.setBlockDomains(blockDomains);
 
         // 解析SSRF配置
@@ -125,10 +126,10 @@ public class SafeDomainParser {
                 }
             }
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("Operation failed.", e);
         }
 
-        logger.info(ssrfBlockIps.toString());
+        logger.info("SSRF block ips: {}", LogSanitizer.clean(ssrfBlockIps));
         wc.setSsrfBlockDomains(ssrfBlockDomains);
         wc.setSsrfBlockIps(ssrfBlockIps);
         wc.setSsrfSafeDomains(ssrfSafeDomains);

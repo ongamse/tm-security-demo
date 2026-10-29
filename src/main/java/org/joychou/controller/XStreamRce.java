@@ -3,9 +3,11 @@ package org.joychou.controller;
 import com.thoughtworks.xstream.XStream;
 import com.thoughtworks.xstream.io.xml.DomDriver;
 import org.joychou.dao.User;
-import org.joychou.util.WebUtils;
+import org.joychou.security.SecureXml;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.w3c.dom.Document;
+import org.w3c.dom.NodeList;
 
 import javax.servlet.http.HttpServletRequest;
 
@@ -22,10 +24,25 @@ public class XStreamRce {
      */
     @PostMapping("/xstream")
     public String parseXml(HttpServletRequest request) throws Exception {
-        String xml = WebUtils.getRequestBody(request);
-        XStream xstream = new XStream(new DomDriver());
-        xstream.fromXML(xml);
+        // Size capped, DOCTYPE / ENTITY rejected, hardened DOM parse; null means empty body.
+        Document doc = SecureXml.parse(request, false);
+        if (doc == null) {
+            return "xstream";
+        }
+        // Data-only parsing: read simple fields from a hardened DOM, never instantiate types from XML.
+        User user = new User();
+        String id = textOf(doc, "id");
+        if (id != null) {
+            user.setId(Integer.valueOf(id.trim()));
+        }
+        user.setUsername(textOf(doc, "username"));
+        user.setPassword(textOf(doc, "password"));
         return "xstream";
+    }
+
+    private static String textOf(Document doc, String tag) {
+        NodeList nodes = doc.getElementsByTagName(tag);
+        return nodes.getLength() == 0 ? null : nodes.item(0).getTextContent();
     }
 
     public static void main(String[] args) {

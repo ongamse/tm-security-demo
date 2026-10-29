@@ -1,5 +1,6 @@
 package org.joychou.controller.othervulns;
 
+import org.springframework.web.util.HtmlUtils;
 import org.apache.poi.xssf.usermodel.XSSFCell;
 import org.apache.poi.xssf.usermodel.XSSFRow;
 import org.apache.poi.xssf.usermodel.XSSFSheet;
@@ -70,6 +71,6 @@ public class ooxmlXXE {
             }
         }
 
-        return sbResult.toString();
+        return HtmlUtils.htmlEscape(sbResult.toString());
     }
 }

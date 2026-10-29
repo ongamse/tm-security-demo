@@ -1,6 +1,8 @@
 package org.joychou.controller;
 
+import org.joychou.security.LogSanitizer;
 
+import org.springframework.web.util.HtmlUtils;
 import org.joychou.security.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -8,7 +10,6 @@ import org.springframework.web.bind.annotation.*;
 
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.net.URL;
 import java.util.ArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -98,23 +99,22 @@ public class URLWhiteList {
     @GetMapping("/vuln/url_bypass")
     public void url_bypass(String url, HttpServletResponse res) throws IOException {
 
-        logger.info("url:  " + url);
+        logger.info("url:  {}", LogSanitizer.clean(url));
 
         if (!SecurityUtil.isHttp(url)) {
             return;
         }
 
-        URL u = new URL(url);
-        String host = u.getHost();
-        logger.info("host:  " + host);
-
-        // endsWith .
-        for (String domain : domainwhitelist) {
-            if (host.endsWith("." + domain)) {
-                res.sendRedirect(url);
-            }
+        // Validate the redirect target: real host parsed by java.net.URI, http/https only,
+        // no backslash / user info / control characters, and trusted host lists.
+        // The redirect target is a server-side constant destination, never the request string.
+        String target = URLRedirect.resolveTarget(url);
+        if (target == null) {
+            res.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            return;
         }
 
+        res.sendRedirect(target);
     }
 
 
@@ -135,9 +135,9 @@ public class URLWhiteList {
 
         for (String whiteHost: whiteDomainlists){
             if (whiteHost.startsWith(".") && host.endsWith(whiteHost)) {
-                return url;
+                return HtmlUtils.htmlEscape(url);
             } else if (!whiteHost.startsWith(".") && host.equals(whiteHost)) {
-                return url;
+                return HtmlUtils.htmlEscape(url);
             }
         }
 

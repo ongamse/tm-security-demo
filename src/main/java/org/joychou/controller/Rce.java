@@ -1,7 +1,8 @@
 package org.joychou.controller;
 
-import groovy.lang.GroovyShell;
+import org.springframework.web.util.HtmlUtils;
 import lombok.extern.slf4j.Slf4j;
+import org.joychou.security.SecurityUtil;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -16,6 +17,8 @@ import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.sql.DriverManager;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 
 /**
@@ -28,13 +31,40 @@ import java.sql.DriverManager;
 @RequestMapping("/rce")
 public class Rce {
 
+    private static final Pattern ARITHMETIC = Pattern.compile("^\\s*(-?[0-9]{1,18})\\s*([-+*/%])\\s*(-?[0-9]{1,18})\\s*$");
+
+    /**
+     * Fixed commands selectable by key. The executed argv comes only from these constants;
+     * the request value is only compared against string literals.
+     *
+     * @return a fresh constant argv, or null if the key is not allowed
+     */
+    private static String[] selectCommand(String cmd) {
+        if (cmd == null) {
+            return null;
+        }
+        String[] argv;
+        switch (cmd) {
+            case "whoami": argv = new String[]{"whoami"}; break;
+            case "date": argv = new String[]{"date"}; break;
+            case "uname": argv = new String[]{"uname", "-a"}; break;
+            default: argv = null; break;
+        }
+        return argv;
+    }
+
     @GetMapping("/runtime/exec")
     public String CommandExec(String cmd) {
         Runtime run = Runtime.getRuntime();
         StringBuilder sb = new StringBuilder();
 
+        String[] argv = selectCommand(cmd);
+        if (argv == null) {
+            return "Bad boy. I got u.";
+        }
+
         try {
-            Process p = run.exec(cmd);
+            Process p = run.exec(argv);
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
             String tmpStr;
@@ -51,9 +81,10 @@ public class Rce {
             inBr.close();
             in.close();
         } catch (Exception e) {
-            return e.toString();
+            log.error("Command exec failed.", e);
+            return "Command exec failed!!";
         }
-        return sb.toString();
+        return HtmlUtils.htmlEscape(sb.toString());
     }
 
 
@@ -65,8 +96,13 @@ public class Rce {
 
         StringBuilder sb = new StringBuilder();
 
+        // The request value is only a lookup key; argv comes from constants.
+        String[] arrCmd = selectCommand(cmd);
+        if (arrCmd == null) {
+            return "Bad boy. I got u.";
+        }
+
         try {
-            String[] arrCmd = {"/bin/sh", "-c", cmd};
             ProcessBuilder processBuilder = new ProcessBuilder(arrCmd);
             Process p = processBuilder.start();
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
@@ -77,10 +113,11 @@ public class Rce {
                 sb.append(tmpStr);
             }
         } catch (Exception e) {
-            return e.toString();
+            log.error("Command exec failed.", e);
+            return "Command exec failed!!";
         }
 
-        return sb.toString();
+        return HtmlUtils.htmlEscape(sb.toString());
     }
 
 
@@ -94,11 +131,16 @@ public class Rce {
      */
     @GetMapping("/jscmd")
     public void jsEngine(String jsurl) throws Exception{
+        // Only load scripts from allowlisted hosts; the URL is never concatenated into script
+        // source, it is passed as a binding value instead.
+        if (!SecurityUtil.checkSSRFByWhitehosts(jsurl)) {
+            throw new IllegalArgumentException("jsurl is not allowed");
+        }
         // js nashorn javascript ecmascript
         ScriptEngine engine = new ScriptEngineManager().getEngineByName("js");
         Bindings bindings = engine.getBindings(ScriptContext.ENGINE_SCOPE);
-        String cmd = String.format("load(\"%s\")", jsurl);
-        engine.eval(cmd, bindings);
+        bindings.put("jsurl", jsurl);
+        engine.eval("load(jsurl)", bindings);
     }
 
 
@@ -110,7 +152,7 @@ public class Rce {
      */
     @GetMapping("/vuln/yarm")
     public void yarm(String content) {
-        Yaml y = new Yaml();
+        Yaml y = new Yaml(new SafeConstructor());
         y.load(content);
     }
 
@@ -121,16 +163,36 @@ public class Rce {
     }
 
     /**
-     * http://localhost:8080/rce/groovy?content="open -a Calculator".execute()
-     * @param content groovy shell
+     * http://localhost:8080/rce/groovy?content=1+2
+     * Request data is never evaluated as code; a fixed arithmetic grammar is parsed in Java.
+     * @param content arithmetic expression: integer operator integer
      */
     @GetMapping("groovy")
-    public void groovyshell(String content) {
-        GroovyShell groovyShell = new GroovyShell();
-        groovyShell.evaluate(content);
+    public String groovyshell(String content) {
+        if (content == null) {
+            return "Bad boy. I got u.";
+        }
+        Matcher m = ARITHMETIC.matcher(content);
+        if (!m.matches()) {
+            return "Bad boy. I got u.";
+        }
+        long a = Long.parseLong(m.group(1));
+        long b = Long.parseLong(m.group(3));
+        try {
+            long result;
+            switch (m.group(2)) {
+                case "+": result = Math.addExact(a, b); break;
+                case "-": result = Math.subtractExact(a, b); break;
+                case "*": result = Math.multiplyExact(a, b); break;
+                case "/": result = a / b; break;
+                case "%": result = a % b; break;
+                default: return "Bad boy. I got u.";
+            }
+            return String.valueOf(result);
+        } catch (ArithmeticException e) {
+            return "Bad boy. I got u.";
+        }
     }
-
-
 
     public static void main(String[] args) throws Exception{
         Runtime.getRuntime().exec("touch /tmp/x");

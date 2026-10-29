@@ -72,14 +72,14 @@ public class SocketHookFactory implements SocketImplFactory {
                 try {
                     return (SocketImpl) socketConstructor.newInstance();
                 } catch (InstantiationException | IllegalAccessException | InvocationTargetException ex) {
-                    logger.error(ex.toString());
+                    logger.error("Operation failed.", ex);
                 }
             }
         } else {
             try {
                 return (SocketImpl) socketConstructor.newInstance();
             } catch (InstantiationException | IllegalAccessException | InvocationTargetException e) {
-                logger.error(e.toString());
+                logger.error("Operation failed.", e);
             }
         }
 

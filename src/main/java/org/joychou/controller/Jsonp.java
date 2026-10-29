@@ -3,13 +3,14 @@ package org.joychou.controller;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 
-import com.alibaba.fastjson.JSONPObject;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang.StringUtils;
 import org.joychou.security.SecurityUtil;
 import org.joychou.util.LoginUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.web.bind.annotation.*;
@@ -21,6 +22,8 @@ import org.joychou.util.WebUtils;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.security.Principal;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 
 /**
@@ -33,6 +36,11 @@ import java.security.Principal;
 @RequestMapping("/jsonp")
 public class Jsonp {
 
+    /** Constant alphabet: 52 letters first, then digits, then '_', '$' and '.'. */
+    private static final String CALLBACK_ALPHABET =
+            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_$.";
+    private static final int CALLBACK_LETTER_COUNT = 52;
+
     private String callback = WebConfig.getBusinessCallback();
 
     @Autowired
@@ -43,9 +51,69 @@ public class Jsonp {
      * http://localhost:8080/jsonp/vuln/referer?callback_=test
      */
     @RequestMapping(value = "/vuln/referer", produces = "application/javascript")
-    public String referer(HttpServletRequest request) {
-        String callback = request.getParameter(this.callback);
-        return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
+    public ResponseEntity<String> referer(HttpServletRequest request) {
+        String newCallback = buildCallbackName(request.getParameter(this.callback));
+        if (newCallback == null) {
+            return invalidCallback();
+        }
+        String json = JSON.toJSONString(JSON.parseObject(LoginUtils.getUserInfo2JsonStr(request)));
+        return jsonpOk(newCallback, json);
+    }
+
+    /**
+     * Build a new callback name from explicitly allowed characters only.
+     *
+     * @return the new callback name, or null if the input is not acceptable
+     */
+    private static String buildCallbackName(String raw) {
+        if (raw == null || raw.isEmpty() || raw.length() > 64) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder(raw.length());
+        int segments = 1;
+        int segmentLength = 0;
+        for (int i = 0; i < raw.length(); i++) {
+            int idx = CALLBACK_ALPHABET.indexOf(raw.charAt(i));
+            if (idx < 0) {
+                return null;
+            }
+            // Only characters taken from the constant alphabet are ever appended.
+            char safe = CALLBACK_ALPHABET.charAt(idx);
+            if (safe == '.') {
+                if (segmentLength == 0) {
+                    return null; // empty segment (leading or consecutive dot)
+                }
+                segments++;
+                segmentLength = 0;
+                if (segments > 4) {
+                    return null;
+                }
+            } else {
+                if (i == 0 && idx >= CALLBACK_LETTER_COUNT && safe != '_' && safe != '$') {
+                    return null; // first char must be a letter, '_' or '$'
+                }
+                segmentLength++;
+            }
+            sb.append(safe);
+        }
+        if (segmentLength == 0) {
+            return null; // trailing dot
+        }
+        return sb.toString();
+    }
+
+    private static ResponseEntity<String> invalidCallback() {
+        return ResponseEntity.badRequest()
+                .contentType(MediaType.TEXT_PLAIN)
+                .header("X-Content-Type-Options", "nosniff")
+                .body("invalid callback");
+    }
+
+    private static ResponseEntity<String> jsonpOk(String newCallback, String json) {
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType("application/javascript;charset=UTF-8"))
+                .header("X-Content-Type-Options", "nosniff")
+                .body("/**/" + newCallback + "(" + json + ");");
     }
 
     /**
@@ -55,14 +123,21 @@ public class Jsonp {
      * http://localhost:8080/jsonp/vuln/emptyReferer?callback_=test
      */
     @RequestMapping(value = "/vuln/emptyReferer", produces = "application/javascript")
-    public String emptyReferer(HttpServletRequest request) {
+    public ResponseEntity<String> emptyReferer(HttpServletRequest request) {
         String referer = request.getHeader("referer");
 
         if (null != referer && SecurityUtil.checkURL(referer) == null) {
-            return "error";
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .contentType(MediaType.TEXT_PLAIN)
+                    .header("X-Content-Type-Options", "nosniff")
+                    .body("error");
         }
-        String callback = request.getParameter(this.callback);
-        return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
+        String newCallback = buildCallbackName(request.getParameter(this.callback));
+        if (newCallback == null) {
+            return invalidCallback();
+        }
+        String json = JSON.toJSONString(JSON.parseObject(LoginUtils.getUserInfo2JsonStr(request)));
+        return jsonpOk(newCallback, json);
     }
 
     /**
@@ -100,14 +175,21 @@ public class Jsonp {
      * http://localhost:8080/jsonp/sec?callback_=test
      */
     @RequestMapping(value = "/sec/checkReferer", produces = "application/javascript")
-    public String safecode(HttpServletRequest request) {
+    public ResponseEntity<String> safecode(HttpServletRequest request) {
         String referer = request.getHeader("referer");
 
         if (SecurityUtil.checkURL(referer) == null) {
-            return "error";
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .contentType(MediaType.TEXT_PLAIN)
+                    .header("X-Content-Type-Options", "nosniff")
+                    .body("error");
         }
-        String callback = request.getParameter(this.callback);
-        return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
+        String newCallback = buildCallbackName(request.getParameter(this.callback));
+        if (newCallback == null) {
+            return invalidCallback();
+        }
+        String json = JSON.toJSONString(JSON.parseObject(LoginUtils.getUserInfo2JsonStr(request)));
+        return jsonpOk(newCallback, json);
     }
 
     /**
@@ -126,17 +208,21 @@ public class Jsonp {
      * fastjsonp to jsonp
      */
     @GetMapping(value = "/fastjsonp/getToken", produces = "application/javascript")
-    public String getCsrfToken2(HttpServletRequest request) {
+    public ResponseEntity<String> getCsrfToken2(HttpServletRequest request) {
         CsrfToken csrfToken = cookieCsrfTokenRepository.loadToken(request); // get csrf token
 
-        String callback = request.getParameter("fastjsonpCallback");
-        if (StringUtils.isNotBlank(callback)) {
-            JSONPObject jsonpObj = new JSONPObject(callback);
-            jsonpObj.addParameter(csrfToken);
-            return jsonpObj.toString();
-        } else {
-            return csrfToken.toString();
+        String newCallback = buildCallbackName(request.getParameter("fastjsonpCallback"));
+        if (newCallback == null) {
+            return invalidCallback();
         }
+        Map<String, String> tokenMap = new LinkedHashMap<>();
+        if (csrfToken != null) {
+            tokenMap.put("headerName", csrfToken.getHeaderName());
+            tokenMap.put("parameterName", csrfToken.getParameterName());
+            tokenMap.put("token", csrfToken.getToken());
+        }
+        String json = JSON.toJSONString(tokenMap);
+        return jsonpOk(newCallback, json);
     }
 
 }

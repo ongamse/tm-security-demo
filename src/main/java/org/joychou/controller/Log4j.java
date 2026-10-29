@@ -1,5 +1,6 @@
 package org.joychou.controller;
 
+import org.joychou.security.LogSanitizer;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -21,7 +22,7 @@ public class Log4j {
         if(token.equals("java-sec-code")) {
             return "java sec code";
         } else {
-            logger.error(token);
+            logger.error("token: {}", LogSanitizer.clean(token));
             return "error";
         }
     }
