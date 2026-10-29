@@ -71,6 +71,12 @@ public class SSRFChecker {
                     return false;  // 内网ip直接return，非内网ip继续判断是否有重定向
                 }
 
+                // Only http/https may be requested (also applies to every redirect target).
+                if (!SecurityUtil.isHttp(finalUrl)) {
+                    logger.error("[-] SSRF check failed. Illegal protocol: " + finalUrl);
+                    return false;
+                }
+
                 connection = (HttpURLConnection) new URL(finalUrl).openConnection();
                 connection.setInstanceFollowRedirects(false);
                 connection.setUseCaches(false); // 设置为false，手动处理跳转，可以拿到每个跳转的URL
@@ -289,12 +295,14 @@ public class SSRFChecker {
      */
     private static String url2host(String url) {
         try {
+            // Reject non http/https (or null) urls before parsing.
+            if (null == url || !SecurityUtil.isHttp(url)) {
+                return "";
+            }
             // use URI instead of URL
             URI u = new URI(url);
-            if (SecurityUtil.isHttp(url)) {
-                return u.getHost();
-            }
-            return "";
+            String host = u.getHost();
+            return null == host ? "" : host;
         } catch (Exception e) {
             return "";
         }

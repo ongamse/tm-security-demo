@@ -121,6 +121,12 @@ public class SSRF {
         InputStream inputStream = null;
         OutputStream outputStream = null;
         try {
+            // Only http/https urls that do not resolve to an internal ip are allowed.
+            if (!SecurityUtil.checkSSRFWithoutRedirect(url)) {
+                logger.error("[-] SSRF check failed");
+                return;
+            }
+
             String downLoadImgFileName = WebUtils.getNameWithoutExtension(url) + "." + WebUtils.getFileExtension(url);
             // download
             response.setHeader("content-disposition", "attachment;fileName=" + downLoadImgFileName);
@@ -128,7 +134,12 @@ public class SSRF {
             URL u = new URL(url);
             int length;
             byte[] bytes = new byte[1024];
-            inputStream = u.openStream(); // send request
+            URLConnection connection = u.openConnection();
+            if (connection instanceof HttpURLConnection) {
+                // the redirect target would not be validated
+                ((HttpURLConnection) connection).setInstanceFollowRedirects(false);
+            }
+            inputStream = connection.getInputStream(); // send request
             outputStream = response.getOutputStream();
             while ((length = inputStream.read(bytes)) > 0) {
                 outputStream.write(bytes, 0, length);
