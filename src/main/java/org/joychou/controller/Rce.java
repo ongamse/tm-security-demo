@@ -1,5 +1,6 @@
 package org.joychou.controller;
 
+import groovy.lang.Binding;
 import groovy.lang.GroovyShell;
 import lombok.extern.slf4j.Slf4j;
 import org.joychou.security.SecurityUtil;
@@ -18,10 +19,6 @@ import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.sql.DriverManager;
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.Set;
-import java.util.regex.Pattern;
 
 
 /**
@@ -34,37 +31,58 @@ import java.util.regex.Pattern;
 @RequestMapping("/rce")
 public class Rce {
 
-    // Commands that may be run through the endpoints below; no shell is ever involved.
-    private static final Set<String> ALLOWED_CMDS = new HashSet<>(
-            Arrays.asList("whoami", "date", "pwd", "id", "hostname", "uname", "ls"));
-    // Only these commands accept (filtered) arguments.
-    private static final Set<String> CMDS_WITH_ARGS = new HashSet<>(Arrays.asList("ls", "uname"));
-    // Arithmetic only: digits, operators, parentheses, dot, whitespace. No identifiers, no quotes.
-    private static final Pattern ARITHMETIC_PATTERN = Pattern.compile("^[0-9+\\-*/%().\\s]{1,200}$");
-
     /**
-     * Parse user input into an argv array. Only allowlisted commands are accepted and every
-     * argument must pass SecurityUtil.cmdFilter.
+     * Map a command selector to a fixed, hard-coded argv. The user-supplied string is only used
+     * to choose between constants; no part of it is ever passed to the process. No shell is involved.
      *
-     * @return argv, or null if the input is not allowed
+     * @return a fixed argv, or null if the selector is not known
      */
     public static String[] parseAllowedCmd(String cmd) {
-        if (cmd == null || cmd.trim().isEmpty()) {
+        if (cmd == null) {
             return null;
         }
-        String[] argv = cmd.trim().split("\\s+");
-        if (!ALLOWED_CMDS.contains(argv[0])) {
-            return null;
-        }
-        if (argv.length > 1 && !CMDS_WITH_ARGS.contains(argv[0])) {
-            return null;
-        }
-        for (int i = 1; i < argv.length; i++) {
-            if (SecurityUtil.cmdFilter(argv[i]) == null) {
+        switch (cmd.trim()) {
+            case "whoami":
+                return new String[]{"whoami"};
+            case "date":
+                return new String[]{"date"};
+            case "pwd":
+                return new String[]{"pwd"};
+            case "id":
+                return new String[]{"id"};
+            case "hostname":
+                return new String[]{"hostname"};
+            case "uname":
+                return new String[]{"uname", "-a"};
+            case "ls":
+                return new String[]{"ls", "-la"};
+            default:
                 return null;
-            }
         }
-        return argv;
+    }
+
+    /**
+     * Map a selector to a fixed Groovy script. Attacker data is never part of the script source;
+     * it is only exposed to the script as the bound variable "input".
+     *
+     * @return a fixed script, or null if the selector is not known
+     */
+    private static String selectGroovyScript(String selector) {
+        if (selector == null) {
+            return null;
+        }
+        switch (selector.trim()) {
+            case "length":
+                return "input.length()";
+            case "upper":
+                return "input.toUpperCase()";
+            case "lower":
+                return "input.toLowerCase()";
+            case "reverse":
+                return "input.reverse()";
+            default:
+                return null;
+        }
     }
 
     @GetMapping("/runtime/exec")
@@ -176,17 +194,21 @@ public class Rce {
     }
 
     /**
-     * http://localhost:8080/rce/groovy?content="open -a Calculator".execute()
-     * @param content groovy shell
+     * http://localhost:8080/rce/groovy?content=upper&value=hello
+     * @param content name of a predefined script (length, upper, lower, reverse)
+     * @param value   data the predefined script operates on (bound variable, never evaluated)
      */
     @GetMapping("groovy")
-    public void groovyshell(String content) {
-        // Only plain arithmetic expressions are evaluated; anything else is rejected.
-        if (content == null || !ARITHMETIC_PATTERN.matcher(content).matches()) {
+    public String groovyshell(String content, String value) {
+        // content only selects a fixed script; user data reaches Groovy only as a binding.
+        String script = selectGroovyScript(content);
+        if (script == null) {
             throw new IllegalArgumentException("Bad boy. I got u.");
         }
-        GroovyShell groovyShell = new GroovyShell();
-        groovyShell.evaluate(content);
+        Binding binding = new Binding();
+        binding.setVariable("input", value == null ? "" : value);
+        GroovyShell groovyShell = new GroovyShell(binding);
+        return HtmlUtils.htmlEscape(String.valueOf(groovyShell.evaluate(script)));
     }
 
 
