@@ -1,6 +1,5 @@
 package org.joychou.controller;
 
-import com.fasterxml.uuid.Generators;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Controller;
@@ -15,10 +14,11 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
-import java.util.UUID;
+import java.security.SecureRandom;
 
 import org.joychou.security.SecurityUtil;
 
@@ -36,6 +36,8 @@ public class FileUpload {
     private static final String UPLOADED_FOLDER = "/tmp/";
     private final Logger logger = LoggerFactory.getLogger(this.getClass());
     private static Path randomFilePath = null;
+    // Single shared cryptographically strong RNG used for generated file names
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     // Allowlisted extensions; stored names only ever use these constants.
     private static final String[] PIC_SUFFIX_LIST = {".jpg", ".png", ".jpeg", ".gif", ".bmp", ".ico"};
@@ -181,14 +183,31 @@ public class FileUpload {
     }
 
     /**
-     * Build a new server-generated path inside UPLOADED_FOLDER: random UUID plus a
+     * Build a new server-generated path inside UPLOADED_FOLDER: SecureRandom hex name plus a
      * constant allowlisted extension. No client supplied string is part of the path.
      *
      * @return safe path, or null if it would escape UPLOADED_FOLDER
      */
     private static Path newUploadPath(String allowlistedExt) {
+        return newUploadPath("", allowlistedExt);
+    }
+
+    /**
+     * Same as {@link #newUploadPath(String)} with a constant, server-side prefix.
+     * The unique part is 16 bytes (128 bit) from a SecureRandom, hex encoded; no time
+     * value or java.util.Random output is used in the name.
+     */
+    private static Path newUploadPath(String constPrefix, String allowlistedExt) {
+        byte[] rnd = new byte[16];
+        SECURE_RANDOM.nextBytes(rnd);
+        StringBuilder name = new StringBuilder(constPrefix);
+        for (byte b : rnd) {
+            name.append(String.format("%02x", b & 0xff));
+        }
+        name.append(allowlistedExt);
+
         Path base = Paths.get(UPLOADED_FOLDER).toAbsolutePath().normalize();
-        Path target = base.resolve(UUID.randomUUID() + allowlistedExt).normalize();
+        Path target = base.resolve(name.toString()).normalize();
         if (!target.startsWith(base) || !base.equals(target.getParent())) {
             return null;
         }
@@ -217,15 +236,15 @@ public class FileUpload {
      * https://stackoverflow.com/questions/24339990/how-to-convert-a-multipart-file-to-file
      */
     private File convert(MultipartFile multiFile, String allowlistedSuffix) throws Exception {
-        UUID uuid = Generators.timeBasedGenerator().generate();
-        // 随机生成一个同后缀名的文件
-        Path convPath = newUploadPath("conv-" + uuid + allowlistedSuffix);
+        // 随机生成一个同后缀名的文件 (SecureRandom based name, allowlisted suffix)
+        Path convPath = newUploadPath("conv-", allowlistedSuffix);
         if (convPath == null) {
             return null;
         }
         randomFilePath = convPath;
         try {
-            Files.write(convPath, multiFile.getBytes(), StandardOpenOption.CREATE_NEW);
+            Files.write(convPath, multiFile.getBytes(), StandardOpenOption.CREATE_NEW,
+                    LinkOption.NOFOLLOW_LINKS);
         } catch (FileAlreadyExistsException e) {
             return null;
         }
