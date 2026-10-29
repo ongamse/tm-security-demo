@@ -30,11 +30,11 @@ public class URLRedirect {
      */
     @GetMapping("/redirect")
     public String redirect(@RequestParam("url") String url) {
-        String safeUrl = SecurityUtil.checkURL(url);
-        if (safeUrl == null) {
+        String target = SecurityUtil.safeRedirectUrl(url);
+        if (target == null) {
             return "redirect:/";
         }
-        return "redirect:" + safeUrl;
+        return "redirect:" + target;
     }
 
 
@@ -44,8 +44,7 @@ public class URLRedirect {
     @RequestMapping("/setHeader")
     @ResponseBody
     public static void setHeader(HttpServletRequest request, HttpServletResponse response) {
-        String checked = SecurityUtil.checkURL(request.getParameter("url"));
-        String url = SecurityUtil.safeHeaderValue(checked);
+        String url = SecurityUtil.safeHeaderValue(SecurityUtil.safeRedirectUrl(request.getParameter("url")));
         if (url == null) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             return;
@@ -61,7 +60,7 @@ public class URLRedirect {
     @RequestMapping("/sendRedirect")
     @ResponseBody
     public static void sendRedirect(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        String url = SecurityUtil.checkURL(request.getParameter("url"));
+        String url = SecurityUtil.safeRedirectUrl(request.getParameter("url"));
         if (url == null) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             return;
@@ -95,7 +94,7 @@ public class URLRedirect {
     @ResponseBody
     public void sendRedirect_seccode(HttpServletRequest request, HttpServletResponse response)
             throws IOException {
-        String url = SecurityUtil.checkURL(request.getParameter("url"));
+        String url = SecurityUtil.safeRedirectUrl(request.getParameter("url"));
         if (url == null) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             response.getWriter().write("url forbidden");

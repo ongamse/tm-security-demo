@@ -112,6 +112,127 @@ public class SecurityUtil {
     }
 
 
+    private static final String HOST_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789-";
+    private static final String PATH_ALPHABET =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._~!$&'()*+,;=:@%/-";
+    private static final String QUERY_ALPHABET = PATH_ALPHABET + "?";
+    private static final Pattern HOST_PREFIX_PATTERN = Pattern.compile("[a-z0-9-]+(\\.[a-z0-9-]+)*");
+    private static final Pattern BAD_PERCENT_PATTERN = Pattern.compile("%(?![0-9A-Fa-f]{2})");
+
+    /**
+     * Rebuild a string character by character from a server side constant alphabet.
+     *
+     * @return a freshly constructed copy, or null if a character is not in the alphabet
+     */
+    private static String rebuild(String value, String alphabet) {
+        StringBuilder sb = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            int idx = alphabet.indexOf(value.charAt(i));
+            if (idx < 0) {
+                return null;
+            }
+            sb.append(alphabet.charAt(idx));
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Build a redirect target from a request supplied url without ever using the request string as
+     * the target. The request url is only used to select an entry of the server side safe domain
+     * allowlist ({@link WebConfig#getSafeDomains()}); the returned url is composed of
+     * <ul>
+     *   <li>a constant scheme (http or https),</li>
+     *   <li>the allowlist's own stored domain string (plus, for a sub domain, a validated
+     *       label prefix rebuilt from a constant alphabet),</li>
+     *   <li>the port as an integer,</li>
+     *   <li>a validated percent-encoded absolute path that starts with a single "/" (never "//"
+     *       or "/\"), and a validated query rebuilt from a constant alphabet.</li>
+     * </ul>
+     *
+     * @param url the untrusted url
+     * @return the server composed redirect url, or null if the url is not allowed
+     */
+    public static String safeRedirectUrl(String url) {
+        String checked = checkURL(url);
+        if (checked == null) {
+            return null;
+        }
+        SafeUrl parsed = SafeUrl.parseSyntax(checked);
+        if (parsed == null) {
+            return null;
+        }
+
+        String scheme;
+        if ("https".equals(parsed.getScheme())) {
+            scheme = "https";
+        } else if ("http".equals(parsed.getScheme())) {
+            scheme = "http";
+        } else {
+            return null;
+        }
+
+        // Select the allowlist entry; use the stored string, not the request's.
+        String host = parsed.getHost();
+        String base = null;
+        for (String safeDomain : WebConfig.getSafeDomains()) {
+            if (host.equals(safeDomain)) {
+                base = safeDomain;
+                break;
+            }
+            if (host.endsWith("." + safeDomain)) {
+                String prefix = host.substring(0, host.length() - safeDomain.length() - 1);
+                if (!HOST_PREFIX_PATTERN.matcher(prefix).matches()) {
+                    return null;
+                }
+                StringBuilder sb = new StringBuilder();
+                for (String label : prefix.split("\\.")) {
+                    String safeLabel = rebuild(label, HOST_ALPHABET);
+                    if (safeLabel == null || safeLabel.isEmpty()) {
+                        return null;
+                    }
+                    sb.append(safeLabel).append('.');
+                }
+                base = sb.append(safeDomain).toString();
+                break;
+            }
+        }
+        if (base == null) {
+            return null;
+        }
+
+        StringBuilder target = new StringBuilder(scheme).append("://").append(base);
+        if (parsed.getPort() >= 0) {
+            target.append(':').append(Integer.toString(parsed.getPort()));
+        }
+
+        String path = parsed.getPath();
+        if (!path.isEmpty()) {
+            if (!path.startsWith("/") || path.startsWith("//") || path.startsWith("/\\")
+                    || BAD_PERCENT_PATTERN.matcher(path).find()) {
+                return null;
+            }
+            String safePath = rebuild(path, PATH_ALPHABET);
+            if (safePath == null) {
+                return null;
+            }
+            target.append(safePath);
+        }
+
+        String query = parsed.getQuery();
+        if (query != null) {
+            if (BAD_PERCENT_PATTERN.matcher(query).find()) {
+                return null;
+            }
+            String safeQuery = rebuild(query, QUERY_ALPHABET);
+            if (safeQuery == null) {
+                return null;
+            }
+            target.append(safeQuery);
+        }
+        return target.toString();
+    }
+
+
     /**
      * 通过自定义白名单域名处理SSRF漏洞。如果URL范围收敛，强烈建议使用该方案。
      * 这是最简单也最有效的修复方式。因为SSRF都是发起URL请求时造成，大多数场景是图片场景，一般图片的域名都是CDN或者OSS等，所以限定域名白名单即可完成SSRF漏洞修复。

@@ -149,6 +149,17 @@ public final class SafeUrl {
         return port;
     }
 
+    public String getPath() {
+        return path;
+    }
+
+    /**
+     * @return the query including the leading '?', or null if there is none
+     */
+    public String getQuery() {
+        return query;
+    }
+
 
     /**
      * Build the url that is requested from the validated components. The fragment is dropped.
