@@ -1,6 +1,7 @@
 package org.joychou.controller;
 
 import org.apache.commons.lang.StringUtils;
+import org.joychou.security.SecurityUtil;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
@@ -11,6 +12,9 @@ import org.springframework.web.bind.annotation.ResponseBody;
 
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletResponse;
+import java.io.UnsupportedEncodingException;
+import java.net.URLDecoder;
+import java.net.URLEncoder;
 
 
 /**
@@ -44,8 +48,14 @@ public class XSS {
      */
     @RequestMapping("/stored/store")
     @ResponseBody
-    public String store(String xss, HttpServletResponse response) {
-        Cookie cookie = new Cookie("xss", xss);
+    public String store(String xss, HttpServletResponse response) throws UnsupportedEncodingException {
+        // Reject CR/LF and other control characters (also url-encoded) to prevent header injection.
+        if (xss != null && SecurityUtil.headerFilter(xss) == null) {
+            response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+            return "Bad request";
+        }
+        String safe = SecurityUtil.toHeaderSafe(xss);
+        Cookie cookie = new Cookie("xss", URLEncoder.encode(safe, "UTF-8"));
         cookie.setHttpOnly(true);
         cookie.setSecure(true);
         cookie.setPath("/");
@@ -61,7 +71,8 @@ public class XSS {
      * @param xss unescape string
      */
     @RequestMapping(value = "/stored/show", produces = "text/plain;charset=UTF-8")
-    public ResponseEntity<String> show(@CookieValue("xss") String xss) {
+    public ResponseEntity<String> show(@CookieValue("xss") String xssCookie) throws UnsupportedEncodingException {
+        String xss = xssCookie == null ? null : URLDecoder.decode(xssCookie, "UTF-8");
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType("text/plain;charset=UTF-8"))
                 .header("X-Content-Type-Options", "nosniff")

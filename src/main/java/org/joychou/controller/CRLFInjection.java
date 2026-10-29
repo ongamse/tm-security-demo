@@ -8,6 +8,8 @@ import org.springframework.web.bind.annotation.ResponseBody;
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import java.io.UnsupportedEncodingException;
+import java.net.URLEncoder;
 
 /**
  * Java 1.7/1.8 no CRLF vulns (test in Java 1.7/1.8)
@@ -38,7 +40,14 @@ public class CRLFInjection {
             response.setHeader("test2", SecurityUtil.toHeaderSafe(test2));
         }
         if (author != null) {
-            Cookie cookie = new Cookie("test3", SecurityUtil.toHeaderSafe(author));
+            String safeAuthor = SecurityUtil.toHeaderSafe(author);
+            Cookie cookie;
+            try {
+                cookie = new Cookie("test3", URLEncoder.encode(safeAuthor, "UTF-8"));
+            } catch (UnsupportedEncodingException e) {
+                response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+                return;
+            }
             cookie.setHttpOnly(true);
             cookie.setSecure(true);
             cookie.setPath("/");
