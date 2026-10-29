@@ -10,6 +10,9 @@ import javax.servlet.RequestDispatcher;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 import org.joychou.security.SecurityUtil;
 
@@ -26,16 +29,55 @@ import org.joychou.security.SecurityUtil;
 public class URLRedirect {
 
     /**
+     * Server-side constant redirect destinations, keyed by a short name.
+     */
+    private static final Map<String, String> ALLOWED;
+
+    static {
+        Map<String, String> m = new LinkedHashMap<>();
+        m.put("home", "/");
+        m.put("docs", "https://www.joychou.org/");
+        ALLOWED = Collections.unmodifiableMap(m);
+    }
+
+    /**
+     * Map a requested value to one of the constant destinations. The requested value matches either a key,
+     * or a value that is accepted by {@link SecurityUtil#checkRedirectURL(String)}. The returned string is
+     * always the constant held by {@link #ALLOWED}, never the request string.
+     *
+     * @return the constant destination, or null if nothing matches
+     */
+    static String resolveTarget(String requested) {
+        if (requested == null) {
+            return null;
+        }
+        for (Map.Entry<String, String> entry : ALLOWED.entrySet()) {
+            if (requested.equals(entry.getKey())) {
+                return entry.getValue();
+            }
+        }
+        if (SecurityUtil.checkRedirectURL(requested) == null) {
+            return null;
+        }
+        for (String allowed : ALLOWED.values()) {
+            if (requested.equals(allowed)) {
+                return allowed;
+            }
+        }
+        return null;
+    }
+
+    /**
      * http://localhost:8080/urlRedirect/redirect?url=http://www.baidu.com
      */
     @GetMapping("/redirect")
     public String redirect(@RequestParam("url") String url) {
-        String safeUrl = SecurityUtil.checkRedirectURL(url);
-        if (safeUrl == null) {
+        String target = resolveTarget(url);
+        if (target == null) {
             // Untrusted redirect target: fall back to a safe same-origin default.
             return "redirect:/";
         }
-        return "redirect:" + safeUrl;
+        return "redirect:" + target;
     }
 
 
@@ -51,14 +93,14 @@ public class URLRedirect {
             response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
             return;
         }
-        // Only redirect to trusted hosts (open redirect).
-        String safeUrl = SecurityUtil.checkRedirectURL(url);
-        if (safeUrl == null) {
+        // Only redirect to server-side constant destinations (open redirect).
+        String target = resolveTarget(url);
+        if (target == null) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             return;
         }
         response.setStatus(HttpServletResponse.SC_MOVED_PERMANENTLY); // 301 redirect
-        response.setHeader("Location", safeUrl);
+        response.setHeader("Location", target);
     }
 
 
@@ -69,13 +111,13 @@ public class URLRedirect {
     @ResponseBody
     public static void sendRedirect(HttpServletRequest request, HttpServletResponse response) throws IOException {
         String url = request.getParameter("url");
-        String safeUrl = SecurityUtil.checkRedirectURL(url);
-        if (safeUrl == null) {
+        String target = resolveTarget(url);
+        if (target == null) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             response.getWriter().write("url forbidden");
             return;
         }
-        response.sendRedirect(safeUrl); // 302 redirect
+        response.sendRedirect(target); // 302 redirect
     }
 
 
@@ -105,12 +147,12 @@ public class URLRedirect {
     public void sendRedirect_seccode(HttpServletRequest request, HttpServletResponse response)
             throws IOException {
         String url = request.getParameter("url");
-        String safeUrl = SecurityUtil.checkRedirectURL(url);
-        if (safeUrl == null) {
+        String target = resolveTarget(url);
+        if (target == null) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             response.getWriter().write("url forbidden");
             return;
         }
-        response.sendRedirect(safeUrl);
+        response.sendRedirect(target);
     }
 }

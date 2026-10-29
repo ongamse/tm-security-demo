@@ -106,23 +106,14 @@ public class URLWhiteList {
 
         // Validate the redirect target: real host parsed by java.net.URI, http/https only,
         // no backslash / user info / control characters, and trusted host lists.
-        String safeUrl = SecurityUtil.checkRedirectURL(url);
-        if (safeUrl == null) {
+        // The redirect target is a server-side constant destination, never the request string.
+        String target = URLRedirect.resolveTarget(url);
+        if (target == null) {
             res.setStatus(HttpServletResponse.SC_FORBIDDEN);
             return;
         }
 
-        String host = SecurityUtil.gethost(safeUrl);
-        logger.info("host:  " + host);
-
-        // Subdomain of a whitelisted domain; the host comes from URI, the same parser used by the checks above.
-        for (String domain : domainwhitelist) {
-            if (host.endsWith("." + domain)) {
-                res.sendRedirect(safeUrl);
-                return;
-            }
-        }
-
+        res.sendRedirect(target);
     }
 
 
