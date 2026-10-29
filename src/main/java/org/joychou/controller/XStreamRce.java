@@ -7,12 +7,12 @@ import com.thoughtworks.xstream.security.NullPermission;
 import com.thoughtworks.xstream.security.PrimitiveTypePermission;
 import org.joychou.dao.User;
 import org.joychou.util.WebUtils;
+import org.joychou.util.XmlSecurity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.xml.parsers.DocumentBuilderFactory;
-import javax.xml.parsers.ParserConfigurationException;
 
 
 @RestController
@@ -34,7 +34,8 @@ public class XStreamRce {
         xstream.addPermission(NullPermission.NULL);
         xstream.addPermission(PrimitiveTypePermission.PRIMITIVES);
         xstream.allowTypes(new Class[]{String.class, User.class});
-        xstream.fromXML(xml);
+        // Reject DOCTYPE/ENTITY and re-serialize through a hardened StAX reader before XStream parses it.
+        xstream.fromXML(XmlSecurity.sanitize(xml));
         return "xstream";
     }
 
@@ -44,15 +45,7 @@ public class XStreamRce {
     private static class SecureDomDriver extends DomDriver {
         @Override
         protected DocumentBuilderFactory createDocumentBuilderFactory() {
-            DocumentBuilderFactory dbf = super.createDocumentBuilderFactory();
-            try {
-                dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-                dbf.setFeature("http://xml.org/sax/features/external-general-entities", false);
-                dbf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
-            } catch (ParserConfigurationException e) {
-                throw new IllegalStateException(e);
-            }
-            return dbf;
+            return XmlSecurity.newDocumentBuilderFactory();
         }
     }
 

@@ -9,6 +9,10 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.multipart.MultipartFile;
 
+import org.joychou.util.XmlSecurity;
+
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -37,11 +41,16 @@ public class xlsxStreamerXXE {
 
     @PostMapping("/readxlsx")
     public void xllx_streamer_xxe(MultipartFile file) throws IOException {
-        // Reject workbooks whose XML parts declare a DOCTYPE/ENTITY before they reach the XML parser.
+        // Reject workbooks whose XML parts declare a DOCTYPE/ENTITY and rewrite every XML part through a
+        // hardened StAX reader; only the sanitized package reaches the streaming reader.
         try (InputStream check = file.getInputStream()) {
             assertNoDoctype(check);
         }
-        StreamingReader.builder().open(file.getInputStream());
+        ByteArrayOutputStream sanitized = new ByteArrayOutputStream();
+        try (InputStream upload = file.getInputStream()) {
+            XmlSecurity.sanitizeOoxml(upload, sanitized);
+        }
+        StreamingReader.builder().open(new ByteArrayInputStream(sanitized.toByteArray()));
     }
 
 
