@@ -100,17 +100,20 @@ public class URLWhiteList {
 
         logger.info("url:  " + url);
 
-        if (!SecurityUtil.isHttp(url)) {
+        // Central allowlist/blocklist check (URI-parsed host, http/https only).
+        String safeUrl = SecurityUtil.checkURL(url);
+        if (safeUrl == null) {
             return;
         }
 
-        String host = SecurityUtil.gethost(url);
+        String host = SecurityUtil.gethost(safeUrl);
         logger.info("host:  " + host);
 
         // endsWith .
         for (String domain : domainwhitelist) {
             if (host.endsWith("." + domain)) {
-                res.sendRedirect(url);
+                res.sendRedirect(safeUrl);
+                return;
             }
         }
 
