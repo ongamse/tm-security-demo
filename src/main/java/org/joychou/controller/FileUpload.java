@@ -1,7 +1,6 @@
 package org.joychou.controller;
 
 import org.springframework.web.util.HtmlUtils;
-import com.fasterxml.uuid.Generators;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Controller;
@@ -17,8 +16,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
+import java.security.SecureRandom;
 import java.util.Locale;
-import java.util.UUID;
 
 import org.joychou.security.SecurityUtil;
 
@@ -34,6 +33,7 @@ public class FileUpload {
 
     // Save the uploaded file to this folder
     private static final String UPLOADED_FOLDER = "/tmp/";
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     private final Logger logger = LoggerFactory.getLogger(this.getClass());
 
     // uplaod any file
@@ -247,17 +247,31 @@ public class FileUpload {
      * 不建议使用transferTo，因为原始的MultipartFile会被覆盖
      * https://stackoverflow.com/questions/24339990/how-to-convert-a-multipart-file-to-file
      *
-     * The file name is fully server generated: UUID + an allowlisted constant suffix.
+     * The file name is fully server generated: random hex + an allowlisted constant suffix.
      */
     private File convert(MultipartFile multiFile, String allowedSuffix) throws Exception {
-        UUID uuid = Generators.timeBasedGenerator().generate();
         // 随机生成一个同后缀名的文件
-        Path convPath = resolveInUploadFolder(uuid + allowedSuffix);
+        Path convPath = resolveInUploadFolder(randomHex(16) + allowedSuffix);
         if (convPath == null) {
             throw new IllegalArgumentException("Illegal file name");
         }
         Files.write(convPath, multiFile.getBytes(), StandardOpenOption.CREATE_NEW);
         return convPath.toFile();
+    }
+
+    /**
+     * Unpredictable hex string built from the given number of cryptographically secure random bytes.
+     */
+    private static String randomHex(int byteCount) {
+        byte[] bytes = new byte[byteCount];
+        SECURE_RANDOM.nextBytes(bytes);
+        char[] digits = "0123456789abcdef".toCharArray();
+        char[] out = new char[byteCount * 2];
+        for (int i = 0; i < byteCount; i++) {
+            out[2 * i] = digits[(bytes[i] >> 4) & 0x0f];
+            out[2 * i + 1] = digits[bytes[i] & 0x0f];
+        }
+        return new String(out);
     }
 
     /**
