@@ -1,5 +1,6 @@
 package org.joychou.controller;
 
+import org.springframework.web.util.HtmlUtils;
 import cn.hutool.http.HttpUtil;
 import org.joychou.security.SecurityUtil;
 import org.joychou.security.ssrf.SSRFException;
@@ -98,9 +99,9 @@ public class SSRF {
     public String request(@RequestParam String url) {
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.request(url);
+            return HtmlUtils.htmlEscape(HttpUtils.request(url));
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return HtmlUtils.htmlEscape(String.valueOf(e.getMessage()));
         } finally {
             SecurityUtil.stopSSRFHook();
         }
