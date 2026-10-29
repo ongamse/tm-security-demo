@@ -20,6 +20,43 @@ public class SecurityUtil {
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
 
 
+    private static final int LOG_MAX_LENGTH = 200;
+
+    /**
+     * Make a value safe to write to a log line (CWE-117). The result is a freshly constructed
+     * string in which CR, LF, TAB and every other control or non-printable character is replaced
+     * by '_', and which is capped at {@value #LOG_MAX_LENGTH} characters.
+     *
+     * @param value untrusted value, may be null
+     * @return sanitized copy that is safe to log
+     */
+    public static String logSafe(Object value) {
+        if (value == null) {
+            return "null";
+        }
+        String s = String.valueOf(value);
+        int len = Math.min(s.length(), LOG_MAX_LENGTH);
+        StringBuilder sb = new StringBuilder(len + 3);
+        for (int i = 0; i < len; i++) {
+            char c = s.charAt(i);
+            if (Character.isISOControl(c) || Character.isSurrogate(c)
+                    || Character.isWhitespace(c) && c != ' '
+                    || Character.getType(c) == Character.FORMAT
+                    || Character.getType(c) == Character.LINE_SEPARATOR
+                    || Character.getType(c) == Character.PARAGRAPH_SEPARATOR
+                    || Character.getType(c) == Character.UNASSIGNED) {
+                sb.append('_');
+            } else {
+                sb.append(c);
+            }
+        }
+        if (s.length() > LOG_MAX_LENGTH) {
+            sb.append("...");
+        }
+        return sb.toString();
+    }
+
+
     /**
      * Determine if the URL starts with HTTP.
      *
@@ -106,7 +143,7 @@ public class SecurityUtil {
             }
             return null;
         } catch (NullPointerException e) {
-            logger.error(e.toString());
+            logger.error("{}", logSafe(e.toString()));
             return null;
         }
     }
@@ -315,10 +352,10 @@ public class SecurityUtil {
             try {
                 temp = URLDecoder.decode(temp, "utf-8");
             } catch (UnsupportedEncodingException e) {
-                logger.info("Unsupported encoding exception: " + filepath);
+                logger.info("Unsupported encoding exception: {}", logSafe(filepath));
                 return null;
             } catch (Exception e) {
-                logger.info(e.toString());
+                logger.info("{}", logSafe(e.toString()));
                 return null;
             }
         }

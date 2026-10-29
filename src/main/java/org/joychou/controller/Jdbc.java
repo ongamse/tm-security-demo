@@ -142,7 +142,7 @@ public class Jdbc {
         byte[] b = java.util.Base64.getDecoder().decode(jdbcUrlBase64);
         JdbcTarget target = buildJdbcTarget(new String(b, StandardCharsets.UTF_8), POSTGRESQL_PREFIX,
                 POSTGRESQL_DEFAULT_PORT, POSTGRESQL_ALLOWED_PARAMS);
-        log.info(target.url);
+        log.info("Opening validated jdbc connection");
         DriverManager.getConnection(target.url, target.props);
     }
 
@@ -152,7 +152,7 @@ public class Jdbc {
         byte[] b = java.util.Base64.getDecoder().decode(jdbcUrlBase64);
         JdbcTarget target = buildJdbcTarget(new String(b, StandardCharsets.UTF_8), DB2_PREFIX,
                 DB2_DEFAULT_PORT, DB2_ALLOWED_PARAMS);
-        log.info(target.url);
+        log.info("Opening validated jdbc connection");
         DriverManager.getConnection(target.url, target.props);
     }
 }
