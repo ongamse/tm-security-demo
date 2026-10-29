@@ -46,8 +46,9 @@ public class OriginFilter implements Filter {
         }
 
         String allowedOrigin = SecurityUtil.allowedOrigin(origin);
+        response.addHeader("Vary", "Origin");
         if (allowedOrigin != null) {
-            // origin has passed the allowlist check above
+            // exact allowlist match: emit the allowlist's own stored string
             response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
             response.setHeader("Access-Control-Allow-Credentials", "true");
         }

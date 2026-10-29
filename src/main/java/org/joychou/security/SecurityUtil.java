@@ -418,18 +418,24 @@ public class SecurityUtil {
     }
 
     /**
-     * Allowlist check of a request Origin (same safe-domain policy as {@link #checkURL(String)})
-     * for use as Access-Control-Allow-Origin.
+     * Exact-match lookup of a request Origin in the fixed server side CORS origin allowlist
+     * ({@link WebConfig#getCorsAllowedOrigins()}, full scheme://host[:port] strings).
+     * No wildcard / sub domain matching and "null" never matches.
      *
      * @param origin the Origin request header
-     * @return a server built header value for an allowlisted origin, otherwise null
+     * @return the allowlist's OWN stored string for the matching entry (never the request string),
+     *         otherwise null
      */
     public static String allowedOrigin(String origin) {
-        String safe = checkURL(origin);
-        if (safe == null) {
+        if (origin == null) {
             return null;
         }
-        return safeHeaderValue(safe);
+        for (String allowed : WebConfig.getCorsAllowedOrigins()) {
+            if (allowed.equals(origin)) {
+                return allowed;
+            }
+        }
+        return null;
     }
 
     public static void main(String[] args) {

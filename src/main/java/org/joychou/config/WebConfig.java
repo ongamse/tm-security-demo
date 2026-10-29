@@ -23,6 +23,7 @@ public class WebConfig {
     private static String businessCallback;
     private static ArrayList<String> safeDomains = new ArrayList<>();
     private static ArrayList<String> blockDomains = new ArrayList<>();
+    private static ArrayList<String> corsAllowedOrigins = new ArrayList<>();
     private static ArrayList<String> ssrfSafeDomains = new ArrayList<>();
     private static ArrayList<String> ssrfBlockDomains = new ArrayList<>();
     private static ArrayList<String> ssrfBlockIps = new ArrayList<>();
@@ -89,6 +90,29 @@ public class WebConfig {
 
     public static String getBusinessCallback() {
         return businessCallback;
+    }
+
+
+    /**
+     * Fixed server side CORS origin allowlist: full scheme://host[:port] strings, matched exactly.
+     */
+    @Value("${joychou.security.cors.allowed.origins:https://joychou.com,https://joychou.org,https://test.joychou.org,http://localhost:8080}")
+    public void setCorsAllowedOrigins(String[] corsAllowedOrigins) {
+        ArrayList<String> origins = new ArrayList<>();
+        if (corsAllowedOrigins != null) {
+            for (String o : corsAllowedOrigins) {
+                String trimmed = o.trim();
+                // never accept wildcard / null / empty entries
+                if (!trimmed.isEmpty() && !trimmed.contains("*") && !"null".equals(trimmed)) {
+                    origins.add(trimmed);
+                }
+            }
+        }
+        WebConfig.corsAllowedOrigins = origins;
+    }
+
+    public static ArrayList<String> getCorsAllowedOrigins() {
+        return corsAllowedOrigins;
     }
 
 
