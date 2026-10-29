@@ -56,14 +56,20 @@ public class FileUpload {
             return "redirect:/file/status";
         }
 
+        String safeName = sanitizeFileName(file.getOriginalFilename());
+        Path path = resolveInUploadFolder(safeName);
+        if (path == null) {
+            redirectAttributes.addFlashAttribute("message", "Illegal file name");
+            return "redirect:/file/status";
+        }
+
         try {
             // Get the file and save it somewhere
             byte[] bytes = file.getBytes();
-            Path path = Paths.get(UPLOADED_FOLDER + file.getOriginalFilename());
             Files.write(path, bytes);
 
             redirectAttributes.addFlashAttribute("message",
-                    "You successfully uploaded '" + UPLOADED_FOLDER + file.getOriginalFilename() + "'");
+                    "You successfully uploaded '" + UPLOADED_FOLDER + safeName + "'");
 
         } catch (IOException e) {
             redirectAttributes.addFlashAttribute("message", "upload failed");
@@ -86,7 +92,12 @@ public class FileUpload {
             return "Please select a file to upload";
         }
 
-        String fileName = multifile.getOriginalFilename();
+        String fileName = sanitizeFileName(multifile.getOriginalFilename());
+        Path savePath = resolveInUploadFolder(fileName);
+        if (savePath == null) {
+            logger.error("[-] Illegal file name");
+            return "Upload failed. Illeagl picture.";
+        }
         String Suffix = fileName.substring(fileName.lastIndexOf(".")); // 获取文件后缀名
         String mimeType = multifile.getContentType(); // 获取MIME类型
         String filePath = UPLOADED_FOLDER + fileName;
@@ -141,8 +152,7 @@ public class FileUpload {
         try {
             // Get the file and save it somewhere
             byte[] bytes = multifile.getBytes();
-            Path path = Paths.get(UPLOADED_FOLDER + multifile.getOriginalFilename());
-            Files.write(path, bytes);
+            Files.write(savePath, bytes);
         } catch (IOException e) {
             logger.error(e.toString());
             deleteFile(filePath);
@@ -154,8 +164,48 @@ public class FileUpload {
         return String.format("You successfully uploaded '%s'", filePath);
     }
 
+    /**
+     * Reduce a client supplied file name to a bare file name (no directory components).
+     *
+     * @return the bare file name, or null if it is not acceptable
+     */
+    private static String sanitizeFileName(String originalName) {
+        if (originalName == null || originalName.indexOf('\0') != -1) {
+            return null;
+        }
+        String name = originalName.replace('\\', '/');
+        name = name.substring(name.lastIndexOf('/') + 1);
+        if (name.isEmpty() || name.equals(".") || name.equals("..")) {
+            return null;
+        }
+        return name;
+    }
+
+    /**
+     * Resolve a bare file name inside the upload folder and make sure it does not escape it.
+     *
+     * @return the normalized absolute path, or null if the name is invalid or escapes the folder
+     */
+    private static Path resolveInUploadFolder(String safeName) {
+        if (safeName == null) {
+            return null;
+        }
+        Path base = Paths.get(UPLOADED_FOLDER).toAbsolutePath().normalize();
+        Path target = base.resolve(safeName).normalize();
+        if (!target.startsWith(base) || !base.equals(target.getParent())) {
+            return null;
+        }
+        return target;
+    }
+
     private void deleteFile(String filePath) {
-        File delFile = new File(filePath);
+        Path safePath = filePath == null ? null : Paths.get(filePath).toAbsolutePath().normalize();
+        Path base = Paths.get(UPLOADED_FOLDER).toAbsolutePath().normalize();
+        if (safePath == null || !safePath.startsWith(base)) {
+            logger.info("Refusing to delete file outside upload folder");
+            return;
+        }
+        File delFile = safePath.toFile();
         if(delFile.isFile() && delFile.exists()) {
             if (delFile.delete()) {
                 logger.info("[+] " + filePath + " delete successfully!");
@@ -172,12 +222,19 @@ public class FileUpload {
      * https://stackoverflow.com/questions/24339990/how-to-convert-a-multipart-file-to-file
      */
     private File convert(MultipartFile multiFile) throws Exception {
-        String fileName = multiFile.getOriginalFilename();
+        String fileName = sanitizeFileName(multiFile.getOriginalFilename());
+        if (fileName == null) {
+            throw new IllegalArgumentException("Illegal file name");
+        }
         String suffix = fileName.substring(fileName.lastIndexOf("."));
         UUID uuid = Generators.timeBasedGenerator().generate();
-        randomFilePath = UPLOADED_FOLDER + uuid + suffix;
+        Path convPath = resolveInUploadFolder(uuid + suffix);
+        if (convPath == null) {
+            throw new IllegalArgumentException("Illegal file name");
+        }
+        randomFilePath = convPath.toString();
         // 随机生成一个同后缀名的文件
-        File convFile = new File(randomFilePath);
+        File convFile = convPath.toFile();
         boolean ret = convFile.createNewFile();
         if (!ret) {
             return null;
