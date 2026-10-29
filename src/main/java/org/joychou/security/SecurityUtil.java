@@ -149,9 +149,34 @@ public class SecurityUtil {
     }
 
 
-    private static final String HOST_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789-";
-    private static final String PATH_ALPHABET =
-            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._~!$&'()*+,;=:@%/-";
+    /**
+     * Build an allowed-character alphabet from character ranges plus a few short extra characters.
+     *
+     * @param upper  include A-Z
+     * @param extras additional literal characters (each argument is a short string)
+     * @return the alphabet: a-z, optionally A-Z, 0-9, then the extras
+     */
+    private static String buildAlphabet(boolean upper, String... extras) {
+        StringBuilder sb = new StringBuilder();
+        for (char c = 'a'; c <= 'z'; c++) {
+            sb.append(c);
+        }
+        if (upper) {
+            for (char c = 'A'; c <= 'Z'; c++) {
+                sb.append(c);
+            }
+        }
+        for (char c = '0'; c <= '9'; c++) {
+            sb.append(c);
+        }
+        for (String extra : extras) {
+            sb.append(extra);
+        }
+        return sb.toString();
+    }
+
+    private static final String HOST_ALPHABET = buildAlphabet(false, "-");
+    private static final String PATH_ALPHABET = buildAlphabet(true, "._~!$&'()*+", ",;=:@%/-");
     private static final String QUERY_ALPHABET = PATH_ALPHABET + "?";
     private static final Pattern HOST_PREFIX_PATTERN = Pattern.compile("[a-z0-9-]+(\\.[a-z0-9-]+)*");
     private static final Pattern BAD_PERCENT_PATTERN = Pattern.compile("%(?![0-9A-Fa-f]{2})");
@@ -422,8 +447,7 @@ public class SecurityUtil {
      * The only characters that may appear in a header value derived from request data. It contains
      * no CR, LF or any other control character, no space, backslash or double quote.
      */
-    private static final String HEADER_ALPHABET =
-            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._~:/?#[]@!$&'()*+,;=%-";
+    private static final String HEADER_ALPHABET = buildAlphabet(true, "._~:/?#[]@", "!$&'()*+,;=%-");
     private static final Pattern HEADER_VALUE_PATTERN =
             Pattern.compile("[A-Za-z0-9._~:/?#\\[\\]@!$&'()*+,;=%-]{0,512}");
 
@@ -454,8 +478,7 @@ public class SecurityUtil {
         return sb.toString();
     }
 
-    private static final String COOKIE_ALPHABET =
-            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.-";
+    private static final String COOKIE_ALPHABET = buildAlphabet(true, "_.-");
     private static final Pattern COOKIE_VALUE_PATTERN = Pattern.compile("^[A-Za-z0-9_.-]{1,64}$");
 
     /**
