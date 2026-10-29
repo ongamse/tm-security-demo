@@ -327,7 +327,13 @@ public class SSRF {
      */
     @GetMapping("/hutool/vuln")
     public String hutoolHttp(String url){
-        return HttpUtil.get(url);
+        final URL target;
+        try {
+            target = SafeUrl.resolve(url);
+        } catch (IOException e) {
+            return "Dangerous url";
+        }
+        return HttpUtil.get(target.toString());
     }
 
 
