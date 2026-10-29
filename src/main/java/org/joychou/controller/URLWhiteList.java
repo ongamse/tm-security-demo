@@ -9,7 +9,6 @@ import org.springframework.web.bind.annotation.*;
 
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.net.URL;
 import java.util.ArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -105,14 +104,22 @@ public class URLWhiteList {
             return;
         }
 
-        URL u = new URL(url);
-        String host = u.getHost();
+        // Validate the redirect target: real host parsed by java.net.URI, http/https only,
+        // no backslash / user info / control characters, and trusted host lists.
+        String safeUrl = SecurityUtil.checkRedirectURL(url);
+        if (safeUrl == null) {
+            res.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            return;
+        }
+
+        String host = SecurityUtil.gethost(safeUrl);
         logger.info("host:  " + host);
 
-        // endsWith .
+        // Subdomain of a whitelisted domain; the host comes from URI, the same parser used by the checks above.
         for (String domain : domainwhitelist) {
             if (host.endsWith("." + domain)) {
-                res.sendRedirect(url);
+                res.sendRedirect(safeUrl);
+                return;
             }
         }
 

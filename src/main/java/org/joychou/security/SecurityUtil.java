@@ -102,6 +102,53 @@ public class SecurityUtil {
 
 
     /**
+     * Validate a request-derived url before it is used as an HTTP redirect target (open redirect, CWE-601).
+     * The url must be an absolute http/https url without user info, must not contain control characters
+     * or backslashes (also url-encoded), its real host (parsed by {@link URI}) must be non-empty and
+     * must pass the safe/block domain lists checked by {@link #checkURL(String)}.
+     *
+     * @param url request-derived redirect target
+     * @return the original url if it is a trusted redirect target; null otherwise
+     */
+    public static String checkRedirectURL(String url) {
+        if (headerFilter(url) == null) {
+            return null;
+        }
+
+        // Reject backslashes, also when hidden by (multi) urlencode, e.g. http://evil.com%5c@www.joychou.org
+        String temp = url;
+        for (int i = 0; i < 10; i++) {
+            if (temp.indexOf('\\') != -1) {
+                return null;
+            }
+            if (temp.indexOf('%') == -1) {
+                break;
+            }
+            try {
+                temp = URLDecoder.decode(temp, "utf-8");
+            } catch (UnsupportedEncodingException | IllegalArgumentException e) {
+                return null;
+            }
+        }
+
+        try {
+            URI uri = new URI(url);
+            String scheme = uri.getScheme();
+            if (scheme == null || !(scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"))) {
+                return null;
+            }
+            if (uri.getRawUserInfo() != null || uri.getHost() == null || uri.getHost().isEmpty()) {
+                return null;
+            }
+        } catch (URISyntaxException e) {
+            return null;
+        }
+
+        return checkURL(url);
+    }
+
+
+    /**
      * 通过自定义白名单域名处理SSRF漏洞。如果URL范围收敛，强烈建议使用该方案。
      * 这是最简单也最有效的修复方式。因为SSRF都是发起URL请求时造成，大多数场景是图片场景，一般图片的域名都是CDN或者OSS等，所以限定域名白名单即可完成SSRF漏洞修复。
      *
