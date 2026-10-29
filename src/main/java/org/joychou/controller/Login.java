@@ -40,6 +40,8 @@ public class Login {
             Cookie cookie = new Cookie(key, null);
             cookie.setMaxAge(0);
             cookie.setPath("/");
+            cookie.setHttpOnly(true);
+            cookie.setSecure(true);
             response.addCookie(cookie);
         }
 
