@@ -28,7 +28,7 @@ public class CustomCorsConfig extends WebMvcRegistrationsAdapter {
                         .allowedOrigins(allowOrigins)
                         .allowedMethods("GET", "POST")
                         .allowedHeaders("Content-Type", "X-Requested-With", "X-CSRF-TOKEN")
-                        .allowCredentials(true)
+                        .allowCredentials(false)
                         .maxAge(3600);
             }
         };

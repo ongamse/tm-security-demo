@@ -30,7 +30,6 @@ public class Cors {
         response.addHeader("Vary", "Origin");
         if (safeOrigin != null) {
             response.setHeader("Access-Control-Allow-Origin", safeOrigin);
-            response.setHeader("Access-Control-Allow-Credentials", "true");  // allow cookie
         }
         return info;
     }
@@ -123,7 +122,6 @@ public class Cors {
         response.addHeader("Vary", "Origin");
         if (allowedOrigin != null) {
             response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
-            response.setHeader("Access-Control-Allow-Credentials", "true");
         }
         return LoginUtils.getUserInfo2JsonStr(request);
     }
