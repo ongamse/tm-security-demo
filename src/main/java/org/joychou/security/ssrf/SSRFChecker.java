@@ -1,9 +1,8 @@
 package org.joychou.security.ssrf;
 
+import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.InetAddress;
-import java.net.URI;
-import java.net.URL;
 import java.util.ArrayList;
 
 import org.apache.commons.lang.StringUtils;
@@ -62,16 +61,17 @@ public class SSRFChecker {
         HttpURLConnection connection;
         int connectTime = 5 * 1000;  // 设置连接超时时间5s
         int i = 1;
-        String finalUrl = url;
+        SafeUrl current;
+        try {
+            current = SafeUrl.parse(url);
+        } catch (IOException e) {
+            logger.error("[-] SSRF check failed. Dangerous url");
+            return false;  // 内网ip或非法url直接return
+        }
         try {
             do {
-                // 判断当前请求的URL是否是内网ip
-                if (isInternalIpByUrl(finalUrl)) {
-                    logger.error("[-] SSRF check failed. Dangerous url: " + finalUrl);
-                    return false;  // 内网ip直接return，非内网ip继续判断是否有重定向
-                }
-
-                connection = (HttpURLConnection) new URL(finalUrl).openConnection();
+                // The request url is rebuilt from the validated components (scheme, public host, port, path).
+                connection = (HttpURLConnection) current.toURL().openConnection();
                 connection.setInstanceFollowRedirects(false);
                 connection.setUseCaches(false); // 设置为false，手动处理跳转，可以拿到每个跳转的URL
                 connection.setConnectTimeout(connectTime);
@@ -82,16 +82,15 @@ public class SSRFChecker {
                     String redirectedUrl = connection.getHeaderField("Location");
                     if (null == redirectedUrl)
                         break;
-                    // Location may be relative; resolve it against the current url
-                    // so that the next iteration validates the real destination.
+                    // Location may be relative; it is resolved against the current url and
+                    // validated with the same rules before it is requested.
                     try {
-                        finalUrl = new URI(finalUrl).resolve(redirectedUrl.trim()).toString();
-                    } catch (IllegalArgumentException | java.net.URISyntaxException e) {
-                        logger.error("[-] SSRF check failed. Illegal redirect url: " + redirectedUrl);
+                        current = current.resolve(redirectedUrl);
+                    } catch (IOException e) {
+                        logger.error("[-] SSRF check failed. Illegal redirect url");
                         return false;
                     }
                     i += 1;  // 重定向次数加1
-                    logger.info("redirected url: " + finalUrl);
                     if (i == checkTimes) {
                         return false;
                     }
@@ -337,22 +336,11 @@ public class SSRFChecker {
      * Get host from URL which the protocol must be http:// or https:// and not be //.
      */
     private static String url2host(String url) {
-        try {
-            // use URI instead of URL
-            if (!SecurityUtil.isHttp(url)) {
-                return "";
-            }
-            URI u = new URI(url);
-            String scheme = u.getScheme();
-            String host = u.getHost();
-            if (host == null || scheme == null
-                    || !("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme))) {
-                return "";
-            }
-            return host;
-        } catch (Exception e) {
+        SafeUrl parsed = SafeUrl.parseSyntax(url);
+        if (parsed == null || !("http".equals(parsed.getScheme()) || "https".equals(parsed.getScheme()))) {
             return "";
         }
+        return parsed.getHost();
     }
 
 }

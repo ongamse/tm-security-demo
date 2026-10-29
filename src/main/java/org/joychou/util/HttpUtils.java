@@ -25,7 +25,7 @@ import org.apache.http.protocol.HttpContext;
 import org.apache.http.impl.nio.client.CloseableHttpAsyncClient;
 import org.apache.http.impl.nio.client.HttpAsyncClients;
 import org.apache.http.util.EntityUtils;
-import org.joychou.security.ssrf.SSRFChecker;
+import org.joychou.security.ssrf.SafeUrl;
 import org.jsoup.Connection;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
@@ -39,9 +39,6 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.InetAddress;
-import java.net.URI;
-import java.net.URISyntaxException;
-import java.net.URL;
 import java.net.UnknownHostException;
 import java.util.concurrent.*;
 
@@ -55,51 +52,8 @@ public class HttpUtils {
     private static final int MAX_REDIRECTS = 5;
     private static final int TIMEOUT_MS = 10 * 1000;
 
-    /**
-     * Validate a user supplied url before any request is sent: only http/https, a host must
-     * exist and it must not resolve to a loopback / link-local / private / metadata address.
-     *
-     * @return the parsed url
-     * @throws IOException if the url is not allowed
-     */
-    private static URI checkUrl(String url) throws IOException {
-        if (url == null) {
-            throw new IOException("[-] SSRF check failed. Url is null");
-        }
-        URI uri;
-        try {
-            uri = new URI(url);
-        } catch (URISyntaxException e) {
-            throw new IOException("[-] SSRF check failed. Illegal url");
-        }
-        String scheme = uri.getScheme();
-        if (!"http".equalsIgnoreCase(scheme) && !"https".equalsIgnoreCase(scheme)) {
-            throw new IOException("[-] SSRF check failed. Illegal url protocol");
-        }
-        if (SSRFChecker.isInternalHost(uri.getHost())) {
-            throw new IOException("[-] SSRF check failed. Illegal url host");
-        }
-        return uri;
-    }
-
-
     private static boolean isRedirect(int code) {
         return code == 301 || code == 302 || code == 303 || code == 307 || code == 308;
-    }
-
-
-    /**
-     * Resolve the Location header against the current url and validate the result.
-     */
-    private static String nextRedirectUrl(String current, String location) throws IOException {
-        if (location == null) {
-            throw new IOException("Redirect without Location header");
-        }
-        try {
-            return new URI(current).resolve(location).toString();
-        } catch (IllegalArgumentException | URISyntaxException e) {
-            throw new IOException("[-] SSRF check failed. Illegal redirect url");
-        }
     }
 
 
@@ -107,10 +61,10 @@ public class HttpUtils {
      * Open a connection to the url. Every redirect hop is validated before it is requested.
      */
     private static HttpURLConnection openSafeConnection(String url) throws IOException {
-        String current = url;
+        SafeUrl current = SafeUrl.parse(url);
         for (int i = 0; i <= MAX_REDIRECTS; i++) {
-            URL u = checkUrl(current).toURL();
-            HttpURLConnection conn = (HttpURLConnection) u.openConnection();
+            // The request url is rebuilt from the validated components, not taken from the raw string.
+            HttpURLConnection conn = (HttpURLConnection) current.toURL().openConnection();
             conn.setInstanceFollowRedirects(false);
             conn.setConnectTimeout(TIMEOUT_MS);
             conn.setReadTimeout(TIMEOUT_MS);
@@ -120,7 +74,7 @@ public class HttpUtils {
             }
             String location = conn.getHeaderField("Location");
             conn.disconnect();
-            current = nextRedirectUrl(current, location);
+            current = current.resolve(location);
         }
         throw new IOException("Too many redirects");
     }
@@ -133,13 +87,11 @@ public class HttpUtils {
     private static class SafeDnsResolver implements DnsResolver {
         @Override
         public InetAddress[] resolve(String host) throws UnknownHostException {
-            InetAddress[] addresses = InetAddress.getAllByName(host);
-            for (InetAddress address : addresses) {
-                if (SSRFChecker.isInternalIp(address.getHostAddress())) {
-                    throw new UnknownHostException("[-] SSRF check failed. Illegal url host");
-                }
+            try {
+                return SafeUrl.resolveExternal(host);
+            } catch (IOException e) {
+                throw new UnknownHostException(e.getMessage());
             }
-            return addresses;
         }
     }
 
@@ -153,7 +105,7 @@ public class HttpUtils {
                                           HttpContext context) throws ProtocolException {
             HttpUriRequest redirect = super.getRedirect(request, response, context);
             try {
-                checkUrl(redirect.getURI().toString());
+                SafeUrl.parse(redirect.getURI().toString());
             } catch (IOException e) {
                 throw new ProtocolException(e.getMessage());
             }
@@ -188,8 +140,7 @@ public class HttpUtils {
         HttpClient client = new HttpClient();
 
         try {
-            checkUrl(url);
-            GetMethod method = new GetMethod(url);
+            GetMethod method = new GetMethod(SafeUrl.parse(url).toExternalForm());
             // Do not follow redirects, so a validated url cannot be redirected to an internal one.
             method.setFollowRedirects(false);
             return executeSafely(client, method);
@@ -216,9 +167,9 @@ public class HttpUtils {
 
     public static String request(String url) {
         try {
-            checkUrl(url);
+            String safeUrl = SafeUrl.parse(url).toExternalForm();
             try (CloseableHttpClient client = safeHttpClient()) {
-                return Executor.newInstance(client).execute(Request.Get(url)).returnContent().toString();
+                return Executor.newInstance(client).execute(Request.Get(safeUrl)).returnContent().toString();
             }
         } catch (Exception e) {
             return e.getMessage();
@@ -232,9 +183,9 @@ public class HttpUtils {
 
         try {
 
-            checkUrl(url);
+            String safeUrl = SafeUrl.parse(url).toExternalForm();
             try (CloseableHttpClient client = safeHttpClient()) {
-                HttpGet httpGet = new HttpGet(url);
+                HttpGet httpGet = new HttpGet(safeUrl);
                 HttpResponse httpResponse = client.execute(httpGet); // send request
                 BufferedReader rd = new BufferedReader(new InputStreamReader(httpResponse.getEntity().getContent()));
 
@@ -303,16 +254,15 @@ public class HttpUtils {
      */
     public static String Jsoup(String url) {
         try {
-            String current = url;
+            SafeUrl current = SafeUrl.parse(url);
             for (int i = 0; i <= MAX_REDIRECTS; i++) {
-                checkUrl(current);
-                Connection.Response res = Jsoup.connect(current)
+                Connection.Response res = Jsoup.connect(current.toExternalForm())
                         .followRedirects(false) // every redirect hop is validated below
                         .timeout(3000)
                         .cookie("name", "joychou") // request cookies
                         .execute();
                 if (isRedirect(res.statusCode())) {
-                    current = nextRedirectUrl(current, res.header("Location"));
+                    current = current.resolve(res.header("Location"));
                     continue;
                 }
                 Document doc = res.parse();
@@ -333,15 +283,14 @@ public class HttpUtils {
     public static String okhttp(String url) throws IOException {
         OkHttpClient client = new OkHttpClient();
         client.setFollowRedirects(false); // every redirect hop is validated below
-        String current = url;
+        SafeUrl current = SafeUrl.parse(url);
         for (int i = 0; i <= MAX_REDIRECTS; i++) {
-            checkUrl(current);
-            com.squareup.okhttp.Request ok_http = new com.squareup.okhttp.Request.Builder().url(current).build();
+            com.squareup.okhttp.Request ok_http = new com.squareup.okhttp.Request.Builder().url(current.toURL()).build();
             com.squareup.okhttp.Response response = client.newCall(ok_http).execute();
             if (isRedirect(response.code())) {
                 String location = response.header("Location");
                 response.body().close();
-                current = nextRedirectUrl(current, location);
+                current = current.resolve(location);
                 continue;
             }
             return response.body().string();
@@ -395,9 +344,9 @@ public class HttpUtils {
                 .setRedirectStrategy(new SafeRedirectStrategy())
                 .build();
         try {
-            checkUrl(url);
+            String safeUrl = SafeUrl.parse(url).toExternalForm();
             httpclient.start();
-            final HttpGet request = new HttpGet(url);
+            final HttpGet request = new HttpGet(safeUrl);
             Future<HttpResponse> future = httpclient.execute(request, null);
             HttpResponse response = future.get(6000, TimeUnit.MILLISECONDS);
             return EntityUtils.toString(response.getEntity());

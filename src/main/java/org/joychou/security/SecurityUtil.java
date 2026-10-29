@@ -2,14 +2,13 @@ package org.joychou.security;
 
 import org.joychou.config.WebConfig;
 import org.joychou.security.ssrf.SSRFChecker;
+import org.joychou.security.ssrf.SafeUrl;
 import org.joychou.security.ssrf.SocketHook;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.regex.Pattern;
@@ -43,13 +42,12 @@ public class SecurityUtil {
             if (url == null) {
                 return "";
             }
-            URI uri = new URI(url);
-            String host = uri.getHost();
-            if (host == null) {
+            SafeUrl parsed = SafeUrl.parseSyntax(url);
+            if (parsed == null) {
                 return "";
             }
-            return host.toLowerCase();
-        } catch (URISyntaxException e) {
+            return parsed.getHost();
+        } catch (RuntimeException e) {
             return "";
         }
     }
@@ -60,7 +58,7 @@ public class SecurityUtil {
      * 优先判断黑名单，如果满足黑名单return null。
      *
      * @param url the url need to check
-     * @return Safe url returns original url; Illegal url returns null;
+     * @return Safe url returns the url rebuilt from its validated components; Illegal url returns null;
      */
     public static String checkURL(String url) {
 
@@ -72,12 +70,18 @@ public class SecurityUtil {
         ArrayList<String> blockDomains = WebConfig.getBlockDomains();
 
         try {
-            String host = gethost(url);
-
-            // 必须http/https
-            if (!isHttp(url)) {
+            // Parse once; everything below (and the returned value) uses the parsed components only.
+            SafeUrl parsed = SafeUrl.parseSyntax(url);
+            if (parsed == null) {
                 return null;
             }
+
+            // 必须http/https
+            if (!"http".equals(parsed.getScheme()) && !"https".equals(parsed.getScheme())) {
+                return null;
+            }
+            String host = parsed.getHost();
+            String safeUrl = parsed.toCanonicalString();
 
             // 如果满足黑名单返回null
             if (blockDomains.contains(host)){
@@ -91,13 +95,13 @@ public class SecurityUtil {
 
             // 支持多级域名
             if (safeDomains.contains(host)){
-                return url;
+                return safeUrl;
             }
 
             // 支持一级域名
             for(String safedomain: safeDomains) {
                 if(host.endsWith("." + safedomain)) {
-                    return url;
+                    return safeUrl;
                 }
             }
             return null;
