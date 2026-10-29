@@ -20,7 +20,7 @@ public class SafeDomainConfig {
             LOGGER.info("SafeDomainParser bean inject successfully!!!");
             return new SafeDomainParser();
         } catch (Exception e) {
-            LOGGER.error("SafeDomainParser is null " + e.getMessage(), e);
+            LOGGER.error("SafeDomainParser is null", e);
         }
         return null;
     }

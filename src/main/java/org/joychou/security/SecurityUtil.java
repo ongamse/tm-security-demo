@@ -103,7 +103,7 @@ public class SecurityUtil {
             }
             return null;
         } catch (NullPointerException e) {
-            logger.error(e.toString());
+            logger.error("Operation failed.", e);
             return null;
         }
     }
@@ -294,10 +294,10 @@ public class SecurityUtil {
             try {
                 temp = URLDecoder.decode(temp, "utf-8");
             } catch (UnsupportedEncodingException e) {
-                logger.info("Unsupported encoding exception: " + filepath);
+                logger.info("Unsupported encoding exception: {}", LogSanitizer.clean(filepath));
                 return null;
             } catch (Exception e) {
-                logger.info(e.toString());
+                logger.info("Operation failed.", e);
                 return null;
             }
         }

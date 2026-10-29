@@ -1,5 +1,6 @@
 package org.joychou.controller;
 
+import org.joychou.security.LogSanitizer;
 
 import org.springframework.web.util.HtmlUtils;
 import org.joychou.security.SecurityUtil;
@@ -98,7 +99,7 @@ public class URLWhiteList {
     @GetMapping("/vuln/url_bypass")
     public void url_bypass(String url, HttpServletResponse res) throws IOException {
 
-        logger.info("url:  " + url);
+        logger.info("url:  {}", LogSanitizer.clean(url));
 
         if (!SecurityUtil.isHttp(url)) {
             return;

@@ -1,5 +1,6 @@
 package org.joychou.controller;
 
+import org.joychou.security.LogSanitizer;
 import org.springframework.web.util.HtmlUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -74,7 +75,7 @@ public class FileUpload {
 
         } catch (IOException e) {
             redirectAttributes.addFlashAttribute("message", "upload failed");
-            logger.error(e.toString());
+            logger.error("Operation failed.", e);
         }
 
         return "redirect:/file/status";
@@ -123,7 +124,7 @@ public class FileUpload {
         for (String blackMimeType : mimeTypeBlackList) {
             // 用contains是为了防止text/html;charset=UTF-8绕过
             if (SecurityUtil.replaceSpecialStr(mimeType).toLowerCase().contains(blackMimeType)) {
-                logger.error("[-] Mime type error: " + mimeType);
+                logger.error("[-] Mime type error: {}", LogSanitizer.clean(mimeType));
                 return "Upload failed. Illeagl picture.";
             }
         }
@@ -150,12 +151,12 @@ public class FileUpload {
             byte[] bytes = multifile.getBytes();
             Files.write(savePath, bytes);
         } catch (IOException e) {
-            logger.error(e.toString());
+            logger.error("Operation failed.", e);
             return "Upload failed";
         }
 
-        logger.info("[+] Safe file. Suffix: {}, MIME: {}", suffix, mimeType);
-        logger.info("[+] Successfully uploaded {}", filePath);
+        logger.info("[+] Safe file. Suffix: {}, MIME: {}", LogSanitizer.clean(suffix), LogSanitizer.clean(mimeType));
+        logger.info("[+] Successfully uploaded {}", LogSanitizer.clean(filePath));
         return String.format("You successfully uploaded '%s'", HtmlUtils.htmlEscape(filePath));
     }
 
@@ -237,7 +238,7 @@ public class FileUpload {
                 logger.info("[+] temporary file delete successfully!");
             }
         } catch (IOException e) {
-            logger.info("temporary file delete failed: {}", e.toString());
+            logger.info("temporary file delete failed", e);
         }
     }
 

@@ -26,18 +26,18 @@ public class LoginSuccessHandler implements AuthenticationSuccessHandler {
                                         HttpServletResponse response, Authentication authentication)
                                         throws ServletException, IOException {
 
-        logger.info("USER " + authentication.getName()+ " LOGIN SUCCESS.");
+        logger.info("USER {} LOGIN SUCCESS.", LogSanitizer.clean(authentication.getName()));
 
         SavedRequest savedRequest = new HttpSessionRequestCache().getRequest(request, response);
         String originUrl = "";
         try {
             originUrl = savedRequest.getRedirectUrl();
         } catch (Exception e) {
-            logger.debug(e.toString());
+            logger.debug("Operation failed.", e);
         }
 
         if (savedRequest != null) {
-            logger.info("Original url is: " + originUrl);
+            logger.info("Original url is: {}", LogSanitizer.clean(originUrl));
         }
 
         Map<String, String> content = new HashMap<>();

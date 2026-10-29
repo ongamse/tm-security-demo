@@ -1,5 +1,6 @@
 package org.joychou.filter;
 
+import org.joychou.security.LogSanitizer;
 import javax.servlet.*;
 import javax.servlet.annotation.WebFilter;
 import javax.servlet.http.HttpServletRequest;
@@ -65,8 +66,8 @@ public class ReferFilter implements Filter {
         if ("GET".equals(request.getMethod()) && StringUtils.isNotBlank(reqCallback)) {
             // If the check of referer fails, a 403 forbidden error page will be returned.
             if (SecurityUtil.checkURL(refer) == null) {
-                logger.info("[-] URL: " + request.getRequestURL() + "?" + request.getQueryString() + "\t"
-                        + "Referer: " + refer);
+                logger.info("[-] URL: {}?{}\tReferer: {}", LogSanitizer.clean(request.getRequestURL()),
+                        LogSanitizer.clean(request.getQueryString()), LogSanitizer.clean(refer));
                 response.setStatus(HttpServletResponse.SC_FORBIDDEN);
                 response.getWriter().write(" Referer check error.");
                 response.flushBuffer();

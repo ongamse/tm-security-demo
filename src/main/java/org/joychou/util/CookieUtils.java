@@ -17,7 +17,7 @@ public class CookieUtils {
             res.addCookie(cookie);
             return true;
         } catch (Exception e) {
-            log.error(e.toString());
+            log.error("Operation failed.", e);
             return false;
         }
     }

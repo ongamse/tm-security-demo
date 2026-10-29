@@ -37,7 +37,7 @@ public class AntObjectInputStream extends ObjectInputStream {
         String className = desc.getName();
 
         // Deserialize class name: org.joychou.security.AntObjectInputStream$MyObject
-        logger.info("Deserialize class name: " + className);
+        logger.info("Deserialize class name: {}", LogSanitizer.clean(className));
 
         // Allowlist: only these exact classes (and arrays of them) may be deserialized.
         String name = className;

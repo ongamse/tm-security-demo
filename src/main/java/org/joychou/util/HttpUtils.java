@@ -1,5 +1,6 @@
 package org.joychou.util;
 
+import org.joychou.security.LogSanitizer;
 import com.squareup.okhttp.OkHttpClient;
 import org.apache.commons.httpclient.HttpClient;
 import org.apache.commons.httpclient.methods.GetMethod;
@@ -52,7 +53,7 @@ public class HttpUtils {
         } catch (IOException e) {
             throw e;
         } catch (Exception e) {
-            logger.error("SSRF check exception: " + e.getMessage());
+            logger.error("SSRF check exception: {}", LogSanitizer.clean(e.getMessage()));
             throw new IOException(SSRF_CHECK_FAILED);
         }
     }
@@ -233,7 +234,7 @@ public class HttpUtils {
                 ImageIO.read(is);
             }
         } catch (IOException e) {
-            logger.error(e.getMessage());
+            logger.error("Operation failed.", e);
         }
 
     }
@@ -249,7 +250,7 @@ public class HttpUtils {
         try {
             IOUtils.toByteArray(openValidatedConnection(url)); // send request
         } catch (IOException e) {
-            logger.error(e.getMessage());
+            logger.error("Operation failed.", e);
         }
     }
 
@@ -276,7 +277,7 @@ public class HttpUtils {
             try {
                 httpclient.close();
             } catch (Exception e) {
-                logger.error(e.getMessage());
+                logger.error("Operation failed.", e);
             }
         }
     }

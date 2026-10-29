@@ -158,7 +158,7 @@ public class SSRF {
             }
 
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("Operation failed.", e);
         } finally {
             if (inputStream != null) {
                 inputStream.close();
