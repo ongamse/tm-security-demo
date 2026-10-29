@@ -147,7 +147,7 @@ public class HttpUtils {
             method.setFollowRedirects(false);
             return executeSafely(client, method);
         } catch (IOException e) {
-            logger.error("Request failed", e);
+            logger.error("Request failed: {}", e.getClass().getSimpleName());
             return GENERIC_ERROR;
         }
     }
@@ -160,7 +160,7 @@ public class HttpUtils {
             return new String(resBody);
 
         } catch (IOException e) {
-            logger.error("Request failed", e);
+            logger.error("Request failed: {}", e.getClass().getSimpleName());
             return GENERIC_ERROR;
         } finally {
             // Release the connection.
@@ -176,7 +176,7 @@ public class HttpUtils {
                 return Executor.newInstance(client).execute(Request.Get(safeUrl)).returnContent().toString();
             }
         } catch (Exception e) {
-            logger.error("Request failed", e);
+            logger.error("Request failed: {}", e.getClass().getSimpleName());
             return GENERIC_ERROR;
         }
     }
@@ -203,7 +203,7 @@ public class HttpUtils {
             return result.toString();
 
         } catch (Exception e) {
-            logger.error("Request failed", e);
+            logger.error("Request failed: {}", e.getClass().getSimpleName());
             return GENERIC_ERROR;
         }
     }
@@ -222,7 +222,7 @@ public class HttpUtils {
             in.close();
             return html.toString();
         } catch (Exception e) {
-            logger.error("Request failed", e);
+            logger.error("Request failed: {}", e.getClass().getSimpleName());
             return GENERIC_ERROR;
         }
     }
@@ -247,7 +247,7 @@ public class HttpUtils {
             in.close();
             return html.toString();
         } catch (IOException e) {
-            logger.error("Request failed", e);
+            logger.error("Request failed: {}", e.getClass().getSimpleName());
             return GENERIC_ERROR;
         }
     }
@@ -276,7 +276,7 @@ public class HttpUtils {
             }
             return "Too many redirects";
         } catch (IOException e) {
-            logger.error("Request failed", e);
+            logger.error("Request failed: {}", e.getClass().getSimpleName());
             return GENERIC_ERROR;
         }
     }
@@ -322,7 +322,7 @@ public class HttpUtils {
                 ImageIO.read(is); // send request
             }
         } catch (IOException e) {
-            logger.error(e.getMessage());
+            logger.error("Request failed: {}", e.getClass().getSimpleName());
         }
 
     }
@@ -341,7 +341,7 @@ public class HttpUtils {
                 IOUtils.toByteArray(is);
             }
         } catch (IOException e) {
-            logger.error(e.getMessage());
+            logger.error("Request failed: {}", e.getClass().getSimpleName());
         }
     }
 
@@ -358,13 +358,13 @@ public class HttpUtils {
             HttpResponse response = future.get(6000, TimeUnit.MILLISECONDS);
             return EntityUtils.toString(response.getEntity());
         } catch (Exception e) {
-            logger.error("Request failed", e);
+            logger.error("Request failed: {}", e.getClass().getSimpleName());
             return GENERIC_ERROR;
         } finally {
             try {
                 httpclient.close();
             } catch (Exception e) {
-                logger.error(e.getMessage());
+                logger.error("Request failed: {}", e.getClass().getSimpleName());
             }
         }
     }
