@@ -17,9 +17,6 @@ import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.sql.DriverManager;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -37,16 +34,23 @@ public class Rce {
     private static final Pattern ARITHMETIC = Pattern.compile("^\\s*(-?[0-9]{1,18})\\s*([-+*/%])\\s*(-?[0-9]{1,18})\\s*$");
 
     /**
-     * Fixed commands selectable by key. The executed argv comes only from these constants.
+     * Fixed commands selectable by key. The executed argv comes only from these constants;
+     * the request value is only compared against string literals.
+     *
+     * @return a fresh constant argv, or null if the key is not allowed
      */
-    private static final Map<String, String[]> COMMANDS;
-
-    static {
-        Map<String, String[]> m = new HashMap<>();
-        m.put("whoami", new String[]{"whoami"});
-        m.put("date", new String[]{"date"});
-        m.put("uname", new String[]{"uname", "-a"});
-        COMMANDS = Collections.unmodifiableMap(m);
+    private static String[] selectCommand(String cmd) {
+        if (cmd == null) {
+            return null;
+        }
+        String[] argv;
+        switch (cmd) {
+            case "whoami": argv = new String[]{"whoami"}; break;
+            case "date": argv = new String[]{"date"}; break;
+            case "uname": argv = new String[]{"uname", "-a"}; break;
+            default: argv = null; break;
+        }
+        return argv;
     }
 
     @GetMapping("/runtime/exec")
@@ -54,7 +58,7 @@ public class Rce {
         Runtime run = Runtime.getRuntime();
         StringBuilder sb = new StringBuilder();
 
-        String[] argv = cmd == null ? null : COMMANDS.get(cmd);
+        String[] argv = selectCommand(cmd);
         if (argv == null) {
             return "Bad boy. I got u.";
         }
@@ -93,7 +97,7 @@ public class Rce {
         StringBuilder sb = new StringBuilder();
 
         // The request value is only a lookup key; argv comes from constants.
-        String[] arrCmd = cmd == null ? null : COMMANDS.get(cmd);
+        String[] arrCmd = selectCommand(cmd);
         if (arrCmd == null) {
             return "Bad boy. I got u.";
         }

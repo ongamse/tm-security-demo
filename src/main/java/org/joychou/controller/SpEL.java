@@ -9,10 +9,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
-
 
 /**
  * SpEL Injection
@@ -27,21 +23,17 @@ public class SpEL {
      * parser are compile-time constants; request data is only used as a lookup key.
      * http://localhost:8080/spel/vuln?expression=hello
      */
-    private static final Map<String, String> EXPRESSIONS;
-
-    static {
-        Map<String, String> m = new HashMap<>();
-        m.put("hello", "'hello'.toUpperCase()");
-        m.put("length", "'hello'.length()");
-        m.put("sum", "1 + 2");
-        EXPRESSIONS = Collections.unmodifiableMap(m);
-    }
-
     @GetMapping("/spel/vuln")
     public String rce(String expression) {
-        String fixed = expression == null ? null : EXPRESSIONS.get(expression);
-        if (fixed == null) {
+        if (expression == null) {
             return "Bad boy. I got u.";
+        }
+        String fixed;
+        switch (expression) {
+            case "hello": fixed = "'hello'.toUpperCase()"; break;
+            case "length": fixed = "'hello'.length()"; break;
+            case "sum": fixed = "1 + 2"; break;
+            default: return "Bad boy. I got u.";
         }
         ExpressionParser parser = new SpelExpressionParser();
         EvaluationContext context = SimpleEvaluationContext.forReadOnlyDataBinding().build();
