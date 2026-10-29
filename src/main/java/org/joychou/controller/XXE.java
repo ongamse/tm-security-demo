@@ -30,7 +30,6 @@ import javax.xml.parsers.SAXParser;
 import org.xml.sax.helpers.DefaultHandler;
 import org.apache.commons.digester3.Digester;
 import org.jdom2.input.SAXBuilder;
-import org.joychou.security.SecurityUtil;
 import org.joychou.util.WebUtils;
 import org.joychou.util.XmlSecurity;
 import org.xmlbeam.annotation.XBRead;
@@ -60,7 +59,7 @@ public class XXE {
             xmlReader.parse(new InputSource(new StringReader(body)));  // parse xml
             return "xmlReader xxe vuln code";
         } catch (Exception e) {
-            logger.error("{}", SecurityUtil.logSafe(e.toString()));
+            logger.error("XML processing exception: {}", e.getClass().getSimpleName());
             return EXCEPT;
         }
     }
@@ -81,7 +80,7 @@ public class XXE {
             xmlReader.parse(new InputSource(new StringReader(body)));  // parse xml
 
         } catch (Exception e) {
-            logger.error("{}", SecurityUtil.logSafe(e.toString()));
+            logger.error("XML processing exception: {}", e.getClass().getSimpleName());
             return EXCEPT;
         }
 
@@ -103,7 +102,7 @@ public class XXE {
             builder.build(new InputSource(new StringReader(XmlSecurity.sanitize(body))));
             return "SAXBuilder xxe vuln code";
         } catch (Exception e) {
-            logger.error("{}", SecurityUtil.logSafe(e.toString()));
+            logger.error("XML processing exception: {}", e.getClass().getSimpleName());
             return EXCEPT;
         }
     }
@@ -122,7 +121,7 @@ public class XXE {
             builder.build(new InputSource(new StringReader(XmlSecurity.sanitize(body))));
 
         } catch (Exception e) {
-            logger.error("{}", SecurityUtil.logSafe(e.toString()));
+            logger.error("XML processing exception: {}", e.getClass().getSimpleName());
             return EXCEPT;
         }
 
@@ -140,7 +139,7 @@ public class XXE {
             reader.read(new InputSource(new StringReader(body))); // cause xxe
 
         } catch (Exception e) {
-            logger.error("{}", SecurityUtil.logSafe(e.toString()));
+            logger.error("XML processing exception: {}", e.getClass().getSimpleName());
             return EXCEPT;
         }
 
@@ -160,7 +159,7 @@ public class XXE {
             // org.dom4j.Document document
             reader.read(new InputSource(new StringReader(body)));
         } catch (Exception e) {
-            logger.error("{}", SecurityUtil.logSafe(e.toString()));
+            logger.error("XML processing exception: {}", e.getClass().getSimpleName());
             return EXCEPT;
         }
         return "SAXReader xxe security code";
@@ -181,7 +180,7 @@ public class XXE {
 
             return "SAXParser xxe vuln code";
         } catch (Exception e) {
-            logger.error("{}", SecurityUtil.logSafe(e.toString()));
+            logger.error("XML processing exception: {}", e.getClass().getSimpleName());
             return EXCEPT;
         }
     }
@@ -200,7 +199,7 @@ public class XXE {
             SAXParser parser = spf.newSAXParser();
             parser.parse(new InputSource(new StringReader(body)), new DefaultHandler());  // parse xml
         } catch (Exception e) {
-            logger.error("{}", SecurityUtil.logSafe(e.toString()));
+            logger.error("XML processing exception: {}", e.getClass().getSimpleName());
             return EXCEPT;
         }
         return "SAXParser xxe security code";
@@ -219,7 +218,7 @@ public class XXE {
             digester.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             digester.parse(new StringReader(XmlSecurity.sanitize(body)));  // parse xml
         } catch (Exception e) {
-            logger.error("{}", SecurityUtil.logSafe(e.toString()));
+            logger.error("XML processing exception: {}", e.getClass().getSimpleName());
             return EXCEPT;
         }
         return "Digester xxe vuln code";
@@ -239,7 +238,7 @@ public class XXE {
 
             return "Digester xxe security code";
         } catch (Exception e) {
-            logger.error("{}", SecurityUtil.logSafe(e.toString()));
+            logger.error("XML processing exception: {}", e.getClass().getSimpleName());
             return EXCEPT;
         }
     }
@@ -272,7 +271,7 @@ public class XXE {
             }
             return HtmlUtils.htmlEscape(buf.toString());
         } catch (Exception e) {
-            logger.error("XML parsing failed: {}", SecurityUtil.logSafe(e.toString()));
+            logger.error("XML parsing failed: {}", e.getClass().getSimpleName());
             return "XML parsing failed";
         }
     }
@@ -293,7 +292,7 @@ public class XXE {
             db.parse(is);  // parse xml
             sr.close();
         } catch (Exception e) {
-            logger.error("{}", SecurityUtil.logSafe(e.toString()));
+            logger.error("XML processing exception: {}", e.getClass().getSimpleName());
             return EXCEPT;
         }
         return "DocumentBuilder xxe security code";
@@ -323,7 +322,7 @@ public class XXE {
             sr.close();
             return "DocumentBuilder xinclude xxe vuln code";
         } catch (Exception e) {
-            logger.error("{}", SecurityUtil.logSafe(e.toString()));
+            logger.error("XML processing exception: {}", e.getClass().getSimpleName());
             return EXCEPT;
         }
     }
@@ -352,7 +351,7 @@ public class XXE {
 
             sr.close();
         } catch (Exception e) {
-            logger.error("{}", SecurityUtil.logSafe(e.toString()));
+            logger.error("XML processing exception: {}", e.getClass().getSimpleName());
             return EXCEPT;
         }
         return "DocumentBuilder xinclude xxe vuln code";
@@ -374,7 +373,7 @@ public class XXE {
             xmlReader.parse(new InputSource(new StringReader(body)));
 
         } catch (Exception e) {
-            logger.error("{}", SecurityUtil.logSafe(e.toString()));
+            logger.error("XML processing exception: {}", e.getClass().getSimpleName());
             return EXCEPT;
         }
 
@@ -397,7 +396,7 @@ public class XXE {
             xmlReader.parse(new InputSource(new StringReader(body)));
 
         } catch (Exception e) {
-            logger.error("{}", SecurityUtil.logSafe(e.toString()));
+            logger.error("XML processing exception: {}", e.getClass().getSimpleName());
             return EXCEPT;
         }
         return "XMLReader xxe security code";
@@ -414,7 +413,7 @@ public class XXE {
             String body = WebUtils.getRequestBody(req);
             DocumentHelper.parseText(body); // parse xml
         } catch (Exception e) {
-            logger.error("{}", SecurityUtil.logSafe(e.toString()));
+            logger.error("XML processing exception: {}", e.getClass().getSimpleName());
             return EXCEPT;
         }
 
@@ -429,7 +428,8 @@ public class XXE {
             for (int j = 0; j < xxe.getLength(); j++) {
                 Node xxeNode = xxe.item(j);
                 // 测试不能blind xxe，所以强行加了一个回显
-                logger.info("xxeNode: {}", SecurityUtil.logSafe(xxeNode.getNodeValue()));
+                String nodeValue = xxeNode.getNodeValue();
+                logger.info("xxeNode value length: {}", nodeValue == null ? 0 : nodeValue.length());
             }
 
         }
@@ -442,7 +442,7 @@ public class XXE {
         @PostMapping(value = "/xmlbeam/vuln")
         HttpEntity<String> post(@RequestBody UserPayload user) {
             try {
-                logger.info("{}", SecurityUtil.logSafe(user));
+                logger.info("Received xmlbeam user payload");
                 return ResponseEntity.ok(String.format("hello, %s!", user.getUserName()));
             }catch (Exception e){
                 e.printStackTrace();

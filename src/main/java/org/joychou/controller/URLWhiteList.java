@@ -98,7 +98,7 @@ public class URLWhiteList {
     @GetMapping("/vuln/url_bypass")
     public void url_bypass(String url, HttpServletResponse res) throws IOException {
 
-        logger.info("url:  " + url);
+        logger.info("url_bypass request received");
 
         // Central allowlist/blocklist check (URI-parsed host, http/https only).
         String safeUrl = SecurityUtil.checkURL(url);
@@ -107,7 +107,7 @@ public class URLWhiteList {
         }
 
         String host = SecurityUtil.gethost(safeUrl);
-        logger.info("host:  " + host);
+        logger.info("url_bypass host resolved");
 
         // endsWith .
         // The request url only selects an entry of the server side domain allowlist. The redirect

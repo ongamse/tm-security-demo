@@ -84,7 +84,7 @@ public class FileUpload {
 
         } catch (IOException e) {
             redirectAttributes.addFlashAttribute("message", "upload failed");
-            logger.error("{}", SecurityUtil.logSafe(e.toString()));
+            logger.error("File operation exception: {}", e.getClass().getSimpleName());
         }
 
         return "redirect:/file/status";
@@ -133,7 +133,7 @@ public class FileUpload {
         for (String blackMimeType : mimeTypeBlackList) {
             // 用contains是为了防止text/html;charset=UTF-8绕过
             if (SecurityUtil.replaceSpecialStr(mimeType).toLowerCase().contains(blackMimeType)) {
-                logger.error("[-] Mime type error: {}", SecurityUtil.logSafe(mimeType));
+                logger.error("[-] Mime type error: blacklisted type {}", blackMimeType);
                 deleteFile(randomFilePath);
                 return "Upload failed. Illeagl picture.";
             }
@@ -154,13 +154,13 @@ public class FileUpload {
             byte[] bytes = multifile.getBytes();
             Files.write(safePath, bytes);
         } catch (IOException e) {
-            logger.error("{}", SecurityUtil.logSafe(e.toString()));
+            logger.error("File operation exception: {}", e.getClass().getSimpleName());
             deleteFile(safePath);
             return "Upload failed";
         }
 
-        logger.info("[+] Safe file. Suffix: {}, MIME: {}", SecurityUtil.logSafe(Suffix), SecurityUtil.logSafe(mimeType));
-        logger.info("[+] Successfully uploaded {}", SecurityUtil.logSafe(filePath));
+        logger.info("[+] Safe file. Suffix and MIME type checks passed.");
+        logger.info("[+] Successfully uploaded picture");
         return String.format("You successfully uploaded '%s'", HtmlUtils.htmlEscape(filePath));
     }
 
@@ -220,13 +220,13 @@ public class FileUpload {
         }
         try {
             if (Files.deleteIfExists(filePath)) {
-                logger.info("[+] {} delete successfully!", SecurityUtil.logSafe(filePath));
+                logger.info("[+] File deleted successfully!");
                 return;
             }
         } catch (IOException e) {
-            logger.error("{}", SecurityUtil.logSafe(e.toString()));
+            logger.error("File operation exception: {}", e.getClass().getSimpleName());
         }
-        logger.info("{} delete failed!", SecurityUtil.logSafe(filePath));
+        logger.info("File delete failed!");
     }
 
     /**
