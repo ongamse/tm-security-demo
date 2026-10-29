@@ -23,9 +23,11 @@ public class CRLFInjection {
     public void crlf(HttpServletRequest request, HttpServletResponse response) {
         String test1 = request.getParameter("test1");
         String test2 = request.getParameter("test2");
+        String author = request.getParameter("test3");
         // Reject CR/LF and other control characters (also url-encoded) to prevent header injection.
         if ((test1 != null && SecurityUtil.headerFilter(test1) == null) ||
-                (test2 != null && SecurityUtil.headerFilter(test2) == null)) {
+                (test2 != null && SecurityUtil.headerFilter(test2) == null) ||
+                (author != null && SecurityUtil.headerFilter(author) == null)) {
             response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
             return;
         }
@@ -35,8 +37,13 @@ public class CRLFInjection {
         if (test2 != null) {
             response.setHeader("test2", SecurityUtil.toHeaderSafe(test2));
         }
-        String author = request.getParameter("test3");
-        Cookie cookie = new Cookie("test3", author);
-        response.addCookie(cookie);
+        if (author != null) {
+            Cookie cookie = new Cookie("test3", SecurityUtil.toHeaderSafe(author));
+            cookie.setHttpOnly(true);
+            cookie.setSecure(true);
+            cookie.setPath("/");
+            cookie.setMaxAge(3600);
+            response.addCookie(cookie);
+        }
     }
 }
