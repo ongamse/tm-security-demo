@@ -121,7 +121,12 @@ public class SecurityUtil {
                 continue;
             }
             origins.add("https://" + domain);
-            origins.add("http://" + domain);
+            // Plain HTTP is only acceptable for local development.
+            if (domain.equals("localhost")) {
+                origins.add("http://localhost");
+            } else if (domain.equals("127.0.0.1")) {
+                origins.add("http://127.0.0.1");
+            }
         }
         return Collections.unmodifiableList(origins);
     }
