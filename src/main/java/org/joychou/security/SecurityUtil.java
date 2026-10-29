@@ -199,6 +199,57 @@ public class SecurityUtil {
     }
 
 
+    /**
+     * Prevent HTTP header injection (CRLF injection, CWE-113).
+     * The value is rejected if it, or any (multi-)URL-decoded form of it, contains CR, LF
+     * or any other control character.
+     *
+     * @param value request-derived value that is going to be written into a response header
+     * @return the original value if it is safe; null if the value is null or unsafe
+     */
+    public static String headerFilter(String value) {
+        if (value == null) {
+            return null;
+        }
+
+        String temp = value;
+        if (containsControlChar(temp)) {
+            return null;
+        }
+
+        // Handle multi urlencode, e.g. %250d%250a
+        for (int i = 0; i < 10 && temp.indexOf('%') != -1; i++) {
+            String decoded;
+            try {
+                decoded = URLDecoder.decode(temp, "utf-8");
+            } catch (UnsupportedEncodingException | IllegalArgumentException e) {
+                // Not decodable, so no encoded control character can be hidden in it.
+                break;
+            }
+            if (containsControlChar(decoded)) {
+                return null;
+            }
+            if (decoded.equals(temp)) {
+                break;
+            }
+            temp = decoded;
+        }
+
+        return value;
+    }
+
+
+    private static boolean containsControlChar(String str) {
+        for (int i = 0; i < str.length(); i++) {
+            char ch = str.charAt(i);
+            if (ch < 0x20 || ch == 0x7f || ch == 0x85 || ch == 0x2028 || ch == 0x2029) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+
     public static String cmdFilter(String input) {
         if (!FILTER_PATTERN.matcher(input).matches()) {
             return null;

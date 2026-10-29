@@ -128,6 +128,11 @@ public class SSRF {
             }
 
             String downLoadImgFileName = WebUtils.getNameWithoutExtension(url) + "." + WebUtils.getFileExtension(url);
+            // Reject CR/LF and other control characters (also url-encoded) to prevent header injection.
+            if (SecurityUtil.headerFilter(downLoadImgFileName) == null) {
+                logger.error("[-] Illegal file name");
+                return;
+            }
             // download
             response.setHeader("content-disposition", "attachment;fileName=" + downLoadImgFileName);
 

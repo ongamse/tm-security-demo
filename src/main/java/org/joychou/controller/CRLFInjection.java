@@ -1,5 +1,6 @@
 package org.joychou.controller;
 
+import org.joychou.security.SecurityUtil;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseBody;
@@ -20,8 +21,16 @@ public class CRLFInjection {
     @RequestMapping("/safecode")
     @ResponseBody
     public void crlf(HttpServletRequest request, HttpServletResponse response) {
-        response.addHeader("test1", request.getParameter("test1"));
-        response.setHeader("test2", request.getParameter("test2"));
+        String test1 = request.getParameter("test1");
+        String test2 = request.getParameter("test2");
+        // Reject CR/LF and other control characters (also url-encoded) to prevent header injection.
+        if ((test1 != null && SecurityUtil.headerFilter(test1) == null) ||
+                (test2 != null && SecurityUtil.headerFilter(test2) == null)) {
+            response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+            return;
+        }
+        response.addHeader("test1", test1);
+        response.setHeader("test2", test2);
         String author = request.getParameter("test3");
         Cookie cookie = new Cookie("test3", author);
         response.addCookie(cookie);
