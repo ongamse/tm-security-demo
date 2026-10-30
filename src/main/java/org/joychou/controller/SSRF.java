@@ -9,6 +9,7 @@ import org.joychou.util.WebUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
+import org.springframework.web.util.HtmlUtils;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 
@@ -98,9 +99,9 @@ public class SSRF {
     public String request(@RequestParam String url) {
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.request(url);
+            return HtmlUtils.htmlEscape(HttpUtils.request(url));
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return HtmlUtils.htmlEscape(e.getMessage());
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -120,9 +121,15 @@ public class SSRF {
         InputStream inputStream = null;
         OutputStream outputStream = null;
         try {
+            // Validate URL: only allow http/https and reject internal IPs
+            if (!SecurityUtil.isHttp(url) || !SecurityUtil.checkSSRFWithoutRedirect(url)) {
+                response.sendError(HttpServletResponse.SC_FORBIDDEN, "SSRF check failed");
+                return;
+            }
+
             String downLoadImgFileName = WebUtils.getNameWithoutExtension(url) + "." + WebUtils.getFileExtension(url);
-            // download
-            response.setHeader("content-disposition", "attachment;fileName=" + downLoadImgFileName);
+            // download — sanitize CRLF from user-derived filename to prevent header injection
+            response.setHeader("content-disposition", "attachment;fileName=" + SecurityUtil.sanitizeHeaderValue(downLoadImgFileName));
 
             URL u = new URL(url);
             int length;

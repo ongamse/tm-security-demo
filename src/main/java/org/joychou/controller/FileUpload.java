@@ -19,6 +19,7 @@ import java.nio.file.Paths;
 import java.util.UUID;
 
 import org.joychou.security.SecurityUtil;
+import org.springframework.web.util.HtmlUtils;
 
 
 /**
@@ -59,11 +60,21 @@ public class FileUpload {
         try {
             // Get the file and save it somewhere
             byte[] bytes = file.getBytes();
-            Path path = Paths.get(UPLOADED_FOLDER + file.getOriginalFilename());
+            String safeName = sanitizeFileName(file.getOriginalFilename());
+            if (safeName == null) {
+                redirectAttributes.addFlashAttribute("message", "Invalid file name");
+                return "redirect:/file/status";
+            }
+            String destPath = UPLOADED_FOLDER + safeName;
+            if (!isPathWithinDirectory(destPath, UPLOADED_FOLDER)) {
+                redirectAttributes.addFlashAttribute("message", "Invalid file path");
+                return "redirect:/file/status";
+            }
+            Path path = Paths.get(destPath);
             Files.write(path, bytes);
 
             redirectAttributes.addFlashAttribute("message",
-                    "You successfully uploaded '" + UPLOADED_FOLDER + file.getOriginalFilename() + "'");
+                    "You successfully uploaded '" + destPath + "'");
 
         } catch (IOException e) {
             redirectAttributes.addFlashAttribute("message", "upload failed");
@@ -86,10 +97,18 @@ public class FileUpload {
             return "Please select a file to upload";
         }
 
-        String fileName = multifile.getOriginalFilename();
+        String rawFileName = multifile.getOriginalFilename();
+        String safeName = sanitizeFileName(rawFileName);
+        if (safeName == null) {
+            return "Upload failed. Invalid file name.";
+        }
+        String fileName = safeName;
         String Suffix = fileName.substring(fileName.lastIndexOf(".")); // 获取文件后缀名
         String mimeType = multifile.getContentType(); // 获取MIME类型
         String filePath = UPLOADED_FOLDER + fileName;
+        if (!isPathWithinDirectory(filePath, UPLOADED_FOLDER)) {
+            return "Upload failed. Invalid file path.";
+        }
         File excelFile = convert(multifile);
 
 
@@ -141,7 +160,7 @@ public class FileUpload {
         try {
             // Get the file and save it somewhere
             byte[] bytes = multifile.getBytes();
-            Path path = Paths.get(UPLOADED_FOLDER + multifile.getOriginalFilename());
+            Path path = Paths.get(filePath);
             Files.write(path, bytes);
         } catch (IOException e) {
             logger.error(e.toString());
@@ -151,10 +170,14 @@ public class FileUpload {
 
         logger.info("[+] Safe file. Suffix: {}, MIME: {}", Suffix, mimeType);
         logger.info("[+] Successfully uploaded {}", filePath);
-        return String.format("You successfully uploaded '%s'", filePath);
+        return String.format("You successfully uploaded '%s'", HtmlUtils.htmlEscape(filePath));
     }
 
     private void deleteFile(String filePath) {
+        if (!isPathWithinDirectory(filePath, UPLOADED_FOLDER)) {
+            logger.error("Refusing to delete file outside upload directory: " + filePath);
+            return;
+        }
         File delFile = new File(filePath);
         if(delFile.isFile() && delFile.exists()) {
             if (delFile.delete()) {
@@ -172,10 +195,17 @@ public class FileUpload {
      * https://stackoverflow.com/questions/24339990/how-to-convert-a-multipart-file-to-file
      */
     private File convert(MultipartFile multiFile) throws Exception {
-        String fileName = multiFile.getOriginalFilename();
-        String suffix = fileName.substring(fileName.lastIndexOf("."));
+        String rawName = multiFile.getOriginalFilename();
+        String safeName = sanitizeFileName(rawName);
+        if (safeName == null) {
+            throw new IllegalArgumentException("Invalid file name");
+        }
+        String suffix = safeName.substring(safeName.lastIndexOf("."));
         UUID uuid = Generators.timeBasedGenerator().generate();
         randomFilePath = UPLOADED_FOLDER + uuid + suffix;
+        if (!isPathWithinDirectory(randomFilePath, UPLOADED_FOLDER)) {
+            throw new IllegalArgumentException("Invalid file path");
+        }
         // 随机生成一个同后缀名的文件
         File convFile = new File(randomFilePath);
         boolean ret = convFile.createNewFile();
@@ -194,5 +224,40 @@ public class FileUpload {
     private static boolean isImage(File file) throws IOException {
         BufferedImage bi = ImageIO.read(file);
         return bi != null;
+    }
+
+    /**
+     * Sanitize file name: strip directory components and reject names containing "..".
+     *
+     * @return the base file name, or null if the name is invalid
+     */
+    private static String sanitizeFileName(String originalFileName) {
+        if (originalFileName == null || originalFileName.isEmpty()) {
+            return null;
+        }
+        // Strip any directory components (handles both / and \ separators)
+        String name = originalFileName;
+        int lastSlash = Math.max(name.lastIndexOf('/'), name.lastIndexOf('\\'));
+        if (lastSlash >= 0) {
+            name = name.substring(lastSlash + 1);
+        }
+        // Reject empty after stripping, or names containing ".."
+        if (name.isEmpty() || name.contains("..")) {
+            return null;
+        }
+        return name;
+    }
+
+    /**
+     * Validate that the resolved canonical path is within the allowed base directory.
+     */
+    private static boolean isPathWithinDirectory(String filePath, String baseDir) {
+        try {
+            java.nio.file.Path resolvedPath = Paths.get(filePath).toAbsolutePath().normalize();
+            java.nio.file.Path basePath = Paths.get(baseDir).toAbsolutePath().normalize();
+            return resolvedPath.startsWith(basePath);
+        } catch (Exception e) {
+            return false;
+        }
     }
 }
