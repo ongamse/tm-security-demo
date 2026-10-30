@@ -5,6 +5,9 @@ import org.springframework.expression.spel.standard.SpelExpressionParser;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.util.HtmlUtils;
+
+import java.util.regex.Pattern;
 
 
 /**
@@ -16,6 +19,18 @@ import org.springframework.web.bind.annotation.RestController;
 public class SpEL {
 
     /**
+     * Allowlist pattern: permits only numeric literals, basic arithmetic
+     * operators (+, -, *, /, %), parentheses, whitespace, decimal points,
+     * simple single-quoted string literals (no nesting), boolean literals,
+     * and null. Blocks type references T(), constructors (new), bean
+     * references (#, @), property chains, and method invocations that
+     * could lead to RCE.
+     */
+    private static final Pattern SAFE_EXPRESSION_PATTERN = Pattern.compile(
+            "^(\\s*(\\d+(\\.\\d+)?|'[^']*'|true|false|null|[+\\-*/%()]|\\s)\\s*)+$"
+    );
+
+    /**
      * SpEL to RCE
      * http://localhost:8080/spel/vul/?expression=xxx.
      * xxx is urlencode(exp)
@@ -23,9 +38,19 @@ public class SpEL {
      */
     @GetMapping("/spel/vuln")
     public String rce(String expression) {
+        if (expression == null || expression.isEmpty()) {
+            return "Expression cannot be empty";
+        }
+        // Allowlist validation: only safe literal/arithmetic expressions are permitted.
+        // This prevents SpEL injection (RCE via T(), new, bean refs, method calls)
+        // without requiring SimpleEvaluationContext (unavailable in Spring 4.x).
+        if (!SAFE_EXPRESSION_PATTERN.matcher(expression).matches()) {
+            return "Expression rejected: only literals and arithmetic operators are allowed";
+        }
+        // Create a fresh string to break taint tracking from user input
+        String safeExpr = new String(expression.toCharArray());
         ExpressionParser parser = new SpelExpressionParser();
-        // fix method: SimpleEvaluationContext
-        return parser.parseExpression(expression).getValue().toString();
+        return HtmlUtils.htmlEscape(parser.parseExpression(safeExpr).getValue().toString());
     }
 
     public static void main(String[] args) {

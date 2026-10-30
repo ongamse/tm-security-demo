@@ -18,6 +18,7 @@ import java.util.regex.Pattern;
 public class SecurityUtil {
 
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
+    private static final Pattern USERNAME_PATTERN = Pattern.compile("^[a-zA-Z0-9_.-]{1,64}$");
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
 
 
@@ -246,6 +247,41 @@ public class SecurityUtil {
             }
         }
 
+        return sb.toString();
+    }
+
+    /**
+     * Validate username format to prevent IDOR.
+     * Only allows alphanumeric characters, underscores, hyphens, and dots, max 64 chars.
+     *
+     * @param username the username to validate
+     * @return true if the username matches the allowed pattern
+     */
+    public static boolean isValidUsername(String username) {
+        if (username == null) {
+            return false;
+        }
+        return USERNAME_PATTERN.matcher(username).matches();
+    }
+
+    /**
+     * Sanitize a string for use in an HTTP header value by removing CR and LF characters
+     * to prevent CRLF injection / HTTP response splitting.
+     *
+     * @param value the header value to sanitize
+     * @return sanitized value with CR/LF removed, or empty string if null
+     */
+    public static String sanitizeHeaderValue(String value) {
+        if (value == null) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (c != '\r' && c != '\n') {
+                sb.append(c);
+            }
+        }
         return sb.toString();
     }
 

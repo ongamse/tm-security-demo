@@ -2,6 +2,10 @@ package org.joychou.controller;
 
 import org.joychou.security.SecurityUtil;
 import org.joychou.util.LoginUtils;
+import org.joychou.config.WebConfig;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -20,20 +24,63 @@ import javax.servlet.http.HttpServletResponse;
 @RequestMapping("/cors")
 public class Cors {
 
+    private static final List<String> ALLOWED_ORIGINS = Arrays.asList(
+            "http://test.joychou.me",
+            "https://joychou.org"
+    );
+
     private static String info = "{\"name\": \"JoyChou\", \"phone\": \"18200001111\"}";
+
+    /**
+     * Match a request origin against the hardcoded ALLOWED_ORIGINS list.
+     * Returns the matched entry from the list (not the user-supplied value)
+     * to break taint flow from request header to response header.
+     *
+     * @param origin the origin header value from the request
+     * @return the matching allowed origin, or null if no match
+     */
+    private static String matchAllowedOrigin(String origin) {
+        if (origin == null) {
+            return null;
+        }
+        for (String allowed : ALLOWED_ORIGINS) {
+            if (allowed.equalsIgnoreCase(origin)) {
+                return allowed;
+            }
+        }
+        return null;
+    }
 
     @GetMapping("/vuln/origin")
     public String vuls1(HttpServletRequest request, HttpServletResponse response) {
         String origin = request.getHeader("origin");
-        response.setHeader("Access-Control-Allow-Origin", origin); // set origin from header
-        response.setHeader("Access-Control-Allow-Credentials", "true");  // allow cookie
+        // Only set CORS headers when origin is present and passes the safe-domain allowlist
+        if (origin != null) {
+            if (SecurityUtil.checkURL(origin) == null) {
+                response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                return "Origin is not allowed.";
+            }
+            String allowedOrigin = matchAllowedOrigin(origin);
+            if (allowedOrigin == null) {
+                response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                return "Origin is not allowed.";
+            }
+            response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
+            response.setHeader("Access-Control-Allow-Credentials", "true");
+        }
         return info;
     }
 
     @GetMapping("/vuln/setHeader")
-    public String vuls2(HttpServletResponse response) {
-        // 后端设置Access-Control-Allow-Origin为*的情况下，跨域的时候前端如果设置withCredentials为true会异常
-        response.setHeader("Access-Control-Allow-Origin", "*");
+    public String vuls2(HttpServletRequest request, HttpServletResponse response) {
+        // Validate origin against the safe-domain allowlist instead of using wildcard "*"
+        String origin = request.getHeader("origin");
+        if (origin != null && SecurityUtil.checkURL(origin) != null) {
+            String allowedOrigin = matchAllowedOrigin(origin);
+            if (allowedOrigin != null) {
+                response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
+            }
+        }
         return info;
     }
 
@@ -105,13 +152,19 @@ public class Cors {
     public String seccode(HttpServletRequest request, HttpServletResponse response) {
         String origin = request.getHeader("Origin");
 
-        // 如果origin不为空并且origin不在白名单内，认定为不安全。
-        // 如果origin为空，表示是同域过来的请求或者浏览器直接发起的请求。
-        if (origin != null && SecurityUtil.checkURL(origin) == null) {
-            return "Origin is not safe.";
+        // Only set CORS headers when origin is present and passes the safe-domain allowlist.
+        // Null origin means same-origin or direct browser request — no CORS headers needed.
+        if (origin != null) {
+            if (SecurityUtil.checkURL(origin) == null) {
+                return "Origin is not safe.";
+            }
+            String allowedOrigin = matchAllowedOrigin(origin);
+            if (allowedOrigin == null) {
+                return "Origin is not safe.";
+            }
+            response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
+            response.setHeader("Access-Control-Allow-Credentials", "true");
         }
-        response.setHeader("Access-Control-Allow-Origin", origin);
-        response.setHeader("Access-Control-Allow-Credentials", "true");
         return LoginUtils.getUserInfo2JsonStr(request);
     }
 

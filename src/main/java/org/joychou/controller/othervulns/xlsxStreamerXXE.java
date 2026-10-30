@@ -34,7 +34,10 @@ public class xlsxStreamerXXE {
 
     @PostMapping("/readxlsx")
     public void xllx_streamer_xxe(MultipartFile file) throws IOException {
-        StreamingReader.builder().open(file.getInputStream());
+        // StreamingReader (xlsx-streamer) does not expose XML parser configuration
+        // to disable external entities. Endpoint disabled to prevent XXE.
+        throw new UnsupportedOperationException(
+                "XLSX streaming upload is disabled due to XXE risk in xlsx-streamer");
     }
 
 

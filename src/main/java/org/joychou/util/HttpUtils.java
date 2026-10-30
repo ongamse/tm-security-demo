@@ -17,6 +17,8 @@ import org.jsoup.nodes.Document;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.joychou.security.ssrf.SSRFChecker;
+
 import javax.imageio.ImageIO;
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -36,6 +38,7 @@ public class HttpUtils {
     private final static Logger logger = LoggerFactory.getLogger(HttpUtils.class);
 
     public static String commonHttpClient(String url) {
+        url = SSRFChecker.validateURLForSSRF(url);
 
         HttpClient client = new HttpClient();
         GetMethod method = new GetMethod(url);
@@ -55,6 +58,7 @@ public class HttpUtils {
 
 
     public static String request(String url) {
+        url = SSRFChecker.validateURLForSSRF(url);
         try {
             return Request.Get(url).execute().returnContent().toString();
         } catch (Exception e) {
@@ -64,6 +68,7 @@ public class HttpUtils {
 
 
     public static String httpClient(String url) {
+        url = SSRFChecker.validateURLForSSRF(url);
 
         StringBuilder result = new StringBuilder();
 
@@ -90,6 +95,7 @@ public class HttpUtils {
 
 
     public static String URLConnection(String url) {
+        url = SSRFChecker.validateURLForSSRF(url);
         try {
             URL u = new URL(url);
             URLConnection urlConnection = u.openConnection();
@@ -114,6 +120,7 @@ public class HttpUtils {
      * UserAgent is Java/1.8.0_102.
      */
     public static String HttpURLConnection(String url) {
+        url = SSRFChecker.validateURLForSSRF(url);
         try {
             URL u = new URL(url);
             URLConnection urlConnection = u.openConnection();
@@ -143,6 +150,7 @@ public class HttpUtils {
      * @param url http request url
      */
     public static String Jsoup(String url) {
+        url = SSRFChecker.validateURLForSSRF(url);
         try {
             Document doc = Jsoup.connect(url)
 //                    .followRedirects(false)
@@ -162,6 +170,7 @@ public class HttpUtils {
      * UserAgent is <code>okhttp/2.5.0</code>.
      */
     public static String okhttp(String url) throws IOException {
+        url = SSRFChecker.validateURLForSSRF(url);
         OkHttpClient client = new OkHttpClient();
 //         client.setFollowRedirects(false);
         com.squareup.okhttp.Request ok_http = new com.squareup.okhttp.Request.Builder().url(url).build();
@@ -177,8 +186,15 @@ public class HttpUtils {
      * @param url http request url
      */
     public static void imageIO(String url) {
+        url = SSRFChecker.validateURLForSSRF(url);
         try {
             URL u = new URL(url);
+            // Validate URL path to prevent path traversal
+            String path = u.getPath();
+            if (path != null && (path.contains("..") || path.contains("\\"))) {
+                logger.error("Path traversal attempt blocked: " + path);
+                return;
+            }
             ImageIO.read(u); // send request
         } catch (IOException e) {
             logger.error(e.getMessage());
@@ -194,6 +210,7 @@ public class HttpUtils {
      * @param url http request url
      */
     public static void IOUtils(String url) {
+        url = SSRFChecker.validateURLForSSRF(url);
         try {
             IOUtils.toByteArray(URI.create(url));
         } catch (IOException e) {
@@ -203,6 +220,7 @@ public class HttpUtils {
 
 
     public static String HttpAsyncClients(String url) {
+        url = SSRFChecker.validateURLForSSRF(url);
         CloseableHttpAsyncClient httpclient = HttpAsyncClients.createDefault();
         try {
             httpclient.start();
