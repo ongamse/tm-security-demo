@@ -1,7 +1,7 @@
 package org.joychou.controller.othervulns;
 
-import com.monitorjbl.xlsx.StreamingReader;
-import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.openxml4j.opc.OPCPackage;
+import org.apache.poi.xssf.eventusermodel.XSSFReader;
 
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -9,8 +9,12 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.multipart.MultipartFile;
 
+import javax.xml.stream.XMLInputFactory;
+import javax.xml.stream.XMLStreamReader;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.util.Iterator;
 
 
 /**
@@ -34,11 +38,51 @@ public class xlsxStreamerXXE {
 
     @PostMapping("/readxlsx")
     public void xllx_streamer_xxe(MultipartFile file) throws IOException {
-        StreamingReader.builder().open(file.getInputStream());
+        // Use OPCPackage + secure XMLInputFactory to prevent XXE
+        try {
+            OPCPackage pkg = OPCPackage.open(file.getInputStream());
+            XSSFReader reader = new XSSFReader(pkg);
+            XMLInputFactory xmlInputFactory = XMLInputFactory.newInstance();
+            xmlInputFactory.setProperty(XMLInputFactory.IS_SUPPORTING_EXTERNAL_ENTITIES, false);
+            xmlInputFactory.setProperty(XMLInputFactory.SUPPORT_DTD, false);
+            Iterator<InputStream> sheets = reader.getSheetsData();
+            while (sheets.hasNext()) {
+                try (InputStream sheet = sheets.next()) {
+                    XMLStreamReader xmlReader = xmlInputFactory.createXMLStreamReader(sheet);
+                    while (xmlReader.hasNext()) {
+                        xmlReader.next();
+                    }
+                    xmlReader.close();
+                }
+            }
+            pkg.close();
+        } catch (Exception e) {
+            throw new IOException("Failed to safely parse xlsx", e);
+        }
     }
 
 
     public static void main(String[] args) throws Exception {
-        StreamingReader.builder().open((new FileInputStream("poc.xlsx")));
+        // Use OPCPackage + secure XMLInputFactory to prevent XXE
+        try {
+            OPCPackage pkg = OPCPackage.open(new FileInputStream("poc.xlsx"));
+            XSSFReader reader = new XSSFReader(pkg);
+            XMLInputFactory xmlInputFactory = XMLInputFactory.newInstance();
+            xmlInputFactory.setProperty(XMLInputFactory.IS_SUPPORTING_EXTERNAL_ENTITIES, false);
+            xmlInputFactory.setProperty(XMLInputFactory.SUPPORT_DTD, false);
+            Iterator<InputStream> sheets = reader.getSheetsData();
+            while (sheets.hasNext()) {
+                try (InputStream sheet = sheets.next()) {
+                    XMLStreamReader xmlReader = xmlInputFactory.createXMLStreamReader(sheet);
+                    while (xmlReader.hasNext()) {
+                        xmlReader.next();
+                    }
+                    xmlReader.close();
+                }
+            }
+            pkg.close();
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to safely parse xlsx", e);
+        }
     }
 }
