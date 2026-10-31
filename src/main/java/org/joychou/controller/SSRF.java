@@ -6,6 +6,7 @@ import org.joychou.security.ssrf.SSRFException;
 import org.joychou.security.ssrf.SafeUrl;
 import org.joychou.service.HttpService;
 import org.joychou.util.HttpUtils;
+import org.joychou.util.LogSanitizer;
 import org.joychou.util.WebUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,6 +36,14 @@ public class SSRF {
     @Resource
     private HttpService httpService;
 
+    private static final String GENERIC_ERROR = "Request failed.";
+
+    /** Logs the failure detail server-side only and returns a constant message for the response. */
+    private static String requestFailed(Exception e) {
+        logger.error("SSRF request failed: {}", LogSanitizer.clean(e));
+        return GENERIC_ERROR;
+    }
+
     /**
      * <p>
      *    The default setting of followRedirects is true. <br>
@@ -61,7 +70,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.URLConnection(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return requestFailed(e);
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -79,7 +88,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.HttpURLConnection(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return requestFailed(e);
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -102,7 +111,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HtmlUtils.htmlEscape(HttpUtils.request(url));
         } catch (SSRFException | IOException e) {
-            return HtmlUtils.htmlEscape(e.getMessage());
+            return requestFailed(e);
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -170,7 +179,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             HttpUtils.imageIO(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return requestFailed(e);
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -186,7 +195,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.okhttp(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return requestFailed(e);
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -205,7 +214,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.httpClient(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return requestFailed(e);
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -225,7 +234,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.commonHttpClient(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return requestFailed(e);
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -244,7 +253,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.Jsoup(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return requestFailed(e);
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -263,7 +272,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             HttpUtils.IOUtils(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return requestFailed(e);
         } finally {
             SecurityUtil.stopSSRFHook();
         }

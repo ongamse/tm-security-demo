@@ -3,6 +3,9 @@ package org.joychou.controller;
 import org.apache.tomcat.websocket.server.WsServerContainer;
 import org.joychou.config.WebSocketsProxyEndpoint;
 import org.joychou.config.WebSocketsCmdEndpoint;
+import org.joychou.util.LogSanitizer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.util.HtmlUtils;
@@ -15,6 +18,8 @@ import javax.websocket.server.ServerEndpointConfig;
 
 @RestController
 public class WebSockets {
+
+    private static final Logger logger = LoggerFactory.getLogger(WebSockets.class);
 
     /**
      * <p>动态添加WebSockets实现命令执行</p>
@@ -47,7 +52,8 @@ public class WebSockets {
                 return "[-] Websocket: " + HtmlUtils.htmlEscape(path) + " has been injected!";
             }
         } catch (Exception e) {
-            return HtmlUtils.htmlEscape(e.toString());
+            logger.error("WebSocket endpoint registration failed: {}", LogSanitizer.clean(e));
+            return "Request failed.";
         }
     }
 
@@ -70,7 +76,8 @@ public class WebSockets {
                 return "[-] Websocket: " + HtmlUtils.htmlEscape(path) + " has been injected!";
             }
         } catch (Exception e) {
-            return HtmlUtils.htmlEscape(e.toString());
+            logger.error("WebSocket endpoint registration failed: {}", LogSanitizer.clean(e));
+            return "Request failed.";
         }
     }
 

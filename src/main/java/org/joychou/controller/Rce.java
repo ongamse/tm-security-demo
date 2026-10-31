@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.joychou.security.SecurityUtil;
 import org.joychou.security.ssrf.SSRFException;
 import org.joychou.security.ssrf.SafeUrl;
+import org.joychou.util.LogSanitizer;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -63,7 +64,8 @@ public class Rce {
             inBr.close();
             in.close();
         } catch (Exception e) {
-            return HtmlUtils.htmlEscape(e.toString());
+            log.error("Command exec failed: {}", LogSanitizer.clean(e));
+            return "Request failed.";
         }
         return HtmlUtils.htmlEscape(sb.toString());
     }
@@ -93,7 +95,8 @@ public class Rce {
                 sb.append(tmpStr);
             }
         } catch (Exception e) {
-            return plainText(HtmlUtils.htmlEscape(e.toString()));
+            log.error("ProcessBuilder exec failed: {}", LogSanitizer.clean(e));
+            return plainText("Request failed.");
         }
 
         return plainText(HtmlUtils.htmlEscape(sb.toString()));
