@@ -1,6 +1,5 @@
 package org.joychou.controller;
 
-import com.fasterxml.uuid.Generators;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Controller;
@@ -12,12 +11,10 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.UUID;
 
 import org.joychou.security.SecurityUtil;
 import org.joychou.util.LogSanitizer;
@@ -213,19 +210,15 @@ public class FileUpload {
     private File convert(MultipartFile multiFile) throws Exception {
         String fileName = baseName(multiFile.getOriginalFilename());
         String suffix = fileName.substring(fileName.lastIndexOf("."));
-        UUID uuid = Generators.timeBasedGenerator().generate();
-        Path randomPath = resolveInUploadDir(uuid + suffix);
+        // Validate the (basename-only) suffix resolves inside the upload folder.
+        resolveInUploadDir("upload" + suffix);
+        Path baseDir = Paths.get(UPLOADED_FOLDER).toAbsolutePath().normalize();
+        // 随机生成一个同后缀名的文件: created atomically with an unpredictable
+        // name (JDK SecureRandom) and owner-only permissions on POSIX systems.
+        Path randomPath = Files.createTempFile(baseDir, "upload-", suffix);
         randomFilePath = randomPath.toString();
-        // 随机生成一个同后缀名的文件
-        File convFile = randomPath.toFile();
-        boolean ret = convFile.createNewFile();
-        if (!ret) {
-            return null;
-        }
-        FileOutputStream fos = new FileOutputStream(convFile);
-        fos.write(multiFile.getBytes());
-        fos.close();
-        return convFile;
+        Files.write(randomPath, multiFile.getBytes());
+        return randomPath.toFile();
     }
 
     /**
