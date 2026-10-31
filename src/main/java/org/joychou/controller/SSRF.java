@@ -123,8 +123,14 @@ public class SSRF {
         OutputStream outputStream = null;
         try {
             String downLoadImgFileName = WebUtils.getNameWithoutExtension(url) + "." + WebUtils.getFileExtension(url);
+            // Reject CR, LF and other control characters, then URL-encode the file name for the header.
+            if (!SecurityUtil.isValidHeaderValue(downLoadImgFileName)) {
+                response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+                return;
+            }
             // download
-            response.setHeader("content-disposition", "attachment;fileName=" + SecurityUtil.stripCRLF(downLoadImgFileName));
+            response.setHeader("content-disposition",
+                    "attachment;fileName=" + SecurityUtil.encodeHeaderValue(downLoadImgFileName));
 
             // Only http/https to public hosts; the connection is pinned to the validated address and
             // redirects are not followed (SSRFException is raised for anything else).

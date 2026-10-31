@@ -21,8 +21,19 @@ public class CRLFInjection {
     @RequestMapping("/safecode")
     @ResponseBody
     public void crlf(HttpServletRequest request, HttpServletResponse response) {
-        response.addHeader("test1", SecurityUtil.stripCRLF(request.getParameter("test1")));
-        response.setHeader("test2", SecurityUtil.stripCRLF(request.getParameter("test2")));
+        String test1 = request.getParameter("test1");
+        String test2 = request.getParameter("test2");
+        // Reject CR, LF and any other control character outright, then URL-encode what is echoed.
+        if (!SecurityUtil.isValidHeaderValue(test1) || !SecurityUtil.isValidHeaderValue(test2)) {
+            response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+            return;
+        }
+        if (test1 != null) {
+            response.addHeader("test1", SecurityUtil.encodeHeaderValue(test1));
+        }
+        if (test2 != null) {
+            response.setHeader("test2", SecurityUtil.encodeHeaderValue(test2));
+        }
         String author = request.getParameter("test3");
         Cookie cookie = new Cookie("test3", author);
         response.addCookie(cookie);

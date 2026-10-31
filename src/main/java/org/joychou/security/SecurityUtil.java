@@ -9,8 +9,10 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
+import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -492,6 +494,132 @@ public class SecurityUtil {
 
         // Absolute URL: must be on the project's domain whitelist.
         return checkURL(url);
+    }
+
+    /**
+     * Server-side constant list of trusted origins (scheme://host[:port], no path). Values written into
+     * response headers (Access-Control-Allow-Origin, Location) are always taken from this list and never
+     * from the request.
+     */
+    private static final List<String> TRUSTED_ORIGINS = Collections.unmodifiableList(Arrays.asList(
+            "http://joychou.com", "https://joychou.com",
+            "http://joychou.org", "https://joychou.org",
+            "http://test.joychou.org", "https://test.joychou.org",
+            "http://localhost", "https://localhost",
+            "http://localhost:8080", "https://localhost:8080"));
+
+
+    /**
+     * Map an untrusted Origin to the matching constant from the trusted origin list. The request value is
+     * only used as a comparison key; the returned string is the server-side constant.
+     * The origin must additionally still pass {@link #checkURL(String)} (domain whitelist/blacklist config).
+     *
+     * @param origin untrusted origin
+     * @return the matching trusted origin constant, or null when the origin is not trusted
+     */
+    public static String lookupTrustedOrigin(String origin) {
+        if (origin == null || checkURL(origin) == null) {
+            return null;
+        }
+        for (String trusted : TRUSTED_ORIGINS) {
+            if (trusted.equals(origin)) {
+                return trusted;
+            }
+        }
+        return null;
+    }
+
+
+    /**
+     * Build a redirect target for a Location header without echoing the request value: the scheme and
+     * authority come from {@link #TRUSTED_ORIGINS} constants (or are absent for a same-site path) and the
+     * path is rebuilt from URL-encoded segments. Query and fragment are dropped.
+     *
+     * @param url untrusted redirect target
+     * @return the rebuilt target, or null when it must not be used for a redirect
+     */
+    public static String lookupRedirectTarget(String url) {
+        String valid = safeRedirectUrl(url);
+        if (valid == null) {
+            return null;
+        }
+        String prefix = "";
+        String rest = valid;
+        if (!valid.startsWith("/")) {
+            String matched = null;
+            for (String trusted : TRUSTED_ORIGINS) {
+                if (valid.equals(trusted) || valid.startsWith(trusted + "/")
+                        || valid.startsWith(trusted + "?") || valid.startsWith(trusted + "#")) {
+                    matched = trusted;
+                    break;
+                }
+            }
+            if (matched == null) {
+                return null;
+            }
+            prefix = matched;
+            rest = valid.substring(matched.length());
+        }
+        int cut = rest.length();
+        for (int i = 0; i < rest.length(); i++) {
+            char c = rest.charAt(i);
+            if (c == '?' || c == '#') {
+                cut = i;
+                break;
+            }
+        }
+        rest = rest.substring(0, cut);
+        StringBuilder target = new StringBuilder(prefix);
+        if (rest.isEmpty()) {
+            return target.append('/').toString();
+        }
+        try {
+            for (String segment : rest.substring(1).split("/", -1)) {
+                target.append('/').append(URLEncoder.encode(segment, "UTF-8"));
+            }
+        } catch (UnsupportedEncodingException e) {
+            return null;
+        }
+        return target.toString();
+    }
+
+
+    /**
+     * Check that an untrusted value may be written into a header at all: null is allowed (no header is
+     * written), anything containing CR, LF or other control characters is rejected.
+     *
+     * @param value untrusted header value
+     * @return false if the value contains CR, LF or any control character
+     */
+    public static boolean isValidHeaderValue(String value) {
+        if (value == null) {
+            return true;
+        }
+        for (int i = 0; i < value.length(); i++) {
+            if (Character.isISOControl(value.charAt(i))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+
+    /**
+     * URL-encode an untrusted value so the result only contains header-safe characters. Callers must
+     * reject values for which {@link #isValidHeaderValue(String)} is false first.
+     *
+     * @param value untrusted header value
+     * @return the URL-encoded value; null stays null
+     */
+    public static String encodeHeaderValue(String value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            return URLEncoder.encode(value, "UTF-8");
+        } catch (UnsupportedEncodingException e) {
+            return "";
+        }
     }
 
     public static void main(String[] args) {

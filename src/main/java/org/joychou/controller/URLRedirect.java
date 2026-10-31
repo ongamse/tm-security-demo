@@ -44,13 +44,14 @@ public class URLRedirect {
     @RequestMapping("/setHeader")
     @ResponseBody
     public static void setHeader(HttpServletRequest request, HttpServletResponse response) {
-        String url = SecurityUtil.safeRedirectUrl(request.getParameter("url"));
+        // The Location value is rebuilt from a trusted-origin constant plus an encoded path.
+        String url = SecurityUtil.lookupRedirectTarget(request.getParameter("url"));
         if (url == null) {
             response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
             return;
         }
         response.setStatus(HttpServletResponse.SC_MOVED_PERMANENTLY); // 301 redirect
-        response.setHeader("Location", SecurityUtil.stripCRLF(url));
+        response.setHeader("Location", url);
     }
 
 
