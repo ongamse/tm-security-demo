@@ -299,6 +299,45 @@ public class SecurityUtil {
         return value.replaceAll("[\\r\\n\\u0000]", "");
     }
 
+    /**
+     * Validate an untrusted redirect target. A target is accepted only when it is either
+     * a same-site absolute path (e.g. /a/b, but not scheme-relative // or /\) or an
+     * http(s) URL whose host passes {@link #checkURL(String)}. Targets containing
+     * backslashes or control characters (CR/LF/NUL, whitespace tricks) are rejected.
+     *
+     * @param url untrusted redirect target
+     * @return the validated target, or null when it must not be used for a redirect
+     */
+    public static String safeRedirectUrl(String url) {
+        if (url == null || url.isEmpty()) {
+            return null;
+        }
+        for (int i = 0; i < url.length(); i++) {
+            char c = url.charAt(i);
+            if (c == '\\' || c <= 0x20 || c == 0x7f) {
+                return null;
+            }
+        }
+
+        URI uri;
+        try {
+            uri = new URI(url);
+        } catch (URISyntaxException e) {
+            return null;
+        }
+
+        // Same-site relative path: must start with a single slash and carry no authority.
+        if (url.startsWith("/")) {
+            if (url.startsWith("//") || uri.getScheme() != null || uri.getRawAuthority() != null) {
+                return null;
+            }
+            return url;
+        }
+
+        // Absolute URL: must be on the project's domain whitelist.
+        return checkURL(url);
+    }
+
     public static void main(String[] args) {
     }
 
