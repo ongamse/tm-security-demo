@@ -54,7 +54,7 @@ public final class SecureXml {
         throw new SAXException("External entities are not allowed");
     };
 
-    private static final class DenyingHandler extends DefaultHandler {
+    private static class DenyingHandler extends DefaultHandler {
         @Override
         public InputSource resolveEntity(String publicId, String systemId) throws SAXException {
             throw new SAXException("External entities are not allowed");
@@ -233,6 +233,41 @@ public final class SecureXml {
      * DOCTYPE/ENTITY, or any part is not well-formed.
      */
     public static void requireSafeXlsx(byte[] content) throws IOException {
+        summarizeXlsx(content);
+    }
+
+    /** Counts rows and cells while streaming worksheet XML through the hardened SAX parser. */
+    private static final class SheetCounter extends DenyingHandler {
+        private final long[] counts;
+
+        SheetCounter(long[] counts) {
+            this.counts = counts;
+        }
+
+        @Override
+        public void startElement(String uri, String localName, String qName,
+                                 org.xml.sax.Attributes attributes) {
+            String name = qName == null ? "" : qName;
+            int colon = name.indexOf(':');
+            if (colon >= 0) {
+                name = name.substring(colon + 1);
+            }
+            if ("row".equals(name)) {
+                counts[0]++;
+            } else if ("c".equals(name)) {
+                counts[1]++;
+            }
+        }
+    }
+
+    /**
+     * Validates the package exactly like {@link #requireSafeXlsx(byte[])} and, in the same single
+     * pass of the hardened SAX parser, reads the worksheet parts (xl/worksheets/*.xml).
+     *
+     * @return {rowCount, cellCount} across all worksheets
+     */
+    public static long[] summarizeXlsx(byte[] content) throws IOException {
+        long[] sheetCounts = new long[2];
         try {
             SAXParserFactory spf = SAXParserFactory.newInstance();
             spf.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
@@ -266,9 +301,12 @@ public final class SecureXml {
                     } catch (SAXException ignored) {
                         // property unsupported by this parser implementation; DOCTYPE is disallowed
                     }
-                    parser.parse(new BoundedEntryStream(zis, MAX_ENTRY_BYTES, total), new DenyingHandler());
+                    DefaultHandler handler = (name.startsWith("xl/worksheets/") && name.endsWith(".xml"))
+                            ? new SheetCounter(sheetCounts) : new DenyingHandler();
+                    parser.parse(new BoundedEntryStream(zis, MAX_ENTRY_BYTES, total), handler);
                 }
             }
+            return sheetCounts;
         } catch (IOException e) {
             throw e;
         } catch (Exception e) {
