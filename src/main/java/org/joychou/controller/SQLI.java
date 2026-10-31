@@ -7,6 +7,9 @@ import org.joychou.security.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
@@ -41,6 +44,27 @@ public class SQLI {
 
     @Resource
     private UserMapper userMapper;
+
+    /**
+     * Whether the authenticated principal may access the record of the given username:
+     * only the owner of the record or an administrator.
+     */
+    private static boolean isAuthorizedFor(String username) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated() || username == null) {
+            return false;
+        }
+        if (username.equals(auth.getName())) {
+            return true;
+        }
+        return auth.getAuthorities().stream().anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()));
+    }
+
+    private static void requireAuthorizedFor(String username) {
+        if (!isAuthorizedFor(username)) {
+            throw new AccessDeniedException("Access denied");
+        }
+    }
 
 
     /**
@@ -95,6 +119,7 @@ public class SQLI {
     @RequestMapping("/jdbc/sec")
     public String jdbc_sqli_sec(@RequestParam("username") String username) {
 
+        requireAuthorizedFor(username);
         StringBuilder result = new StringBuilder();
         try {
             Class.forName(driver);
@@ -182,6 +207,7 @@ public class SQLI {
      */
     @GetMapping("/mybatis/vuln01")
     public List<User> mybatisVuln01(@RequestParam("username") String username) {
+        requireAuthorizedFor(username);
         return userMapper.findByUserNameVuln01(username);
     }
 
@@ -192,6 +218,7 @@ public class SQLI {
      */
     @GetMapping("/mybatis/vuln02")
     public List<User> mybatisVuln02(@RequestParam("username") String username) {
+        requireAuthorizedFor(username);
         return userMapper.findByUserNameVuln02(username);
     }
 
@@ -212,6 +239,7 @@ public class SQLI {
      */
     @GetMapping("/mybatis/sec01")
     public User mybatisSec01(@RequestParam("username") String username) {
+        requireAuthorizedFor(username);
         return userMapper.findByUserName(username);
     }
 
@@ -221,7 +249,11 @@ public class SQLI {
      */
     @GetMapping("/mybatis/sec02")
     public User mybatisSec02(@RequestParam("id") Integer id) {
-        return userMapper.findById(id);
+        User found = userMapper.findById(id);
+        if (found != null) {
+            requireAuthorizedFor(found.getUsername());
+        }
+        return found;
     }
 
 
