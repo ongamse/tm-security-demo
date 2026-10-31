@@ -2,6 +2,7 @@ package org.joychou.controller;
 
 import org.apache.commons.codec.binary.Base64;
 import org.joychou.security.SecurityUtil;
+import org.joychou.util.LogSanitizer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -31,7 +32,7 @@ public class PathTraversal {
     @GetMapping("/path_traversal/sec")
     public String getImageSec(String filepath) throws IOException {
         if (SecurityUtil.pathFilter(filepath) == null) {
-            logger.info("Illegal file path: " + filepath);
+            logger.info("Illegal file path: {}", LogSanitizer.clean(filepath));
             return "Bad boy. Illegal file path.";
         }
         return getImgBase64(filepath);
@@ -40,7 +41,7 @@ public class PathTraversal {
     private String getImgBase64(String imgFile) throws IOException {
 
         logger.info("Working directory: " + System.getProperty("user.dir"));
-        logger.info("File path: " + imgFile);
+        logger.info("File path: {}", LogSanitizer.clean(imgFile));
 
         if (imgFile == null || imgFile.indexOf('\0') != -1) {
             return "File doesn't exist or is not a file.";
@@ -55,7 +56,7 @@ public class PathTraversal {
             return "File doesn't exist or is not a file.";
         }
         if (!target.startsWith(baseDir)) {
-            logger.info("Illegal file path: " + imgFile);
+            logger.info("Illegal file path: {}", LogSanitizer.clean(imgFile));
             return "Bad boy. Illegal file path.";
         }
 

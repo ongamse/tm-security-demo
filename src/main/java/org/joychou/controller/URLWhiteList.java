@@ -2,6 +2,7 @@ package org.joychou.controller;
 
 
 import org.joychou.security.SecurityUtil;
+import org.joychou.util.LogSanitizer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.*;
@@ -98,7 +99,7 @@ public class URLWhiteList {
     @GetMapping("/vuln/url_bypass")
     public void url_bypass(String url, HttpServletResponse res) throws IOException {
 
-        logger.info("url:  " + url);
+        logger.info("url:  {}", LogSanitizer.clean(url));
 
         if (!SecurityUtil.isHttp(url)) {
             return;
@@ -107,7 +108,7 @@ public class URLWhiteList {
         // Parse with java.net.URI (rejects backslash tricks such as http://evil.com\@www.joychou.org)
         // so the validated host is the host the redirect target really uses.
         String host = SecurityUtil.gethost(url);
-        logger.info("host:  " + host);
+        logger.info("host:  {}", LogSanitizer.clean(host));
 
         // endsWith .
         for (String domain : domainwhitelist) {
