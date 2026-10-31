@@ -6,14 +6,14 @@ import org.joychou.security.ssrf.SSRFException;
 import org.joychou.security.ssrf.SafeUrl;
 import org.joychou.service.HttpService;
 import org.joychou.util.HttpUtils;
-import org.joychou.util.LogSanitizer;
 import org.joychou.util.WebUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.util.HtmlUtils;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletResponse;
@@ -37,11 +37,37 @@ public class SSRF {
     private HttpService httpService;
 
     private static final String GENERIC_ERROR = "Request failed.";
+    private static final String BLOCKED = "Blocked";
+    private static final String ILLEGAL_URL = "Illegal url";
 
-    /** Logs the failure detail server-side only and returns a constant message for the response. */
-    private static String requestFailed(Exception e) {
-        logger.error("SSRF request failed: {}", LogSanitizer.clean(e));
-        return GENERIC_ERROR;
+    private static ResponseEntity<String> plain(String constantBody) {
+        return ResponseEntity.status(HttpStatus.OK)
+                .contentType(MediaType.TEXT_PLAIN)
+                .header("X-Content-Type-Options", "nosniff")
+                .body(constantBody);
+    }
+
+    /**
+     * Logs only the exception class name server-side and returns a constant message; neither the
+     * exception nor its message ever reaches the response.
+     */
+    private static ResponseEntity<String> requestFailed(Exception e) {
+        logger.error("SSRF request failed: {}", e.getClass().getSimpleName());
+        return plain(GENERIC_ERROR);
+    }
+
+    /**
+     * The fetched content is never echoed. The response is a constant status plus, on success, only
+     * the numeric length of the fetched content.
+     */
+    private static ResponseEntity<String> status(String fetched) {
+        if (fetched == null) {
+            return plain(GENERIC_ERROR);
+        }
+        if (ILLEGAL_URL.equals(fetched)) {
+            return plain(BLOCKED);
+        }
+        return plain("OK, length=" + fetched.length());
     }
 
     /**
@@ -53,22 +79,22 @@ public class SSRF {
      * <a href="http://localhost:8080/ssrf/urlConnection/vuln?url=file:///etc/passwd">http://localhost:8080/ssrf/urlConnection/vuln?url=file:///etc/passwd</a>
      */
     @RequestMapping(value = "/urlConnection/vuln", method = {RequestMethod.POST, RequestMethod.GET})
-    public String URLConnectionVuln(String url) {
-        return HttpUtils.URLConnection(url);
+    public ResponseEntity<String> URLConnectionVuln(String url) {
+        return status(HttpUtils.URLConnection(url));
     }
 
 
     @GetMapping("/urlConnection/sec")
-    public String URLConnectionSec(String url) {
+    public ResponseEntity<String> URLConnectionSec(String url) {
 
         // Decline not http/https protocol
         if (!SecurityUtil.isHttp(url)) {
-            return "[-] SSRF check failed";
+            return plain("[-] SSRF check failed");
         }
 
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.URLConnection(url);
+            return status(HttpUtils.URLConnection(url));
         } catch (SSRFException | IOException e) {
             return requestFailed(e);
         } finally {
@@ -83,10 +109,10 @@ public class SSRF {
      * UserAgent is Java/1.8.0_102.
      */
     @GetMapping("/HttpURLConnection/sec")
-    public String httpURLConnection(@RequestParam String url) {
+    public ResponseEntity<String> httpURLConnection(@RequestParam String url) {
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.HttpURLConnection(url);
+            return status(HttpUtils.HttpURLConnection(url));
         } catch (SSRFException | IOException e) {
             return requestFailed(e);
         } finally {
@@ -96,8 +122,8 @@ public class SSRF {
 
 
     @GetMapping("/HttpURLConnection/vuln")
-    public String httpURLConnectionVuln(@RequestParam String url) {
-        return HttpUtils.HttpURLConnection(url);
+    public ResponseEntity<String> httpURLConnectionVuln(@RequestParam String url) {
+        return status(HttpUtils.HttpURLConnection(url));
     }
 
     /**
@@ -106,10 +132,10 @@ public class SSRF {
      * <a href="http://localhost:8080/ssrf/request/sec?url=http://test.joychou.org">http://localhost:8080/ssrf/request/sec?url=http://test.joychou.org</a>
      */
     @GetMapping("/request/sec")
-    public String request(@RequestParam String url) {
+    public ResponseEntity<String> request(@RequestParam String url) {
         try {
             SecurityUtil.startSSRFHook();
-            return HtmlUtils.htmlEscape(HttpUtils.request(url));
+            return status(HttpUtils.request(url));
         } catch (SSRFException | IOException e) {
             return requestFailed(e);
         } finally {
@@ -174,7 +200,7 @@ public class SSRF {
      * UserAgent is Java/1.8.0_102.
      */
     @GetMapping("/ImageIO/sec")
-    public String ImageIO(@RequestParam String url) {
+    public ResponseEntity<String> ImageIO(@RequestParam String url) {
         try {
             SecurityUtil.startSSRFHook();
             HttpUtils.imageIO(url);
@@ -184,16 +210,16 @@ public class SSRF {
             SecurityUtil.stopSSRFHook();
         }
 
-        return "ImageIO ssrf test";
+        return plain("ImageIO ssrf test");
     }
 
 
     @GetMapping("/okhttp/sec")
-    public String okhttp(@RequestParam String url) {
+    public ResponseEntity<String> okhttp(@RequestParam String url) {
 
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.okhttp(url);
+            return status(HttpUtils.okhttp(url));
         } catch (SSRFException | IOException e) {
             return requestFailed(e);
         } finally {
@@ -208,11 +234,11 @@ public class SSRF {
      * <a href="http://localhost:8080/ssrf/httpclient/sec?url=http://www.baidu.com">http://localhost:8080/ssrf/httpclient/sec?url=http://www.baidu.com</a>
      */
     @GetMapping("/httpclient/sec")
-    public String HttpClient(@RequestParam String url) {
+    public ResponseEntity<String> HttpClient(@RequestParam String url) {
 
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.httpClient(url);
+            return status(HttpUtils.httpClient(url));
         } catch (SSRFException | IOException e) {
             return requestFailed(e);
         } finally {
@@ -228,11 +254,11 @@ public class SSRF {
      * <a href="http://localhost:8080/ssrf/commonsHttpClient/sec?url=http://www.baidu.com">http://localhost:8080/ssrf/commonsHttpClient/sec?url=http://www.baidu.com</a>
      */
     @GetMapping("/commonsHttpClient/sec")
-    public String commonsHttpClient(@RequestParam String url) {
+    public ResponseEntity<String> commonsHttpClient(@RequestParam String url) {
 
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.commonHttpClient(url);
+            return status(HttpUtils.commonHttpClient(url));
         } catch (SSRFException | IOException e) {
             return requestFailed(e);
         } finally {
@@ -247,11 +273,11 @@ public class SSRF {
      * <a href="http://localhost:8080/ssrf/Jsoup?url=http://www.baidu.com">http://localhost:8080/ssrf/Jsoup?url=http://www.baidu.com</a>
      */
     @GetMapping("/Jsoup/sec")
-    public String Jsoup(@RequestParam String url) {
+    public ResponseEntity<String> Jsoup(@RequestParam String url) {
 
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.Jsoup(url);
+            return status(HttpUtils.Jsoup(url));
         } catch (SSRFException | IOException e) {
             return requestFailed(e);
         } finally {
@@ -267,7 +293,7 @@ public class SSRF {
      * <a href="http://localhost:8080/ssrf/IOUtils/sec?url=http://www.baidu.com">http://localhost:8080/ssrf/IOUtils/sec?url=http://www.baidu.com</a>
      */
     @GetMapping("/IOUtils/sec")
-    public String IOUtils(String url) {
+    public ResponseEntity<String> IOUtils(String url) {
         try {
             SecurityUtil.startSSRFHook();
             HttpUtils.IOUtils(url);
@@ -277,7 +303,7 @@ public class SSRF {
             SecurityUtil.stopSSRFHook();
         }
 
-        return "IOUtils ssrf test";
+        return plain("IOUtils ssrf test");
     }
 
 
@@ -286,8 +312,8 @@ public class SSRF {
      * UserAgent is <code>Apache-HttpAsyncClient/4.1.4 (Java/1.8.0_102)</code>.
      */
     @GetMapping("/HttpSyncClients/vuln")
-    public String HttpSyncClients(@RequestParam("url") String url) {
-        return HttpUtils.HttpAsyncClients(url);
+    public ResponseEntity<String> HttpSyncClients(@RequestParam("url") String url) {
+        return status(HttpUtils.HttpAsyncClients(url));
     }
 
 
@@ -329,9 +355,9 @@ public class SSRF {
      * <a href="http://localhost:8080/ssrf/dnsrebind/vuln?url=http://test.joychou.org">http://localhost:8080/ssrf/dnsrebind/vuln?url=dnsrebind_url</a>
      */
     @GetMapping("/dnsrebind/vuln")
-    public String DnsRebind(String url) {
+    public ResponseEntity<String> DnsRebind(String url) {
         // Resolve once, validate the resolved address and connect to that same address (no second DNS lookup).
-        return HttpUtils.request(url);
+        return status(HttpUtils.request(url));
     }
 
 
