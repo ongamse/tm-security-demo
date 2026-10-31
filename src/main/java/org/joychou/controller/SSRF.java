@@ -3,6 +3,7 @@ package org.joychou.controller;
 import cn.hutool.http.HttpUtil;
 import org.joychou.security.SecurityUtil;
 import org.joychou.security.ssrf.SSRFException;
+import org.joychou.security.ssrf.SafeUrl;
 import org.joychou.service.HttpService;
 import org.joychou.util.HttpUtils;
 import org.joychou.util.WebUtils;
@@ -125,16 +126,16 @@ public class SSRF {
             // download
             response.setHeader("content-disposition", "attachment;fileName=" + SecurityUtil.stripCRLF(downLoadImgFileName));
 
-            // Only http/https to external hosts; redirects are not followed.
-            if (!SecurityUtil.isHttp(url) || !SecurityUtil.checkSSRFWithoutRedirect(url)) {
+            // Only http/https to public hosts; the connection is pinned to the validated address and
+            // redirects are not followed (SSRFException is raised for anything else).
+            try {
+                inputStream = SafeUrl.parse(url).open();
+            } catch (SSRFException e) {
                 logger.error("Blocked illegal url");
                 return;
             }
-            HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
-            connection.setInstanceFollowRedirects(false);
             int length;
             byte[] bytes = new byte[1024];
-            inputStream = connection.getInputStream(); // send request
             outputStream = response.getOutputStream();
             while ((length = inputStream.read(bytes)) > 0) {
                 outputStream.write(bytes, 0, length);
@@ -314,11 +315,8 @@ public class SSRF {
      */
     @GetMapping("/dnsrebind/vuln")
     public String DnsRebind(String url) {
-        java.security.Security.setProperty("networkaddress.cache.negative.ttl" , "0");
-        if (!SecurityUtil.checkSSRFWithoutRedirect(url)) {
-            return "Dangerous url";
-        }
-        return HttpUtil.get(url);
+        // Resolve once, validate the resolved address and connect to that same address (no second DNS lookup).
+        return HttpUtils.request(url);
     }
 
 

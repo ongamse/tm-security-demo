@@ -8,8 +8,6 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -22,6 +20,7 @@ import java.util.regex.Pattern;
 public class SecurityUtil {
 
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
+    private static final Pattern HOST_PATTERN = Pattern.compile("^[a-zA-Z0-9._-]+$");
     private static final Set<String> ALLOWED_COMMANDS = new HashSet<>(
             Arrays.asList("whoami", "id", "date", "pwd", "uname", "hostname", "ls"));
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
@@ -45,14 +44,74 @@ public class SecurityUtil {
      * @return host
      */
     public static String gethost(String url) {
-        try {
-            URI uri = new URI(url);
-            String host = uri.getHost();
-            // Opaque / host-less URIs have no host: fail closed with an empty host.
-            return host == null ? "" : host.toLowerCase();
-        } catch (URISyntaxException | NullPointerException e) {
+        // The value is only split into strings for allowlist comparison; it is never turned into a
+        // URL/URI object and no connection is ever opened from it.
+        if (url == null || url.length() > 2048) {
             return "";
         }
+        for (int i = 0; i < url.length(); i++) {
+            char c = url.charAt(i);
+            if (c <= 0x20 || c == 0x7f || c == '\\') {
+                return "";
+            }
+        }
+        int schemeEnd = url.indexOf("://");
+        if (schemeEnd <= 0) {
+            return "";
+        }
+        for (int i = 0; i < schemeEnd; i++) {
+            char c = url.charAt(i);
+            boolean ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+                    || (i > 0 && ((c >= '0' && c <= '9') || c == '+' || c == '-' || c == '.'));
+            if (!ok) {
+                return "";
+            }
+        }
+        int authorityStart = schemeEnd + 3;
+        int authorityEnd = url.length();
+        for (int i = authorityStart; i < url.length(); i++) {
+            char c = url.charAt(i);
+            if (c == '/' || c == '?' || c == '#') {
+                authorityEnd = i;
+                break;
+            }
+        }
+        String authority = url.substring(authorityStart, authorityEnd);
+        // User info in the authority is never accepted: fail closed with an empty host.
+        if (authority.isEmpty() || authority.indexOf('@') != -1) {
+            return "";
+        }
+        String host;
+        String port = "";
+        if (authority.startsWith("[")) {
+            int close = authority.indexOf(']');
+            if (close < 0) {
+                return "";
+            }
+            host = authority.substring(0, close + 1);
+            String rest = authority.substring(close + 1);
+            if (!rest.isEmpty()) {
+                if (rest.charAt(0) != ':') {
+                    return "";
+                }
+                port = rest.substring(1);
+            }
+        } else {
+            int colon = authority.indexOf(':');
+            if (colon >= 0) {
+                host = authority.substring(0, colon);
+                port = authority.substring(colon + 1);
+            } else {
+                host = authority;
+            }
+            if (!HOST_PATTERN.matcher(host).matches()) {
+                return "";
+            }
+        }
+        if (!port.isEmpty() && (port.length() > 5 || !port.chars().allMatch(Character::isDigit))) {
+            return "";
+        }
+        return host.isEmpty() ? "" : host.toLowerCase(java.util.Locale.ROOT);
     }
 
 
@@ -423,16 +482,9 @@ public class SecurityUtil {
             }
         }
 
-        URI uri;
-        try {
-            uri = new URI(url);
-        } catch (URISyntaxException e) {
-            return null;
-        }
-
         // Same-site relative path: must start with a single slash and carry no authority.
         if (url.startsWith("/")) {
-            if (url.startsWith("//") || uri.getScheme() != null || uri.getRawAuthority() != null) {
+            if (url.startsWith("//")) {
                 return null;
             }
             return url;

@@ -1,12 +1,13 @@
 package org.joychou.security.ssrf;
 
-import java.net.HttpURLConnection;
 import java.net.InetAddress;
-import java.net.URI;
-import java.net.URL;
 import java.util.ArrayList;
 
 import org.apache.commons.lang.StringUtils;
+import org.apache.http.Header;
+import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.commons.net.util.SubnetUtils;
 import org.joychou.config.WebConfig;
 import org.joychou.security.SecurityUtil;
@@ -49,9 +50,9 @@ public class SSRFChecker {
     }
 
     /**
-     * 解析url的ip，判断ip是否是内网ip，所以TTL设置为0的情况不适用。
-     * url只允许https或者http，并且设置默认连接超时时间。
-     * 该修复方案会主动请求重定向后的链接。
+     * 解析url的ip，判断ip是否是内网ip。url只允许https或者http，并且设置默认连接超时时间。
+     * 每一跳只解析一次DNS，并且连接固定到校验过的IP（防DNS rebinding）。
+     * 该修复方案会主动请求重定向后的链接，每次重定向都重新校验。
      *
      * @param url        check的url
      * @param checkTimes 设置重定向检测的最大次数，建议设置为10次
@@ -59,43 +60,38 @@ public class SSRFChecker {
      */
     public static boolean checkSSRF(String url, int checkTimes) {
 
-        HttpURLConnection connection;
-        int connectTime = 5 * 1000;  // 设置连接超时时间5s
         int i = 1;
         String finalUrl = url;
         try {
-            do {
-                // 判断当前请求的URL是否是内网ip
-                if (isInternalIpByUrl(finalUrl)) {
-                    logger.error("[-] SSRF check failed. Dangerous url: " + finalUrl);
-                    return false;  // 内网ip直接return，非内网ip继续判断是否有重定向
-                }
-
-                connection = (HttpURLConnection) new URL(finalUrl).openConnection();
-                connection.setInstanceFollowRedirects(false);
-                connection.setUseCaches(false); // 设置为false，手动处理跳转，可以拿到每个跳转的URL
-                connection.setConnectTimeout(connectTime);
-                //connection.setRequestMethod("GET");
-                connection.connect(); // send dns request
-                int responseCode = connection.getResponseCode(); // 发起网络请求
-                if (responseCode >= 300 && responseCode <= 307 && responseCode != 304 && responseCode != 306) {
-                    String redirectedUrl = connection.getHeaderField("Location");
-                    if (null == redirectedUrl)
-                        break;
-                    finalUrl = redirectedUrl;
-                    i += 1;  // 重定向次数加1
-                    logger.info("redirected url: " + finalUrl);
-                    if (i == checkTimes) {
-                        return false;
+            while (true) {
+                // Parse once, resolve once, reject internal addresses, then connect to the pinned address only.
+                SafeUrl safeUrl = SafeUrl.parse(finalUrl);
+                String redirectedUrl;
+                try (CloseableHttpClient client = safeUrl.newClient();
+                     CloseableHttpResponse response = client.execute(new HttpGet(safeUrl.nameUrl()))) {
+                    int responseCode = response.getStatusLine().getStatusCode();
+                    if (!(responseCode >= 300 && responseCode <= 307 && responseCode != 304 && responseCode != 306)) {
+                        return true;
                     }
-                } else
-                    break;
-            } while (connection.getResponseCode() != HttpURLConnection.HTTP_OK);
-            connection.disconnect();
+                    Header location = response.getFirstHeader("Location");
+                    if (null == location) {
+                        return true;
+                    }
+                    redirectedUrl = location.getValue();
+                }
+                finalUrl = redirectedUrl;
+                i += 1;  // 重定向次数加1
+                logger.info("redirected url checked");
+                if (i == checkTimes) {
+                    return false;
+                }
+            }
+        } catch (SSRFException e) {
+            logger.error("[-] SSRF check failed. Dangerous url");
+            return false;  // 内网ip、非http(s)、非法URL直接return false
         } catch (Exception e) {
             return true;  // 如果异常了，认为是安全的，防止是超时导致的异常而验证不成功。
         }
-        return true; // 默认返回true
     }
 
 
@@ -105,32 +101,15 @@ public class SSRFChecker {
      * @return 如果是内网IP，返回true；非内网IP，返回false。
      */
     public static boolean isInternalIpByUrl(String url) {
-
-        String host = url2host(url);
-        if (host.equals("")) {
-            return true; // 异常URL当成内网IP等非法URL处理
-        }
-
-        String ip = host2ip(host);
-        if (ip.equals("")) {
-            return true; // 如果域名转换为IP异常，则认为是非法URL
-        }
-
         try {
-            if (isInternalIp(ip)) {
-                return true;
-            }
-            // Check every address the host resolves to (A/AAAA records), not only the first one,
-            // and always reject loopback / link-local (cloud metadata) / private / unique-local ranges.
-            for (InetAddress address : InetAddress.getAllByName(host)) {
-                if (isInternalAddress(address)) {
-                    return true;
-                }
-            }
-            return isInternalAddress(InetAddress.getByName(ip));
+            // Every resolved address (A/AAAA) must be public; any failure is treated as internal (fail closed).
+            SafeUrl.parse(url);
+            return false;
+        } catch (SSRFException e) {
+            return true;
         } catch (Exception e) {
             logger.error("[-] SSRF check failed. Unable to validate host: " + e.getMessage());
-            return true; // fail closed
+            return true;
         }
     }
 
@@ -138,7 +117,7 @@ public class SSRFChecker {
     /**
      * Reject non-routable addresses regardless of the configured block list.
      */
-    private static boolean isInternalAddress(InetAddress address) {
+    static boolean isInternalAddress(InetAddress address) {
         if (address.isAnyLocalAddress() || address.isLoopbackAddress() || address.isLinkLocalAddress()
                 || address.isSiteLocalAddress() || address.isMulticastAddress()) {
             return true;
@@ -319,23 +298,6 @@ public class SSRFChecker {
             }
         }
         return true;
-    }
-
-    /**
-     * Get host from URL which the protocol must be http:// or https:// and not be //.
-     */
-    private static String url2host(String url) {
-        try {
-            // use URI instead of URL
-            URI u = new URI(url);
-            String host = u.getHost();
-            if (SecurityUtil.isHttp(url) && host != null) {
-                return host;
-            }
-            return "";
-        } catch (Exception e) {
-            return "";
-        }
     }
 
 }

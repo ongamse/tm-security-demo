@@ -2,6 +2,8 @@ package org.joychou.controller;
 
 import lombok.extern.slf4j.Slf4j;
 import org.joychou.security.SecurityUtil;
+import org.joychou.security.ssrf.SSRFException;
+import org.joychou.security.ssrf.SafeUrl;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -9,8 +11,6 @@ import org.springframework.web.util.HtmlUtils;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
 
-import javax.script.Bindings;
-import javax.script.ScriptContext;
 import javax.script.ScriptEngine;
 import javax.script.ScriptEngineManager;
 import java.io.BufferedInputStream;
@@ -30,6 +30,7 @@ import java.util.regex.Pattern;
 @RequestMapping("/rce")
 public class Rce {
 
+    private static final int MAX_SCRIPT_BYTES = 256 * 1024;
     private static final Pattern SAFE_GROOVY_EXPR = Pattern.compile("^[0-9+\\-*/%(). ]{1,100}$");
 
     @GetMapping("/runtime/exec")
@@ -108,15 +109,30 @@ public class Rce {
     @GetMapping("/jscmd")
     public void jsEngine(String jsurl) throws Exception{
         // Only scripts hosted on allowlisted domains may be loaded.
-        if (SecurityUtil.checkURL(jsurl) == null || jsurl.indexOf('"') >= 0 || jsurl.indexOf('\\') >= 0) {
+        if (SecurityUtil.checkURL(jsurl) == null) {
+            throw new IllegalArgumentException("Illegal jsurl");
+        }
+        // The script is fetched through the SSRF-safe client (http/https only, public addresses only,
+        // connection pinned to the validated address, no redirects) and evaluated from memory;
+        // the url is never handed to the script engine's own loader.
+        String script;
+        try (java.io.InputStream in = SafeUrl.parse(jsurl).open()) {
+            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+            byte[] buf = new byte[4096];
+            int n;
+            while ((n = in.read(buf)) > 0) {
+                out.write(buf, 0, n);
+                if (out.size() > MAX_SCRIPT_BYTES) {
+                    throw new IllegalArgumentException("jsurl script too large");
+                }
+            }
+            script = new String(out.toByteArray(), java.nio.charset.StandardCharsets.UTF_8);
+        } catch (SSRFException e) {
             throw new IllegalArgumentException("Illegal jsurl");
         }
         // js nashorn javascript ecmascript
         ScriptEngine engine = new ScriptEngineManager().getEngineByName("js");
-        Bindings bindings = engine.getBindings(ScriptContext.ENGINE_SCOPE);
-        // pass the url as a binding instead of concatenating it into script source
-        bindings.put("jsurl", jsurl);
-        engine.eval("load(jsurl)", bindings);
+        engine.eval(script);
     }
 
 

@@ -1,12 +1,16 @@
 package org.joychou.controller;
 
 import lombok.extern.slf4j.Slf4j;
-import org.joychou.security.SecurityUtil;
+import org.joychou.security.ssrf.SSRFException;
+import org.joychou.security.ssrf.SafeUrl;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.sql.DriverManager;
+import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Jdbc Attack @2023.04
@@ -16,30 +20,63 @@ import java.sql.DriverManager;
 @RequestMapping("/jdbc")
 public class Jdbc {
 
+    /** <code>jdbc:&lt;subprotocol&gt;://host[:port][/database]</code>, nothing else (no properties). */
+    private static final Pattern JDBC_URL = Pattern.compile(
+            "^jdbc:(postgresql|db2)://([A-Za-z0-9.-]{1,253}|\\[[0-9A-Fa-f:.]{2,45}\\])(?::([0-9]{1,5}))?(?:/([A-Za-z0-9_.-]{1,63}))?$");
+
     /**
-     * Only plain <code>jdbc:&lt;subprotocol&gt;://host[:port]/db</code> URLs to an external host are accepted.
-     * Connection properties (query string / ';' properties) are rejected because they can load
-     * arbitrary classes (e.g. socketFactory, sslfactory) or redirect the connection.
+     * Optional fixed list of <code>host:port</code> endpoints (comma separated) that may be connected to,
+     * configured with the system property <code>jdbc.allowed.endpoints</code> or the environment variable
+     * <code>JDBC_ALLOWED_ENDPOINTS</code>. When configured, any other endpoint is rejected.
      */
-    private static void validateJdbcUrl(String jdbcUrl, String subProtocol) {
-        String prefix = "jdbc:" + subProtocol + "://";
-        if (jdbcUrl == null || !jdbcUrl.toLowerCase().startsWith(prefix)) {
+    private static boolean endpointAllowed(String host, int port) {
+        String configured = System.getProperty("jdbc.allowed.endpoints", System.getenv("JDBC_ALLOWED_ENDPOINTS"));
+        if (configured == null || configured.trim().isEmpty()) {
+            return true;
+        }
+        String wanted = host.toLowerCase(Locale.ROOT) + ":" + port;
+        for (String entry : configured.split(",")) {
+            if (entry.trim().toLowerCase(Locale.ROOT).equals(wanted)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Validate the untrusted jdbc url and rebuild a new one from validated components only. The raw decoded
+     * value is never handed to the driver: host and port are parsed, the host is resolved once and rejected
+     * when it is loopback / link-local / site-local / any-local / multicast, and the rebuilt url points at
+     * the resolved literal IP (so DNS rebinding cannot swap the destination). Connection properties
+     * (query string / ';' properties) are impossible by construction because they can load arbitrary
+     * classes (e.g. socketFactory, sslfactory) or redirect the connection.
+     */
+    private static String buildSafeJdbcUrl(String jdbcUrl, String subProtocol, int defaultPort) {
+        if (jdbcUrl == null) {
             throw new IllegalArgumentException("Illegal jdbc url");
         }
-        if (jdbcUrl.indexOf('?') != -1 || jdbcUrl.indexOf(';') != -1 || jdbcUrl.indexOf('\\') != -1) {
+        Matcher m = JDBC_URL.matcher(jdbcUrl);
+        if (!m.matches() || !m.group(1).equals(subProtocol)) {
             throw new IllegalArgumentException("Illegal jdbc url");
         }
-        // Reuse the SSRF defence: host must be parseable and must not resolve to an internal address.
-        String httpUrl = "http://" + jdbcUrl.substring(prefix.length());
-        URI uri;
+        String hostPart = m.group(2);
+        int port = m.group(3) == null ? defaultPort : Integer.parseInt(m.group(3));
+        if (port < 1 || port > 65535 || !endpointAllowed(hostPart, port)) {
+            throw new IllegalArgumentException("Illegal jdbc url");
+        }
+        SafeUrl target;
         try {
-            uri = new URI(httpUrl);
-        } catch (Exception e) {
+            // SafeUrl is only used to validate and resolve host:port; no http request is made.
+            target = SafeUrl.parse("http://" + hostPart + ":" + port + "/");
+        } catch (SSRFException e) {
             throw new IllegalArgumentException("Illegal jdbc url");
         }
-        if (uri.getHost() == null || uri.getUserInfo() != null || !SecurityUtil.checkSSRFWithoutRedirect(httpUrl)) {
-            throw new IllegalArgumentException("Illegal jdbc url");
+        StringBuilder safe = new StringBuilder("jdbc:").append(subProtocol).append("://")
+                .append(target.getAddressLiteral()).append(':').append(port);
+        if (m.group(4) != null) {
+            safe.append('/').append(m.group(4));
         }
+        return safe.toString();
     }
 
     /**
@@ -48,19 +85,17 @@ public class Jdbc {
     @RequestMapping("/postgresql")
     public void postgresql(String jdbcUrlBase64) throws Exception{
         byte[] b = java.util.Base64.getDecoder().decode(jdbcUrlBase64);
-        String jdbcUrl = new String(b);
-        validateJdbcUrl(jdbcUrl, "postgresql");
-        log.info(jdbcUrl);
-        DriverManager.getConnection(jdbcUrl);
+        String safeUrl = buildSafeJdbcUrl(new String(b, StandardCharsets.UTF_8), "postgresql", 5432);
+        log.info("Connecting to validated jdbc endpoint");
+        DriverManager.getConnection(safeUrl);
     }
 
     @RequestMapping("/db2")
     public void db2(String jdbcUrlBase64) throws Exception{
         Class.forName("com.ibm.db2.jcc.DB2Driver");
         byte[] b = java.util.Base64.getDecoder().decode(jdbcUrlBase64);
-        String jdbcUrl = new String(b);
-        validateJdbcUrl(jdbcUrl, "db2");
-        log.info(jdbcUrl);
-        DriverManager.getConnection(jdbcUrl);
+        String safeUrl = buildSafeJdbcUrl(new String(b, StandardCharsets.UTF_8), "db2", 50000);
+        log.info("Connecting to validated jdbc endpoint");
+        DriverManager.getConnection(safeUrl);
     }
 }
