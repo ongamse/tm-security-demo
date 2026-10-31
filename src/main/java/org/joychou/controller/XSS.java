@@ -43,6 +43,9 @@ public class XSS {
     @ResponseBody
     public String store(String xss, HttpServletResponse response) {
         Cookie cookie = new Cookie("xss", xss);
+        cookie.setHttpOnly(true);
+        cookie.setSecure(true);
+        cookie.setPath("/");
         response.addCookie(cookie);
         return "Set param into cookie";
     }
