@@ -192,12 +192,14 @@ public class FileUpload {
             logger.info("Refuse to delete file outside upload folder");
             return;
         }
-        File delFile = target.toFile();
-        if(delFile.isFile() && delFile.exists()) {
-            if (delFile.delete()) {
+        // Atomic delete (no isFile()/exists() pre-check) to avoid a check-then-use race.
+        try {
+            if (Files.deleteIfExists(target)) {
                 logger.info("[+] {} delete successfully!", LogSanitizer.clean(filePath));
                 return;
             }
+        } catch (IOException e) {
+            logger.debug("Delete error: {}", LogSanitizer.clean(e.getClass().getSimpleName()));
         }
         logger.info("{} delete failed!", LogSanitizer.clean(filePath));
     }
