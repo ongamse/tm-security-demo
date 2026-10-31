@@ -7,10 +7,12 @@ import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
+import java.nio.file.NoSuchFileException;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 
 @RestController
@@ -29,7 +31,7 @@ public class PathTraversal {
     @GetMapping("/path_traversal/sec")
     public String getImageSec(String filepath) throws IOException {
         if (SecurityUtil.pathFilter(filepath) == null) {
-            logger.info("Illegal file path: " + filepath);
+            logger.info("Illegal file path.");
             return "Bad boy. Illegal file path.";
         }
         return getImgBase64(filepath);
@@ -38,13 +40,40 @@ public class PathTraversal {
     private String getImgBase64(String imgFile) throws IOException {
 
         logger.info("Working directory: " + System.getProperty("user.dir"));
-        logger.info("File path: " + imgFile);
+        logger.info("Reading image file.");
 
-        File f = new File(imgFile);
-        if (f.exists() && !f.isDirectory()) {
-            byte[] data = Files.readAllBytes(Paths.get(imgFile));
+        if (imgFile == null || imgFile.indexOf('\0') != -1) {
+            return "File doesn't exist or is not a file.";
+        }
+
+        // Resolve against a fixed base directory and reject anything that escapes it.
+        Path baseDir = Paths.get(System.getProperty("user.dir")).toAbsolutePath().normalize();
+        Path target;
+        try {
+            target = baseDir.resolve(imgFile).normalize();
+        } catch (InvalidPathException e) {
+            return "File doesn't exist or is not a file.";
+        }
+        if (!target.startsWith(baseDir)) {
+            logger.info("Illegal file path.");
+            return "Bad boy. Illegal file path.";
+        }
+
+        // Attempt the read directly (no exists()/isDirectory() pre-check) to avoid a
+        // check-then-use race. Missing files and directories surface as IOException.
+        try {
+            Path realBase = baseDir.toRealPath();
+            Path realTarget = target.toRealPath();
+            if (!realTarget.startsWith(realBase)) {
+                logger.info("Illegal file path.");
+                return "Bad boy. Illegal file path.";
+            }
+            byte[] data = Files.readAllBytes(realTarget);
             return new String(Base64.encodeBase64(data));
-        } else {
+        } catch (NoSuchFileException e) {
+            return "File doesn't exist or is not a file.";
+        } catch (IOException e) {
+            logger.info("Unable to read file: {}", e.getClass().getSimpleName());
             return "File doesn't exist or is not a file.";
         }
     }

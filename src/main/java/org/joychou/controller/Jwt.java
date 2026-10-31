@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.util.HtmlUtils;
 
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
@@ -31,7 +32,7 @@ public class Jwt {
     @GetMapping("/createToken")
     public String createToken(HttpServletResponse response, HttpServletRequest request) {
         String loginUser = request.getUserPrincipal().getName();
-        log.info("Current login user is " + loginUser);
+        log.info("Creating jwt token for the current login user.");
 
         CookieUtils.deleteCookie(response, COOKIE_NAME);
         String token = JwtUtils.generateTokenByJavaJwt(loginUser);
@@ -40,6 +41,7 @@ public class Jwt {
         cookie.setMaxAge(86400);    // 1 DAY
         cookie.setPath("/");
         cookie.setSecure(true);
+        cookie.setHttpOnly(true);
         response.addCookie(cookie);
         return "Add jwt token cookie successfully. Cookie name is USER_COOKIE";
     }
@@ -56,7 +58,7 @@ public class Jwt {
     @GetMapping("/getName")
     public String getNickname(@CookieValue(COOKIE_NAME) String user_cookie) {
         String nickname = JwtUtils.getNicknameByJavaJwt(user_cookie);
-        return "Current jwt user is " + nickname;
+        return "Current jwt user is " + HtmlUtils.htmlEscape(nickname);
     }
 
 }

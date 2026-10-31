@@ -14,14 +14,17 @@
     <!--</select>-->
 
     <select id="findByUserNameVuln02" parameterType="String" resultMap="User">
-        select * from users where username like '%${_parameter}%'
+        select * from users where username like concat('%', #{_parameter}, '%')
     </select>
 
+    <!-- ORDER BY cannot be bound as a parameter, so only allowlisted columns are accepted. -->
     <select id="findByUserNameVuln03" parameterType="String" resultMap="User">
         select * from users
-        <if test="order != null">
-            order by ${order} asc
-        </if>
+        <choose>
+            <when test="order == 'id'">order by id asc</when>
+            <when test="order == 'username'">order by username asc</when>
+            <when test="order == 'password'">order by password asc</when>
+        </choose>
     </select>
 
     <select id="findById" resultMap="User">

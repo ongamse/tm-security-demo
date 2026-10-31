@@ -8,16 +8,23 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.net.URLDecoder;
+import java.net.URLEncoder;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 
 public class SecurityUtil {
 
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
+    private static final Pattern HOST_PATTERN = Pattern.compile("^[a-zA-Z0-9._-]+$");
+    private static final Set<String> ALLOWED_COMMANDS = new HashSet<>(
+            Arrays.asList("whoami", "id", "date", "pwd", "uname", "hostname", "ls"));
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
 
 
@@ -28,7 +35,7 @@ public class SecurityUtil {
      * @return true or false
      */
     public static boolean isHttp(String url) {
-        return url.startsWith("http://") || url.startsWith("https://");
+        return url != null && (url.startsWith("http://") || url.startsWith("https://"));
     }
 
 
@@ -39,12 +46,74 @@ public class SecurityUtil {
      * @return host
      */
     public static String gethost(String url) {
-        try {
-            URI uri = new URI(url);
-            return uri.getHost().toLowerCase();
-        } catch (URISyntaxException e) {
+        // The value is only split into strings for allowlist comparison; it is never turned into a
+        // URL/URI object and no connection is ever opened from it.
+        if (url == null || url.length() > 2048) {
             return "";
         }
+        for (int i = 0; i < url.length(); i++) {
+            char c = url.charAt(i);
+            if (c <= 0x20 || c == 0x7f || c == '\\') {
+                return "";
+            }
+        }
+        int schemeEnd = url.indexOf("://");
+        if (schemeEnd <= 0) {
+            return "";
+        }
+        for (int i = 0; i < schemeEnd; i++) {
+            char c = url.charAt(i);
+            boolean ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+                    || (i > 0 && ((c >= '0' && c <= '9') || c == '+' || c == '-' || c == '.'));
+            if (!ok) {
+                return "";
+            }
+        }
+        int authorityStart = schemeEnd + 3;
+        int authorityEnd = url.length();
+        for (int i = authorityStart; i < url.length(); i++) {
+            char c = url.charAt(i);
+            if (c == '/' || c == '?' || c == '#') {
+                authorityEnd = i;
+                break;
+            }
+        }
+        String authority = url.substring(authorityStart, authorityEnd);
+        // User info in the authority is never accepted: fail closed with an empty host.
+        if (authority.isEmpty() || authority.indexOf('@') != -1) {
+            return "";
+        }
+        String host;
+        String port = "";
+        if (authority.startsWith("[")) {
+            int close = authority.indexOf(']');
+            if (close < 0) {
+                return "";
+            }
+            host = authority.substring(0, close + 1);
+            String rest = authority.substring(close + 1);
+            if (!rest.isEmpty()) {
+                if (rest.charAt(0) != ':') {
+                    return "";
+                }
+                port = rest.substring(1);
+            }
+        } else {
+            int colon = authority.indexOf(':');
+            if (colon >= 0) {
+                host = authority.substring(0, colon);
+                port = authority.substring(colon + 1);
+            } else {
+                host = authority;
+            }
+            if (!HOST_PATTERN.matcher(host).matches()) {
+                return "";
+            }
+        }
+        if (!port.isEmpty() && (port.length() > 5 || !port.chars().allMatch(Character::isDigit))) {
+            return "";
+        }
+        return host.isEmpty() ? "" : host.toLowerCase(java.util.Locale.ROOT);
     }
 
 
@@ -183,10 +252,10 @@ public class SecurityUtil {
             try {
                 temp = URLDecoder.decode(temp, "utf-8");
             } catch (UnsupportedEncodingException e) {
-                logger.info("Unsupported encoding exception: " + filepath);
+                logger.info("Unsupported encoding exception.");
                 return null;
             } catch (Exception e) {
-                logger.info(e.toString());
+                logger.info("Path filter decode failed: {}", e.getClass().getSimpleName());
                 return null;
             }
         }
@@ -205,6 +274,138 @@ public class SecurityUtil {
         }
 
         return input;
+    }
+
+
+    /**
+     * Split a user supplied command line into an argv array for a no-shell exec.
+     * The executable must be in a fixed allowlist and every argument must match
+     * {@link #FILTER_PATTERN}. No shell is involved, so metacharacters are never interpreted.
+     *
+     * @param cmd user supplied command line, e.g. "ls -la /tmp"
+     * @return argv array, or null if the command is empty, not allowlisted or has an illegal argument
+     */
+    public static String[] cmdArgv(String cmd) {
+        if (cmd == null) {
+            return null;
+        }
+        String trimmed = cmd.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        String[] tokens = trimmed.split("\\s+");
+        if (tokens.length > 4) {
+            return null;
+        }
+        // The returned argv is rebuilt only from server-side constants: the request value is used
+        // purely as a lookup key and never flows into the process arguments.
+        List<String> argv = new ArrayList<>();
+        String executable = lookupExecutable(tokens[0]);
+        if (executable == null) {
+            return null;
+        }
+        argv.add(executable);
+        for (int i = 1; i < tokens.length; i++) {
+            String arg = lookupFlag(tokens[i]);
+            if (arg == null) {
+                arg = lookupDirectory(tokens[i]);
+            }
+            if (arg == null) {
+                return null;
+            }
+            argv.add(arg);
+        }
+        return argv.toArray(new String[0]);
+    }
+
+
+    private static String lookupExecutable(String key) {
+        switch (key) {
+            case "whoami":
+                return "whoami";
+            case "id":
+                return "id";
+            case "date":
+                return "date";
+            case "pwd":
+                return "pwd";
+            case "uname":
+                return "uname";
+            case "hostname":
+                return "hostname";
+            case "ls":
+                return "ls";
+            default:
+                return null;
+        }
+    }
+
+
+    private static String lookupFlag(String key) {
+        switch (key) {
+            case "-a":
+                return "-a";
+            case "-l":
+                return "-l";
+            case "-la":
+                return "-la";
+            case "-al":
+                return "-al";
+            default:
+                return null;
+        }
+    }
+
+
+    /**
+     * Map a user supplied directory to a fixed server-side directory constant.
+     *
+     * @param key user supplied directory
+     * @return the matching constant, or null if the directory is not in the fixed allowlist
+     */
+    public static String lookupDirectory(String key) {
+        if (key == null) {
+            return null;
+        }
+        switch (key) {
+            case "/tmp":
+                return "/tmp";
+            case "/var/tmp":
+                return "/var/tmp";
+            case "/var/log":
+                return "/var/log";
+            case "/usr/share":
+                return "/usr/share";
+            case ".":
+                return ".";
+            default:
+                return null;
+        }
+    }
+
+
+    /**
+     * Map a user supplied Host header to a fixed server-side host constant.
+     *
+     * @param key user supplied host
+     * @return the matching constant, or null if the host is not in the fixed allowlist
+     */
+    public static String lookupHost(String key) {
+        if (key == null) {
+            return null;
+        }
+        switch (key.toLowerCase(java.util.Locale.ROOT)) {
+            case "localhost":
+                return "localhost";
+            case "localhost:8080":
+                return "localhost:8080";
+            case "127.0.0.1":
+                return "127.0.0.1";
+            case "127.0.0.1:8080":
+                return "127.0.0.1:8080";
+            default:
+                return null;
+        }
     }
 
 
@@ -247,6 +448,237 @@ public class SecurityUtil {
         }
 
         return sb.toString();
+    }
+
+    /**
+     * Remove CR, LF and NUL characters so that a value is safe to write into an
+     * HTTP response header (prevents header injection / response splitting).
+     *
+     * @param value untrusted header value
+     * @return the value without CR/LF/NUL; null stays null
+     */
+    public static String stripCRLF(String value) {
+        if (value == null) {
+            return null;
+        }
+        return value.replaceAll("[\\r\\n\\u0000]", "");
+    }
+
+    /**
+     * Validate an untrusted redirect target. A target is accepted only when it is either
+     * a same-site absolute path (e.g. /a/b, but not scheme-relative // or /\) or an
+     * http(s) URL whose host passes {@link #checkURL(String)}. Targets containing
+     * backslashes or control characters (CR/LF/NUL, whitespace tricks) are rejected.
+     *
+     * @param url untrusted redirect target
+     * @return the validated target, or null when it must not be used for a redirect
+     */
+    public static String safeRedirectUrl(String url) {
+        if (url == null || url.isEmpty()) {
+            return null;
+        }
+        for (int i = 0; i < url.length(); i++) {
+            char c = url.charAt(i);
+            if (c == '\\' || c <= 0x20 || c == 0x7f) {
+                return null;
+            }
+        }
+
+        // Same-site relative path: must start with a single slash and carry no authority.
+        if (url.startsWith("/")) {
+            if (url.startsWith("//")) {
+                return null;
+            }
+            return url;
+        }
+
+        // Absolute URL: must be on the project's domain whitelist.
+        return checkURL(url);
+    }
+
+    /**
+     * Server-side constant list of trusted origins (scheme://host[:port], no path). Values written into
+     * response headers (Access-Control-Allow-Origin, Location) are always taken from this list and never
+     * from the request.
+     */
+    private static final List<String> TRUSTED_ORIGINS = Collections.unmodifiableList(Arrays.asList(
+            "http://joychou.com", "https://joychou.com",
+            "http://joychou.org", "https://joychou.org",
+            "http://test.joychou.org", "https://test.joychou.org",
+            "http://localhost", "https://localhost",
+            "http://localhost:8080", "https://localhost:8080"));
+
+
+    private static final String DEFAULT_REDIRECT = "/";
+
+    /** Characters allowed in a redirect path segment (unreserved URL characters only). */
+    private static final String PATH_ALPHABET =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._~-";
+
+
+    /**
+     * Map an untrusted Origin to the matching constant from the trusted origin list. The request value is
+     * only used as a comparison key; the returned string is the server-side constant.
+     * The origin must additionally still pass {@link #checkURL(String)} (domain whitelist/blacklist config).
+     *
+     * @param origin untrusted origin
+     * @return the matching trusted origin constant, or null when the origin is not trusted
+     */
+    public static String lookupTrustedOrigin(String origin) {
+        if (origin == null || checkURL(origin) == null) {
+            return null;
+        }
+        for (String trusted : TRUSTED_ORIGINS) {
+            if (trusted.equals(origin)) {
+                return trusted;
+            }
+        }
+        return null;
+    }
+
+
+    /**
+     * Build a redirect target for a Location header without echoing the request value: the scheme and
+     * authority come from {@link #TRUSTED_ORIGINS} constants (or are absent for a same-site path) and the
+     * path is rebuilt from URL-encoded segments. Query and fragment are dropped.
+     *
+     * @param url untrusted redirect target
+     * @return the rebuilt target, or null when it must not be used for a redirect
+     */
+    public static String lookupRedirectTarget(String url) {
+        String valid = safeRedirectUrl(url);
+        if (valid == null) {
+            return null;
+        }
+        String prefix = "";
+        String rest = valid;
+        if (!valid.startsWith("/")) {
+            String matched = null;
+            for (String trusted : TRUSTED_ORIGINS) {
+                if (valid.equals(trusted) || valid.startsWith(trusted + "/")
+                        || valid.startsWith(trusted + "?") || valid.startsWith(trusted + "#")) {
+                    matched = trusted;
+                    break;
+                }
+            }
+            if (matched == null) {
+                return null;
+            }
+            prefix = matched;
+            rest = valid.substring(matched.length());
+        }
+        int cut = rest.length();
+        for (int i = 0; i < rest.length(); i++) {
+            char c = rest.charAt(i);
+            if (c == '?' || c == '#') {
+                cut = i;
+                break;
+            }
+        }
+        rest = rest.substring(0, cut);
+        // prefix is a TRUSTED_ORIGINS constant or empty; the path below is rebuilt character by
+        // character from the constant PATH_ALPHABET, so no request character is ever appended.
+        StringBuilder target = new StringBuilder(prefix);
+        if (rest.isEmpty()) {
+            return target.append('/').toString();
+        }
+        if (rest.charAt(0) != '/') {
+            return null;
+        }
+        String[] segments = rest.substring(1).split("/", -1);
+        for (int i = 0; i < segments.length; i++) {
+            String segment = segments[i];
+            if (segment.isEmpty()) {
+                // Only a trailing slash is allowed; an empty middle segment would form "//".
+                if (i != segments.length - 1) {
+                    return null;
+                }
+                target.append('/');
+                continue;
+            }
+            String safeSegment = lookupPathSegment(segment);
+            if (safeSegment == null) {
+                return null;
+            }
+            target.append('/').append(safeSegment);
+        }
+        return target.toString();
+    }
+
+
+    /**
+     * Same as {@link #lookupRedirectTarget(String)} but never returns null and never returns the request
+     * value: when nothing matches the constant {@code "/"} is returned.
+     *
+     * @param url untrusted redirect target
+     * @return a rebuilt trusted target or the constant "/"
+     */
+    public static String redirectTargetOrDefault(String url) {
+        String target = lookupRedirectTarget(url);
+        return target == null ? DEFAULT_REDIRECT : target;
+    }
+
+
+    /**
+     * Rebuild a path segment from the constant {@link #PATH_ALPHABET}: each request character is only used
+     * to find an index into the constant, and the character appended is the constant's.
+     *
+     * @param segment untrusted path segment
+     * @return the rebuilt segment, or null when it is empty, a dot segment or has a character outside the alphabet
+     */
+    private static String lookupPathSegment(String segment) {
+        if (segment == null || segment.isEmpty() || segment.length() > 255
+                || ".".equals(segment) || "..".equals(segment)) {
+            return null;
+        }
+        StringBuilder rebuilt = new StringBuilder(segment.length());
+        for (int i = 0; i < segment.length(); i++) {
+            int idx = PATH_ALPHABET.indexOf(segment.charAt(i));
+            if (idx < 0) {
+                return null;
+            }
+            rebuilt.append(PATH_ALPHABET.charAt(idx));
+        }
+        return rebuilt.toString();
+    }
+
+
+    /**
+     * Check that an untrusted value may be written into a header at all: null is allowed (no header is
+     * written), anything containing CR, LF or other control characters is rejected.
+     *
+     * @param value untrusted header value
+     * @return false if the value contains CR, LF or any control character
+     */
+    public static boolean isValidHeaderValue(String value) {
+        if (value == null) {
+            return true;
+        }
+        for (int i = 0; i < value.length(); i++) {
+            if (Character.isISOControl(value.charAt(i))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+
+    /**
+     * URL-encode an untrusted value so the result only contains header-safe characters. Callers must
+     * reject values for which {@link #isValidHeaderValue(String)} is false first.
+     *
+     * @param value untrusted header value
+     * @return the URL-encoded value; null stays null
+     */
+    public static String encodeHeaderValue(String value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            return URLEncoder.encode(value, "UTF-8");
+        } catch (UnsupportedEncodingException e) {
+            return "";
+        }
     }
 
     public static void main(String[] args) {

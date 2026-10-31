@@ -45,9 +45,16 @@ public class OriginFilter implements Filter {
             return;
         }
 
-        response.setHeader("Access-Control-Allow-Origin", origin);
-        response.setHeader("Access-Control-Allow-Credentials", "true");
-        response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTION");
+        // 只有校验通过的白名单origin才设置CORS头；同域请求(origin为空)不需要CORS头。
+        // The response depends on the Origin request header, so caches must key on it.
+        response.setHeader("Vary", "Origin");
+        String safeOrigin = SecurityUtil.lookupTrustedOrigin(origin);
+        if (safeOrigin != null) {
+            response.setHeader("Access-Control-Allow-Origin", safeOrigin);
+            response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+            response.setHeader("Access-Control-Allow-Headers", "Content-Type");
+            // Credentials are intentionally not allowed: cross-site requests never carry cookies.
+        }
 
         filterChain.doFilter(req, res);
     }

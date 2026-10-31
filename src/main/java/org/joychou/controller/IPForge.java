@@ -1,9 +1,12 @@
 package org.joychou.controller;
 
 import org.apache.commons.lang.StringUtils;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.util.HtmlUtils;
 
 import javax.servlet.http.HttpServletRequest;
 
@@ -17,30 +20,34 @@ import javax.servlet.http.HttpServletRequest;
 public class IPForge {
 
     // no any proxy
-    @RequestMapping("/noproxy")
-    public static String noProxy(HttpServletRequest request) {
-        return request.getRemoteAddr();
+    @RequestMapping(value = "/noproxy", produces = MediaType.TEXT_PLAIN_VALUE)
+    public static ResponseEntity<String> noProxy(HttpServletRequest request) {
+        return plainText(HtmlUtils.htmlEscape(request.getRemoteAddr()));
+    }
+
+    private static ResponseEntity<String> plainText(String body) {
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType("text/plain;charset=UTF-8"))
+                .header("X-Content-Type-Options", "nosniff")
+                .body(body);
     }
 
 
     /**
-     * proxy_set_header X-Real-IP $remote_addr;
-     * proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for
-     * if code used X-Forwarded-For to get ip, the code must be vulnerable.
+     * Client-supplied forwarding headers (X-Real-IP / X-Forwarded-For) are spoofable,
+     * so they are not trusted. The address of the direct peer is used instead.
+     * Behind a reverse proxy, configure the container to resolve the real client IP
+     * from trusted proxies only (e.g. server.forward-headers-strategy / RemoteIpValve),
+     * which makes getRemoteAddr() return the real client address.
      */
-    @RequestMapping("/proxy")
+    @RequestMapping(value = "/proxy", produces = MediaType.TEXT_PLAIN_VALUE)
     @ResponseBody
-    public static String proxy(HttpServletRequest request) {
-        String ip = request.getHeader("X-Real-IP");
-        if (StringUtils.isNotBlank(ip)) {
-            return ip;
-        } else {
-            String remoteAddr = request.getRemoteAddr();
-            if (StringUtils.isNotBlank(remoteAddr)) {
-                return remoteAddr;
-            }
+    public static ResponseEntity<String> proxy(HttpServletRequest request) {
+        String remoteAddr = request.getRemoteAddr();
+        if (StringUtils.isNotBlank(remoteAddr)) {
+            return plainText(HtmlUtils.htmlEscape(remoteAddr));
         }
-        return "";
+        return plainText("");
     }
 
 

@@ -1,10 +1,13 @@
 package org.joychou.controller;
 
-import org.apache.commons.lang.StringUtils;
+import org.joychou.security.SecurityUtil;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseBody;
+import org.springframework.web.util.HtmlUtils;
 
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletResponse;
@@ -24,10 +27,10 @@ public class XSS {
      *
      * @param xss unescape string
      */
-    @RequestMapping("/reflect")
+    @RequestMapping(value = "/reflect", produces = MediaType.TEXT_PLAIN_VALUE)
     @ResponseBody
-    public static String reflect(String xss) {
-        return xss;
+    public static ResponseEntity<String> reflect(String xss) {
+        return plainText(encode(xss));
     }
 
     /**
@@ -40,7 +43,15 @@ public class XSS {
     @RequestMapping("/stored/store")
     @ResponseBody
     public String store(String xss, HttpServletResponse response) {
-        Cookie cookie = new Cookie("xss", xss);
+        // Reject CR, LF and any other control character, then URL-encode what goes into Set-Cookie.
+        if (!SecurityUtil.isValidHeaderValue(xss)) {
+            response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+            return "Invalid xss parameter";
+        }
+        Cookie cookie = new Cookie("xss", SecurityUtil.encodeHeaderValue(xss));
+        cookie.setHttpOnly(true);
+        cookie.setSecure(true);
+        cookie.setPath("/");
         response.addCookie(cookie);
         return "Set param into cookie";
     }
@@ -52,29 +63,33 @@ public class XSS {
      *
      * @param xss unescape string
      */
-    @RequestMapping("/stored/show")
+    @RequestMapping(value = "/stored/show", produces = MediaType.TEXT_PLAIN_VALUE)
     @ResponseBody
-    public String show(@CookieValue("xss") String xss) {
-        return xss;
+    public ResponseEntity<String> show(@CookieValue("xss") String xss) {
+        return plainText(encode(xss));
     }
 
     /**
      * safe Code.
      * http://localhost:8080/xss/safe
      */
-    @RequestMapping("/safe")
+    @RequestMapping(value = "/safe", produces = MediaType.TEXT_PLAIN_VALUE)
     @ResponseBody
-    public static String safe(String xss) {
-        return encode(xss);
+    public static ResponseEntity<String> safe(String xss) {
+        return plainText(encode(xss));
+    }
+
+    /**
+     * Echoed user data is never served as HTML: explicit text/plain plus nosniff.
+     */
+    private static ResponseEntity<String> plainText(String body) {
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType("text/plain;charset=UTF-8"))
+                .header("X-Content-Type-Options", "nosniff")
+                .body(body);
     }
 
     private static String encode(String origin) {
-        origin = StringUtils.replace(origin, "&", "&amp;");
-        origin = StringUtils.replace(origin, "<", "&lt;");
-        origin = StringUtils.replace(origin, ">", "&gt;");
-        origin = StringUtils.replace(origin, "\"", "&quot;");
-        origin = StringUtils.replace(origin, "'", "&#x27;");
-        origin = StringUtils.replace(origin, "/", "&#x2F;");
-        return origin;
+        return HtmlUtils.htmlEscape(origin);
     }
 }

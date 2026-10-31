@@ -5,10 +5,10 @@ import org.joychou.security.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.util.HtmlUtils;
 
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.net.URL;
 import java.util.ArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -98,20 +98,28 @@ public class URLWhiteList {
     @GetMapping("/vuln/url_bypass")
     public void url_bypass(String url, HttpServletResponse res) throws IOException {
 
-        logger.info("url:  " + url);
+        logger.info("Checking redirect url against whitelist.");
 
         if (!SecurityUtil.isHttp(url)) {
             return;
         }
 
-        URL u = new URL(url);
-        String host = u.getHost();
-        logger.info("host:  " + host);
+        // Parse with java.net.URI (rejects backslash tricks such as http://evil.com\@www.joychou.org)
+        // so the validated host is the host the redirect target really uses.
+        String host = SecurityUtil.gethost(url);
+        logger.info("Parsed redirect host.");
 
         // endsWith .
         for (String domain : domainwhitelist) {
             if (host.endsWith("." + domain)) {
-                res.sendRedirect(url);
+                // Rebuilt from trusted-origin / alphabet constants; the request string is never redirected to.
+                String safeUrl = SecurityUtil.lookupRedirectTarget(url);
+                if (safeUrl == null) {
+                    res.sendError(HttpServletResponse.SC_BAD_REQUEST);
+                    return;
+                }
+                res.sendRedirect(safeUrl);
+                return;
             }
         }
 
@@ -135,9 +143,9 @@ public class URLWhiteList {
 
         for (String whiteHost: whiteDomainlists){
             if (whiteHost.startsWith(".") && host.endsWith(whiteHost)) {
-                return url;
+                return HtmlUtils.htmlEscape(url);
             } else if (!whiteHost.startsWith(".") && host.equals(whiteHost)) {
-                return url;
+                return HtmlUtils.htmlEscape(url);
             }
         }
 

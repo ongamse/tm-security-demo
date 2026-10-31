@@ -1,17 +1,8 @@
 package org.joychou.util;
 
-import com.squareup.okhttp.OkHttpClient;
-import org.apache.commons.httpclient.HttpClient;
-import org.apache.commons.httpclient.methods.GetMethod;
 import org.apache.commons.io.IOUtils;
-import org.apache.http.HttpResponse;
-import org.apache.http.client.fluent.Request;
-import org.apache.http.client.methods.HttpGet;
-import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.impl.client.HttpClients;
-import org.apache.http.impl.nio.client.CloseableHttpAsyncClient;
-import org.apache.http.impl.nio.client.HttpAsyncClients;
-import org.apache.http.util.EntityUtils;
+import org.joychou.security.ssrf.SSRFException;
+import org.joychou.security.ssrf.SafeUrl;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.slf4j.Logger;
@@ -22,41 +13,61 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.URI;
-import java.net.URL;
-import java.net.URLConnection;
-import java.util.concurrent.*;
+import java.nio.charset.StandardCharsets;
 
 /**
+ * Outbound HTTP helpers. Every method follows the same structure:
+ * <ol>
+ *   <li>{@link SafeUrl#parse(String)} parses the untrusted url once into a {@link java.net.URI}, requires
+ *       http/https, resolves every address of the host and rejects loopback / link-local (169.254.169.254) /
+ *       site-local / any-local / multicast / blocked addresses (and hosts outside the optional
+ *       <code>ssrf.allowed.hosts</code> allowlist);</li>
+ *   <li>the request is then sent through a client pinned to the validated address (the original Host header is
+ *       kept), so DNS rebinding between check and use cannot change the destination;</li>
+ *   <li>redirects are never followed.</li>
+ * </ol>
+ *
  * @author JoyChou 2020-04-06
  */
 public class HttpUtils {
 
     private final static Logger logger = LoggerFactory.getLogger(HttpUtils.class);
 
+    private static final String ILLEGAL_URL = "Illegal url";
+
+    private static String readLines(InputStream is) throws IOException {
+        try (BufferedReader in = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))) {
+            String inputLine;
+            StringBuilder html = new StringBuilder();
+            while ((inputLine = in.readLine()) != null) {
+                html.append(inputLine);
+            }
+            return html.toString();
+        }
+    }
+
+    private static String readAll(InputStream is) throws IOException {
+        try (InputStream in = is) {
+            return new String(IOUtils.toByteArray(in), StandardCharsets.UTF_8);
+        }
+    }
+
     public static String commonHttpClient(String url) {
-
-        HttpClient client = new HttpClient();
-        GetMethod method = new GetMethod(url);
-
         try {
-            client.executeMethod(method); // send request
-            byte[] resBody = method.getResponseBody();
-            return new String(resBody);
-
+            return readAll(SafeUrl.parse(url).open());
+        } catch (SSRFException e) {
+            return ILLEGAL_URL;
         } catch (IOException e) {
             return "Error: " + e.getMessage();
-        } finally {
-            // Release the connection.
-            method.releaseConnection();
         }
     }
 
 
     public static String request(String url) {
         try {
-            return Request.Get(url).execute().returnContent().toString();
+            return readAll(SafeUrl.parse(url).open());
+        } catch (SSRFException e) {
+            return ILLEGAL_URL;
         } catch (Exception e) {
             return e.getMessage();
         }
@@ -64,25 +75,10 @@ public class HttpUtils {
 
 
     public static String httpClient(String url) {
-
-        StringBuilder result = new StringBuilder();
-
         try {
-
-            CloseableHttpClient client = HttpClients.createDefault();
-            HttpGet httpGet = new HttpGet(url);
-            // set redirect enable false
-            // httpGet.setConfig(RequestConfig.custom().setRedirectsEnabled(false).build());
-            HttpResponse httpResponse = client.execute(httpGet); // send request
-            BufferedReader rd = new BufferedReader(new InputStreamReader(httpResponse.getEntity().getContent()));
-
-            String line;
-            while ((line = rd.readLine()) != null) {
-                result.append(line);
-            }
-
-            return result.toString();
-
+            return readLines(SafeUrl.parse(url).open());
+        } catch (SSRFException e) {
+            return ILLEGAL_URL;
         } catch (Exception e) {
             return e.getMessage();
         }
@@ -91,17 +87,9 @@ public class HttpUtils {
 
     public static String URLConnection(String url) {
         try {
-            URL u = new URL(url);
-            URLConnection urlConnection = u.openConnection();
-            BufferedReader in = new BufferedReader(new InputStreamReader(urlConnection.getInputStream())); //send request
-            String inputLine;
-            StringBuilder html = new StringBuilder();
-
-            while ((inputLine = in.readLine()) != null) {
-                html.append(inputLine);
-            }
-            in.close();
-            return html.toString();
+            return readLines(SafeUrl.parse(url).open());
+        } catch (SSRFException e) {
+            return ILLEGAL_URL;
         } catch (Exception e) {
             logger.error(e.getMessage());
             return e.getMessage();
@@ -110,26 +98,13 @@ public class HttpUtils {
 
 
     /**
-     * The default setting of followRedirects is true.
-     * UserAgent is Java/1.8.0_102.
+     * Redirects are not followed and the connection is pinned to the validated address.
      */
     public static String HttpURLConnection(String url) {
         try {
-            URL u = new URL(url);
-            URLConnection urlConnection = u.openConnection();
-            HttpURLConnection conn = (HttpURLConnection) urlConnection;
-//             conn.setInstanceFollowRedirects(false);
-//             Many HttpURLConnection methods can send http request, such as getResponseCode, getHeaderField
-            InputStream is = conn.getInputStream();  // send request
-            BufferedReader in = new BufferedReader(new InputStreamReader(is));
-            String inputLine;
-            StringBuilder html = new StringBuilder();
-
-            while ((inputLine = in.readLine()) != null) {
-                html.append(inputLine);
-            }
-            in.close();
-            return html.toString();
+            return readLines(SafeUrl.parse(url).open());
+        } catch (SSRFException e) {
+            return ILLEGAL_URL;
         } catch (IOException e) {
             logger.error(e.getMessage());
             return e.getMessage();
@@ -138,18 +113,19 @@ public class HttpUtils {
 
 
     /**
-     * Jsoup is a HTML parser about Java.
+     * Jsoup is a HTML parser about Java. The page is fetched through the pinned client and only parsed by Jsoup.
      *
      * @param url http request url
      */
     public static String Jsoup(String url) {
         try {
-            Document doc = Jsoup.connect(url)
-//                    .followRedirects(false)
-                    .timeout(3000)
-                    .cookie("name", "joychou") // request cookies
-                    .execute().parse();
-            return doc.outerHtml();
+            SafeUrl safeUrl = SafeUrl.parse(url);
+            try (InputStream is = safeUrl.open("name=joychou")) { // request cookies
+                Document doc = Jsoup.parse(is, "UTF-8", safeUrl.nameUrl());
+                return doc.outerHtml();
+            }
+        } catch (SSRFException e) {
+            return ILLEGAL_URL;
         } catch (IOException e) {
             return e.getMessage();
         }
@@ -157,45 +133,43 @@ public class HttpUtils {
 
 
     /**
-     * The default setting of followRedirects is true. The option of followRedirects is true.
-     *
-     * UserAgent is <code>okhttp/2.5.0</code>.
+     * Redirects are not followed and the connection is pinned to the validated address.
      */
     public static String okhttp(String url) throws IOException {
-        OkHttpClient client = new OkHttpClient();
-//         client.setFollowRedirects(false);
-        com.squareup.okhttp.Request ok_http = new com.squareup.okhttp.Request.Builder().url(url).build();
-        return client.newCall(ok_http).execute().body().string();
+        try {
+            return readAll(SafeUrl.parse(url).open());
+        } catch (SSRFException e) {
+            return ILLEGAL_URL;
+        }
     }
 
 
     /**
-     * The default setting of followRedirects is true.
-     *
-     * UserAgent is Java/1.8.0_102.
+     * Only remote http(s) resources on public hosts are read; file:, jar: etc. are rejected.
      *
      * @param url http request url
      */
     public static void imageIO(String url) {
-        try {
-            URL u = new URL(url);
-            ImageIO.read(u); // send request
+        try (InputStream is = SafeUrl.parse(url).open()) { // send request
+            ImageIO.read(is);
+        } catch (SSRFException e) {
+            logger.error("Blocked illegal url");
         } catch (IOException e) {
             logger.error(e.getMessage());
         }
-
     }
 
 
     /**
-     * IOUtils which is wrapped by URLConnection can get remote pictures.
-     * The default setting of redirection is true.
+     * Read the remote resource through the pinned client.
      *
      * @param url http request url
      */
     public static void IOUtils(String url) {
-        try {
-            IOUtils.toByteArray(URI.create(url));
+        try (InputStream is = SafeUrl.parse(url).open()) {
+            IOUtils.toByteArray(is);
+        } catch (SSRFException e) {
+            logger.error("Blocked illegal url");
         } catch (IOException e) {
             logger.error(e.getMessage());
         }
@@ -203,21 +177,12 @@ public class HttpUtils {
 
 
     public static String HttpAsyncClients(String url) {
-        CloseableHttpAsyncClient httpclient = HttpAsyncClients.createDefault();
         try {
-            httpclient.start();
-            final HttpGet request = new HttpGet(url);
-            Future<HttpResponse> future = httpclient.execute(request, null);
-            HttpResponse response = future.get(6000, TimeUnit.MILLISECONDS);
-            return EntityUtils.toString(response.getEntity());
+            return readAll(SafeUrl.parse(url).open());
+        } catch (SSRFException e) {
+            return ILLEGAL_URL;
         } catch (Exception e) {
             return e.getMessage();
-        } finally {
-            try {
-                httpclient.close();
-            } catch (Exception e) {
-                logger.error(e.getMessage());
-            }
         }
     }
 }
