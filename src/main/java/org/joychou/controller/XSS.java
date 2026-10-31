@@ -1,5 +1,6 @@
 package org.joychou.controller;
 
+import org.joychou.security.SecurityUtil;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
@@ -42,7 +43,12 @@ public class XSS {
     @RequestMapping("/stored/store")
     @ResponseBody
     public String store(String xss, HttpServletResponse response) {
-        Cookie cookie = new Cookie("xss", xss);
+        // Reject CR, LF and any other control character, then URL-encode what goes into Set-Cookie.
+        if (!SecurityUtil.isValidHeaderValue(xss)) {
+            response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+            return "Invalid xss parameter";
+        }
+        Cookie cookie = new Cookie("xss", SecurityUtil.encodeHeaderValue(xss));
         cookie.setHttpOnly(true);
         cookie.setSecure(true);
         cookie.setPath("/");
