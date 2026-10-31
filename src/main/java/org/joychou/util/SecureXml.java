@@ -8,7 +8,7 @@ import com.thoughtworks.xstream.security.NullPermission;
 import com.thoughtworks.xstream.security.PrimitiveTypePermission;
 import org.apache.commons.digester3.Digester;
 import org.jdom2.JDOMException;
-import org.jdom2.input.SAXBuilder;
+import org.jdom2.input.DOMBuilder;
 import org.w3c.dom.Document;
 import org.xml.sax.EntityResolver;
 import org.xml.sax.InputSource;
@@ -76,9 +76,28 @@ public final class SecureXml {
         return xml;
     }
 
-    // ---------------------------------------------------------------- factories
+    // ------------------------------------------------------------------ parsing
 
-    public static SAXParserFactory newSaxParserFactory() throws ParserConfigurationException, SAXException {
+    /**
+     * Parses request-derived XML with a JDOM2 builder fed from the hardened DOM parse.
+     */
+    public static org.jdom2.Document buildJdom(String xml)
+            throws JDOMException, IOException, SAXException {
+        try {
+            return new DOMBuilder().build(parseHardenedDom(xml));
+        } catch (ParserConfigurationException e) {
+            throw new SAXException(e);
+        }
+    }
+
+    /**
+     * Parses request-derived XML with a Commons Digester that is driven as the content handler of
+     * a hardened SAX parser.
+     */
+    public static Object parseDigester(String xml)
+            throws IOException, SAXException, ParserConfigurationException {
+        requireNoDtd(xml);
+
         SAXParserFactory spf = SAXParserFactory.newInstance();
         spf.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
         spf.setFeature(DISALLOW_DOCTYPE, true);
@@ -86,18 +105,32 @@ public final class SecureXml {
         spf.setFeature(PARAMETER_ENTITIES, false);
         spf.setFeature(LOAD_EXTERNAL_DTD, false);
         spf.setXIncludeAware(false);
-        return spf;
+        spf.setNamespaceAware(true);
+        SAXParser parser = spf.newSAXParser();
+        try {
+            parser.setProperty(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+            parser.setProperty(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
+        } catch (SAXException ignored) {
+            // property unsupported by this parser implementation; DOCTYPE is already disallowed
+        }
+
+        Digester digester = new Digester();
+        digester.setEntityResolver(DENY_ENTITIES);
+        parser.parse(new InputSource(new StringReader(xml)), digester);
+        return digester.getRoot();
     }
 
-    public static SAXParser newSaxParser() throws ParserConfigurationException, SAXException {
-        SAXParser parser = newSaxParserFactory().newSAXParser();
-        // Not every parser implementation knows these; DOCTYPE is already disallowed above.
-        trySetProperty(parser, XMLConstants.ACCESS_EXTERNAL_DTD);
-        trySetProperty(parser, XMLConstants.ACCESS_EXTERNAL_SCHEMA);
-        return parser;
+    /** Parses request-derived XML into a DOM with a hardened DocumentBuilder. */
+    public static Document parseDom(String xml)
+            throws IOException, SAXException, ParserConfigurationException {
+        return parseHardenedDom(xml);
     }
 
-    public static DocumentBuilder newDocumentBuilder() throws ParserConfigurationException {
+    /** OWASP-style hardened DOM parse: factory, hardening and parse all live in this method. */
+    private static Document parseHardenedDom(String xml)
+            throws IOException, SAXException, ParserConfigurationException {
+        requireNoDtd(xml);
+
         DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
         dbf.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
         dbf.setFeature(DISALLOW_DOCTYPE, true);
@@ -106,73 +139,15 @@ public final class SecureXml {
         dbf.setFeature(LOAD_EXTERNAL_DTD, false);
         dbf.setXIncludeAware(false);
         dbf.setExpandEntityReferences(false);
-        trySetAttribute(dbf, XMLConstants.ACCESS_EXTERNAL_DTD);
-        trySetAttribute(dbf, XMLConstants.ACCESS_EXTERNAL_SCHEMA);
+        try {
+            dbf.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+            dbf.setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
+        } catch (IllegalArgumentException ignored) {
+            // attribute unsupported by this parser implementation; DOCTYPE is already disallowed
+        }
         DocumentBuilder db = dbf.newDocumentBuilder();
         db.setEntityResolver(DENY_ENTITIES);
-        return db;
-    }
-
-    public static SAXBuilder newSaxBuilder() {
-        SAXBuilder builder = new SAXBuilder();
-        builder.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
-        builder.setFeature(DISALLOW_DOCTYPE, true);
-        builder.setFeature(GENERAL_ENTITIES, false);
-        builder.setFeature(PARAMETER_ENTITIES, false);
-        builder.setFeature(LOAD_EXTERNAL_DTD, false);
-        builder.setExpandEntities(false);
-        builder.setEntityResolver(DENY_ENTITIES);
-        return builder;
-    }
-
-    public static org.dom4j.io.SAXReader newSaxReader() throws SAXException {
-        org.dom4j.io.SAXReader reader = new org.dom4j.io.SAXReader();
-        reader.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
-        reader.setFeature(DISALLOW_DOCTYPE, true);
-        reader.setFeature(GENERAL_ENTITIES, false);
-        reader.setFeature(PARAMETER_ENTITIES, false);
-        reader.setFeature(LOAD_EXTERNAL_DTD, false);
-        reader.setEntityResolver(DENY_ENTITIES);
-        return reader;
-    }
-
-    /** Parses request-derived XML with a hardened dom4j SAXReader. */
-    public static org.dom4j.Document parseDom4j(String xml) throws org.dom4j.DocumentException, SAXException {
-        requireNoDtd(xml);
-        return newSaxReader().read(new InputSource(new StringReader(xml)));
-    }
-
-    public static Digester newDigester() throws ParserConfigurationException, SAXException {
-        Digester digester = new Digester();
-        digester.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
-        digester.setFeature(DISALLOW_DOCTYPE, true);
-        digester.setFeature(GENERAL_ENTITIES, false);
-        digester.setFeature(PARAMETER_ENTITIES, false);
-        digester.setFeature(LOAD_EXTERNAL_DTD, false);
-        digester.setEntityResolver(DENY_ENTITIES);
-        return digester;
-    }
-
-    // ------------------------------------------------------------------ parsing
-
-    /** Parses request-derived XML with a hardened JDOM2 SAXBuilder. */
-    public static org.jdom2.Document buildJdom(String xml) throws JDOMException, IOException, SAXException {
-        requireNoDtd(xml);
-        return newSaxBuilder().build(new InputSource(new StringReader(xml)));
-    }
-
-    /** Parses request-derived XML with a hardened Commons Digester. */
-    public static Object parseDigester(String xml)
-            throws IOException, SAXException, ParserConfigurationException {
-        requireNoDtd(xml);
-        return newDigester().parse(new StringReader(xml));
-    }
-
-    /** Parses request-derived XML into a DOM with a hardened DocumentBuilder. */
-    public static Document parseDom(String xml)
-            throws IOException, SAXException, ParserConfigurationException {
-        requireNoDtd(xml);
-        return newDocumentBuilder().parse(new InputSource(new StringReader(xml)));
+        return db.parse(new InputSource(new StringReader(xml)));
     }
 
     // ------------------------------------------------------------------- XStream
@@ -198,33 +173,100 @@ public final class SecureXml {
      */
     public static Object fromXml(XStream xstream, String xml)
             throws IOException, SAXException, ParserConfigurationException {
-        Document document = parseDom(xml);
+        Document document = parseHardenedDom(xml);
         return xstream.unmarshal(new DomReader(document));
     }
 
     // --------------------------------------------------------------------- xlsx
 
+    private static final int MAX_ZIP_ENTRIES = 1000;
+    private static final long MAX_ENTRY_BYTES = 10L * 1024 * 1024;
+    private static final long MAX_TOTAL_BYTES = 100L * 1024 * 1024;
+
+    /** Stream view of one zip entry that fails once more than the allowed bytes are read. */
+    private static final class BoundedEntryStream extends FilterInputStream {
+        private final long limit;
+        private final long[] total;
+        private long read;
+
+        BoundedEntryStream(InputStream in, long limit, long[] total) {
+            super(in);
+            this.limit = limit;
+            this.total = total;
+        }
+
+        private void count(long n) throws IOException {
+            if (n > 0) {
+                read += n;
+                total[0] += n;
+                if (read > limit || total[0] > MAX_TOTAL_BYTES) {
+                    throw new IOException("xlsx part exceeds the allowed size");
+                }
+            }
+        }
+
+        @Override
+        public int read() throws IOException {
+            int b = super.read();
+            if (b >= 0) {
+                count(1);
+            }
+            return b;
+        }
+
+        @Override
+        public int read(byte[] buf, int off, int len) throws IOException {
+            int n = super.read(buf, off, len);
+            count(n);
+            return n;
+        }
+
+        @Override
+        public void close() {
+            // keep the underlying ZipInputStream open
+        }
+    }
+
     /**
-     * Parses every XML part of an OOXML (zip) package with the hardened SAX parser; throws if any
-     * part declares a DOCTYPE/ENTITY or is not well-formed.
+     * Parses every XML part of an OOXML (zip) package with a hardened SAX parser; throws if the
+     * package has too many entries, any entry is larger than 10 MB, any part declares a
+     * DOCTYPE/ENTITY, or any part is not well-formed.
      */
     public static void requireSafeXlsx(byte[] content) throws IOException {
         try {
+            SAXParserFactory spf = SAXParserFactory.newInstance();
+            spf.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+            spf.setFeature(DISALLOW_DOCTYPE, true);
+            spf.setFeature(GENERAL_ENTITIES, false);
+            spf.setFeature(PARAMETER_ENTITIES, false);
+            spf.setFeature(LOAD_EXTERNAL_DTD, false);
+            spf.setXIncludeAware(false);
+
+            long[] total = new long[1];
+            int entries = 0;
             try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(content))) {
                 ZipEntry entry;
                 while ((entry = zis.getNextEntry()) != null) {
+                    if (++entries > MAX_ZIP_ENTRIES) {
+                        throw new IOException("xlsx package has too many entries");
+                    }
+                    if (entry.getSize() > MAX_ENTRY_BYTES) {
+                        throw new IOException("xlsx entry exceeds the allowed size");
+                    }
                     String name = entry.getName().toLowerCase(Locale.ROOT);
                     if (entry.isDirectory() || !(name.endsWith(".xml") || name.endsWith(".rels"))) {
+                        // Still bound what is inflated for entries that are skipped.
+                        drain(new BoundedEntryStream(zis, MAX_ENTRY_BYTES, total));
                         continue;
                     }
-                    // Do not let the parser close the shared zip stream.
-                    InputStream part = new FilterInputStream(zis) {
-                        @Override
-                        public void close() {
-                            // keep the underlying ZipInputStream open
-                        }
-                    };
-                    newSaxParser().parse(part, new DenyingHandler());
+                    SAXParser parser = spf.newSAXParser();
+                    try {
+                        parser.setProperty(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+                        parser.setProperty(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
+                    } catch (SAXException ignored) {
+                        // property unsupported by this parser implementation; DOCTYPE is disallowed
+                    }
+                    parser.parse(new BoundedEntryStream(zis, MAX_ENTRY_BYTES, total), new DenyingHandler());
                 }
             }
         } catch (IOException e) {
@@ -234,21 +276,10 @@ public final class SecureXml {
         }
     }
 
-    // ------------------------------------------------------------------ helpers
-
-    private static void trySetProperty(SAXParser parser, String property) {
-        try {
-            parser.setProperty(property, "");
-        } catch (SAXException ignored) {
-            // property unsupported by this parser implementation
-        }
-    }
-
-    private static void trySetAttribute(DocumentBuilderFactory dbf, String attribute) {
-        try {
-            dbf.setAttribute(attribute, "");
-        } catch (IllegalArgumentException ignored) {
-            // attribute unsupported by this parser implementation
+    private static void drain(InputStream in) throws IOException {
+        byte[] buf = new byte[8192];
+        while (in.read(buf) != -1) {
+            // discard, size is enforced by the bounded stream
         }
     }
 }

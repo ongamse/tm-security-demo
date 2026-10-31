@@ -27,6 +27,8 @@ import java.io.IOException;
 @RequestMapping("xlsx-streamer")
 public class xlsxStreamerXXE {
 
+    private static final long MAX_UPLOAD_BYTES = 20L * 1024 * 1024;
+
 
     @GetMapping("/upload")
     public String index() {
@@ -36,10 +38,16 @@ public class xlsxStreamerXXE {
 
     @PostMapping("/readxlsx")
     public void xllx_streamer_xxe(MultipartFile file) throws IOException {
+        if (file.getSize() > MAX_UPLOAD_BYTES) {
+            throw new IOException("Uploaded file is too large");
+        }
         byte[] content = file.getBytes();
-        // Every XML part is validated by the hardened parser before the library sees the package.
+        // Zip entry count/size caps and every XML part (DOCTYPE/ENTITY rejected, hardened SAX
+        // parser) are validated before the library sees the package.
         SecureXml.requireSafeXlsx(content);
-        StreamingReader.builder().open(new ByteArrayInputStream(content));
+        try (Workbook workbook = StreamingReader.builder().open(new ByteArrayInputStream(content))) {
+            // package passed validation; nothing further to do with the workbook here
+        }
     }
 
     public static void main(String[] args) throws Exception {
