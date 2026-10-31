@@ -28,7 +28,7 @@ public class Cors {
 
     @GetMapping("/vuln/origin")
     public String vuls1(HttpServletRequest request, HttpServletResponse response) {
-        // 只有白名单内的origin才会被反射，并且只对白名单origin允许携带cookie
+        // 只有白名单内的origin才会被反射，且不允许跨域携带cookie
         // The header value is the matching server-side constant, never the request value.
         // The response depends on the Origin request header, so caches must key on it.
         response.setHeader("Vary", "Origin");
@@ -37,7 +37,7 @@ public class Cors {
             response.setHeader("Access-Control-Allow-Origin", origin);
             response.setHeader("Access-Control-Allow-Methods", ALLOWED_METHODS);
             response.setHeader("Access-Control-Allow-Headers", ALLOWED_HEADERS);
-            response.setHeader("Access-Control-Allow-Credentials", "true");  // allow cookie, trusted origin only
+            // Credentials are intentionally not allowed: cross-site requests never carry cookies.
         }
         return info;
     }
@@ -136,7 +136,7 @@ public class Cors {
             response.setHeader("Access-Control-Allow-Origin", safeOrigin);
             response.setHeader("Access-Control-Allow-Methods", ALLOWED_METHODS);
             response.setHeader("Access-Control-Allow-Headers", ALLOWED_HEADERS);
-            response.setHeader("Access-Control-Allow-Credentials", "true");
+            // Credentials are intentionally not allowed: cross-site requests never carry cookies.
         }
         return LoginUtils.getUserInfo2JsonStr(request);
     }

@@ -53,7 +53,7 @@ public class OriginFilter implements Filter {
             response.setHeader("Access-Control-Allow-Origin", safeOrigin);
             response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
             response.setHeader("Access-Control-Allow-Headers", "Content-Type");
-            response.setHeader("Access-Control-Allow-Credentials", "true");
+            // Credentials are intentionally not allowed: cross-site requests never carry cookies.
         }
 
         filterChain.doFilter(req, res);
