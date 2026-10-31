@@ -33,7 +33,7 @@ public class SecurityUtil {
      * @return true or false
      */
     public static boolean isHttp(String url) {
-        return url.startsWith("http://") || url.startsWith("https://");
+        return url != null && (url.startsWith("http://") || url.startsWith("https://"));
     }
 
 
@@ -46,8 +46,10 @@ public class SecurityUtil {
     public static String gethost(String url) {
         try {
             URI uri = new URI(url);
-            return uri.getHost().toLowerCase();
-        } catch (URISyntaxException e) {
+            String host = uri.getHost();
+            // Opaque / host-less URIs have no host: fail closed with an empty host.
+            return host == null ? "" : host.toLowerCase();
+        } catch (URISyntaxException | NullPointerException e) {
             return "";
         }
     }

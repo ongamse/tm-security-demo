@@ -116,7 +116,44 @@ public class SSRFChecker {
             return true; // 如果域名转换为IP异常，则认为是非法URL
         }
 
-        return isInternalIp(ip);
+        try {
+            if (isInternalIp(ip)) {
+                return true;
+            }
+            // Check every address the host resolves to (A/AAAA records), not only the first one,
+            // and always reject loopback / link-local (cloud metadata) / private / unique-local ranges.
+            for (InetAddress address : InetAddress.getAllByName(host)) {
+                if (isInternalAddress(address)) {
+                    return true;
+                }
+            }
+            return isInternalAddress(InetAddress.getByName(ip));
+        } catch (Exception e) {
+            logger.error("[-] SSRF check failed. Unable to validate host: " + e.getMessage());
+            return true; // fail closed
+        }
+    }
+
+
+    /**
+     * Reject non-routable addresses regardless of the configured block list.
+     */
+    private static boolean isInternalAddress(InetAddress address) {
+        if (address.isAnyLocalAddress() || address.isLoopbackAddress() || address.isLinkLocalAddress()
+                || address.isSiteLocalAddress() || address.isMulticastAddress()) {
+            return true;
+        }
+        byte[] raw = address.getAddress();
+        if (raw.length == 16) {
+            return (raw[0] & 0xfe) == 0xfc; // IPv6 unique local fc00::/7
+        }
+        if (raw.length == 4) {
+            if ((raw[0] & 0xff) == 100 && (raw[1] & 0xc0) == 64) {
+                return true; // carrier-grade NAT 100.64.0.0/10
+            }
+            return isInternalIp(address.getHostAddress());
+        }
+        return false;
     }
 
 
@@ -291,8 +328,9 @@ public class SSRFChecker {
         try {
             // use URI instead of URL
             URI u = new URI(url);
-            if (SecurityUtil.isHttp(url)) {
-                return u.getHost();
+            String host = u.getHost();
+            if (SecurityUtil.isHttp(url) && host != null) {
+                return host;
             }
             return "";
         } catch (Exception e) {
