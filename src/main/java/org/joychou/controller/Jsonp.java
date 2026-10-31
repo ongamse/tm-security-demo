@@ -21,6 +21,7 @@ import org.joychou.util.WebUtils;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.security.Principal;
+import java.util.regex.Pattern;
 
 
 /**
@@ -32,6 +33,8 @@ import java.security.Principal;
 @RestController
 @RequestMapping("/jsonp")
 public class Jsonp {
+
+    private static final Pattern CALLBACK_PATTERN = Pattern.compile("^[A-Za-z_$][A-Za-z0-9_$.]{0,63}$");
 
     private String callback = WebConfig.getBusinessCallback();
 
@@ -131,6 +134,9 @@ public class Jsonp {
 
         String callback = request.getParameter("fastjsonpCallback");
         if (StringUtils.isNotBlank(callback)) {
+            if (!CALLBACK_PATTERN.matcher(callback).matches()) {
+                return "error";
+            }
             JSONPObject jsonpObj = new JSONPObject(callback);
             jsonpObj.addParameter(csrfToken);
             return jsonpObj.toString();
