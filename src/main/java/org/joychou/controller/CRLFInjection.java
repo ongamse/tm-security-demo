@@ -24,7 +24,9 @@ public class CRLFInjection {
         String test1 = request.getParameter("test1");
         String test2 = request.getParameter("test2");
         // Reject CR, LF and any other control character outright, then URL-encode what is echoed.
-        if (!SecurityUtil.isValidHeaderValue(test1) || !SecurityUtil.isValidHeaderValue(test2)) {
+        String author = request.getParameter("test3");
+        if (!SecurityUtil.isValidHeaderValue(test1) || !SecurityUtil.isValidHeaderValue(test2)
+                || !SecurityUtil.isValidHeaderValue(author)) {
             response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
             return;
         }
@@ -34,8 +36,8 @@ public class CRLFInjection {
         if (test2 != null) {
             response.setHeader("test2", SecurityUtil.encodeHeaderValue(test2));
         }
-        String author = request.getParameter("test3");
-        Cookie cookie = new Cookie("test3", author);
+        // URL-encoded so only [A-Za-z0-9%._~*+-] can reach the Set-Cookie header.
+        Cookie cookie = new Cookie("test3", SecurityUtil.encodeHeaderValue(author));
         cookie.setHttpOnly(true);
         cookie.setSecure(true);
         cookie.setPath("/");
