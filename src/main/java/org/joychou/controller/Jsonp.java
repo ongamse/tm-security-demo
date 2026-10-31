@@ -9,7 +9,9 @@ import org.apache.commons.lang.StringUtils;
 import org.joychou.security.SecurityUtil;
 import org.joychou.util.LoginUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.web.bind.annotation.*;
@@ -40,15 +42,38 @@ public class Jsonp {
 
     @Autowired
     CookieCsrfTokenRepository cookieCsrfTokenRepository;
+
+    private static ResponseEntity<String> text(HttpStatus status, MediaType type, String body) {
+        return ResponseEntity.status(status)
+                .contentType(type)
+                .header("X-Content-Type-Options", "nosniff")
+                .body(body);
+    }
+
+    private static ResponseEntity<String> error() {
+        return text(HttpStatus.BAD_REQUEST, MediaType.TEXT_PLAIN, "error");
+    }
+
+    /**
+     * The callback is validated strictly before it reaches the response; the body is served as
+     * application/javascript with nosniff.
+     */
+    private static ResponseEntity<String> jsonp(String callback, String jsonStr) {
+        if (!WebUtils.isValidJsonpCallback(callback)) {
+            return error();
+        }
+        return text(HttpStatus.OK, MediaType.parseMediaType("application/javascript;charset=UTF-8"),
+                WebUtils.json2Jsonp(callback, jsonStr));
+    }
     /**
      * Set the response content-type to application/javascript.
      * <p>
      * http://localhost:8080/jsonp/vuln/referer?callback_=test
      */
     @RequestMapping(value = "/vuln/referer", produces = "application/javascript")
-    public String referer(HttpServletRequest request) {
+    public ResponseEntity<String> referer(HttpServletRequest request) {
         String callback = request.getParameter(this.callback);
-        return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
+        return jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
     }
 
     /**
@@ -58,14 +83,14 @@ public class Jsonp {
      * http://localhost:8080/jsonp/vuln/emptyReferer?callback_=test
      */
     @RequestMapping(value = "/vuln/emptyReferer", produces = "application/javascript")
-    public String emptyReferer(HttpServletRequest request) {
+    public ResponseEntity<String> emptyReferer(HttpServletRequest request) {
         String referer = request.getHeader("referer");
 
         if (null != referer && SecurityUtil.checkURL(referer) == null) {
-            return "error";
+            return error();
         }
         String callback = request.getParameter(this.callback);
-        return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
+        return jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
     }
 
     /**
@@ -103,14 +128,14 @@ public class Jsonp {
      * http://localhost:8080/jsonp/sec?callback_=test
      */
     @RequestMapping(value = "/sec/checkReferer", produces = "application/javascript")
-    public String safecode(HttpServletRequest request) {
+    public ResponseEntity<String> safecode(HttpServletRequest request) {
         String referer = request.getHeader("referer");
 
         if (SecurityUtil.checkURL(referer) == null) {
-            return "error";
+            return error();
         }
         String callback = request.getParameter(this.callback);
-        return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
+        return jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
     }
 
     /**
@@ -129,19 +154,20 @@ public class Jsonp {
      * fastjsonp to jsonp
      */
     @GetMapping(value = "/fastjsonp/getToken", produces = "application/javascript")
-    public String getCsrfToken2(HttpServletRequest request) {
+    public ResponseEntity<String> getCsrfToken2(HttpServletRequest request) {
         CsrfToken csrfToken = cookieCsrfTokenRepository.loadToken(request); // get csrf token
 
         String callback = request.getParameter("fastjsonpCallback");
         if (StringUtils.isNotBlank(callback)) {
             if (!CALLBACK_PATTERN.matcher(callback).matches()) {
-                return "error";
+                return error();
             }
             JSONPObject jsonpObj = new JSONPObject(callback);
             jsonpObj.addParameter(csrfToken);
-            return jsonpObj.toString();
+            return text(HttpStatus.OK, MediaType.parseMediaType("application/javascript;charset=UTF-8"),
+                    jsonpObj.toString());
         } else {
-            return csrfToken.toString();
+            return text(HttpStatus.OK, MediaType.TEXT_PLAIN, csrfToken.toString());
         }
     }
 

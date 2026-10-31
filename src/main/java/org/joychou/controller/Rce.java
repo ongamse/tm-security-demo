@@ -4,6 +4,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.joychou.security.SecurityUtil;
 import org.joychou.security.ssrf.SSRFException;
 import org.joychou.security.ssrf.SafeUrl;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -70,14 +72,14 @@ public class Rce {
     /**
      * <a href="http://localhost:8080/rce/ProcessBuilder?cmd=whoami">POC</a>
      */
-    @GetMapping("/ProcessBuilder")
-    public String processBuilder(String cmd) {
+    @GetMapping(value = "/ProcessBuilder", produces = MediaType.TEXT_PLAIN_VALUE)
+    public ResponseEntity<String> processBuilder(String cmd) {
 
         StringBuilder sb = new StringBuilder();
 
         String[] arrCmd = SecurityUtil.cmdArgv(cmd);
         if (arrCmd == null) {
-            return "Bad boy. I got u.";
+            return plainText("Bad boy. I got u.");
         }
 
         try {
@@ -91,10 +93,18 @@ public class Rce {
                 sb.append(tmpStr);
             }
         } catch (Exception e) {
-            return e.toString();
+            return plainText(HtmlUtils.htmlEscape(e.toString()));
         }
 
-        return sb.toString();
+        return plainText(HtmlUtils.htmlEscape(sb.toString()));
+    }
+
+
+    private static ResponseEntity<String> plainText(String body) {
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType("text/plain;charset=UTF-8"))
+                .header("X-Content-Type-Options", "nosniff")
+                .body(body);
     }
 
 
