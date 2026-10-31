@@ -4,6 +4,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * RASP：Hook java/io/ObjectInputStream类的resolveClass方法
@@ -14,6 +17,16 @@ import java.io.*;
 public class AntObjectInputStream extends ObjectInputStream {
 
     protected final Logger logger= LoggerFactory.getLogger(AntObjectInputStream.class);
+
+    // Allowlist of classes that may be deserialized; everything else is rejected.
+    private static final Set<String> ALLOWED_CLASSES = new HashSet<>(Arrays.asList(
+            "java.lang.String",
+            "java.lang.Number",
+            "java.lang.Integer",
+            "java.lang.Long",
+            "java.lang.Boolean",
+            "org.joychou.security.AntObjectInputStream$MyObject"
+    ));
 
     public AntObjectInputStream(InputStream inputStream) throws IOException {
         super(inputStream);
@@ -36,14 +49,20 @@ public class AntObjectInputStream extends ObjectInputStream {
         // Deserialize class name: org.joychou.security.AntObjectInputStream$MyObject
         logger.info("Deserialize class name: " + className);
 
-        String[] denyClasses = {"java.net.InetAddress",
-                                "org.apache.commons.collections.Transformer",
-                                "org.apache.commons.collections.functors"};
+        // Unwrap array types such as "[Ljava.lang.String;" to the element type name.
+        String baseName = className;
+        while (baseName.startsWith("[")) {
+            baseName = baseName.substring(1);
+        }
+        if (baseName.startsWith("L") && baseName.endsWith(";")) {
+            baseName = baseName.substring(1, baseName.length() - 1);
+        }
 
-        for (String denyClass : denyClasses) {
-            if (className.startsWith(denyClass)) {
-                throw new InvalidClassException("Unauthorized deserialization attempt", className);
-            }
+        // Primitive array element types (e.g. "[B" -> "B") are single characters.
+        boolean primitive = baseName.length() == 1 && "BCDFIJSZ".contains(baseName);
+
+        if (!primitive && !ALLOWED_CLASSES.contains(baseName)) {
+            throw new InvalidClassException("Unauthorized deserialization attempt", className);
         }
 
         return super.resolveClass(desc);
