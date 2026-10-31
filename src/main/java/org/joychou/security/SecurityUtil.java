@@ -12,12 +12,17 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 
 public class SecurityUtil {
 
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
+    private static final Set<String> ALLOWED_COMMANDS = new HashSet<>(
+            Arrays.asList("whoami", "id", "date", "pwd", "uname", "hostname", "ls"));
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
 
 
@@ -205,6 +210,35 @@ public class SecurityUtil {
         }
 
         return input;
+    }
+
+
+    /**
+     * Split a user supplied command line into an argv array for a no-shell exec.
+     * The executable must be in a fixed allowlist and every argument must match
+     * {@link #FILTER_PATTERN}. No shell is involved, so metacharacters are never interpreted.
+     *
+     * @param cmd user supplied command line, e.g. "ls -la /tmp"
+     * @return argv array, or null if the command is empty, not allowlisted or has an illegal argument
+     */
+    public static String[] cmdArgv(String cmd) {
+        if (cmd == null) {
+            return null;
+        }
+        String trimmed = cmd.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        String[] argv = trimmed.split("\\s+");
+        if (!ALLOWED_COMMANDS.contains(argv[0])) {
+            return null;
+        }
+        for (String arg : argv) {
+            if (cmdFilter(arg) == null) {
+                return null;
+            }
+        }
+        return argv;
     }
 
 
