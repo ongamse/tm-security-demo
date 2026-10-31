@@ -20,16 +20,24 @@ import javax.servlet.http.HttpServletResponse;
 @RequestMapping("/cors")
 public class Cors {
 
+    // Explicit least-privilege CORS constants (never wildcards).
+    private static final String ALLOWED_METHODS = "GET";
+    private static final String ALLOWED_HEADERS = "Content-Type";
+
     private static String info = "{\"name\": \"JoyChou\", \"phone\": \"18200001111\"}";
 
     @GetMapping("/vuln/origin")
     public String vuls1(HttpServletRequest request, HttpServletResponse response) {
         // 只有白名单内的origin才会被反射，并且只对白名单origin允许携带cookie
         // The header value is the matching server-side constant, never the request value.
-        String origin = SecurityUtil.lookupTrustedOrigin(request.getHeader("origin"));
+        // The response depends on the Origin request header, so caches must key on it.
+        response.setHeader("Vary", "Origin");
+        String origin = SecurityUtil.lookupTrustedOrigin(request.getHeader("Origin"));
         if (origin != null) {
             response.setHeader("Access-Control-Allow-Origin", origin);
-            response.setHeader("Access-Control-Allow-Credentials", "true");  // allow cookie
+            response.setHeader("Access-Control-Allow-Methods", ALLOWED_METHODS);
+            response.setHeader("Access-Control-Allow-Headers", ALLOWED_HEADERS);
+            response.setHeader("Access-Control-Allow-Credentials", "true");  // allow cookie, trusted origin only
         }
         return info;
     }
@@ -37,10 +45,13 @@ public class Cors {
     @GetMapping("/vuln/setHeader")
     public String vuls2(HttpServletRequest request, HttpServletResponse response) {
         // 不再使用通配符*，仅对白名单内的origin设置Access-Control-Allow-Origin
+        response.setHeader("Vary", "Origin");
         String origin = SecurityUtil.lookupTrustedOrigin(request.getHeader("Origin"));
         if (origin != null) {
+            // No credentials for this endpoint: only the trusted-origin constant, read-only methods.
             response.setHeader("Access-Control-Allow-Origin", origin);
-            response.setHeader("Vary", "Origin");
+            response.setHeader("Access-Control-Allow-Methods", ALLOWED_METHODS);
+            response.setHeader("Access-Control-Allow-Headers", ALLOWED_HEADERS);
         }
         return info;
     }
@@ -119,9 +130,12 @@ public class Cors {
             return "Origin is not safe.";
         }
         // 只有校验通过的白名单origin才设置CORS头；同域请求不需要CORS头。
+        response.setHeader("Vary", "Origin");
         String safeOrigin = SecurityUtil.lookupTrustedOrigin(origin);
         if (safeOrigin != null) {
             response.setHeader("Access-Control-Allow-Origin", safeOrigin);
+            response.setHeader("Access-Control-Allow-Methods", ALLOWED_METHODS);
+            response.setHeader("Access-Control-Allow-Headers", ALLOWED_HEADERS);
             response.setHeader("Access-Control-Allow-Credentials", "true");
         }
         return LoginUtils.getUserInfo2JsonStr(request);
