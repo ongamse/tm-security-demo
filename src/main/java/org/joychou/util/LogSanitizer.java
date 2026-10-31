@@ -1,8 +1,11 @@
 package org.joychou.util;
 
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
+import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 
 /**
  * Neutralizes untrusted values before they are written to a log (CWE-117, log forging).
@@ -13,8 +16,18 @@ public final class LogSanitizer {
 
     private static final int MAX_LENGTH = 200;
     private static final int FINGERPRINT_HEX_LENGTH = 16;
+    private static final String HMAC_ALGORITHM = "HmacSHA256";
+    // Per-process random key: fingerprints are only comparable within one JVM run and cannot be
+    // reversed with precomputed (unsalted) hash tables.
+    private static final SecretKeySpec HMAC_KEY = newRandomKey();
 
     private LogSanitizer() {
+    }
+
+    private static SecretKeySpec newRandomKey() {
+        byte[] key = new byte[32];
+        new SecureRandom().nextBytes(key);
+        return new SecretKeySpec(key, HMAC_ALGORITHM);
     }
 
     /**
@@ -27,15 +40,16 @@ public final class LogSanitizer {
             return "null";
         }
         try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(String.valueOf(value).getBytes(StandardCharsets.UTF_8));
+            Mac mac = Mac.getInstance(HMAC_ALGORITHM);
+            mac.init(HMAC_KEY);
+            byte[] hash = mac.doFinal(String.valueOf(value).getBytes(StandardCharsets.UTF_8));
             StringBuilder sb = new StringBuilder(FINGERPRINT_HEX_LENGTH);
             for (int i = 0; i < FINGERPRINT_HEX_LENGTH / 2; i++) {
                 sb.append(Character.forDigit((hash[i] >> 4) & 0xF, 16));
                 sb.append(Character.forDigit(hash[i] & 0xF, 16));
             }
             return sb.toString();
-        } catch (NoSuchAlgorithmException e) {
+        } catch (NoSuchAlgorithmException | InvalidKeyException e) {
             return "unavailable";
         }
     }
