@@ -123,7 +123,7 @@ public class SSRF {
         try {
             String downLoadImgFileName = WebUtils.getNameWithoutExtension(url) + "." + WebUtils.getFileExtension(url);
             // download
-            response.setHeader("content-disposition", "attachment;fileName=" + downLoadImgFileName);
+            response.setHeader("content-disposition", "attachment;fileName=" + SecurityUtil.stripCRLF(downLoadImgFileName));
 
             // Only http/https to external hosts; redirects are not followed.
             if (!SecurityUtil.isHttp(url) || !SecurityUtil.checkSSRFWithoutRedirect(url)) {

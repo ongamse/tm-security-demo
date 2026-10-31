@@ -285,6 +285,20 @@ public class SecurityUtil {
         return sb.toString();
     }
 
+    /**
+     * Remove CR, LF and NUL characters so that a value is safe to write into an
+     * HTTP response header (prevents header injection / response splitting).
+     *
+     * @param value untrusted header value
+     * @return the value without CR/LF/NUL; null stays null
+     */
+    public static String stripCRLF(String value) {
+        if (value == null) {
+            return null;
+        }
+        return value.replaceAll("[\\r\\n\\u0000]", "");
+    }
+
     public static void main(String[] args) {
     }
 
