@@ -10,12 +10,9 @@ import org.springframework.web.util.HtmlUtils;
 
 import javax.servlet.http.HttpServletRequest;
 import java.io.IOException;
-import java.util.regex.Pattern;
 
 @RestController
 public class CommandInject {
-
-    private static final Pattern HOST_PATTERN = Pattern.compile("^[a-zA-Z0-9][a-zA-Z0-9.-]*(:[0-9]{1,5})?$");
 
     protected final Logger logger = LoggerFactory.getLogger(this.getClass());
 
@@ -28,7 +25,8 @@ public class CommandInject {
     @GetMapping("/codeinject")
     public String codeInject(String filepath) throws IOException {
 
-        String safePath = SecurityUtil.cmdFilter(filepath);
+        // the request value is only a lookup key; the argument passed to ls is a server-side constant
+        String safePath = SecurityUtil.lookupDirectory(filepath);
         if (null == safePath) {
             return "Bad boy. I got u.";
         }
@@ -49,11 +47,13 @@ public class CommandInject {
 
         String host = request.getHeader("host");
         logger.info(host);
-        // the Host header is attacker-controlled: only a plain host[:port] is accepted, no shell, no option injection
-        if (host == null || !HOST_PATTERN.matcher(host).matches()) {
+        // the Host header is attacker-controlled: it is only a lookup key into a fixed set of
+        // server-side host constants, the constant (not the header) is passed to curl
+        String safeHost = SecurityUtil.lookupHost(host);
+        if (safeHost == null) {
             return "Bad boy. I got u.";
         }
-        String[] cmdList = new String[]{"curl", "--", host};
+        String[] cmdList = new String[]{"curl", "--", safeHost};
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);
         Process process = builder.start();
@@ -62,7 +62,7 @@ public class CommandInject {
 
     @GetMapping("/codeinject/sec")
     public String codeInjectSec(String filepath) throws IOException {
-        String filterFilePath = SecurityUtil.cmdFilter(filepath);
+        String filterFilePath = SecurityUtil.lookupDirectory(filepath);
         if (null == filterFilePath) {
             return "Bad boy. I got u.";
         }

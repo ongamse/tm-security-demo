@@ -14,6 +14,7 @@ import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -231,16 +232,119 @@ public class SecurityUtil {
         if (trimmed.isEmpty()) {
             return null;
         }
-        String[] argv = trimmed.split("\\s+");
-        if (!ALLOWED_COMMANDS.contains(argv[0])) {
+        String[] tokens = trimmed.split("\\s+");
+        if (tokens.length > 4) {
             return null;
         }
-        for (String arg : argv) {
-            if (cmdFilter(arg) == null) {
+        // The returned argv is rebuilt only from server-side constants: the request value is used
+        // purely as a lookup key and never flows into the process arguments.
+        List<String> argv = new ArrayList<>();
+        String executable = lookupExecutable(tokens[0]);
+        if (executable == null) {
+            return null;
+        }
+        argv.add(executable);
+        for (int i = 1; i < tokens.length; i++) {
+            String arg = lookupFlag(tokens[i]);
+            if (arg == null) {
+                arg = lookupDirectory(tokens[i]);
+            }
+            if (arg == null) {
                 return null;
             }
+            argv.add(arg);
         }
-        return argv;
+        return argv.toArray(new String[0]);
+    }
+
+
+    private static String lookupExecutable(String key) {
+        switch (key) {
+            case "whoami":
+                return "whoami";
+            case "id":
+                return "id";
+            case "date":
+                return "date";
+            case "pwd":
+                return "pwd";
+            case "uname":
+                return "uname";
+            case "hostname":
+                return "hostname";
+            case "ls":
+                return "ls";
+            default:
+                return null;
+        }
+    }
+
+
+    private static String lookupFlag(String key) {
+        switch (key) {
+            case "-a":
+                return "-a";
+            case "-l":
+                return "-l";
+            case "-la":
+                return "-la";
+            case "-al":
+                return "-al";
+            default:
+                return null;
+        }
+    }
+
+
+    /**
+     * Map a user supplied directory to a fixed server-side directory constant.
+     *
+     * @param key user supplied directory
+     * @return the matching constant, or null if the directory is not in the fixed allowlist
+     */
+    public static String lookupDirectory(String key) {
+        if (key == null) {
+            return null;
+        }
+        switch (key) {
+            case "/tmp":
+                return "/tmp";
+            case "/var/tmp":
+                return "/var/tmp";
+            case "/var/log":
+                return "/var/log";
+            case "/usr/share":
+                return "/usr/share";
+            case ".":
+                return ".";
+            default:
+                return null;
+        }
+    }
+
+
+    /**
+     * Map a user supplied Host header to a fixed server-side host constant.
+     *
+     * @param key user supplied host
+     * @return the matching constant, or null if the host is not in the fixed allowlist
+     */
+    public static String lookupHost(String key) {
+        if (key == null) {
+            return null;
+        }
+        switch (key.toLowerCase(java.util.Locale.ROOT)) {
+            case "localhost":
+                return "localhost";
+            case "localhost:8080":
+                return "localhost:8080";
+            case "127.0.0.1":
+                return "127.0.0.1";
+            case "127.0.0.1:8080":
+                return "127.0.0.1:8080";
+            default:
+                return null;
+        }
     }
 
 

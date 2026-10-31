@@ -1,6 +1,5 @@
 package org.joychou.controller;
 
-import groovy.lang.GroovyShell;
 import lombok.extern.slf4j.Slf4j;
 import org.joychou.security.SecurityUtil;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -150,8 +149,102 @@ public class Rce {
         if (content == null || !SAFE_GROOVY_EXPR.matcher(content).matches()) {
             throw new IllegalArgumentException("Illegal expression");
         }
-        GroovyShell groovyShell = new GroovyShell();
-        groovyShell.evaluate(content);
+        // Request content is never compiled as Groovy source: it is evaluated by a small
+        // arithmetic-only parser that has no way to call methods or touch the runtime.
+        new ArithmeticParser(content).parse();
+    }
+
+    /**
+     * Minimal recursive-descent evaluator for + - * / % and parentheses over decimal numbers.
+     */
+    private static final class ArithmeticParser {
+        private final String src;
+        private int pos;
+
+        ArithmeticParser(String src) {
+            this.src = src;
+        }
+
+        double parse() {
+            double v = expr();
+            skipSpaces();
+            if (pos != src.length()) {
+                throw new IllegalArgumentException("Illegal expression");
+            }
+            return v;
+        }
+
+        private void skipSpaces() {
+            while (pos < src.length() && src.charAt(pos) == ' ') {
+                pos++;
+            }
+        }
+
+        private boolean eat(char c) {
+            skipSpaces();
+            if (pos < src.length() && src.charAt(pos) == c) {
+                pos++;
+                return true;
+            }
+            return false;
+        }
+
+        private double expr() {
+            double v = term();
+            while (true) {
+                if (eat('+')) {
+                    v += term();
+                } else if (eat('-')) {
+                    v -= term();
+                } else {
+                    return v;
+                }
+            }
+        }
+
+        private double term() {
+            double v = factor();
+            while (true) {
+                if (eat('*')) {
+                    v *= factor();
+                } else if (eat('/')) {
+                    v /= factor();
+                } else if (eat('%')) {
+                    v %= factor();
+                } else {
+                    return v;
+                }
+            }
+        }
+
+        private double factor() {
+            if (eat('-')) {
+                return -factor();
+            }
+            if (eat('+')) {
+                return factor();
+            }
+            if (eat('(')) {
+                double v = expr();
+                if (!eat(')')) {
+                    throw new IllegalArgumentException("Illegal expression");
+                }
+                return v;
+            }
+            skipSpaces();
+            int start = pos;
+            while (pos < src.length() && (Character.isDigit(src.charAt(pos)) || src.charAt(pos) == '.')) {
+                pos++;
+            }
+            if (start == pos) {
+                throw new IllegalArgumentException("Illegal expression");
+            }
+            try {
+                return Double.parseDouble(src.substring(start, pos));
+            } catch (NumberFormatException e) {
+                throw new IllegalArgumentException("Illegal expression");
+            }
+        }
     }
 
 
