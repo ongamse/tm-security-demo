@@ -90,7 +90,7 @@ public class SQLI {
             String sql = "select * from users where username = ?";
             PreparedStatement statement = con.prepareStatement(sql);
             statement.setString(1, username);
-            logger.info("{}", LogSanitizer.clean(statement));
+            logger.info("Executing prepared statement query.");
             ResultSet rs = statement.executeQuery();
 
             while (rs.next()) {
@@ -135,7 +135,7 @@ public class SQLI {
             PreparedStatement st = con.prepareStatement(sql);
             st.setString(1, username);
 
-            logger.info("{}", LogSanitizer.clean(st));  // sql after prepare statement
+            logger.info("Executing prepared statement query.");
             ResultSet rs = st.executeQuery();
 
             while (rs.next()) {
@@ -179,7 +179,7 @@ public class SQLI {
             PreparedStatement st = con.prepareStatement(sql);
             st.setString(1, username);
 
-            logger.info("{}", LogSanitizer.clean(st));
+            logger.info("Executing prepared statement query.");
             ResultSet rs = st.executeQuery();
 
             while (rs.next()) {

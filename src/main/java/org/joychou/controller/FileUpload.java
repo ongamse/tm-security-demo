@@ -102,7 +102,7 @@ public class FileUpload {
             }
         }
         if (!suffixFlag) {
-            logger.error("[-] Suffix error: {}", LogSanitizer.clean(Suffix));
+            logger.error("[-] Suffix error: suffix is not in the whitelist");
             deleteFile(filePath);
             return "Upload failed. Illeagl picture.";
         }
@@ -120,7 +120,7 @@ public class FileUpload {
         for (String blackMimeType : mimeTypeBlackList) {
             // 用contains是为了防止text/html;charset=UTF-8绕过
             if (SecurityUtil.replaceSpecialStr(mimeType).toLowerCase().contains(blackMimeType)) {
-                logger.error("[-] Mime type error: {}", LogSanitizer.clean(mimeType));
+                logger.error("[-] Mime type error: MIME type is blacklisted");
                 deleteFile(filePath);
                 return "Upload failed. Illeagl picture.";
             }
@@ -148,8 +148,8 @@ public class FileUpload {
             return "Upload failed";
         }
 
-        logger.info("[+] Safe file. Suffix: {}, MIME: {}", LogSanitizer.clean(Suffix), LogSanitizer.clean(mimeType));
-        logger.info("[+] Successfully uploaded {}", LogSanitizer.clean(filePath));
+        logger.info("[+] Safe file. Suffix and MIME type checks passed.");
+        logger.info("[+] Successfully uploaded file, name fingerprint: {}", LogSanitizer.fingerprint(filePath));
         return String.format("You successfully uploaded '%s'", HtmlUtils.htmlEscape(filePath));
     }
 
@@ -192,13 +192,13 @@ public class FileUpload {
         // Atomic delete (no isFile()/exists() pre-check) to avoid a check-then-use race.
         try {
             if (Files.deleteIfExists(target)) {
-                logger.info("[+] {} delete successfully!", LogSanitizer.clean(filePath));
+                logger.info("[+] Uploaded file deleted successfully!");
                 return;
             }
         } catch (IOException e) {
-            logger.debug("Delete error: {}", LogSanitizer.clean(e.getClass().getSimpleName()));
+            logger.debug("Delete error: {}", e.getClass().getSimpleName());
         }
-        logger.info("{} delete failed!", LogSanitizer.clean(filePath));
+        logger.info("Uploaded file delete failed!");
     }
 
     /**

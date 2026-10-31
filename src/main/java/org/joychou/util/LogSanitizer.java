@@ -1,5 +1,9 @@
 package org.joychou.util;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+
 /**
  * Neutralizes untrusted values before they are written to a log (CWE-117, log forging).
  * CR, LF, tab and every other control character, as well as the Unicode line / paragraph
@@ -8,8 +12,32 @@ package org.joychou.util;
 public final class LogSanitizer {
 
     private static final int MAX_LENGTH = 200;
+    private static final int FINGERPRINT_HEX_LENGTH = 16;
 
     private LogSanitizer() {
+    }
+
+    /**
+     * Returns a short hex SHA-256 fingerprint of the value so that correlated log lines can be
+     * matched without ever writing request-derived text to the log. Hex digits cannot contain
+     * CR/LF or any other control character.
+     */
+    public static String fingerprint(Object value) {
+        if (value == null) {
+            return "null";
+        }
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(String.valueOf(value).getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder(FINGERPRINT_HEX_LENGTH);
+            for (int i = 0; i < FINGERPRINT_HEX_LENGTH / 2; i++) {
+                sb.append(Character.forDigit((hash[i] >> 4) & 0xF, 16));
+                sb.append(Character.forDigit(hash[i] & 0xF, 16));
+            }
+            return sb.toString();
+        } catch (NoSuchAlgorithmException e) {
+            return "unavailable";
+        }
     }
 
     public static String clean(Object value) {

@@ -30,7 +30,6 @@ import javax.xml.parsers.SAXParser;
 import org.xml.sax.helpers.DefaultHandler;
 import org.apache.commons.digester3.Digester;
 import org.jdom2.input.SAXBuilder;
-import org.joychou.util.LogSanitizer;
 import org.joychou.util.SecureXml;
 import org.joychou.util.WebUtils;
 import org.xmlbeam.annotation.XBRead;
@@ -52,7 +51,7 @@ public class XXE {
     public String xmlReaderVuln(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info("Request body: {}", LogSanitizer.clean(body));
+            logger.info("Request body received.");
             XMLReader xmlReader = XMLReaderFactory.createXMLReader();
             xmlReader.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
             xmlReader.setFeature("http://xml.org/sax/features/external-general-entities", false);
@@ -70,7 +69,7 @@ public class XXE {
     public String xmlReaderSec(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info("Request body: {}", LogSanitizer.clean(body));
+            logger.info("Request body received.");
 
             XMLReader xmlReader = XMLReaderFactory.createXMLReader();
             // fix code start
@@ -93,7 +92,7 @@ public class XXE {
     public String SAXBuilderVuln(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info("Request body: {}", LogSanitizer.clean(body));
+            logger.info("Request body received.");
 
             // org.jdom2.Document document
             SecureXml.buildJdom(body);
@@ -108,7 +107,7 @@ public class XXE {
     public String SAXBuilderSec(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info("Request body: {}", LogSanitizer.clean(body));
+            logger.info("Request body received.");
 
             // org.jdom2.Document document
             SecureXml.buildJdom(body);
@@ -125,7 +124,7 @@ public class XXE {
     public String SAXReaderVuln(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info("Request body: {}", LogSanitizer.clean(body));
+            logger.info("Request body received.");
 
             SAXReader reader = new SAXReader();
             // org.dom4j.Document document
@@ -143,7 +142,7 @@ public class XXE {
     public String SAXReaderSec(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info("Request body: {}", LogSanitizer.clean(body));
+            logger.info("Request body received.");
 
             SAXReader reader = new SAXReader();
             reader.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
@@ -162,7 +161,7 @@ public class XXE {
     public String SAXParserVuln(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info("Request body: {}", LogSanitizer.clean(body));
+            logger.info("Request body received.");
 
             SAXParserFactory spf = SAXParserFactory.newInstance();
             spf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
@@ -183,7 +182,7 @@ public class XXE {
     public String SAXParserSec(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info("Request body: {}", LogSanitizer.clean(body));
+            logger.info("Request body received.");
 
             SAXParserFactory spf = SAXParserFactory.newInstance();
             spf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
@@ -203,7 +202,7 @@ public class XXE {
     public String DigesterVuln(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info("Request body: {}", LogSanitizer.clean(body));
+            logger.info("Request body received.");
 
             SecureXml.parseDigester(body);  // parse xml
         } catch (Exception e) {
@@ -217,7 +216,7 @@ public class XXE {
     public String DigesterSec(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info("Request body: {}", LogSanitizer.clean(body));
+            logger.info("Request body received.");
 
             SecureXml.parseDigester(body);  // parse xml
 
@@ -256,7 +255,7 @@ public class XXE {
             }
             return HtmlUtils.htmlEscape(buf.toString());
         } catch (Exception e) {
-            logger.error("DocumentBuilder parse failed: {}", LogSanitizer.clean(e));
+            logger.error("DocumentBuilder parse failed: {}", e.getClass().getSimpleName());
             return "Request failed.";
         }
     }
@@ -265,7 +264,7 @@ public class XXE {
     public String DocumentBuilderSec(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info("Request body: {}", LogSanitizer.clean(body));
+            logger.info("Request body received.");
 
             DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
             dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
@@ -288,7 +287,7 @@ public class XXE {
     public String DocumentBuilderXincludeVuln(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info("Request body: {}", LogSanitizer.clean(body));
+            logger.info("Request body received.");
 
             DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
             dbf.setXIncludeAware(false);  // XInclude processing disabled (file/URL inclusion)
@@ -317,7 +316,7 @@ public class XXE {
     public String DocumentBuilderXincludeSec(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info("Request body: {}", LogSanitizer.clean(body));
+            logger.info("Request body received.");
             DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
 
             dbf.setXIncludeAware(true);   // 支持XInclude
@@ -347,7 +346,7 @@ public class XXE {
     public String XMLReaderVuln(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info("Request body: {}", LogSanitizer.clean(body));
+            logger.info("Request body received.");
 
             SAXParserFactory spf = SAXParserFactory.newInstance();
             SAXParser saxParser = spf.newSAXParser();
@@ -370,7 +369,7 @@ public class XXE {
     public String XMLReaderSec(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info("Request body: {}", LogSanitizer.clean(body));
+            logger.info("Request body received.");
 
             SAXParserFactory spf = SAXParserFactory.newInstance();
             SAXParser saxParser = spf.newSAXParser();
@@ -413,7 +412,7 @@ public class XXE {
             for (int j = 0; j < xxe.getLength(); j++) {
                 Node xxeNode = xxe.item(j);
                 // 测试不能blind xxe，所以强行加了一个回显
-                logger.info("xxeNode: {}", LogSanitizer.clean(xxeNode.getNodeValue()));
+                logger.info("xxeNode parsed.");
             }
 
         }
@@ -426,7 +425,7 @@ public class XXE {
         @PostMapping(value = "/xmlbeam/vuln")
         HttpEntity<String> post(@RequestBody UserPayload user) {
             try {
-                logger.info("User payload: {}", LogSanitizer.clean(user));
+                logger.info("User payload received.");
                 return ResponseEntity.ok(String.format("hello, %s!", user.getUserName()));
             }catch (Exception e){
                 e.printStackTrace();
