@@ -45,9 +45,10 @@ public class xlsxStreamerXXE {
         // Zip entry count/size caps and every XML part (DOCTYPE/ENTITY rejected, hardened SAX
         // parser) are validated before the library sees the package.
         SecureXml.requireSafeXlsx(content);
-        try (Workbook workbook = StreamingReader.builder().open(new ByteArrayInputStream(content))) {
-            // package passed validation; nothing further to do with the workbook here
-        }
+        // poi 3.10-FINAL's Workbook interface has no close() and is not AutoCloseable, so no
+        // try-with-resources / close() here.
+        Workbook workbook = StreamingReader.builder().open(new ByteArrayInputStream(content));
+        // package passed validation; nothing further to do with the workbook here
     }
 
     public static void main(String[] args) throws Exception {
