@@ -30,7 +30,8 @@ import java.util.regex.Pattern;
  * validated exactly once.
  *
  * <ul>
- *   <li>the URL is parsed into a {@link URI}; only http/https without user info is accepted;</li>
+ *   <li>the URL is parsed into a {@link URI}; only https without user info is accepted (plain http only when
+ *       explicitly enabled with <code>ssrf.allow.http=true</code> / <code>SSRF_ALLOW_HTTP=true</code>);</li>
  *   <li>the host is resolved with {@link InetAddress#getAllByName(String)} and the URL is rejected when
  *       <b>any</b> resolved address is loopback / link-local (cloud metadata 169.254.169.254) / site-local /
  *       any-local / multicast / otherwise non-routable;</li>
@@ -77,7 +78,7 @@ public final class SafeUrl {
     /**
      * Parse and validate an untrusted URL.
      *
-     * @throws SSRFException when the URL is malformed, not http/https, not allowlisted or resolves to a
+     * @throws SSRFException when the URL is malformed, not https, not allowlisted or resolves to a
      *                       non-public address
      */
     public static SafeUrl parse(String url) {
@@ -99,7 +100,8 @@ public final class SafeUrl {
         }
 
         String scheme = uri.getScheme() == null ? null : uri.getScheme().toLowerCase(Locale.ROOT);
-        if (!"http".equals(scheme) && !"https".equals(scheme)) {
+        // https is required unless plain http is explicitly enabled (ssrf.allow.http=true / SSRF_ALLOW_HTTP=true).
+        if (!"https".equals(scheme) && !("http".equals(scheme) && httpAllowed())) {
             throw new SSRFException(ILLEGAL_URL);
         }
         if (uri.getRawUserInfo() != null) {
@@ -143,6 +145,14 @@ public final class SafeUrl {
             }
         }
         return new SafeUrl(scheme, name, ipv6, port, uri.getRawPath(), uri.getRawQuery(), addresses[0]);
+    }
+
+    /**
+     * Plain http is rejected by default. It can only be enabled explicitly with the system property
+     * <code>ssrf.allow.http=true</code> or the environment variable <code>SSRF_ALLOW_HTTP=true</code>.
+     */
+    private static boolean httpAllowed() {
+        return Boolean.parseBoolean(System.getProperty("ssrf.allow.http", System.getenv("SSRF_ALLOW_HTTP")));
     }
 
     private static void checkAllowedHost(String name) {
@@ -216,10 +226,12 @@ public final class SafeUrl {
      * verification use the original host name. Redirects are disabled and timeouts are set.
      */
     public CloseableHttpClient newClient() {
-        Registry<ConnectionSocketFactory> registry = RegistryBuilder.<ConnectionSocketFactory>create()
-                .register("http", PlainConnectionSocketFactory.getSocketFactory())
-                .register("https", SSLConnectionSocketFactory.getSocketFactory())
-                .build();
+        RegistryBuilder<ConnectionSocketFactory> registryBuilder = RegistryBuilder.<ConnectionSocketFactory>create()
+                .register("https", SSLConnectionSocketFactory.getSocketFactory());
+        if (httpAllowed()) {
+            registryBuilder.register("http", PlainConnectionSocketFactory.getSocketFactory());
+        }
+        Registry<ConnectionSocketFactory> registry = registryBuilder.build();
         final InetAddress pinned = this.address;
         DnsResolver pinnedResolver = new DnsResolver() {
             @Override

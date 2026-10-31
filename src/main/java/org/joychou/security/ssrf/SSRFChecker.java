@@ -51,7 +51,7 @@ public class SSRFChecker {
     }
 
     /**
-     * 解析url的ip，判断ip是否是内网ip。url只允许https或者http，并且设置默认连接超时时间。
+     * 解析url的ip，判断ip是否是内网ip。url默认只允许https（仅当显式设置ssrf.allow.http=true或SSRF_ALLOW_HTTP=true时才允许http），并且设置默认连接超时时间。
      * 每一跳只解析一次DNS，并且连接固定到校验过的IP（防DNS rebinding）。
      * 该修复方案会主动请求重定向后的链接，每次重定向都重新校验。
      *

@@ -67,14 +67,21 @@ public class Jdbc {
         SafeUrl target;
         try {
             // SafeUrl is only used to validate and resolve host:port; no http request is made.
-            target = SafeUrl.parse("http://" + hostPart + ":" + port + "/");
+            target = SafeUrl.parse("https://" + hostPart + ":" + port + "/");
         } catch (SSRFException e) {
             throw new IllegalArgumentException("Illegal jdbc url");
         }
         StringBuilder safe = new StringBuilder("jdbc:").append(subProtocol).append("://")
                 .append(target.getAddressLiteral()).append(':').append(port);
-        if (m.group(4) != null) {
-            safe.append('/').append(m.group(4));
+        String database = m.group(4);
+        // TLS is always required and added here as fixed, server-side constants (never from user input).
+        if ("postgresql".equals(subProtocol)) {
+            safe.append('/').append(database == null ? "" : database).append("?sslmode=verify-full");
+        } else {
+            if (database == null) {
+                throw new IllegalArgumentException("Illegal jdbc url");
+            }
+            safe.append('/').append(database).append(":sslConnection=true;");
         }
         return safe.toString();
     }
