@@ -112,7 +112,8 @@ public class URLWhiteList {
         // endsWith .
         for (String domain : domainwhitelist) {
             if (host.endsWith("." + domain)) {
-                String safeUrl = SecurityUtil.safeRedirectUrl(url);
+                // Rebuilt from trusted-origin / alphabet constants; the request string is never redirected to.
+                String safeUrl = SecurityUtil.lookupRedirectTarget(url);
                 if (safeUrl == null) {
                     res.sendError(HttpServletResponse.SC_BAD_REQUEST);
                     return;

@@ -509,6 +509,13 @@ public class SecurityUtil {
             "http://localhost:8080", "https://localhost:8080"));
 
 
+    private static final String DEFAULT_REDIRECT = "/";
+
+    /** Characters allowed in a redirect path segment (unreserved URL characters only). */
+    private static final String PATH_ALPHABET =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._~-";
+
+
     /**
      * Map an untrusted Origin to the matching constant from the trusted origin list. The request value is
      * only used as a comparison key; the returned string is the server-side constant.
@@ -569,18 +576,70 @@ public class SecurityUtil {
             }
         }
         rest = rest.substring(0, cut);
+        // prefix is a TRUSTED_ORIGINS constant or empty; the path below is rebuilt character by
+        // character from the constant PATH_ALPHABET, so no request character is ever appended.
         StringBuilder target = new StringBuilder(prefix);
         if (rest.isEmpty()) {
             return target.append('/').toString();
         }
-        try {
-            for (String segment : rest.substring(1).split("/", -1)) {
-                target.append('/').append(URLEncoder.encode(segment, "UTF-8"));
-            }
-        } catch (UnsupportedEncodingException e) {
+        if (rest.charAt(0) != '/') {
             return null;
         }
+        String[] segments = rest.substring(1).split("/", -1);
+        for (int i = 0; i < segments.length; i++) {
+            String segment = segments[i];
+            if (segment.isEmpty()) {
+                // Only a trailing slash is allowed; an empty middle segment would form "//".
+                if (i != segments.length - 1) {
+                    return null;
+                }
+                target.append('/');
+                continue;
+            }
+            String safeSegment = lookupPathSegment(segment);
+            if (safeSegment == null) {
+                return null;
+            }
+            target.append('/').append(safeSegment);
+        }
         return target.toString();
+    }
+
+
+    /**
+     * Same as {@link #lookupRedirectTarget(String)} but never returns null and never returns the request
+     * value: when nothing matches the constant {@code "/"} is returned.
+     *
+     * @param url untrusted redirect target
+     * @return a rebuilt trusted target or the constant "/"
+     */
+    public static String redirectTargetOrDefault(String url) {
+        String target = lookupRedirectTarget(url);
+        return target == null ? DEFAULT_REDIRECT : target;
+    }
+
+
+    /**
+     * Rebuild a path segment from the constant {@link #PATH_ALPHABET}: each request character is only used
+     * to find an index into the constant, and the character appended is the constant's.
+     *
+     * @param segment untrusted path segment
+     * @return the rebuilt segment, or null when it is empty, a dot segment or has a character outside the alphabet
+     */
+    private static String lookupPathSegment(String segment) {
+        if (segment == null || segment.isEmpty() || segment.length() > 255
+                || ".".equals(segment) || "..".equals(segment)) {
+            return null;
+        }
+        StringBuilder rebuilt = new StringBuilder(segment.length());
+        for (int i = 0; i < segment.length(); i++) {
+            int idx = PATH_ALPHABET.indexOf(segment.charAt(i));
+            if (idx < 0) {
+                return null;
+            }
+            rebuilt.append(PATH_ALPHABET.charAt(idx));
+        }
+        return rebuilt.toString();
     }
 
 

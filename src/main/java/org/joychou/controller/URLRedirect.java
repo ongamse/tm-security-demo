@@ -30,11 +30,8 @@ public class URLRedirect {
      */
     @GetMapping("/redirect")
     public String redirect(@RequestParam("url") String url) {
-        String safeUrl = SecurityUtil.safeRedirectUrl(url);
-        if (safeUrl == null) {
-            return "redirect:/";
-        }
-        return "redirect:" + safeUrl;
+        // The target is rebuilt from trusted-origin / alphabet constants; falls back to the constant "/".
+        return "redirect:" + SecurityUtil.redirectTargetOrDefault(url);
     }
 
 
@@ -61,7 +58,7 @@ public class URLRedirect {
     @RequestMapping("/sendRedirect")
     @ResponseBody
     public static void sendRedirect(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        String url = SecurityUtil.safeRedirectUrl(request.getParameter("url"));
+        String url = SecurityUtil.lookupRedirectTarget(request.getParameter("url"));
         if (url == null) {
             response.sendError(HttpServletResponse.SC_BAD_REQUEST);
             return;
@@ -95,7 +92,7 @@ public class URLRedirect {
     @ResponseBody
     public void sendRedirect_seccode(HttpServletRequest request, HttpServletResponse response)
             throws IOException {
-        String url = SecurityUtil.safeRedirectUrl(request.getParameter("url"));
+        String url = SecurityUtil.lookupRedirectTarget(request.getParameter("url"));
         if (url == null) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             response.getWriter().write("url forbidden");
