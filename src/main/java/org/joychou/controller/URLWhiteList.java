@@ -101,7 +101,8 @@ public class URLWhiteList {
 
         logger.info("url:  " + url);
 
-        if (!SecurityUtil.isHttp(url)) {
+        if (url == null || SecurityUtil.hasHeaderControlChars(url) || !SecurityUtil.isHttp(url)
+                || SecurityUtil.checkURL(url) == null) {
             return;
         }
 
@@ -113,6 +114,7 @@ public class URLWhiteList {
         for (String domain : domainwhitelist) {
             if (host.endsWith("." + domain)) {
                 res.sendRedirect(url);
+                return;
             }
         }
 
