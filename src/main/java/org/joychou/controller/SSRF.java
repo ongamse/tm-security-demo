@@ -31,8 +31,16 @@ public class SSRF {
 
     private static final Logger logger = LoggerFactory.getLogger(SSRF.class);
 
+    private static final String REQUEST_FAILED = "Request failed";
+
     @Resource
     private HttpService httpService;
+
+    /** Log only the failing endpoint and exception class; the response carries a constant. */
+    private static String fail(String endpoint, Exception e) {
+        logger.error("{} failed: {}", endpoint, e.getClass().getSimpleName());
+        return REQUEST_FAILED;
+    }
 
     /**
      * <p>
@@ -60,7 +68,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.URLConnection(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return fail("URLConnectionSec", e);
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -78,7 +86,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.HttpURLConnection(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return fail("httpURLConnection", e);
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -101,7 +109,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HtmlUtils.htmlEscape(HttpUtils.request(url));
         } catch (SSRFException | IOException e) {
-            return HtmlUtils.htmlEscape(e.getMessage());
+            return fail("request", e);
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -135,7 +143,7 @@ public class SSRF {
             }
 
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("openStream failed: {}", e.getClass().getSimpleName());
         } finally {
             if (inputStream != null) {
                 inputStream.close();
@@ -157,7 +165,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             HttpUtils.imageIO(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return fail("ImageIO", e);
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -173,7 +181,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.okhttp(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return fail("okhttp", e);
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -192,7 +200,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.httpClient(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return fail("HttpClient", e);
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -212,7 +220,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.commonHttpClient(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return fail("commonsHttpClient", e);
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -231,7 +239,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.Jsoup(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return fail("Jsoup", e);
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -250,7 +258,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             HttpUtils.IOUtils(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return fail("IOUtils", e);
         } finally {
             SecurityUtil.stopSSRFHook();
         }

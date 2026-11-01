@@ -41,6 +41,7 @@ public class HttpUtils {
 
     private final static Logger logger = LoggerFactory.getLogger(HttpUtils.class);
 
+    private static final String REQUEST_FAILED = "Request failed";
     private static final int MAX_REDIRECTS = 5;
     private static final int CONNECT_TIMEOUT_MS = 5000;
     private static final int READ_TIMEOUT_MS = 10000;
@@ -104,7 +105,8 @@ public class HttpUtils {
             return new String(resBody);
 
         } catch (IOException | SSRFException e) {
-            return "Error: " + e.getMessage();
+            logger.error("commonHttpClient failed: {}", e.getClass().getSimpleName());
+            return REQUEST_FAILED;
         } finally {
             // Release the connection.
             if (method != null) {
@@ -124,7 +126,8 @@ public class HttpUtils {
                 client.close();
             }
         } catch (Exception e) {
-            return e.getMessage();
+            logger.error("request failed: {}", e.getClass().getSimpleName());
+            return REQUEST_FAILED;
         }
     }
 
@@ -148,7 +151,8 @@ public class HttpUtils {
             return result.toString();
 
         } catch (Exception e) {
-            return e.getMessage();
+            logger.error("httpClient failed: {}", e.getClass().getSimpleName());
+            return REQUEST_FAILED;
         }
     }
 
@@ -166,8 +170,8 @@ public class HttpUtils {
             in.close();
             return html.toString();
         } catch (Exception e) {
-            logger.error(e.getMessage());
-            return e.getMessage();
+            logger.error("URLConnection failed: {}", e.getClass().getSimpleName());
+            return REQUEST_FAILED;
         }
     }
 
@@ -190,8 +194,8 @@ public class HttpUtils {
             in.close();
             return html.toString();
         } catch (IOException | SSRFException e) {
-            logger.error(e.getMessage());
-            return e.getMessage();
+            logger.error("HttpURLConnection failed: {}", e.getClass().getSimpleName());
+            return REQUEST_FAILED;
         }
     }
 
@@ -211,7 +215,8 @@ public class HttpUtils {
                     .execute().parse();
             return doc.outerHtml();
         } catch (IOException | SSRFException e) {
-            return e.getMessage();
+            logger.error("Jsoup failed: {}", e.getClass().getSimpleName());
+            return REQUEST_FAILED;
         }
     }
 
@@ -245,7 +250,7 @@ public class HttpUtils {
                 ImageIO.read(is); // read response
             }
         } catch (IOException | SSRFException e) {
-            logger.error(e.getMessage());
+            logger.error("imageIO failed: {}", e.getClass().getSimpleName());
         }
 
     }
@@ -264,7 +269,7 @@ public class HttpUtils {
                 IOUtils.toByteArray(is);
             }
         } catch (IOException | SSRFException e) {
-            logger.error(e.getMessage());
+            logger.error("IOUtils failed: {}", e.getClass().getSimpleName());
         }
     }
 
@@ -282,14 +287,15 @@ public class HttpUtils {
             HttpResponse response = future.get(6000, TimeUnit.MILLISECONDS);
             return EntityUtils.toString(response.getEntity());
         } catch (Exception e) {
-            return e.getMessage();
+            logger.error("HttpAsyncClients failed: {}", e.getClass().getSimpleName());
+            return REQUEST_FAILED;
         } finally {
             try {
                 if (httpclient != null) {
                     httpclient.close();
                 }
             } catch (Exception e) {
-                logger.error(e.getMessage());
+                logger.error("HttpAsyncClients close failed: {}", e.getClass().getSimpleName());
             }
         }
     }
