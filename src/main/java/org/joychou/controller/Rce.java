@@ -69,8 +69,6 @@ public class Rce {
     @GetMapping("/ProcessBuilder")
     public String processBuilder(String cmd) {
 
-        StringBuilder sb = new StringBuilder();
-
         String[] arrCmd = SecurityUtil.cmdAllowlistArgv(cmd);
         if (arrCmd == null) {
             return "Bad boy. I got u.";
@@ -81,16 +79,18 @@ public class Rce {
             Process p = processBuilder.start();
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
-            String tmpStr;
 
-            while ((tmpStr = inBr.readLine()) != null) {
-                sb.append(tmpStr);
+            // Drain and discard the output so the process can finish; it is not reflected to the caller.
+            while (inBr.readLine() != null) {
+                // discard
             }
+            inBr.close();
         } catch (Exception e) {
-            return e.toString();
+            log.error("processBuilder failed: {}", e.getClass().getSimpleName());
+            return "Command exec failed!!";
         }
 
-        return sb.toString();
+        return "Command executed";
     }
 
 

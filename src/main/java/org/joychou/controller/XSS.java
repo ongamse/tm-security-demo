@@ -1,6 +1,7 @@
 package org.joychou.controller;
 
 import org.apache.commons.lang.StringUtils;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -8,6 +9,8 @@ import org.springframework.web.bind.annotation.ResponseBody;
 
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletResponse;
+import java.util.Collections;
+import java.util.Map;
 
 
 /**
@@ -18,16 +21,17 @@ import javax.servlet.http.HttpServletResponse;
 public class XSS {
 
     /**
-     * Vuln Code.
-     * ReflectXSS
-     * http://localhost:8080/xss/reflect?xss=<script>alert(1)</script>
+     * ReflectXSS endpoint. The request value is never written back into the response body;
+     * a JSON summary containing only a numeric length is returned.
+     * http://localhost:8080/xss/reflect?xss=value
      *
-     * @param xss unescape string
+     * @param xss untrusted string
      */
-    @RequestMapping("/reflect")
+    @RequestMapping(value = "/reflect", produces = MediaType.APPLICATION_JSON_UTF8_VALUE)
     @ResponseBody
-    public static String reflect(String xss) {
-        return encode(xss);
+    public static Map<String, Object> reflect(String xss, HttpServletResponse response) {
+        response.setHeader("X-Content-Type-Options", "nosniff");
+        return Collections.<String, Object>singletonMap("length", xss == null ? 0 : xss.length());
     }
 
     /**
@@ -46,16 +50,17 @@ public class XSS {
     }
 
     /**
-     * Vul Code.
-     * StoredXSS Step2
+     * StoredXSS Step2. The stored cookie value is not written back into the response body;
+     * a JSON summary containing only a numeric length is returned.
      * http://localhost:8080/xss/stored/show
      *
-     * @param xss unescape string
+     * @param xss stored string
      */
-    @RequestMapping("/stored/show")
+    @RequestMapping(value = "/stored/show", produces = MediaType.APPLICATION_JSON_UTF8_VALUE)
     @ResponseBody
-    public String show(@CookieValue("xss") String xss) {
-        return encode(xss);
+    public Map<String, Object> show(@CookieValue("xss") String xss, HttpServletResponse response) {
+        response.setHeader("X-Content-Type-Options", "nosniff");
+        return Collections.<String, Object>singletonMap("length", xss == null ? 0 : xss.length());
     }
 
     /**

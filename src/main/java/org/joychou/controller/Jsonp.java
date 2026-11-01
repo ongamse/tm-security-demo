@@ -3,7 +3,9 @@ package org.joychou.controller;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 
-import com.alibaba.fastjson.JSONPObject;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang.StringUtils;
 import org.joychou.security.SecurityUtil;
@@ -20,7 +22,10 @@ import org.joychou.util.WebUtils;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import java.io.IOException;
 import java.security.Principal;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 
 /**
@@ -42,10 +47,44 @@ public class Jsonp {
      * <p>
      * http://localhost:8080/jsonp/vuln/referer?callback_=test
      */
-    @RequestMapping(value = "/vuln/referer", produces = "application/javascript")
-    public String referer(HttpServletRequest request) {
+    @RequestMapping(value = "/vuln/referer", produces = JS_UTF8)
+    public String referer(HttpServletRequest request, HttpServletResponse response) {
         String callback = request.getParameter(this.callback);
-        return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
+        return userInfoJsonp(callback, request, response);
+    }
+
+    private static final String JS_UTF8 = "application/javascript;charset=UTF-8";
+    private static final String ERROR_BODY = "error";
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    /**
+     * Wrap a Jackson-serialized object in a validated JSONP callback. Only a strict
+     * JavaScript identifier is accepted as callback; the body is never built by concatenating raw values.
+     */
+    private static String jsonp(String callback, Object data, HttpServletResponse response) {
+        response.setHeader("X-Content-Type-Options", "nosniff");
+        if (!WebUtils.isValidJsonpCallback(callback)) {
+            return ERROR_BODY;
+        }
+        try {
+            // Escape characters that are legal in JSON but dangerous inside HTML / script contexts.
+            String json = MAPPER.writeValueAsString(data)
+                    .replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
+                    .replace("\u2028", "\\u2028").replace("\u2029", "\\u2029");
+            return callback + "(" + json + ")";
+        } catch (JsonProcessingException e) {
+            return ERROR_BODY;
+        }
+    }
+
+    private static String userInfoJsonp(String callback, HttpServletRequest request, HttpServletResponse response) {
+        try {
+            JsonNode info = MAPPER.readTree(LoginUtils.getUserInfo2JsonStr(request));
+            return jsonp(callback, info, response);
+        } catch (IOException e) {
+            response.setHeader("X-Content-Type-Options", "nosniff");
+            return ERROR_BODY;
+        }
     }
 
     /**
@@ -54,15 +93,16 @@ public class Jsonp {
      * <p>
      * http://localhost:8080/jsonp/vuln/emptyReferer?callback_=test
      */
-    @RequestMapping(value = "/vuln/emptyReferer", produces = "application/javascript")
-    public String emptyReferer(HttpServletRequest request) {
+    @RequestMapping(value = "/vuln/emptyReferer", produces = JS_UTF8)
+    public String emptyReferer(HttpServletRequest request, HttpServletResponse response) {
         String referer = request.getHeader("referer");
 
         if (null != referer && SecurityUtil.checkURL(referer) == null) {
-            return "error";
+            response.setHeader("X-Content-Type-Options", "nosniff");
+            return ERROR_BODY;
         }
         String callback = request.getParameter(this.callback);
-        return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
+        return userInfoJsonp(callback, request, response);
     }
 
     /**
@@ -99,15 +139,16 @@ public class Jsonp {
      * Safe code.
      * http://localhost:8080/jsonp/sec?callback_=test
      */
-    @RequestMapping(value = "/sec/checkReferer", produces = "application/javascript")
-    public String safecode(HttpServletRequest request) {
+    @RequestMapping(value = "/sec/checkReferer", produces = JS_UTF8)
+    public String safecode(HttpServletRequest request, HttpServletResponse response) {
         String referer = request.getHeader("referer");
 
         if (SecurityUtil.checkURL(referer) == null) {
-            return "error";
+            response.setHeader("X-Content-Type-Options", "nosniff");
+            return ERROR_BODY;
         }
         String callback = request.getParameter(this.callback);
-        return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
+        return userInfoJsonp(callback, request, response);
     }
 
     /**
@@ -125,20 +166,27 @@ public class Jsonp {
      *
      * fastjsonp to jsonp
      */
-    @GetMapping(value = "/fastjsonp/getToken", produces = "application/javascript")
-    public String getCsrfToken2(HttpServletRequest request) {
+    @GetMapping(value = "/fastjsonp/getToken", produces = JS_UTF8)
+    public String getCsrfToken2(HttpServletRequest request, HttpServletResponse response) {
         CsrfToken csrfToken = cookieCsrfTokenRepository.loadToken(request); // get csrf token
+        response.setHeader("X-Content-Type-Options", "nosniff");
+        if (csrfToken == null) {
+            return ERROR_BODY;
+        }
+
+        Map<String, String> data = new LinkedHashMap<>();
+        data.put("headerName", csrfToken.getHeaderName());
+        data.put("parameterName", csrfToken.getParameterName());
+        data.put("token", csrfToken.getToken());
 
         String callback = request.getParameter("fastjsonpCallback");
         if (StringUtils.isNotBlank(callback)) {
-            if (!WebUtils.isValidJsonpCallback(callback)) {
-                return "error";
-            }
-            JSONPObject jsonpObj = new JSONPObject(callback);
-            jsonpObj.addParameter(csrfToken);
-            return jsonpObj.toString();
-        } else {
-            return csrfToken.toString();
+            return jsonp(callback, data, response);
+        }
+        try {
+            return MAPPER.writeValueAsString(data);
+        } catch (JsonProcessingException e) {
+            return ERROR_BODY;
         }
     }
 

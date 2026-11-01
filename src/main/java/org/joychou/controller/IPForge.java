@@ -31,7 +31,8 @@ public class IPForge {
     // no any proxy
     @RequestMapping("/noproxy")
     public static String noProxy(HttpServletRequest request) {
-        return request.getRemoteAddr();
+        // The address is intentionally not reflected into the response body.
+        return "ok";
     }
 
 

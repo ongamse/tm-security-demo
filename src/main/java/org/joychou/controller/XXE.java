@@ -239,14 +239,11 @@ public class XXE {
     public String DocumentBuilderXincludeSec(HttpServletRequest request) {
         try {
             byte[] xml = validatedBody(request);
-            Document document = XmlSafe.parseDocument(xml);  // parse xml (XInclude disabled)
-
-            NodeList rootNodeList = document.getChildNodes();
-            response(rootNodeList);
+            XmlSafe.parseDocument(xml);  // parse xml (XInclude disabled); content is not reflected or logged
         } catch (Exception e) {
             return fail(e);
         }
-        return "DocumentBuilder xinclude xxe vuln code";
+        return "DocumentBuilder xinclude xxe security code";
     }
 
 
