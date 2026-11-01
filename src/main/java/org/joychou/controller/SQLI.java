@@ -9,6 +9,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
@@ -81,6 +84,27 @@ public class SQLI {
 
 
     /**
+     * Resolve the record owner from the authenticated principal (never from the request).
+     * If a username was supplied it must match the principal, otherwise 403. Fails closed (403)
+     * when the caller is not authenticated.
+     *
+     * @return the principal-derived username to bind into the query
+     */
+    private static String principalUsername(String requestedUsername) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated() || auth instanceof AnonymousAuthenticationToken
+                || auth.getName() == null) {
+            throw new ForbiddenException();
+        }
+        String principalName = auth.getName();
+        if (requestedUsername != null && !principalName.equalsIgnoreCase(requestedUsername)) {
+            throw new ForbiddenException();
+        }
+        return principalName;
+    }
+
+
+    /**
      * <p>Sql injection jbdc vuln code.</p><br>
      *
      * <a href="http://localhost:8080/sqli/jdbc/vuln?username=joychou">http://localhost:8080/sqli/jdbc/vuln?username=joychou</a>
@@ -88,6 +112,7 @@ public class SQLI {
     @RequestMapping("/jdbc/vuln")
     public String jdbc_sqli_vul(@RequestParam("username") String username) {
 
+        final String owner = principalUsername(username);
         StringBuilder result = new StringBuilder();
 
         try {
@@ -100,7 +125,7 @@ public class SQLI {
             // sqli vuln code
             String sql = "select * from users where username = ?";
             PreparedStatement statement = con.prepareStatement(sql);
-            statement.setString(1, username);
+            statement.setString(1, owner);
             logger.info("Executing parameterized query on users");
             ResultSet rs = statement.executeQuery();
 
@@ -177,6 +202,7 @@ public class SQLI {
     @RequestMapping("/jdbc/ps/vuln")
     public String jdbc_ps_vuln(@RequestParam("username") String username) {
 
+        final String owner = principalUsername(username);
         StringBuilder result = new StringBuilder();
         try {
             Class.forName(driver);
@@ -187,7 +213,7 @@ public class SQLI {
 
             String sql = "select * from users where username = ?";
             PreparedStatement st = con.prepareStatement(sql);
-            st.setString(1, username);
+            st.setString(1, owner);
 
             logger.info("Executing parameterized query on users");
             ResultSet rs = st.executeQuery();
