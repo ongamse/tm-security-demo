@@ -1,6 +1,5 @@
 package org.joychou.controller;
 
-import com.fasterxml.uuid.Generators;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Controller;
@@ -12,12 +11,10 @@ import org.springframework.web.util.HtmlUtils;
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.UUID;
 
 import org.joychou.security.SecurityUtil;
 
@@ -224,21 +221,23 @@ public class FileUpload {
      */
     private File convert(MultipartFile multiFile, String fileName) throws Exception {
         String suffix = fileName.substring(fileName.lastIndexOf("."));
-        UUID uuid = Generators.timeBasedGenerator().generate();
-        // 随机生成一个同后缀名的文件
-        Path convPath = resolveUploadPath(uuid + suffix);
-        if (convPath == null) {
+        // 随机生成一个同后缀名的文件: unpredictable name from the JDK's SecureRandom-backed
+        // Files.createTempFile, created atomically inside the controlled upload folder
+        Path base = Paths.get(UPLOADED_FOLDER).toAbsolutePath().normalize();
+        Path convPath;
+        try {
+            convPath = Files.createTempFile(base, "upload-", suffix);
+        } catch (IOException | IllegalArgumentException | java.nio.file.InvalidPathException e) {
+            logger.error(e.toString());
+            return null;
+        }
+        if (!convPath.normalize().startsWith(base)) {
+            Files.deleteIfExists(convPath);
             return null;
         }
         randomFilePath = convPath.toString();
         File convFile = convPath.toFile();
-        boolean ret = convFile.createNewFile();
-        if (!ret) {
-            return null;
-        }
-        FileOutputStream fos = new FileOutputStream(convFile);
-        fos.write(multiFile.getBytes());
-        fos.close();
+        Files.write(convPath, multiFile.getBytes());
         return convFile;
     }
 
