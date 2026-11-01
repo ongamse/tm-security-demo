@@ -2,19 +2,16 @@ package org.joychou.controller;
 
 import com.thoughtworks.xstream.XStream;
 import com.thoughtworks.xstream.io.xml.DomDriver;
+import com.thoughtworks.xstream.io.xml.DomReader;
 import com.thoughtworks.xstream.security.NoTypePermission;
 import com.thoughtworks.xstream.security.NullPermission;
 import com.thoughtworks.xstream.security.PrimitiveTypePermission;
 import org.joychou.dao.User;
-import org.joychou.util.WebUtils;
+import org.joychou.security.XmlSafe;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import org.xml.sax.InputSource;
-
 import javax.servlet.http.HttpServletRequest;
-import javax.xml.parsers.DocumentBuilderFactory;
-import java.io.StringReader;
 
 
 @RestController
@@ -29,10 +26,13 @@ public class XStreamRce {
      */
     @PostMapping("/xstream")
     public String parseXml(HttpServletRequest request) throws Exception {
-        String xml = WebUtils.getRequestBody(request);
-        rejectDoctype(xml);
+        // size-capped read; DOCTYPE / ENTITY payloads are rejected (HTTP 400) before any parser sees them
+        byte[] xml = XmlSafe.readValidated(request.getInputStream());
+        // second gate: strict parse with the hardened factory; XStream only ever sees the resulting DOM,
+        // so it never runs its own XML parser over untrusted bytes
+        org.w3c.dom.Document document = XmlSafe.parseDocument(xml);
         XStream xstream = secureXStream();
-        xstream.fromXML(xml);
+        xstream.unmarshal(new DomReader(document));
         return "xstream";
     }
 
@@ -46,17 +46,6 @@ public class XStreamRce {
         xstream.addPermission(PrimitiveTypePermission.PRIMITIVES);
         xstream.allowTypes(new Class[]{User.class, String.class, Integer.class});
         return xstream;
-    }
-
-    /**
-     * Reject any XML carrying a DOCTYPE (XXE / entity expansion) before it reaches the XStream DOM driver.
-     */
-    private static void rejectDoctype(String xml) throws Exception {
-        DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
-        dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-        dbf.setFeature("http://xml.org/sax/features/external-general-entities", false);
-        dbf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
-        dbf.newDocumentBuilder().parse(new InputSource(new StringReader(xml)));
     }
 
     public static void main(String[] args) {
