@@ -101,19 +101,19 @@ public class URLWhiteList {
 
         logger.info("url:  " + url);
 
-        if (url == null || SecurityUtil.hasHeaderControlChars(url) || !SecurityUtil.isHttp(url)
-                || SecurityUtil.checkURL(url) == null) {
+        String target = SecurityUtil.safeRedirectTarget(url);
+        if (target == null) {
             return;
         }
 
-        URL u = new URL(url);
+        URL u = new URL(target);
         String host = u.getHost();
         logger.info("host:  " + host);
 
         // endsWith .
         for (String domain : domainwhitelist) {
             if (host.endsWith("." + domain)) {
-                res.sendRedirect(url);
+                res.sendRedirect(target);
                 return;
             }
         }

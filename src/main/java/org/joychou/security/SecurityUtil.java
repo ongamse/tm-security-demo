@@ -24,7 +24,9 @@ public class SecurityUtil {
     private static final Pattern ARG_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.=-]+$");
     private static final Set<String> ALLOWED_COMMANDS = new HashSet<>(
             Arrays.asList("whoami", "id", "pwd", "date", "uname", "hostname", "uptime", "ls"));
-    private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
+    private static final Pattern REDIRECT_HOST_PATTERN =
+            Pattern.compile("^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$");
+    private static Logger logger =LoggerFactory.getLogger(SecurityUtil.class);
 
 
     /**
@@ -102,6 +104,67 @@ public class SecurityUtil {
             return null;
         } catch (NullPointerException e) {
             logger.error(e.toString());
+            return null;
+        }
+    }
+
+
+    /**
+     * Build a redirect target for an untrusted url. The returned value is NOT the request string:
+     * scheme is a server-side constant, the host is composed from a configured safe domain entry
+     * (plus a strictly validated sub-domain prefix), and path/query are re-encoded from the parsed
+     * components. User info, custom ports, fragments and control chars are rejected or dropped.
+     *
+     * @param url untrusted url
+     * @return rebuilt safe absolute url, or null if the url must not be redirected to
+     */
+    public static String safeRedirectTarget(String url) {
+        if (url == null || hasHeaderControlChars(url) || checkURL(url) == null) {
+            return null;
+        }
+        try {
+            URI uri = new URI(url);
+            if (uri.getRawUserInfo() != null || uri.getPort() != -1 || uri.getHost() == null) {
+                return null;
+            }
+
+            final String scheme;
+            if ("https".equalsIgnoreCase(uri.getScheme())) {
+                scheme = "https";
+            } else if ("http".equalsIgnoreCase(uri.getScheme())) {
+                scheme = "http";
+            } else {
+                return null;
+            }
+
+            String host = uri.getHost().toLowerCase();
+            if (!REDIRECT_HOST_PATTERN.matcher(host).matches()) {
+                return null;
+            }
+
+            String safeHost = null;
+            for (String safeDomain : WebConfig.getSafeDomains()) {
+                String domain = safeDomain.toLowerCase();
+                if (host.equals(domain)) {
+                    safeHost = domain;
+                    break;
+                }
+                if (host.endsWith("." + domain)) {
+                    safeHost = host.substring(0, host.length() - domain.length()) + domain;
+                    break;
+                }
+            }
+            if (safeHost == null) {
+                return null;
+            }
+
+            String path = uri.getPath();
+            if (path == null || path.isEmpty()) {
+                path = "/";
+            }
+            // The multi-argument constructor quotes any illegal character (including CR/LF).
+            return new URI(scheme, null, safeHost, -1, path, uri.getQuery(), null).toASCIIString();
+        } catch (URISyntaxException e) {
             return null;
         }
     }
