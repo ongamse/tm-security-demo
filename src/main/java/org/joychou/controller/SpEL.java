@@ -8,6 +8,7 @@ import org.springframework.expression.spel.standard.SpelExpressionParser;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.util.HtmlUtils;
 
 
 /**
@@ -38,7 +39,7 @@ public class SpEL {
         context.setMethodResolvers(Collections.emptyList());
         context.setPropertyAccessors(Collections.emptyList());
         Object value = parser.parseExpression(expression).getValue(context);
-        return String.valueOf(value);
+        return HtmlUtils.htmlEscape(String.valueOf(value));
     }
 
     public static void main(String[] args) {
