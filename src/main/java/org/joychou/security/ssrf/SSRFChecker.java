@@ -1,10 +1,15 @@
 package org.joychou.security.ssrf;
 
+import java.io.ByteArrayOutputStream;
 import java.net.HttpURLConnection;
 import java.net.InetAddress;
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.UnknownHostException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.net.util.SubnetUtils;
@@ -18,6 +23,10 @@ public class SSRFChecker {
 
     private static final Logger logger = LoggerFactory.getLogger(SSRFChecker.class);
     private static String decimalIp;
+
+    /** scheme://authority path ?query #fragment (fragment is dropped when the url is rebuilt). */
+    private static final Pattern HTTP_URL_PATTERN =
+            Pattern.compile("^([a-zA-Z][a-zA-Z0-9+.-]*)://([^/?#]*)([^?#]*)(?:\\?([^#]*))?(?:#.*)?$");
 
     public static boolean checkURLFckSSRF(String url) {
         if (null == url) {
@@ -92,7 +101,11 @@ public class SSRFChecker {
                     String redirectedUrl = connection.getHeaderField("Location");
                     if (null == redirectedUrl)
                         break;
-                    finalUrl = redirectedUrl;
+                    try {
+                        finalUrl = validated.resolve(redirectedUrl).toString();
+                    } catch (IllegalArgumentException e) {
+                        return false;
+                    }
                     i += 1;  // 重定向次数加1
                     logger.info("redirected url: " + finalUrl);
                     if (i == checkTimes) {
@@ -236,25 +249,137 @@ public class SSRFChecker {
         if (url == null) {
             throw new SSRFException("[-] SSRF check failed. Empty url.");
         }
-        URI uri;
-        try {
-            uri = new URI(url.trim());
-        } catch (Exception e) {
+        // The untrusted string is split with a strict pattern (never parsed by java.net.URI/URL);
+        // the returned URI is freshly built from validated components only.
+        Matcher m = HTTP_URL_PATTERN.matcher(url.trim());
+        if (!m.matches()) {
             throw new SSRFException("[-] SSRF check failed. Illegal url.");
         }
-        String scheme = uri.getScheme();
-        if (scheme == null || !(scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"))) {
+
+        final String scheme;
+        if ("https".equalsIgnoreCase(m.group(1))) {
+            scheme = "https";
+        } else if ("http".equalsIgnoreCase(m.group(1))) {
+            scheme = "http";
+        } else {
             throw new SSRFException("[-] SSRF check failed. Only http/https is allowed.");
         }
-        if (uri.getUserInfo() != null) {
+
+        String authority = m.group(2);
+        if (authority.indexOf('@') >= 0) {
             throw new SSRFException("[-] SSRF check failed. User info is not allowed.");
         }
+        String host = SecurityUtil.gethost(scheme + "://" + authority);
+        if (host.isEmpty() || !isSafeHostSyntax(host)) {
+            throw new SSRFException("[-] SSRF check failed. Illegal host.");
+        }
+
+        int port = -1;
+        int portSep = authority.lastIndexOf(':');
+        if (portSep >= 0 && portSep > authority.lastIndexOf(']') && portSep < authority.length() - 1) {
+            port = Integer.parseInt(authority.substring(portSep + 1)); // digits only, max 5 (host pattern)
+            if (port < 1 || port > 65535) {
+                throw new SSRFException("[-] SSRF check failed. Illegal port.");
+            }
+        }
+
+        String path = decodeComponent(m.group(3));
+        if (path.isEmpty()) {
+            path = "/";
+        }
+        String query = m.group(4) == null ? null : decodeComponent(m.group(4));
+
         try {
-            resolvePublicAddresses(uri.getHost());
+            resolvePublicAddresses(host);
+            // The multi-argument constructor quotes every illegal character in path/query.
+            return new URI(scheme, null, host, port, path, query, null);
         } catch (UnknownHostException e) {
             throw new SSRFException("[-] SSRF check failed. Unknown host.");
+        } catch (URISyntaxException e) {
+            throw new SSRFException("[-] SSRF check failed. Illegal url.");
         }
-        return uri;
+    }
+
+
+    /**
+     * Reject host spellings that a resolver might read as an obfuscated IPv4 address
+     * (decimal/octal/hex integers, short or zero-padded dotted forms).
+     */
+    private static boolean isSafeHostSyntax(String host) {
+        if (host.startsWith("[")) {
+            return true; // IPv6 literal, syntax already checked
+        }
+        if (host.matches("^[0-9.]+$")) {
+            String[] parts = host.split("\\.", -1);
+            if (parts.length != 4) {
+                return false;
+            }
+            for (String part : parts) {
+                if (part.isEmpty() || part.length() > 3 || (part.length() > 1 && part.startsWith("0"))
+                        || Integer.parseInt(part) > 255) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        String lastLabel = host.substring(host.lastIndexOf('.') + 1);
+        return !lastLabel.matches("^0[xX][0-9a-fA-F]*$") && !lastLabel.matches("^[0-9]+$");
+    }
+
+
+    /**
+     * Strictly percent-decode a path or query component (UTF-8). Delimiter-changing escapes
+     * (such as %2F, %26, %3D, %23, %25) and control characters are rejected so the rebuilt URI keeps
+     * the original structure after being re-encoded.
+     */
+    public static String decodeComponent(String raw) {
+        if (raw == null) {
+            return "";
+        }
+        StringBuilder out = new StringBuilder(raw.length());
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        int i = 0;
+        while (i < raw.length()) {
+            char ch = raw.charAt(i);
+            if (ch == '%') {
+                if (i + 2 >= raw.length()) {
+                    throw new SSRFException("[-] SSRF check failed. Illegal url.");
+                }
+                int hi = Character.digit(raw.charAt(i + 1), 16);
+                int lo = Character.digit(raw.charAt(i + 2), 16);
+                if (hi < 0 || lo < 0) {
+                    throw new SSRFException("[-] SSRF check failed. Illegal url.");
+                }
+                bytes.write((hi << 4) | lo);
+                i += 3;
+                continue;
+            }
+            flushDecoded(bytes, out);
+            if (Character.isISOControl(ch) || Character.isWhitespace(ch) || ch == '\\') {
+                throw new SSRFException("[-] SSRF check failed. Illegal url.");
+            }
+            out.append(ch);
+            i++;
+        }
+        flushDecoded(bytes, out);
+        return out.toString();
+    }
+
+
+    private static void flushDecoded(ByteArrayOutputStream bytes, StringBuilder out) {
+        if (bytes.size() == 0) {
+            return;
+        }
+        String decoded = new String(bytes.toByteArray(), StandardCharsets.UTF_8);
+        bytes.reset();
+        for (int k = 0; k < decoded.length(); k++) {
+            char c = decoded.charAt(k);
+            if (c == '\uFFFD' || Character.isISOControl(c) || Character.isWhitespace(c)
+                    || "/?#&=+;%\\@:".indexOf(c) >= 0) {
+                throw new SSRFException("[-] SSRF check failed. Illegal url.");
+            }
+        }
+        out.append(decoded);
     }
 
 
@@ -400,16 +525,9 @@ public class SSRFChecker {
      * Get host from URL which the protocol must be http:// or https:// and not be //.
      */
     private static String url2host(String url) {
-        try {
-            // use URI instead of URL
-            URI u = new URI(url);
-            if (SecurityUtil.isHttp(url)) {
-                return u.getHost();
-            }
-            return "";
-        } catch (Exception e) {
+        if (!SecurityUtil.isHttp(url)) {
             return "";
         }
+        return SecurityUtil.gethost(url);
     }
-
 }

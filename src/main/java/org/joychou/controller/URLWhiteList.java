@@ -9,7 +9,6 @@ import org.springframework.web.util.HtmlUtils;
 
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.net.URL;
 import java.util.ArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -106,8 +105,8 @@ public class URLWhiteList {
             return;
         }
 
-        URL u = new URL(target);
-        String host = u.getHost();
+        // target was rebuilt by safeRedirectTarget (constant scheme, allowlisted host); take the host as a string.
+        String host = SecurityUtil.gethost(target);
         logger.info("host:  " + host);
 
         // endsWith .

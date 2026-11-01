@@ -2,6 +2,7 @@ package org.joychou.security;
 
 import org.joychou.config.WebConfig;
 import org.joychou.security.ssrf.SSRFChecker;
+import org.joychou.security.ssrf.SSRFException;
 import org.joychou.security.ssrf.SocketHook;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,6 +16,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 
@@ -26,6 +28,14 @@ public class SecurityUtil {
             Arrays.asList("whoami", "id", "pwd", "date", "uname", "hostname", "uptime", "ls"));
     private static final Pattern REDIRECT_HOST_PATTERN =
             Pattern.compile("^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$");
+    private static final Pattern AUTHORITY_PATTERN =
+            Pattern.compile("^[a-zA-Z][a-zA-Z0-9+.-]*://([^/?#]*)(?:[/?#].*)?$");
+    private static final Pattern HOSTNAME_PATTERN =
+            Pattern.compile("^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*$");
+    private static final Pattern REDIRECT_URL_PATTERN =
+            Pattern.compile("^([a-zA-Z][a-zA-Z0-9+.-]*)://([^/?#]*)([^?#]*)(?:\\?([^#]*))?(?:#.*)?$");
+    private static final Pattern IPV6_LITERAL_PATTERN = Pattern.compile("^\\[[0-9a-fA-F:.]+\\]$");
+    private static final Pattern PORT_PATTERN = Pattern.compile("^[0-9]{0,5}$");
     private static Logger logger =LoggerFactory.getLogger(SecurityUtil.class);
 
 
@@ -47,12 +57,52 @@ public class SecurityUtil {
      * @return host
      */
     public static String gethost(String url) {
-        try {
-            URI uri = new URI(url);
-            return uri.getHost().toLowerCase();
-        } catch (URISyntaxException e) {
+        // Pure string based extraction: the untrusted value is never handed to java.net.URI / URL.
+        if (url == null || url.isEmpty() || url.indexOf('\\') >= 0) {
             return "";
         }
+        for (int i = 0; i < url.length(); i++) {
+            char ch = url.charAt(i);
+            if (Character.isISOControl(ch) || Character.isWhitespace(ch)) {
+                return "";
+            }
+        }
+        Matcher m = AUTHORITY_PATTERN.matcher(url);
+        if (!m.matches()) {
+            return "";
+        }
+        String authority = m.group(1);
+        int at = authority.lastIndexOf('@');
+        String hostPort = at >= 0 ? authority.substring(at + 1) : authority;
+
+        String host;
+        String port;
+        if (hostPort.startsWith("[")) {
+            int end = hostPort.indexOf(']');
+            if (end < 0) {
+                return "";
+            }
+            host = hostPort.substring(0, end + 1);
+            port = hostPort.substring(end + 1);
+            if (!IPV6_LITERAL_PATTERN.matcher(host).matches()) {
+                return "";
+            }
+            if (!port.isEmpty() && !port.startsWith(":")) {
+                return "";
+            }
+            port = port.isEmpty() ? "" : port.substring(1);
+        } else {
+            int colon = hostPort.indexOf(':');
+            host = colon >= 0 ? hostPort.substring(0, colon) : hostPort;
+            port = colon >= 0 ? hostPort.substring(colon + 1) : "";
+            if (!HOSTNAME_PATTERN.matcher(host).matches()) {
+                return "";
+            }
+        }
+        if (!PORT_PATTERN.matcher(port).matches()) {
+            return "";
+        }
+        return host.toLowerCase();
     }
 
 
@@ -122,49 +172,56 @@ public class SecurityUtil {
         if (url == null || hasHeaderControlChars(url) || checkURL(url) == null) {
             return null;
         }
+        // The untrusted string is split with a strict pattern; it is never parsed by java.net.URI/URL.
+        Matcher m = REDIRECT_URL_PATTERN.matcher(url);
+        if (!m.matches()) {
+            return null;
+        }
+
+        final String scheme;
+        if ("https".equalsIgnoreCase(m.group(1))) {
+            scheme = "https";
+        } else if ("http".equalsIgnoreCase(m.group(1))) {
+            scheme = "http";
+        } else {
+            return null;
+        }
+
+        String authority = m.group(2);
+        if (authority.indexOf('@') >= 0 || authority.indexOf(':') >= 0) {
+            return null; // no user info, no custom port, no IPv6 literal
+        }
+
+        String host = authority.toLowerCase();
+        if (!REDIRECT_HOST_PATTERN.matcher(host).matches()) {
+            return null;
+        }
+
+        String safeHost = null;
+        for (String safeDomain : WebConfig.getSafeDomains()) {
+            String domain = safeDomain.toLowerCase();
+            if (host.equals(domain)) {
+                safeHost = domain;
+                break;
+            }
+            if (host.endsWith("." + domain)) {
+                safeHost = host.substring(0, host.length() - domain.length()) + domain;
+                break;
+            }
+        }
+        if (safeHost == null) {
+            return null;
+        }
+
         try {
-            URI uri = new URI(url);
-            if (uri.getRawUserInfo() != null || uri.getPort() != -1 || uri.getHost() == null) {
-                return null;
-            }
-
-            final String scheme;
-            if ("https".equalsIgnoreCase(uri.getScheme())) {
-                scheme = "https";
-            } else if ("http".equalsIgnoreCase(uri.getScheme())) {
-                scheme = "http";
-            } else {
-                return null;
-            }
-
-            String host = uri.getHost().toLowerCase();
-            if (!REDIRECT_HOST_PATTERN.matcher(host).matches()) {
-                return null;
-            }
-
-            String safeHost = null;
-            for (String safeDomain : WebConfig.getSafeDomains()) {
-                String domain = safeDomain.toLowerCase();
-                if (host.equals(domain)) {
-                    safeHost = domain;
-                    break;
-                }
-                if (host.endsWith("." + domain)) {
-                    safeHost = host.substring(0, host.length() - domain.length()) + domain;
-                    break;
-                }
-            }
-            if (safeHost == null) {
-                return null;
-            }
-
-            String path = uri.getPath();
-            if (path == null || path.isEmpty()) {
+            String path = SSRFChecker.decodeComponent(m.group(3));
+            if (path.isEmpty()) {
                 path = "/";
             }
+            String query = m.group(4) == null ? null : SSRFChecker.decodeComponent(m.group(4));
             // The multi-argument constructor quotes any illegal character (including CR/LF).
-            return new URI(scheme, null, safeHost, -1, path, uri.getQuery(), null).toASCIIString();
-        } catch (URISyntaxException e) {
+            return new URI(scheme, null, safeHost, -1, path, query, null).toASCIIString();
+        } catch (URISyntaxException | SSRFException e) {
             return null;
         }
     }
