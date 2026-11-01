@@ -2,15 +2,16 @@ package org.joychou.controller;
 
 import cn.hutool.http.HttpUtil;
 import org.joychou.security.SecurityUtil;
+import org.joychou.security.ssrf.SSRFChecker;
 import org.joychou.security.ssrf.SSRFException;
 import org.joychou.service.HttpService;
 import org.joychou.util.HttpUtils;
-import org.joychou.util.WebUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.util.HtmlUtils;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletResponse;
@@ -30,8 +31,16 @@ public class SSRF {
 
     private static final Logger logger = LoggerFactory.getLogger(SSRF.class);
 
+    private static final String REQUEST_FAILED = "Request failed";
+
     @Resource
     private HttpService httpService;
+
+    /** Log only the failing endpoint and exception class; the response carries a constant. */
+    private static String fail(String endpoint, Exception e) {
+        logger.error("{} failed: {}", endpoint, e.getClass().getSimpleName());
+        return REQUEST_FAILED;
+    }
 
     /**
      * <p>
@@ -59,7 +68,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.URLConnection(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return fail("URLConnectionSec", e);
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -77,7 +86,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.HttpURLConnection(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return fail("httpURLConnection", e);
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -98,9 +107,9 @@ public class SSRF {
     public String request(@RequestParam String url) {
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.request(url);
+            return HtmlUtils.htmlEscape(HttpUtils.request(url));
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return fail("request", e);
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -120,21 +129,19 @@ public class SSRF {
         InputStream inputStream = null;
         OutputStream outputStream = null;
         try {
-            String downLoadImgFileName = WebUtils.getNameWithoutExtension(url) + "." + WebUtils.getFileExtension(url);
-            // download
-            response.setHeader("content-disposition", "attachment;fileName=" + downLoadImgFileName);
+            // download; the header is a fixed constant, no request-derived data is written into it
+            response.setHeader("content-disposition", "attachment; filename=download");
 
-            URL u = new URL(url);
             int length;
             byte[] bytes = new byte[1024];
-            inputStream = u.openStream(); // send request
+            inputStream = HttpUtils.openStream(url); // send request to a validated public http(s) url
             outputStream = response.getOutputStream();
             while ((length = inputStream.read(bytes)) > 0) {
                 outputStream.write(bytes, 0, length);
             }
 
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("openStream failed: {}", e.getClass().getSimpleName());
         } finally {
             if (inputStream != null) {
                 inputStream.close();
@@ -156,7 +163,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             HttpUtils.imageIO(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return fail("ImageIO", e);
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -172,7 +179,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.okhttp(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return fail("okhttp", e);
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -191,7 +198,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.httpClient(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return fail("HttpClient", e);
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -211,7 +218,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.commonHttpClient(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return fail("commonsHttpClient", e);
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -230,7 +237,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.Jsoup(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return fail("Jsoup", e);
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -249,7 +256,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             HttpUtils.IOUtils(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return fail("IOUtils", e);
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -308,10 +315,13 @@ public class SSRF {
     @GetMapping("/dnsrebind/vuln")
     public String DnsRebind(String url) {
         java.security.Security.setProperty("networkaddress.cache.negative.ttl" , "0");
-        if (!SecurityUtil.checkSSRFWithoutRedirect(url)) {
-            return "Dangerous url";
+        try {
+            // Validate (http/https only, public addresses only) and request the rebuilt, validated URI.
+            URI uri = SSRFChecker.validateHttpUrl(url);
+            return HttpUtil.get(uri.toString());
+        } catch (SSRFException | cn.hutool.http.HttpException e) {
+            return fail("DnsRebind", e);
         }
-        return HttpUtil.get(url);
     }
 
 

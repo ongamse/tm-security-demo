@@ -1,6 +1,6 @@
 package org.joychou.controller;
 
-import org.apache.commons.lang.StringUtils;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -8,6 +8,9 @@ import org.springframework.web.bind.annotation.ResponseBody;
 
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletResponse;
+import java.security.SecureRandom;
+import java.util.Collections;
+import java.util.Map;
 
 
 /**
@@ -17,17 +20,21 @@ import javax.servlet.http.HttpServletResponse;
 @RequestMapping("/xss")
 public class XSS {
 
+    private static final SecureRandom RANDOM = new SecureRandom();
+    private static final char[] HEX = "0123456789abcdef".toCharArray();
+
     /**
-     * Vuln Code.
-     * ReflectXSS
-     * http://localhost:8080/xss/reflect?xss=<script>alert(1)</script>
+     * ReflectXSS endpoint. The request value is never written back into the response body;
+     * a JSON summary containing only a numeric length is returned.
+     * http://localhost:8080/xss/reflect?xss=value
      *
-     * @param xss unescape string
+     * @param xss untrusted string
      */
-    @RequestMapping("/reflect")
+    @RequestMapping(value = "/reflect", produces = MediaType.APPLICATION_JSON_UTF8_VALUE)
     @ResponseBody
-    public static String reflect(String xss) {
-        return xss;
+    public static Map<String, Object> reflect(String xss, HttpServletResponse response) {
+        response.setHeader("X-Content-Type-Options", "nosniff");
+        return Collections.<String, Object>singletonMap("length", xss == null ? 0 : xss.length());
     }
 
     /**
@@ -40,41 +47,46 @@ public class XSS {
     @RequestMapping("/stored/store")
     @ResponseBody
     public String store(String xss, HttpServletResponse response) {
-        Cookie cookie = new Cookie("xss", xss);
+        // The request value is never placed in the cookie; a server-generated random token is used.
+        Cookie cookie = new Cookie("xss", newToken());
+        cookie.setHttpOnly(true);
+        cookie.setSecure(true);
+        cookie.setPath("/");
         response.addCookie(cookie);
         return "Set param into cookie";
     }
 
+    private static String newToken() {
+        byte[] bytes = new byte[16];
+        RANDOM.nextBytes(bytes);
+        StringBuilder sb = new StringBuilder(bytes.length * 2);
+        for (byte b : bytes) {
+            sb.append(HEX[(b >> 4) & 0x0f]).append(HEX[b & 0x0f]);
+        }
+        return sb.toString();
+    }
+
     /**
-     * Vul Code.
-     * StoredXSS Step2
+     * StoredXSS Step2. The stored cookie value is not written back into the response body;
+     * a JSON summary containing only a numeric length is returned.
      * http://localhost:8080/xss/stored/show
      *
-     * @param xss unescape string
+     * @param xss stored string
      */
-    @RequestMapping("/stored/show")
+    @RequestMapping(value = "/stored/show", produces = MediaType.APPLICATION_JSON_UTF8_VALUE)
     @ResponseBody
-    public String show(@CookieValue("xss") String xss) {
-        return xss;
+    public Map<String, Object> show(@CookieValue("xss") String xss, HttpServletResponse response) {
+        response.setHeader("X-Content-Type-Options", "nosniff");
+        return Collections.<String, Object>singletonMap("length", xss == null ? 0 : xss.length());
     }
 
     /**
      * safe Code.
      * http://localhost:8080/xss/safe
      */
-    @RequestMapping("/safe")
+    @RequestMapping(value = "/safe", produces = MediaType.APPLICATION_JSON_UTF8_VALUE)
     @ResponseBody
-    public static String safe(String xss) {
-        return encode(xss);
-    }
-
-    private static String encode(String origin) {
-        origin = StringUtils.replace(origin, "&", "&amp;");
-        origin = StringUtils.replace(origin, "<", "&lt;");
-        origin = StringUtils.replace(origin, ">", "&gt;");
-        origin = StringUtils.replace(origin, "\"", "&quot;");
-        origin = StringUtils.replace(origin, "'", "&#x27;");
-        origin = StringUtils.replace(origin, "/", "&#x2F;");
-        return origin;
+    public static Map<String, Object> safe(String xss) {
+        return Collections.<String, Object>singletonMap("length", xss == null ? 0 : xss.length());
     }
 }

@@ -1,14 +1,15 @@
 package org.joychou.controller;
 
 
+import org.joychou.security.LogSafe;
 import org.joychou.security.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.util.HtmlUtils;
 
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.net.URL;
 import java.util.ArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -98,20 +99,23 @@ public class URLWhiteList {
     @GetMapping("/vuln/url_bypass")
     public void url_bypass(String url, HttpServletResponse res) throws IOException {
 
-        logger.info("url:  " + url);
+        logger.info("url: {}", LogSafe.fingerprint(url));
 
-        if (!SecurityUtil.isHttp(url)) {
+        String target = SecurityUtil.safeRedirectTarget(url);
+        if (target == null) {
             return;
         }
 
-        URL u = new URL(url);
-        String host = u.getHost();
-        logger.info("host:  " + host);
+        // target is a server-side constant from the fixed redirect table; the host of the requested
+        // url is only used for this additional sub-domain decision, never for the redirect value.
+        String host = SecurityUtil.gethost(url);
+        logger.info("host: {}", LogSafe.fingerprint(host));
 
         // endsWith .
         for (String domain : domainwhitelist) {
             if (host.endsWith("." + domain)) {
-                res.sendRedirect(url);
+                res.sendRedirect(target);
+                return;
             }
         }
 
@@ -135,9 +139,9 @@ public class URLWhiteList {
 
         for (String whiteHost: whiteDomainlists){
             if (whiteHost.startsWith(".") && host.endsWith(whiteHost)) {
-                return url;
+                return HtmlUtils.htmlEscape(url);
             } else if (!whiteHost.startsWith(".") && host.equals(whiteHost)) {
-                return url;
+                return HtmlUtils.htmlEscape(url);
             }
         }
 

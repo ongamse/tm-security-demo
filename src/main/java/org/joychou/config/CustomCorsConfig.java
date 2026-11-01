@@ -12,6 +12,10 @@ import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandl
 @Configuration
 public class CustomCorsConfig extends WebMvcRegistrationsAdapter {
 
+    /** Fixed server-side list of explicit origins (scheme://host); never "*". */
+    private static final String[] ALLOWED_ORIGINS = {
+            "https://joychou.org", "http://joychou.org", "http://test.joychou.me"};
+
     /**
      * 设置cors origin白名单。区分http和https，并且默认不会拦截同域请求。
      */
@@ -21,11 +25,13 @@ public class CustomCorsConfig extends WebMvcRegistrationsAdapter {
             @Override
             public void addCorsMappings(CorsRegistry registry) {
                 // 为了支持一级域名，重写了checkOrigin
-                //String[] allowOrigins = {"joychou.org", "http://test.joychou.me"};
+                // 显式配置origin白名单，不允许所有来源；CustomCorsProcessor会在此基础上额外校验一级域名
+                // 固定的服务端常量白名单，不含通配符；不允许携带凭证(cookie)的跨域请求
                 registry.addMapping("/cors/sec/webMvcConfigurer") // /**表示所有路由path
-                        //.allowedOrigins(allowOrigins)
+                        .allowedOrigins(ALLOWED_ORIGINS)
                         .allowedMethods("GET", "POST")
-                        .allowCredentials(true);
+                        .allowedHeaders("Content-Type", "X-Requested-With", "X-CSRF-TOKEN")
+                        .allowCredentials(false);
             }
         };
     }

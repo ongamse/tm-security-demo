@@ -8,17 +8,38 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 
 public class SecurityUtil {
 
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
-    private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
+    private static final Pattern ARG_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.=-]+$");
+    private static final Set<String> ALLOWED_COMMANDS = new HashSet<>(
+            Arrays.asList("whoami", "id", "pwd", "date", "uname", "hostname", "uptime", "ls"));
+    private static final Pattern REDIRECT_HOST_PATTERN =
+            Pattern.compile("^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$");
+    private static final Pattern AUTHORITY_PATTERN =
+            Pattern.compile("^[a-zA-Z][a-zA-Z0-9+.-]*://([^/?#]*)(?:[/?#].*)?$");
+    private static final Pattern HOSTNAME_PATTERN =
+            Pattern.compile("^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*$");
+    private static final Pattern REDIRECT_URL_PATTERN =
+            Pattern.compile("^([a-zA-Z][a-zA-Z0-9+.-]*)://([^/?#]*)([^?#]*)(?:\\?([^#]*))?(?:#.*)?$");
+    private static final Pattern IPV6_LITERAL_PATTERN = Pattern.compile("^\\[[0-9a-fA-F:.]+\\]$");
+    private static final Pattern PORT_PATTERN = Pattern.compile("^[0-9]{0,5}$");
+    private static final List<String> ALLOWED_REDIRECT_PATHS =
+            Collections.unmodifiableList(Arrays.asList("/", "/index", "/login", "/home"));
+    private static Logger logger =LoggerFactory.getLogger(SecurityUtil.class);
 
 
     /**
@@ -39,12 +60,52 @@ public class SecurityUtil {
      * @return host
      */
     public static String gethost(String url) {
-        try {
-            URI uri = new URI(url);
-            return uri.getHost().toLowerCase();
-        } catch (URISyntaxException e) {
+        // Pure string based extraction: the untrusted value is never handed to java.net.URI / URL.
+        if (url == null || url.isEmpty() || url.indexOf('\\') >= 0) {
             return "";
         }
+        for (int i = 0; i < url.length(); i++) {
+            char ch = url.charAt(i);
+            if (Character.isISOControl(ch) || Character.isWhitespace(ch)) {
+                return "";
+            }
+        }
+        Matcher m = AUTHORITY_PATTERN.matcher(url);
+        if (!m.matches()) {
+            return "";
+        }
+        String authority = m.group(1);
+        int at = authority.lastIndexOf('@');
+        String hostPort = at >= 0 ? authority.substring(at + 1) : authority;
+
+        String host;
+        String port;
+        if (hostPort.startsWith("[")) {
+            int end = hostPort.indexOf(']');
+            if (end < 0) {
+                return "";
+            }
+            host = hostPort.substring(0, end + 1);
+            port = hostPort.substring(end + 1);
+            if (!IPV6_LITERAL_PATTERN.matcher(host).matches()) {
+                return "";
+            }
+            if (!port.isEmpty() && !port.startsWith(":")) {
+                return "";
+            }
+            port = port.isEmpty() ? "" : port.substring(1);
+        } else {
+            int colon = hostPort.indexOf(':');
+            host = colon >= 0 ? hostPort.substring(0, colon) : hostPort;
+            port = colon >= 0 ? hostPort.substring(colon + 1) : "";
+            if (!HOSTNAME_PATTERN.matcher(host).matches()) {
+                return "";
+            }
+        }
+        if (!PORT_PATTERN.matcher(port).matches()) {
+            return "";
+        }
+        return host.toLowerCase();
     }
 
 
@@ -95,9 +156,116 @@ public class SecurityUtil {
             }
             return null;
         } catch (NullPointerException e) {
-            logger.error(e.toString());
+            logger.error("safeRedirect check failed: {}", LogSafe.errorName(e));
             return null;
         }
+    }
+
+
+    /**
+     * Build a redirect target for an untrusted url. The returned value is NOT the request string:
+     * scheme is a server-side constant, the host is composed from a configured safe domain entry
+     * (plus a strictly validated sub-domain prefix), and path/query are re-encoded from the parsed
+     * components. User info, custom ports, fragments and control chars are rejected or dropped.
+     *
+     * @param url untrusted url
+     * @return rebuilt safe absolute url, or null if the url must not be redirected to
+     */
+    public static String safeRedirectTarget(String url) {
+        if (url == null || hasHeaderControlChars(url) || checkURL(url) == null) {
+            return null;
+        }
+        // The untrusted string is split with a strict pattern; it is never parsed by java.net.URI/URL.
+        Matcher m = REDIRECT_URL_PATTERN.matcher(url);
+        if (!m.matches()) {
+            return null;
+        }
+
+        final String scheme;
+        if ("https".equalsIgnoreCase(m.group(1))) {
+            scheme = "https";
+        } else if ("http".equalsIgnoreCase(m.group(1))) {
+            scheme = "http";
+        } else {
+            return null;
+        }
+
+        String authority = m.group(2);
+        if (authority.indexOf('@') >= 0 || authority.indexOf(':') >= 0) {
+            return null; // no user info, no custom port, no IPv6 literal
+        }
+
+        String host = authority.toLowerCase();
+        if (!REDIRECT_HOST_PATTERN.matcher(host).matches()) {
+            return null;
+        }
+
+        // Server-side table of every redirect target that may ever be emitted. Keys and values are
+        // built only from the configured safe domains and the fixed landing paths below.
+        Map<String, String> allowedTargets = buildAllowedRedirectTargets();
+
+        // Select the configured domain that the validated host belongs to (exact host or one of its
+        // sub-domains). The lookup key is composed of server-side constants only.
+        String configuredDomain = null;
+        for (String safeDomain : allowedRedirectDomains()) {
+            if (host.equals(safeDomain) || host.endsWith("." + safeDomain)) {
+                configuredDomain = safeDomain;
+                break;
+            }
+        }
+        if (configuredDomain == null) {
+            return null;
+        }
+
+        // Select the fixed landing path; anything that is not in the fixed list falls back to "/".
+        String rawPath = m.group(3);
+        String landingPath = "/";
+        for (String allowedPath : ALLOWED_REDIRECT_PATHS) {
+            if (allowedPath.equals(rawPath)) {
+                landingPath = allowedPath;
+                break;
+            }
+        }
+
+        // The returned value is the server-side map value, never a string derived from the request.
+        return allowedTargets.get(scheme + "://" + configuredDomain + landingPath);
+    }
+
+
+    /**
+     * Configured, lower-cased, non-blocked redirect domains (server-side data only).
+     */
+    private static List<String> allowedRedirectDomains() {
+        List<String> domains = new ArrayList<String>();
+        ArrayList<String> blockDomains = WebConfig.getBlockDomains();
+        for (String safeDomain : WebConfig.getSafeDomains()) {
+            if (safeDomain == null || safeDomain.isEmpty()) {
+                continue;
+            }
+            String domain = safeDomain.toLowerCase();
+            if (!REDIRECT_HOST_PATTERN.matcher(domain).matches() || blockDomains.contains(domain)) {
+                continue;
+            }
+            domains.add(domain);
+        }
+        return domains;
+    }
+
+
+    /**
+     * Build the fixed table of allowed redirect targets: scheme://configuredDomain + landingPath.
+     */
+    private static Map<String, String> buildAllowedRedirectTargets() {
+        Map<String, String> targets = new HashMap<String, String>();
+        for (String domain : allowedRedirectDomains()) {
+            for (String scheme : new String[]{"https", "http"}) {
+                for (String path : ALLOWED_REDIRECT_PATHS) {
+                    String target = scheme + "://" + domain + path;
+                    targets.put(target, target);
+                }
+            }
+        }
+        return targets;
     }
 
 
@@ -183,10 +351,10 @@ public class SecurityUtil {
             try {
                 temp = URLDecoder.decode(temp, "utf-8");
             } catch (UnsupportedEncodingException e) {
-                logger.info("Unsupported encoding exception: " + filepath);
+                logger.info("Unsupported encoding exception: {}", LogSafe.fingerprint(filepath));
                 return null;
             } catch (Exception e) {
-                logger.info(e.toString());
+                logger.info("pathFilter decode failed: {}", LogSafe.errorName(e));
                 return null;
             }
         }
@@ -199,12 +367,134 @@ public class SecurityUtil {
     }
 
 
+    /**
+     * Check whether a value contains CR, LF or any other ISO control character, which must never
+     * be written into an HTTP response header (CRLF / header injection).
+     *
+     * @param value header value candidate
+     * @return true if the value contains a control character; false for null or clean values
+     */
+    public static boolean hasHeaderControlChars(String value) {
+        if (value == null) {
+            return false;
+        }
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            if (Character.isISOControl(ch)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+
+    /**
+     * Return the Origin only if it is free of control characters and passes the url allowlist.
+     *
+     * @param origin value of the request Origin header
+     * @return the origin if it is safe to reflect in Access-Control-Allow-Origin, otherwise null
+     */
+    public static String checkOrigin(String origin) {
+        return allowedOriginOrNull(origin);
+    }
+
+
+    /**
+     * Look up a request Origin in the fixed, server-side list of allowed origins and return the
+     * MATCHING SERVER-SIDE CONSTANT (never the request string). The list is built from the
+     * configured safe domains (WebConfig / url_safe_domain.xml) as exact scheme://host origins
+     * for http and https. The literal "null" origin, origins with control characters, ports,
+     * user info, paths or wildcards never match and block-listed domains are never returned.
+     *
+     * @param origin value of the request Origin header (untrusted)
+     * @return the equal element of the server allowlist, or null if the origin is not allowed
+     */
+    public static String allowedOriginOrNull(String origin) {
+        if (origin == null || origin.isEmpty() || hasHeaderControlChars(origin)
+                || "null".equalsIgnoreCase(origin) || origin.indexOf('*') >= 0) {
+            return null;
+        }
+        ArrayList<String> blockDomains = WebConfig.getBlockDomains();
+        // server-side allowlist: key and value are both built from the configured safe domains
+        Map<String, String> allowedOrigins = new HashMap<String, String>();
+        for (String safeDomain : WebConfig.getSafeDomains()) {
+            if (safeDomain == null || safeDomain.isEmpty()) {
+                continue;
+            }
+            String domain = safeDomain.toLowerCase();
+            if (blockDomains.contains(domain)) {
+                continue;
+            }
+            for (String scheme : new String[]{"https://", "http://"}) {
+                String candidate = scheme + domain;
+                allowedOrigins.put(candidate, candidate);
+            }
+        }
+        // the returned value is the server-side map value, never the request string
+        return allowedOrigins.get(origin);
+    }
+
+
+    /**
+     * Make a file name safe for use inside a Content-Disposition header: control characters,
+     * whitespace, quotes, semicolons, commas and backslashes are replaced with an underscore.
+     *
+     * @param fileName file name candidate
+     * @return sanitized file name
+     */
+    public static String sanitizeHeaderFileName(String fileName) {
+        if (fileName == null) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder(fileName.length());
+        for (int i = 0; i < fileName.length(); i++) {
+            char ch = fileName.charAt(i);
+            if (Character.isISOControl(ch) || Character.isWhitespace(ch)
+                    || ch == '"' || ch == ';' || ch == ',' || ch == '\\') {
+                sb.append('_');
+            } else {
+                sb.append(ch);
+            }
+        }
+        return sb.toString();
+    }
+
+
     public static String cmdFilter(String input) {
         if (!FILTER_PATTERN.matcher(input).matches()) {
             return null;
         }
 
         return input;
+    }
+
+
+    /**
+     * Split a user supplied command line into an argv array, but only if the program is on a
+     * strict allowlist and every argument consists of safe characters only. The result must be
+     * executed without a shell (ProcessBuilder with argv).
+     *
+     * @param cmd user supplied command line
+     * @return argv array, or null if the command is not allowed
+     */
+    public static String[] cmdAllowlistArgv(String cmd) {
+        if (cmd == null) {
+            return null;
+        }
+        String trimmed = cmd.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        String[] argv = trimmed.split("\\s+");
+        if (!ALLOWED_COMMANDS.contains(argv[0])) {
+            return null;
+        }
+        for (int i = 1; i < argv.length; i++) {
+            if (!ARG_PATTERN.matcher(argv[i]).matches()) {
+                return null;
+            }
+        }
+        return argv;
     }
 
 

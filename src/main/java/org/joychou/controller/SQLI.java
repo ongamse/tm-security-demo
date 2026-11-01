@@ -3,13 +3,22 @@ package org.joychou.controller;
 
 import org.joychou.mapper.UserMapper;
 import org.joychou.dao.User;
+import org.joychou.security.LogSafe;
 import org.joychou.security.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
+import javax.servlet.http.HttpServletRequest;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.Principal;
 import java.sql.*;
 import java.util.List;
 
@@ -42,6 +51,58 @@ public class SQLI {
     @Resource
     private UserMapper userMapper;
 
+    /**
+     * Thrown when the authenticated caller requests a user record that is not their own.
+     */
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    static class ForbiddenException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        ForbiddenException() {
+            super("Forbidden");
+        }
+    }
+
+    /**
+     * Object-level authorization: the requested username must be the authenticated principal,
+     * unless the caller has the ADMIN role. Fails closed (403) when no principal exists.
+     */
+    private static void checkAccess(HttpServletRequest request, String targetUsername) {
+        Principal principal = request.getUserPrincipal();
+        if (principal == null || targetUsername == null) {
+            throw new ForbiddenException();
+        }
+        if (request.isUserInRole("ADMIN")) {
+            return;
+        }
+        byte[] expected = principal.getName().getBytes(StandardCharsets.UTF_8);
+        byte[] actual = targetUsername.getBytes(StandardCharsets.UTF_8);
+        if (!MessageDigest.isEqual(expected, actual)) {
+            throw new ForbiddenException();
+        }
+    }
+
+
+    /**
+     * Resolve the record owner from the authenticated principal (never from the request).
+     * If a username was supplied it must match the principal, otherwise 403. Fails closed (403)
+     * when the caller is not authenticated.
+     *
+     * @return the principal-derived username to bind into the query
+     */
+    private static String principalUsername(String requestedUsername) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated() || auth instanceof AnonymousAuthenticationToken
+                || auth.getName() == null) {
+            throw new ForbiddenException();
+        }
+        String principalName = auth.getName();
+        if (requestedUsername != null && !principalName.equalsIgnoreCase(requestedUsername)) {
+            throw new ForbiddenException();
+        }
+        return principalName;
+    }
+
 
     /**
      * <p>Sql injection jbdc vuln code.</p><br>
@@ -51,6 +112,7 @@ public class SQLI {
     @RequestMapping("/jdbc/vuln")
     public String jdbc_sqli_vul(@RequestParam("username") String username) {
 
+        final String owner = principalUsername(username);
         StringBuilder result = new StringBuilder();
 
         try {
@@ -61,17 +123,18 @@ public class SQLI {
                 System.out.println("Connect to database successfully.");
 
             // sqli vuln code
-            Statement statement = con.createStatement();
-            String sql = "select * from users where username = '" + username + "'";
-            logger.info(sql);
-            ResultSet rs = statement.executeQuery(sql);
+            String sql = "select * from users where username = ?";
+            PreparedStatement statement = con.prepareStatement(sql);
+            statement.setString(1, owner);
+            logger.info("Executing parameterized query on users");
+            ResultSet rs = statement.executeQuery();
 
             while (rs.next()) {
                 String res_name = rs.getString("username");
                 String res_pwd = rs.getString("password");
                 String info = String.format("%s: %s\n", res_name, res_pwd);
                 result.append(info);
-                logger.info(info);
+                logger.info("User row fetched");
             }
             rs.close();
             con.close();
@@ -80,7 +143,7 @@ public class SQLI {
         } catch (ClassNotFoundException e) {
             logger.error("Sorry, can't find the Driver!");
         } catch (SQLException e) {
-            logger.error(e.toString());
+            logger.error("SQL error: {}", LogSafe.errorName(e));
         }
         return result.toString();
     }
@@ -92,8 +155,9 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/jdbc/sec?username=joychou">http://localhost:8080/sqli/jdbc/sec?username=joychou</a>
      */
     @RequestMapping("/jdbc/sec")
-    public String jdbc_sqli_sec(@RequestParam("username") String username) {
+    public String jdbc_sqli_sec(@RequestParam("username") String username, HttpServletRequest request) {
 
+        checkAccess(request, username);
         StringBuilder result = new StringBuilder();
         try {
             Class.forName(driver);
@@ -107,7 +171,7 @@ public class SQLI {
             PreparedStatement st = con.prepareStatement(sql);
             st.setString(1, username);
 
-            logger.info(st.toString());  // sql after prepare statement
+            logger.info("Executing parameterized query on users");
             ResultSet rs = st.executeQuery();
 
             while (rs.next()) {
@@ -115,7 +179,7 @@ public class SQLI {
                 String res_pwd = rs.getString("password");
                 String info = String.format("%s: %s\n", res_name, res_pwd);
                 result.append(info);
-                logger.info(info);
+                logger.info("User row fetched");
             }
 
             rs.close();
@@ -125,7 +189,7 @@ public class SQLI {
             logger.error("Sorry, can't find the Driver!");
             e.printStackTrace();
         } catch (SQLException e) {
-            logger.error(e.toString());
+            logger.error("SQL error: {}", LogSafe.errorName(e));
         }
         return result.toString();
     }
@@ -138,6 +202,7 @@ public class SQLI {
     @RequestMapping("/jdbc/ps/vuln")
     public String jdbc_ps_vuln(@RequestParam("username") String username) {
 
+        final String owner = principalUsername(username);
         StringBuilder result = new StringBuilder();
         try {
             Class.forName(driver);
@@ -146,10 +211,11 @@ public class SQLI {
             if (!con.isClosed())
                 System.out.println("Connecting to Database successfully.");
 
-            String sql = "select * from users where username = '" + username + "'";
+            String sql = "select * from users where username = ?";
             PreparedStatement st = con.prepareStatement(sql);
+            st.setString(1, owner);
 
-            logger.info(st.toString());
+            logger.info("Executing parameterized query on users");
             ResultSet rs = st.executeQuery();
 
             while (rs.next()) {
@@ -157,7 +223,7 @@ public class SQLI {
                 String res_pwd = rs.getString("password");
                 String info = String.format("%s: %s\n", res_name, res_pwd);
                 result.append(info);
-                logger.info(info);
+                logger.info("User row fetched");
             }
 
             rs.close();
@@ -167,7 +233,7 @@ public class SQLI {
             logger.error("Sorry, can't find the Driver!");
             e.printStackTrace();
         } catch (SQLException e) {
-            logger.error(e.toString());
+            logger.error("SQL error: {}", LogSafe.errorName(e));
         }
         return result.toString();
     }
@@ -179,7 +245,8 @@ public class SQLI {
      * <p>select * from users where username = 'joychou' or '1'='1' </p>
      */
     @GetMapping("/mybatis/vuln01")
-    public List<User> mybatisVuln01(@RequestParam("username") String username) {
+    public List<User> mybatisVuln01(@RequestParam("username") String username, HttpServletRequest request) {
+        checkAccess(request, username);
         return userMapper.findByUserNameVuln01(username);
     }
 
@@ -189,7 +256,8 @@ public class SQLI {
      * <p>select * from users where username like '%joychou' or '1'='1%' </p>
      */
     @GetMapping("/mybatis/vuln02")
-    public List<User> mybatisVuln02(@RequestParam("username") String username) {
+    public List<User> mybatisVuln02(@RequestParam("username") String username, HttpServletRequest request) {
+        checkAccess(request, username);
         return userMapper.findByUserNameVuln02(username);
     }
 
@@ -209,7 +277,8 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/mybatis/sec01?username=joychou">http://localhost:8080/sqli/mybatis/sec01?username=joychou</a>
      */
     @GetMapping("/mybatis/sec01")
-    public User mybatisSec01(@RequestParam("username") String username) {
+    public User mybatisSec01(@RequestParam("username") String username, HttpServletRequest request) {
+        checkAccess(request, username);
         return userMapper.findByUserName(username);
     }
 
@@ -218,8 +287,12 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/mybatis/sec02?id=1">http://localhost:8080/sqli/mybatis/sec02?id=1</a>
      */
     @GetMapping("/mybatis/sec02")
-    public User mybatisSec02(@RequestParam("id") Integer id) {
-        return userMapper.findById(id);
+    public User mybatisSec02(@RequestParam("id") Integer id, HttpServletRequest request) {
+        User found = userMapper.findById(id);
+        if (found != null) {
+            checkAccess(request, found.getUsername());
+        }
+        return found;
     }
 
 

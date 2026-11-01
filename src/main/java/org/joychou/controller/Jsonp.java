@@ -3,24 +3,31 @@ package org.joychou.controller;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 
-import com.alibaba.fastjson.JSONPObject;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang.StringUtils;
 import org.joychou.security.SecurityUtil;
 import org.joychou.util.LoginUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.view.json.MappingJackson2JsonView;
 import org.joychou.config.WebConfig;
-import org.joychou.util.WebUtils;
 
 import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import java.io.IOException;
 import java.security.Principal;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 
 /**
@@ -42,10 +49,71 @@ public class Jsonp {
      * <p>
      * http://localhost:8080/jsonp/vuln/referer?callback_=test
      */
-    @RequestMapping(value = "/vuln/referer", produces = "application/javascript")
-    public String referer(HttpServletRequest request) {
+    @RequestMapping(value = "/vuln/referer")
+    public ResponseEntity<String> referer(HttpServletRequest request) {
         String callback = request.getParameter(this.callback);
-        return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
+        return userInfoJsonp(callback, request);
+    }
+
+    private static final String JS_UTF8 = "application/javascript;charset=UTF-8";
+    private static final String JSON_UTF8 = "application/json;charset=UTF-8";
+    private static final String TEXT_UTF8 = "text/plain;charset=UTF-8";
+    private static final String ERROR_BODY = "error";
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    /**
+     * Fixed server-side allowlist of JSONP function names. The request callback is only used as a
+     * lookup key; the constant map value is what is written into the response.
+     */
+    private static final Map<String, String> ALLOWED_CALLBACKS;
+
+    static {
+        Map<String, String> m = new HashMap<>();
+        m.put("callback", "callback");
+        m.put("jsonp", "jsonp");
+        m.put("cb", "cb");
+        ALLOWED_CALLBACKS = Collections.unmodifiableMap(m);
+    }
+
+    private static ResponseEntity<String> body(String content, String contentType) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("Content-Type", contentType);
+        headers.set("X-Content-Type-Options", "nosniff");
+        return new ResponseEntity<>(content, headers, HttpStatus.OK);
+    }
+
+    private static ResponseEntity<String> error() {
+        return body(ERROR_BODY, TEXT_UTF8);
+    }
+
+    /**
+     * Serialize an object with Jackson. When the request callback is in the server-side allowlist,
+     * the constant allowlisted function name wraps the JSON; otherwise plain JSON is returned.
+     * The request callback value itself is never written to the response.
+     */
+    private static ResponseEntity<String> jsonp(String callback, Object data) {
+        try {
+            // Escape characters that are legal in JSON but dangerous inside HTML / script contexts.
+            String json = MAPPER.writeValueAsString(data)
+                    .replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
+                    .replace("\u2028", "\\u2028").replace("\u2029", "\\u2029");
+            String fixedName = callback == null ? null : ALLOWED_CALLBACKS.get(callback);
+            if (fixedName == null) {
+                return body(json, JSON_UTF8);
+            }
+            return body(fixedName + "(" + json + ")", JS_UTF8);
+        } catch (JsonProcessingException e) {
+            return error();
+        }
+    }
+
+    private static ResponseEntity<String> userInfoJsonp(String callback, HttpServletRequest request) {
+        try {
+            JsonNode info = MAPPER.readTree(LoginUtils.getUserInfo2JsonStr(request));
+            return jsonp(callback, info);
+        } catch (IOException e) {
+            return error();
+        }
     }
 
     /**
@@ -54,15 +122,15 @@ public class Jsonp {
      * <p>
      * http://localhost:8080/jsonp/vuln/emptyReferer?callback_=test
      */
-    @RequestMapping(value = "/vuln/emptyReferer", produces = "application/javascript")
-    public String emptyReferer(HttpServletRequest request) {
+    @RequestMapping(value = "/vuln/emptyReferer")
+    public ResponseEntity<String> emptyReferer(HttpServletRequest request) {
         String referer = request.getHeader("referer");
 
         if (null != referer && SecurityUtil.checkURL(referer) == null) {
-            return "error";
+            return error();
         }
         String callback = request.getParameter(this.callback);
-        return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
+        return userInfoJsonp(callback, request);
     }
 
     /**
@@ -99,15 +167,15 @@ public class Jsonp {
      * Safe code.
      * http://localhost:8080/jsonp/sec?callback_=test
      */
-    @RequestMapping(value = "/sec/checkReferer", produces = "application/javascript")
-    public String safecode(HttpServletRequest request) {
+    @RequestMapping(value = "/sec/checkReferer")
+    public ResponseEntity<String> safecode(HttpServletRequest request) {
         String referer = request.getHeader("referer");
 
         if (SecurityUtil.checkURL(referer) == null) {
-            return "error";
+            return error();
         }
         String callback = request.getParameter(this.callback);
-        return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
+        return userInfoJsonp(callback, request);
     }
 
     /**
@@ -125,18 +193,20 @@ public class Jsonp {
      *
      * fastjsonp to jsonp
      */
-    @GetMapping(value = "/fastjsonp/getToken", produces = "application/javascript")
-    public String getCsrfToken2(HttpServletRequest request) {
+    @GetMapping(value = "/fastjsonp/getToken")
+    public ResponseEntity<String> getCsrfToken2(HttpServletRequest request) {
         CsrfToken csrfToken = cookieCsrfTokenRepository.loadToken(request); // get csrf token
+        if (csrfToken == null) {
+            return error();
+        }
+
+        Map<String, String> data = new LinkedHashMap<>();
+        data.put("headerName", csrfToken.getHeaderName());
+        data.put("parameterName", csrfToken.getParameterName());
+        data.put("token", csrfToken.getToken());
 
         String callback = request.getParameter("fastjsonpCallback");
-        if (StringUtils.isNotBlank(callback)) {
-            JSONPObject jsonpObj = new JSONPObject(callback);
-            jsonpObj.addParameter(csrfToken);
-            return jsonpObj.toString();
-        } else {
-            return csrfToken.toString();
-        }
+        return jsonp(callback, data);
     }
 
 }
