@@ -205,6 +205,66 @@ public class SecurityUtil {
     }
 
 
+    /**
+     * Check whether a value contains CR, LF or any other ISO control character, which must never
+     * be written into an HTTP response header (CRLF / header injection).
+     *
+     * @param value header value candidate
+     * @return true if the value contains a control character; false for null or clean values
+     */
+    public static boolean hasHeaderControlChars(String value) {
+        if (value == null) {
+            return false;
+        }
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            if (Character.isISOControl(ch)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+
+    /**
+     * Return the Origin only if it is free of control characters and passes the url allowlist.
+     *
+     * @param origin value of the request Origin header
+     * @return the origin if it is safe to reflect in Access-Control-Allow-Origin, otherwise null
+     */
+    public static String checkOrigin(String origin) {
+        if (origin == null || hasHeaderControlChars(origin)) {
+            return null;
+        }
+        return checkURL(origin);
+    }
+
+
+    /**
+     * Make a file name safe for use inside a Content-Disposition header: control characters,
+     * whitespace, quotes, semicolons, commas and backslashes are replaced with an underscore.
+     *
+     * @param fileName file name candidate
+     * @return sanitized file name
+     */
+    public static String sanitizeHeaderFileName(String fileName) {
+        if (fileName == null) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder(fileName.length());
+        for (int i = 0; i < fileName.length(); i++) {
+            char ch = fileName.charAt(i);
+            if (Character.isISOControl(ch) || Character.isWhitespace(ch)
+                    || ch == '"' || ch == ';' || ch == ',' || ch == '\\') {
+                sb.append('_');
+            } else {
+                sb.append(ch);
+            }
+        }
+        return sb.toString();
+    }
+
+
     public static String cmdFilter(String input) {
         if (!FILTER_PATTERN.matcher(input).matches()) {
             return null;
