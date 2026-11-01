@@ -1,6 +1,7 @@
 package org.joychou.controller;
 
 
+import org.joychou.security.LogSafe;
 import org.joychou.security.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -98,7 +99,7 @@ public class URLWhiteList {
     @GetMapping("/vuln/url_bypass")
     public void url_bypass(String url, HttpServletResponse res) throws IOException {
 
-        logger.info("url:  " + url);
+        logger.info("url: {}", LogSafe.fingerprint(url));
 
         String target = SecurityUtil.safeRedirectTarget(url);
         if (target == null) {
@@ -107,7 +108,7 @@ public class URLWhiteList {
 
         // target was rebuilt by safeRedirectTarget (constant scheme, allowlisted host); take the host as a string.
         String host = SecurityUtil.gethost(target);
-        logger.info("host:  " + host);
+        logger.info("host: {}", LogSafe.fingerprint(host));
 
         // endsWith .
         for (String domain : domainwhitelist) {

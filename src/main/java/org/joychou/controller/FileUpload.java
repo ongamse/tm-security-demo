@@ -16,6 +16,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
+import org.joychou.security.LogSafe;
 import org.joychou.security.SecurityUtil;
 
 
@@ -69,7 +70,7 @@ public class FileUpload {
 
         } catch (IOException e) {
             redirectAttributes.addFlashAttribute("message", "upload failed");
-            logger.error(e.toString());
+            logger.error("file operation failed: {}", LogSafe.errorName(e));
         }
 
         return "redirect:/file/status";
@@ -109,7 +110,7 @@ public class FileUpload {
             }
         }
         if (!suffixFlag) {
-            logger.error("[-] Suffix error: " + Suffix);
+            logger.error("[-] Suffix error: {}", LogSafe.fingerprint(Suffix));
             deleteFile(filePath);
             return "Upload failed. Illeagl picture.";
         }
@@ -127,7 +128,7 @@ public class FileUpload {
         for (String blackMimeType : mimeTypeBlackList) {
             // 用contains是为了防止text/html;charset=UTF-8绕过
             if (SecurityUtil.replaceSpecialStr(mimeType).toLowerCase().contains(blackMimeType)) {
-                logger.error("[-] Mime type error: " + mimeType);
+                logger.error("[-] Mime type error: {}", LogSafe.fingerprint(mimeType));
                 deleteFile(filePath);
                 return "Upload failed. Illeagl picture.";
             }
@@ -149,13 +150,13 @@ public class FileUpload {
             byte[] bytes = multifile.getBytes();
             Files.write(safePath, bytes);
         } catch (IOException e) {
-            logger.error(e.toString());
+            logger.error("file operation failed: {}", LogSafe.errorName(e));
             deleteFile(filePath);
             return "Upload failed";
         }
 
-        logger.info("[+] Safe file. Suffix: {}, MIME: {}", Suffix, mimeType);
-        logger.info("[+] Successfully uploaded {}", filePath);
+        logger.info("[+] Safe file. Suffix: {}, MIME: {}", LogSafe.fingerprint(Suffix), LogSafe.fingerprint(mimeType));
+        logger.info("[+] Successfully uploaded {}", LogSafe.fingerprint(filePath));
         return String.format("You successfully uploaded '%s'", HtmlUtils.htmlEscape(filePath));
     }
 
@@ -206,11 +207,11 @@ public class FileUpload {
         File delFile = safeDelPath.toFile();
         if(delFile.isFile() && delFile.exists()) {
             if (delFile.delete()) {
-                logger.info("[+] " + filePath + " delete successfully!");
+                logger.info("[+] {} delete successfully!", LogSafe.fingerprint(filePath));
                 return;
             }
         }
-        logger.info(filePath + " delete failed!");
+        logger.info("{} delete failed!", LogSafe.fingerprint(filePath));
     }
 
     /**
@@ -228,7 +229,7 @@ public class FileUpload {
         try {
             convPath = Files.createTempFile(base, "upload-", suffix);
         } catch (IOException | IllegalArgumentException | java.nio.file.InvalidPathException e) {
-            logger.error(e.toString());
+            logger.error("file operation failed: {}", LogSafe.errorName(e));
             return null;
         }
         if (!convPath.normalize().startsWith(base)) {

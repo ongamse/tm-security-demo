@@ -24,6 +24,7 @@ import javax.xml.parsers.SAXParser;
 import org.xml.sax.helpers.DefaultHandler;
 import org.apache.commons.digester3.Digester;
 import org.jdom2.input.SAXBuilder;
+import org.joychou.security.LogSafe;
 import org.joychou.security.XmlSafe;
 import org.xmlbeam.annotation.XBRead;
 
@@ -299,7 +300,7 @@ public class XXE {
             for (int j = 0; j < xxe.getLength(); j++) {
                 Node xxeNode = xxe.item(j);
                 // 测试不能blind xxe，所以强行加了一个回显
-                logger.info("xxeNode: " + xxeNode.getNodeValue());
+                logger.info("xxeNode: {}", LogSafe.fingerprint(xxeNode.getNodeValue()));
             }
 
         }
@@ -312,7 +313,7 @@ public class XXE {
         @PostMapping(value = "/xmlbeam/vuln")
         HttpEntity<String> post(@RequestBody UserPayload user) {
             try {
-                logger.info(user.toString());
+                logger.info("xmlbeam payload received");
                 return ResponseEntity.ok(String.format("hello, %s!", user.getUserName()));
             }catch (Exception e){
                 e.printStackTrace();

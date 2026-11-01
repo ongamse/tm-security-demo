@@ -3,6 +3,7 @@ package org.joychou.controller;
 
 import org.joychou.mapper.UserMapper;
 import org.joychou.dao.User;
+import org.joychou.security.LogSafe;
 import org.joychou.security.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -100,7 +101,7 @@ public class SQLI {
             String sql = "select * from users where username = ?";
             PreparedStatement statement = con.prepareStatement(sql);
             statement.setString(1, username);
-            logger.info(statement.toString());
+            logger.info("Executing parameterized query on users");
             ResultSet rs = statement.executeQuery();
 
             while (rs.next()) {
@@ -108,7 +109,7 @@ public class SQLI {
                 String res_pwd = rs.getString("password");
                 String info = String.format("%s: %s\n", res_name, res_pwd);
                 result.append(info);
-                logger.info(info);
+                logger.info("User row fetched");
             }
             rs.close();
             con.close();
@@ -117,7 +118,7 @@ public class SQLI {
         } catch (ClassNotFoundException e) {
             logger.error("Sorry, can't find the Driver!");
         } catch (SQLException e) {
-            logger.error(e.toString());
+            logger.error("SQL error: {}", LogSafe.errorName(e));
         }
         return result.toString();
     }
@@ -145,7 +146,7 @@ public class SQLI {
             PreparedStatement st = con.prepareStatement(sql);
             st.setString(1, username);
 
-            logger.info(st.toString());  // sql after prepare statement
+            logger.info("Executing parameterized query on users");
             ResultSet rs = st.executeQuery();
 
             while (rs.next()) {
@@ -153,7 +154,7 @@ public class SQLI {
                 String res_pwd = rs.getString("password");
                 String info = String.format("%s: %s\n", res_name, res_pwd);
                 result.append(info);
-                logger.info(info);
+                logger.info("User row fetched");
             }
 
             rs.close();
@@ -163,7 +164,7 @@ public class SQLI {
             logger.error("Sorry, can't find the Driver!");
             e.printStackTrace();
         } catch (SQLException e) {
-            logger.error(e.toString());
+            logger.error("SQL error: {}", LogSafe.errorName(e));
         }
         return result.toString();
     }
@@ -188,7 +189,7 @@ public class SQLI {
             PreparedStatement st = con.prepareStatement(sql);
             st.setString(1, username);
 
-            logger.info(st.toString());
+            logger.info("Executing parameterized query on users");
             ResultSet rs = st.executeQuery();
 
             while (rs.next()) {
@@ -196,7 +197,7 @@ public class SQLI {
                 String res_pwd = rs.getString("password");
                 String info = String.format("%s: %s\n", res_name, res_pwd);
                 result.append(info);
-                logger.info(info);
+                logger.info("User row fetched");
             }
 
             rs.close();
@@ -206,7 +207,7 @@ public class SQLI {
             logger.error("Sorry, can't find the Driver!");
             e.printStackTrace();
         } catch (SQLException e) {
-            logger.error(e.toString());
+            logger.error("SQL error: {}", LogSafe.errorName(e));
         }
         return result.toString();
     }
