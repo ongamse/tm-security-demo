@@ -5,7 +5,6 @@ import org.joychou.security.SecurityUtil;
 import org.joychou.security.ssrf.SSRFException;
 import org.joychou.service.HttpService;
 import org.joychou.util.HttpUtils;
-import org.joychou.util.WebUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
@@ -129,10 +128,8 @@ public class SSRF {
         InputStream inputStream = null;
         OutputStream outputStream = null;
         try {
-            String downLoadImgFileName = SecurityUtil.sanitizeHeaderFileName(
-                    WebUtils.getNameWithoutExtension(url) + "." + WebUtils.getFileExtension(url));
-            // download
-            response.setHeader("content-disposition", "attachment;fileName=" + downLoadImgFileName);
+            // download; the header is a fixed constant, no request-derived data is written into it
+            response.setHeader("content-disposition", "attachment; filename=download");
 
             int length;
             byte[] bytes = new byte[1024];

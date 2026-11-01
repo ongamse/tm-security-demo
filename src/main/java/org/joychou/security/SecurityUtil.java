@@ -14,7 +14,9 @@ import java.net.URISyntaxException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -373,6 +375,8 @@ public class SecurityUtil {
             return null;
         }
         ArrayList<String> blockDomains = WebConfig.getBlockDomains();
+        // server-side allowlist: key and value are both built from the configured safe domains
+        Map<String, String> allowedOrigins = new HashMap<String, String>();
         for (String safeDomain : WebConfig.getSafeDomains()) {
             if (safeDomain == null || safeDomain.isEmpty()) {
                 continue;
@@ -383,12 +387,11 @@ public class SecurityUtil {
             }
             for (String scheme : new String[]{"https://", "http://"}) {
                 String candidate = scheme + domain;
-                if (candidate.equals(origin)) {
-                    return candidate;
-                }
+                allowedOrigins.put(candidate, candidate);
             }
         }
-        return null;
+        // the returned value is the server-side map value, never the request string
+        return allowedOrigins.get(origin);
     }
 
 

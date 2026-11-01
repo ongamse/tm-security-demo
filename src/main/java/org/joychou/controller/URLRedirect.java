@@ -1,5 +1,8 @@
 package org.joychou.controller;
 
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -10,6 +13,7 @@ import javax.servlet.RequestDispatcher;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.net.URI;
 
 import org.joychou.security.SecurityUtil;
 
@@ -46,16 +50,16 @@ public class URLRedirect {
      */
     @RequestMapping("/setHeader")
     @ResponseBody
-    public static void setHeader(HttpServletRequest request, HttpServletResponse response) throws IOException {
+    public static ResponseEntity<String> setHeader(HttpServletRequest request) {
         String url = request.getParameter("url");
         String target = SecurityUtil.safeRedirectTarget(url);
         if (target == null) {
-            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-            response.getWriter().write("url forbidden");
-            return;
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body("url forbidden");
         }
-        response.setStatus(HttpServletResponse.SC_MOVED_PERMANENTLY); // 301 redirect
-        response.setHeader("Location", target);
+        // 301 redirect; target is the rebuilt url (already ASCII encoded), set as a typed URI
+        HttpHeaders headers = new HttpHeaders();
+        headers.setLocation(URI.create(target));
+        return new ResponseEntity<String>(headers, HttpStatus.MOVED_PERMANENTLY);
     }
 
 
