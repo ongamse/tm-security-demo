@@ -230,7 +230,7 @@ public class FileUpload {
         Path convPath;
         try {
             convPath = Files.createTempFile(base, "upload-", suffix);
-        } catch (IOException | IllegalArgumentException | java.nio.file.InvalidPathException e) {
+        } catch (IOException | IllegalArgumentException e) {
             logger.error("file operation failed: {}", LogSafe.errorName(e));
             return null;
         }
