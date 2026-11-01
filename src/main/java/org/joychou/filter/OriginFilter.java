@@ -48,7 +48,6 @@ public class OriginFilter implements Filter {
         if (allowedOrigin != null) {
             // the header value is the matching constant of the server-side allowlist
             response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
-            response.setHeader("Access-Control-Allow-Credentials", "true");
             response.addHeader("Vary", "Origin");
             response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
         }

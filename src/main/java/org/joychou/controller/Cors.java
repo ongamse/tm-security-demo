@@ -28,7 +28,6 @@ public class Cors {
         String allowedOrigin = SecurityUtil.allowedOriginOrNull(request.getHeader("Origin"));
         if (allowedOrigin != null) {
             response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
-            response.setHeader("Access-Control-Allow-Credentials", "true");  // allow cookie
             response.addHeader("Vary", "Origin");
         }
         return info;
@@ -122,7 +121,6 @@ public class Cors {
         if (allowedOrigin != null) {
             // the header value is the matching constant of the server-side allowlist
             response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
-            response.setHeader("Access-Control-Allow-Credentials", "true");
             response.addHeader("Vary", "Origin");
         }
         return LoginUtils.getUserInfo2JsonStr(request);
