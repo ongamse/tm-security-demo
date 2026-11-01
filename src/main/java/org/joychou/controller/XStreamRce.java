@@ -1,15 +1,11 @@
 package org.joychou.controller;
 
-import com.thoughtworks.xstream.XStream;
-import com.thoughtworks.xstream.io.xml.DomDriver;
-import com.thoughtworks.xstream.io.xml.DomReader;
-import com.thoughtworks.xstream.security.NoTypePermission;
-import com.thoughtworks.xstream.security.NullPermission;
-import com.thoughtworks.xstream.security.PrimitiveTypePermission;
 import org.joychou.dao.User;
 import org.joychou.security.XmlSafe;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.w3c.dom.Element;
+import org.w3c.dom.Node;
 
 import javax.servlet.http.HttpServletRequest;
 
@@ -17,47 +13,57 @@ import javax.servlet.http.HttpServletRequest;
 @RestController
 public class XStreamRce {
 
+    private static final int MAX_FIELD_CHARS = 256;
+
     /**
-     * Fix method: update xstream to 1.4.11
-     * Xstream affected version: 1.4.10 or <= 1.4.6
+     * The request XML is never handed to a object-graph deserializer (XStream). It is size-capped,
+     * DOCTYPE/ENTITY-rejected, parsed with the hardened DOM parser, and only the allowed
+     * plain-text fields of {@link User} are copied over manually.
      * Set Content-Type: application/xml
      *
      * @author JoyChou @2019-07-26
      */
     @PostMapping("/xstream")
     public String parseXml(HttpServletRequest request) throws Exception {
-        // size-capped read; DOCTYPE / ENTITY payloads are rejected (HTTP 400) before any parser sees them
         byte[] xml = XmlSafe.readValidated(request.getInputStream());
-        // second gate: strict parse with the hardened factory; XStream only ever sees the resulting DOM,
-        // so it never runs its own XML parser over untrusted bytes
         org.w3c.dom.Document document = XmlSafe.parseDocument(xml);
-        XStream xstream = secureXStream();
-        xstream.unmarshal(new DomReader(document));
+        User user = toUser(document.getDocumentElement());
         return "xstream";
     }
 
     /**
-     * XStream with a type allowlist: everything is denied except primitives and the listed classes.
+     * Map the allowed child elements (id, username) of the root element to a User. Unknown elements,
+     * attributes (e.g. class=) and nested structures are ignored.
      */
-    private static XStream secureXStream() {
-        XStream xstream = new XStream(new DomDriver());
-        xstream.addPermission(NoTypePermission.NONE);
-        xstream.addPermission(NullPermission.NULL);
-        xstream.addPermission(PrimitiveTypePermission.PRIMITIVES);
-        xstream.allowTypes(new Class[]{User.class, String.class, Integer.class});
-        return xstream;
+    static User toUser(Element root) {
+        User user = new User();
+        for (Node n = root.getFirstChild(); n != null; n = n.getNextSibling()) {
+            if (n.getNodeType() != Node.ELEMENT_NODE) {
+                continue;
+            }
+            String name = n.getLocalName() != null ? n.getLocalName() : n.getNodeName();
+            String text = n.getTextContent();
+            if (text == null || text.length() > MAX_FIELD_CHARS) {
+                throw new XmlSafe.RejectedXmlException();
+            }
+            text = text.trim();
+            if ("id".equals(name)) {
+                try {
+                    user.setId(Integer.valueOf(text));
+                } catch (NumberFormatException e) {
+                    throw new XmlSafe.RejectedXmlException();
+                }
+            } else if ("username".equals(name)) {
+                user.setUsername(text);
+            }
+        }
+        return user;
     }
 
     public static void main(String[] args) {
         User user = new User();
         user.setId(0);
         user.setUsername("admin");
-
-        XStream xstream = secureXStream();
-        String xml = xstream.toXML(user); // Serialize
-        System.out.println(xml);
-
-        user = (User) xstream.fromXML(xml); // Deserialize
         System.out.println(user.getId() + ": " + user.getUsername());
     }
 }
