@@ -8,11 +8,11 @@ import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
@@ -56,20 +56,25 @@ public class PathTraversal {
                 logger.info("Illegal file path: {}", LogSafe.fingerprint(imgFile));
                 return "Bad boy. Illegal file path.";
             }
-            // Resolve symlinks too, so a link inside the base cannot point outside it.
-            if (Files.exists(safePath) && !safePath.toRealPath().startsWith(base.toRealPath())) {
-                logger.info("Illegal file path: {}", LogSafe.fingerprint(imgFile));
-                return "Bad boy. Illegal file path.";
-            }
         } catch (InvalidPathException e) {
             return "Bad boy. Illegal file path.";
         }
 
-        File f = safePath.toFile();
-        if (f.exists() && !f.isDirectory()) {
-            byte[] data = Files.readAllBytes(safePath);
+        try {
+            // Resolve symlinks too, so a link inside the base cannot point outside it.
+            // Read directly (no separate exists()/isDirectory() check) to avoid a check-then-use race.
+            Path realPath = safePath.toRealPath();
+            if (!realPath.startsWith(base.toRealPath())) {
+                logger.info("Illegal file path: {}", LogSafe.fingerprint(imgFile));
+                return "Bad boy. Illegal file path.";
+            }
+            byte[] data = Files.readAllBytes(realPath);
             return new String(Base64.encodeBase64(data));
-        } else {
+        } catch (NoSuchFileException e) {
+            return "File doesn't exist or is not a file.";
+        } catch (IOException e) {
+            // Includes attempts to read a directory or an unreadable file.
+            logger.info("file operation failed: {}", LogSafe.errorName(e));
             return "File doesn't exist or is not a file.";
         }
     }

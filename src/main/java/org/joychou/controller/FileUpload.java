@@ -204,12 +204,14 @@ public class FileUpload {
             logger.info("Refusing to delete path outside upload folder");
             return;
         }
-        File delFile = safeDelPath.toFile();
-        if(delFile.isFile() && delFile.exists()) {
-            if (delFile.delete()) {
+        try {
+            // Delete directly (no separate exists()/isFile() check) to avoid a check-then-use race.
+            if (Files.deleteIfExists(safeDelPath)) {
                 logger.info("[+] {} delete successfully!", LogSafe.fingerprint(filePath));
                 return;
             }
+        } catch (IOException e) {
+            logger.info("file operation failed: {}", LogSafe.errorName(e));
         }
         logger.info("{} delete failed!", LogSafe.fingerprint(filePath));
     }
