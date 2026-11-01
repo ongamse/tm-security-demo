@@ -1,6 +1,5 @@
 package org.joychou.controller;
 
-import org.apache.commons.lang.StringUtils;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.CookieValue;
@@ -9,6 +8,7 @@ import org.springframework.web.bind.annotation.ResponseBody;
 
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletResponse;
+import java.security.SecureRandom;
 import java.util.Collections;
 import java.util.Map;
 
@@ -19,6 +19,9 @@ import java.util.Map;
 @Controller
 @RequestMapping("/xss")
 public class XSS {
+
+    private static final SecureRandom RANDOM = new SecureRandom();
+    private static final char[] HEX = "0123456789abcdef".toCharArray();
 
     /**
      * ReflectXSS endpoint. The request value is never written back into the response body;
@@ -44,9 +47,23 @@ public class XSS {
     @RequestMapping("/stored/store")
     @ResponseBody
     public String store(String xss, HttpServletResponse response) {
-        Cookie cookie = new Cookie("xss", xss);
+        // The request value is never placed in the cookie; a server-generated random token is used.
+        Cookie cookie = new Cookie("xss", newToken());
+        cookie.setHttpOnly(true);
+        cookie.setSecure(true);
+        cookie.setPath("/");
         response.addCookie(cookie);
         return "Set param into cookie";
+    }
+
+    private static String newToken() {
+        byte[] bytes = new byte[16];
+        RANDOM.nextBytes(bytes);
+        StringBuilder sb = new StringBuilder(bytes.length * 2);
+        for (byte b : bytes) {
+            sb.append(HEX[(b >> 4) & 0x0f]).append(HEX[b & 0x0f]);
+        }
+        return sb.toString();
     }
 
     /**
@@ -67,19 +84,9 @@ public class XSS {
      * safe Code.
      * http://localhost:8080/xss/safe
      */
-    @RequestMapping("/safe")
+    @RequestMapping(value = "/safe", produces = MediaType.APPLICATION_JSON_UTF8_VALUE)
     @ResponseBody
-    public static String safe(String xss) {
-        return encode(xss);
-    }
-
-    private static String encode(String origin) {
-        origin = StringUtils.replace(origin, "&", "&amp;");
-        origin = StringUtils.replace(origin, "<", "&lt;");
-        origin = StringUtils.replace(origin, ">", "&gt;");
-        origin = StringUtils.replace(origin, "\"", "&quot;");
-        origin = StringUtils.replace(origin, "'", "&#x27;");
-        origin = StringUtils.replace(origin, "/", "&#x2F;");
-        return origin;
+    public static Map<String, Object> safe(String xss) {
+        return Collections.<String, Object>singletonMap("length", xss == null ? 0 : xss.length());
     }
 }
