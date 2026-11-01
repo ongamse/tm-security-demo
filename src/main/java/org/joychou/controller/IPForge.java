@@ -1,12 +1,16 @@
 package org.joychou.controller;
 
 import org.apache.commons.lang.StringUtils;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.util.HtmlUtils;
 
 import javax.servlet.http.HttpServletRequest;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
+import java.util.regex.Pattern;
 
 /**
  * Java get real ip. More details: https://joychou.org/web/how-to-get-real-ip.html
@@ -16,6 +20,13 @@ import javax.servlet.http.HttpServletRequest;
 @RestController
 @RequestMapping("/ip")
 public class IPForge {
+
+    // Only hex digits, dots and colons, so InetAddress.getByName can never trigger a DNS lookup.
+    private static final Pattern IP_LITERAL = Pattern.compile("^(?=.*[.:])[0-9A-Fa-f:.]{2,45}$");
+
+    // Comma-separated list of trusted reverse proxy IPs; empty means no proxy is trusted.
+    @Value("${joychou.security.trusted.proxies:}")
+    private String trustedProxies;
 
     // no any proxy
     @RequestMapping("/noproxy")
@@ -31,17 +42,51 @@ public class IPForge {
      */
     @RequestMapping("/proxy")
     @ResponseBody
-    public static String proxy(HttpServletRequest request) {
-        String ip = request.getHeader("X-Real-IP");
-        if (StringUtils.isNotBlank(ip)) {
-            return HtmlUtils.htmlEscape(ip);
-        } else {
-            String remoteAddr = request.getRemoteAddr();
-            if (StringUtils.isNotBlank(remoteAddr)) {
-                return remoteAddr;
+    public String proxy(HttpServletRequest request) {
+        String remoteAddr = request.getRemoteAddr();
+        String ip = "";
+        // Only honor the forwarding header when the direct peer is a trusted proxy.
+        if (isTrustedProxy(remoteAddr)) {
+            String header = request.getHeader("X-Real-IP");
+            if (StringUtils.isNotBlank(header)) {
+                InetAddress forwarded = parseIpLiteral(header.trim());
+                if (forwarded != null) {
+                    ip = forwarded.getHostAddress();
+                }
             }
         }
-        return "";
+        if (StringUtils.isBlank(ip) && StringUtils.isNotBlank(remoteAddr)) {
+            ip = remoteAddr;
+        }
+        return HtmlUtils.htmlEscape(ip);
+    }
+
+    private boolean isTrustedProxy(String remoteAddr) {
+        InetAddress peer = parseIpLiteral(remoteAddr);
+        if (peer == null || StringUtils.isBlank(trustedProxies)) {
+            return false;
+        }
+        for (String candidate : trustedProxies.split(",")) {
+            InetAddress trusted = parseIpLiteral(candidate.trim());
+            if (trusted != null && trusted.equals(peer)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Parse a literal IPv4/IPv6 address. Returns null for anything else; never performs a DNS lookup.
+     */
+    private static InetAddress parseIpLiteral(String value) {
+        if (value == null || !IP_LITERAL.matcher(value).matches()) {
+            return null;
+        }
+        try {
+            return InetAddress.getByName(value);
+        } catch (UnknownHostException e) {
+            return null;
+        }
     }
 
 
