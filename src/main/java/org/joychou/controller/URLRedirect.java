@@ -56,7 +56,7 @@ public class URLRedirect {
         if (target == null) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body("url forbidden");
         }
-        // 301 redirect; target is the rebuilt url (already ASCII encoded), set as a typed URI
+        // 301 redirect; target is a server-side constant from the fixed redirect table, set as a typed URI
         HttpHeaders headers = new HttpHeaders();
         headers.setLocation(URI.create(target));
         return new ResponseEntity<String>(headers, HttpStatus.MOVED_PERMANENTLY);

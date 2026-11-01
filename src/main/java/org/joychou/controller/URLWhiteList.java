@@ -106,8 +106,9 @@ public class URLWhiteList {
             return;
         }
 
-        // target was rebuilt by safeRedirectTarget (constant scheme, allowlisted host); take the host as a string.
-        String host = SecurityUtil.gethost(target);
+        // target is a server-side constant from the fixed redirect table; the host of the requested
+        // url is only used for this additional sub-domain decision, never for the redirect value.
+        String host = SecurityUtil.gethost(url);
         logger.info("host: {}", LogSafe.fingerprint(host));
 
         // endsWith .

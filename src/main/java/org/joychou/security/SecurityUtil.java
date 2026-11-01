@@ -2,20 +2,19 @@ package org.joychou.security;
 
 import org.joychou.config.WebConfig;
 import org.joychou.security.ssrf.SSRFChecker;
-import org.joychou.security.ssrf.SSRFException;
 import org.joychou.security.ssrf.SocketHook;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -38,6 +37,8 @@ public class SecurityUtil {
             Pattern.compile("^([a-zA-Z][a-zA-Z0-9+.-]*)://([^/?#]*)([^?#]*)(?:\\?([^#]*))?(?:#.*)?$");
     private static final Pattern IPV6_LITERAL_PATTERN = Pattern.compile("^\\[[0-9a-fA-F:.]+\\]$");
     private static final Pattern PORT_PATTERN = Pattern.compile("^[0-9]{0,5}$");
+    private static final List<String> ALLOWED_REDIRECT_PATHS =
+            Collections.unmodifiableList(Arrays.asList("/", "/index", "/login", "/home"));
     private static Logger logger =LoggerFactory.getLogger(SecurityUtil.class);
 
 
@@ -199,33 +200,72 @@ public class SecurityUtil {
             return null;
         }
 
-        String safeHost = null;
-        for (String safeDomain : WebConfig.getSafeDomains()) {
-            String domain = safeDomain.toLowerCase();
-            if (host.equals(domain)) {
-                safeHost = domain;
-                break;
-            }
-            if (host.endsWith("." + domain)) {
-                safeHost = host.substring(0, host.length() - domain.length()) + domain;
+        // Server-side table of every redirect target that may ever be emitted. Keys and values are
+        // built only from the configured safe domains and the fixed landing paths below.
+        Map<String, String> allowedTargets = buildAllowedRedirectTargets();
+
+        // Select the configured domain that the validated host belongs to (exact host or one of its
+        // sub-domains). The lookup key is composed of server-side constants only.
+        String configuredDomain = null;
+        for (String safeDomain : allowedRedirectDomains()) {
+            if (host.equals(safeDomain) || host.endsWith("." + safeDomain)) {
+                configuredDomain = safeDomain;
                 break;
             }
         }
-        if (safeHost == null) {
+        if (configuredDomain == null) {
             return null;
         }
 
-        try {
-            String path = SSRFChecker.decodeComponent(m.group(3));
-            if (path.isEmpty()) {
-                path = "/";
+        // Select the fixed landing path; anything that is not in the fixed list falls back to "/".
+        String rawPath = m.group(3);
+        String landingPath = "/";
+        for (String allowedPath : ALLOWED_REDIRECT_PATHS) {
+            if (allowedPath.equals(rawPath)) {
+                landingPath = allowedPath;
+                break;
             }
-            String query = m.group(4) == null ? null : SSRFChecker.decodeComponent(m.group(4));
-            // The multi-argument constructor quotes any illegal character (including CR/LF).
-            return new URI(scheme, null, safeHost, -1, path, query, null).toASCIIString();
-        } catch (URISyntaxException | SSRFException e) {
-            return null;
         }
+
+        // The returned value is the server-side map value, never a string derived from the request.
+        return allowedTargets.get(scheme + "://" + configuredDomain + landingPath);
+    }
+
+
+    /**
+     * Configured, lower-cased, non-blocked redirect domains (server-side data only).
+     */
+    private static List<String> allowedRedirectDomains() {
+        List<String> domains = new ArrayList<String>();
+        ArrayList<String> blockDomains = WebConfig.getBlockDomains();
+        for (String safeDomain : WebConfig.getSafeDomains()) {
+            if (safeDomain == null || safeDomain.isEmpty()) {
+                continue;
+            }
+            String domain = safeDomain.toLowerCase();
+            if (!REDIRECT_HOST_PATTERN.matcher(domain).matches() || blockDomains.contains(domain)) {
+                continue;
+            }
+            domains.add(domain);
+        }
+        return domains;
+    }
+
+
+    /**
+     * Build the fixed table of allowed redirect targets: scheme://configuredDomain + landingPath.
+     */
+    private static Map<String, String> buildAllowedRedirectTargets() {
+        Map<String, String> targets = new HashMap<String, String>();
+        for (String domain : allowedRedirectDomains()) {
+            for (String scheme : new String[]{"https", "http"}) {
+                for (String path : ALLOWED_REDIRECT_PATHS) {
+                    String target = scheme + "://" + domain + path;
+                    targets.put(target, target);
+                }
+            }
+        }
+        return targets;
     }
 
 
