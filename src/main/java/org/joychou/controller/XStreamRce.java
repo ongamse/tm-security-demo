@@ -2,6 +2,9 @@ package org.joychou.controller;
 
 import com.thoughtworks.xstream.XStream;
 import com.thoughtworks.xstream.io.xml.DomDriver;
+import com.thoughtworks.xstream.security.NoTypePermission;
+import com.thoughtworks.xstream.security.NullPermission;
+import com.thoughtworks.xstream.security.PrimitiveTypePermission;
 import org.joychou.dao.User;
 import org.joychou.util.WebUtils;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -28,9 +31,21 @@ public class XStreamRce {
     public String parseXml(HttpServletRequest request) throws Exception {
         String xml = WebUtils.getRequestBody(request);
         rejectDoctype(xml);
-        XStream xstream = new XStream(new DomDriver());
+        XStream xstream = secureXStream();
         xstream.fromXML(xml);
         return "xstream";
+    }
+
+    /**
+     * XStream with a type allowlist: everything is denied except primitives and the listed classes.
+     */
+    private static XStream secureXStream() {
+        XStream xstream = new XStream(new DomDriver());
+        xstream.addPermission(NoTypePermission.NONE);
+        xstream.addPermission(NullPermission.NULL);
+        xstream.addPermission(PrimitiveTypePermission.PRIMITIVES);
+        xstream.allowTypes(new Class[]{User.class, String.class, Integer.class});
+        return xstream;
     }
 
     /**
@@ -49,7 +64,7 @@ public class XStreamRce {
         user.setId(0);
         user.setUsername("admin");
 
-        XStream xstream = new XStream(new DomDriver());
+        XStream xstream = secureXStream();
         String xml = xstream.toXML(user); // Serialize
         System.out.println(xml);
 
