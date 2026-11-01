@@ -353,10 +353,42 @@ public class SecurityUtil {
      * @return the origin if it is safe to reflect in Access-Control-Allow-Origin, otherwise null
      */
     public static String checkOrigin(String origin) {
-        if (origin == null || hasHeaderControlChars(origin)) {
+        return allowedOriginOrNull(origin);
+    }
+
+
+    /**
+     * Look up a request Origin in the fixed, server-side list of allowed origins and return the
+     * MATCHING SERVER-SIDE CONSTANT (never the request string). The list is built from the
+     * configured safe domains (WebConfig / url_safe_domain.xml) as exact scheme://host origins
+     * for http and https. The literal "null" origin, origins with control characters, ports,
+     * user info, paths or wildcards never match and block-listed domains are never returned.
+     *
+     * @param origin value of the request Origin header (untrusted)
+     * @return the equal element of the server allowlist, or null if the origin is not allowed
+     */
+    public static String allowedOriginOrNull(String origin) {
+        if (origin == null || origin.isEmpty() || hasHeaderControlChars(origin)
+                || "null".equalsIgnoreCase(origin) || origin.indexOf('*') >= 0) {
             return null;
         }
-        return checkURL(origin);
+        ArrayList<String> blockDomains = WebConfig.getBlockDomains();
+        for (String safeDomain : WebConfig.getSafeDomains()) {
+            if (safeDomain == null || safeDomain.isEmpty()) {
+                continue;
+            }
+            String domain = safeDomain.toLowerCase();
+            if (blockDomains.contains(domain)) {
+                continue;
+            }
+            for (String scheme : new String[]{"https://", "http://"}) {
+                String candidate = scheme + domain;
+                if (candidate.equals(origin)) {
+                    return candidate;
+                }
+            }
+        }
+        return null;
     }
 
 

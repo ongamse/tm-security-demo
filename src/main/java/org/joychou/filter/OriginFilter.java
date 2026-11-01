@@ -37,19 +37,21 @@ public class OriginFilter implements Filter {
         logger.info("[+] Origin: " + origin + "\tCurrent url:" + request.getRequestURL());
 
         // 以file协议访问html，origin为字符串的null，所以依然会走安全check逻辑
-        if (origin != null && SecurityUtil.checkOrigin(origin) == null) {
-            logger.error("[-] Origin check error. " + "Origin: " + origin +
-                    "\tCurrent url:" + request.getRequestURL());
-            response.setStatus(response.SC_FORBIDDEN);
+        String allowedOrigin = SecurityUtil.allowedOriginOrNull(origin);
+        if (origin != null && allowedOrigin == null) {
+            logger.error("[-] Origin check error. Current url:" + request.getRequestURL());
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             response.getWriter().println("Invaid cors config by joychou.");
             return;
         }
 
-        if (origin != null) {
-            response.setHeader("Access-Control-Allow-Origin", origin);
+        if (allowedOrigin != null) {
+            // the header value is the matching constant of the server-side allowlist
+            response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
+            response.setHeader("Access-Control-Allow-Credentials", "true");
+            response.addHeader("Vary", "Origin");
+            response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
         }
-        response.setHeader("Access-Control-Allow-Credentials", "true");
-        response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTION");
 
         filterChain.doFilter(req, res);
     }
