@@ -1,8 +1,6 @@
 package org.joychou.util;
 
 import com.squareup.okhttp.OkHttpClient;
-import org.apache.commons.httpclient.HttpClient;
-import org.apache.commons.httpclient.methods.GetMethod;
 import org.apache.commons.io.IOUtils;
 import org.apache.http.HttpResponse;
 import org.apache.http.client.config.RequestConfig;
@@ -23,11 +21,13 @@ import org.slf4j.LoggerFactory;
 
 import javax.imageio.ImageIO;
 import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.*;
 
 /**
@@ -45,6 +45,7 @@ public class HttpUtils {
     private static final int MAX_REDIRECTS = 5;
     private static final int CONNECT_TIMEOUT_MS = 5000;
     private static final int READ_TIMEOUT_MS = 10000;
+    private static final int MAX_BODY_BYTES = 1024 * 1024;
 
     /**
      * Open a connection to a validated url. Redirects are followed manually and each hop is validated again.
@@ -91,27 +92,33 @@ public class HttpUtils {
     }
 
 
+    /**
+     * Read at most {@link #MAX_BODY_BYTES} bytes from the stream.
+     */
+    private static byte[] readBounded(InputStream in) throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        byte[] buf = new byte[4096];
+        int total = 0;
+        int n;
+        while (total < MAX_BODY_BYTES && (n = in.read(buf, 0, Math.min(buf.length, MAX_BODY_BYTES - total))) != -1) {
+            out.write(buf, 0, n);
+            total += n;
+        }
+        return out.toByteArray();
+    }
+
+
     public static String commonHttpClient(String url) {
-
-        HttpClient client = new HttpClient();
-        GetMethod method = null;
-
         try {
-            URI uri = SSRFChecker.validateHttpUrl(url);
-            method = new GetMethod(uri.toString());
-            method.setFollowRedirects(false);
-            client.executeMethod(method); // send request
-            byte[] resBody = method.getResponseBody();
-            return new String(resBody);
-
+            HttpURLConnection conn = openValidatedConnection(url); // send request
+            try (InputStream in = conn.getInputStream()) {
+                return new String(readBounded(in), StandardCharsets.UTF_8);
+            } finally {
+                conn.disconnect();
+            }
         } catch (IOException | SSRFException e) {
             logger.error("commonHttpClient failed: {}", e.getClass().getSimpleName());
             return REQUEST_FAILED;
-        } finally {
-            // Release the connection.
-            if (method != null) {
-                method.releaseConnection();
-            }
         }
     }
 
@@ -207,13 +214,13 @@ public class HttpUtils {
      */
     public static String Jsoup(String url) {
         try {
-            URI uri = SSRFChecker.validateHttpUrl(url);
-            Document doc = Jsoup.connect(uri.toString())
-                    .followRedirects(false)
-                    .timeout(3000)
-                    .cookie("name", "joychou") // request cookies
-                    .execute().parse();
-            return doc.outerHtml();
+            HttpURLConnection conn = openValidatedConnection(url); // send request
+            try (InputStream in = conn.getInputStream()) {
+                Document doc = Jsoup.parse(in, "UTF-8", conn.getURL().toString());
+                return doc.outerHtml();
+            } finally {
+                conn.disconnect();
+            }
         } catch (IOException | SSRFException e) {
             logger.error("Jsoup failed: {}", e.getClass().getSimpleName());
             return REQUEST_FAILED;
