@@ -11,6 +11,8 @@ import javax.servlet.http.HttpServletRequest;
 import java.io.IOException;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
+import java.nio.file.NotDirectoryException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -38,7 +40,7 @@ public class CommandInject {
         }
         try {
             Path target = BASE_DIR.resolve(filtered).normalize();
-            if (!target.startsWith(BASE_DIR) || !Files.isDirectory(target)) {
+            if (!target.startsWith(BASE_DIR)) {
                 return "Bad boy. I got u.";
             }
             List<String> names = new ArrayList<>();
@@ -49,6 +51,8 @@ public class CommandInject {
             }
             Collections.sort(names);
             return HtmlUtils.htmlEscape(String.join("\n", names));
+        } catch (NotDirectoryException | NoSuchFileException e) {
+            return "Bad boy. I got u.";
         } catch (IOException | RuntimeException e) {
             logger.error("list failed: {}", e.getClass().getSimpleName());
             return "Command exec failed!!";
