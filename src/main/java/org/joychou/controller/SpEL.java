@@ -1,6 +1,9 @@
 package org.joychou.controller;
 
+import org.springframework.expression.EvaluationException;
 import org.springframework.expression.ExpressionParser;
+import org.springframework.expression.spel.support.StandardEvaluationContext;
+import java.util.Collections;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -24,8 +27,18 @@ public class SpEL {
     @GetMapping("/spel/vuln")
     public String rce(String expression) {
         ExpressionParser parser = new SpelExpressionParser();
-        // fix method: SimpleEvaluationContext
-        return parser.parseExpression(expression).getValue().toString();
+        // SimpleEvaluationContext is not available in this Spring version (4.3.6), so build an
+        // equivalent restricted context: no type references, no constructors, no method calls,
+        // no property access, no bean references. Only literals and operators can be evaluated.
+        StandardEvaluationContext context = new StandardEvaluationContext();
+        context.setTypeLocator(typeName -> {
+            throw new EvaluationException("Type references are not allowed: " + typeName);
+        });
+        context.setConstructorResolvers(Collections.emptyList());
+        context.setMethodResolvers(Collections.emptyList());
+        context.setPropertyAccessors(Collections.emptyList());
+        Object value = parser.parseExpression(expression).getValue(context);
+        return String.valueOf(value);
     }
 
     public static void main(String[] args) {

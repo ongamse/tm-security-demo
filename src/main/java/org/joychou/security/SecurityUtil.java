@@ -12,12 +12,18 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 
 public class SecurityUtil {
 
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
+    private static final Pattern ARG_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.=-]+$");
+    private static final Set<String> ALLOWED_COMMANDS = new HashSet<>(
+            Arrays.asList("whoami", "id", "pwd", "date", "uname", "hostname", "uptime", "ls"));
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
 
 
@@ -205,6 +211,35 @@ public class SecurityUtil {
         }
 
         return input;
+    }
+
+
+    /**
+     * Split a user supplied command line into an argv array, but only if the program is on a
+     * strict allowlist and every argument consists of safe characters only. The result must be
+     * executed without a shell (ProcessBuilder with argv).
+     *
+     * @param cmd user supplied command line
+     * @return argv array, or null if the command is not allowed
+     */
+    public static String[] cmdAllowlistArgv(String cmd) {
+        if (cmd == null) {
+            return null;
+        }
+        String trimmed = cmd.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        String[] argv = trimmed.split("\\s+");
+        if (!ALLOWED_COMMANDS.contains(argv[0])) {
+            return null;
+        }
+        for (int i = 1; i < argv.length; i++) {
+            if (!ARG_PATTERN.matcher(argv[i]).matches()) {
+                return null;
+            }
+        }
+        return argv;
     }
 
 
