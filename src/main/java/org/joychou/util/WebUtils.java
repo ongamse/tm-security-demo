@@ -46,6 +46,27 @@ public class WebUtils {
     }
 
 
+    /**
+     * Make an untrusted value safe to write into an HTTP response header (or Location).
+     * Strips CR, LF and every other control / line-separator character so the value can
+     * never terminate the header line (CRLF / response splitting). Returns null for null.
+     */
+    public static String sanitizeHeaderValue(String value) {
+        if (value == null) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (Character.isISOControl(c) || c == 0x2028 || c == 0x2029) {
+                continue;
+            }
+            sb.append(c);
+        }
+        return sb.toString();
+    }
+
+
     public static String getFileExtension(String fullName) {
         Preconditions.checkNotNull(fullName);
         String fileName = (new File(fullName)).getName();
