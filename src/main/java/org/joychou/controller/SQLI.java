@@ -55,7 +55,10 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/jdbc/vuln?username=joychou">http://localhost:8080/sqli/jdbc/vuln?username=joychou</a>
      */
     @RequestMapping("/jdbc/vuln")
-    public String jdbc_sqli_vul(@RequestParam("username") String username) {
+    public String jdbc_sqli_vul(@RequestParam("username") String username, HttpServletRequest request) {
+
+        // authorize the referenced user right before the data access; use the authorized value
+        String authorizedName = authorizedUsername(request, username);
 
         StringBuilder result = new StringBuilder();
 
@@ -69,7 +72,7 @@ public class SQLI {
             // bound parameter instead of string concatenation
             String sql = "select * from users where username = ?";
             PreparedStatement statement = con.prepareStatement(sql);
-            statement.setString(1, username);
+            statement.setString(1, authorizedName);
             logger.info(sql);
             ResultSet rs = statement.executeQuery();
 
@@ -145,7 +148,10 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/jdbc/ps/vuln?username=joychou' or 'a'='a">http://localhost:8080/sqli/jdbc/ps/vuln?username=joychou' or 'a'='a</a>
      */
     @RequestMapping("/jdbc/ps/vuln")
-    public String jdbc_ps_vuln(@RequestParam("username") String username) {
+    public String jdbc_ps_vuln(@RequestParam("username") String username, HttpServletRequest request) {
+
+        // authorize the referenced user right before the data access; use the authorized value
+        String authorizedName = authorizedUsername(request, username);
 
         StringBuilder result = new StringBuilder();
         try {
@@ -157,7 +163,7 @@ public class SQLI {
 
             String sql = "select * from users where username = ?";
             PreparedStatement st = con.prepareStatement(sql);
-            st.setString(1, username);
+            st.setString(1, authorizedName);
 
             logger.info(st.toString());
             ResultSet rs = st.executeQuery();
@@ -201,8 +207,9 @@ public class SQLI {
      */
     @GetMapping("/mybatis/vuln02")
     public List<User> mybatisVuln02(@RequestParam("username") String username, HttpServletRequest request) {
-        validateUsernameFormat(username);
-        List<User> found = userMapper.findByUserNameVuln02(username);
+        // authorize the referenced user right before the data access; use the authorized value
+        String authorizedName = authorizedUsername(request, username);
+        List<User> found = userMapper.findByUserNameVuln02(authorizedName);
         // fuzzy search: only records the caller owns (or all, for admins) may be returned
         List<User> visible = new ArrayList<>();
         for (User u : found) {
@@ -300,7 +307,28 @@ public class SQLI {
         if (principal == null || referencedUsername == null) {
             return false;
         }
-        return referencedUsername.equals(principal.getName()) || request.isUserInRole("ADMIN");
+        return referencedUsername.equalsIgnoreCase(principal.getName()) || request.isUserInRole("ADMIN");
+    }
+
+    /**
+     * Authorize the referenced username against the authenticated principal (owner or ADMIN, else 403)
+     * and return the value that may be used in the data access call. For the owner this is the
+     * principal's own name (never the raw request string); an admin may reference any username that
+     * passed the format allowlist.
+     */
+    private static String authorizedUsername(HttpServletRequest request, String username) {
+        validateUsernameFormat(username);
+        Principal principal = request.getUserPrincipal();
+        if (principal == null) {
+            throw new ReferenceAccessDeniedException();
+        }
+        if (username.equalsIgnoreCase(principal.getName())) {
+            return principal.getName();
+        }
+        if (request.isUserInRole("ADMIN")) {
+            return username;
+        }
+        throw new ReferenceAccessDeniedException();
     }
 
     /**
