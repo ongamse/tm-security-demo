@@ -3,7 +3,6 @@ package org.joychou.controller;
 
 import org.joychou.mapper.UserMapper;
 import org.joychou.dao.User;
-import org.joychou.util.LogSanitizer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -82,7 +81,7 @@ public class SQLI {
                 String res_pwd = rs.getString("password");
                 String info = String.format("%s: %s\n", res_name, res_pwd);
                 result.append(info);
-                logger.info("Query returned user: {}", LogSanitizer.clean(res_name));
+                logger.info("Query returned a user row");
             }
             rs.close();
             con.close();
@@ -91,7 +90,7 @@ public class SQLI {
         } catch (ClassNotFoundException e) {
             logger.error("Sorry, can't find the Driver!");
         } catch (SQLException e) {
-            logger.error("SQL error", e);
+            logger.error("SQL error: " + e.getClass().getSimpleName());
         }
         return result.toString();
     }
@@ -120,7 +119,7 @@ public class SQLI {
             PreparedStatement st = con.prepareStatement(sql);
             st.setString(1, username);
 
-            logger.info("Executing: {}", LogSanitizer.clean(st));  // sql after prepare statement
+            logger.info("Executing prepared statement");
             ResultSet rs = st.executeQuery();
 
             while (rs.next()) {
@@ -128,7 +127,7 @@ public class SQLI {
                 String res_name = rs.getString("username");
                 String info = String.format("%s\n", res_name);
                 result.append(info);
-                logger.info("Query returned user: {}", LogSanitizer.clean(res_name));
+                logger.info("Query returned a user row");
             }
 
             rs.close();
@@ -136,9 +135,9 @@ public class SQLI {
 
         } catch (ClassNotFoundException e) {
             logger.error("Sorry, can't find the Driver!");
-            e.printStackTrace();
+            logger.error("Driver load failed: " + e.getClass().getSimpleName());
         } catch (SQLException e) {
-            logger.error("SQL error", e);
+            logger.error("SQL error: " + e.getClass().getSimpleName());
         }
         return result.toString();
     }
@@ -166,7 +165,7 @@ public class SQLI {
             PreparedStatement st = con.prepareStatement(sql);
             st.setString(1, authorizedName);
 
-            logger.info("Executing: {}", LogSanitizer.clean(st));
+            logger.info("Executing prepared statement");
             ResultSet rs = st.executeQuery();
 
             while (rs.next()) {
@@ -174,7 +173,7 @@ public class SQLI {
                 String res_pwd = rs.getString("password");
                 String info = String.format("%s: %s\n", res_name, res_pwd);
                 result.append(info);
-                logger.info("Query returned user: {}", LogSanitizer.clean(res_name));
+                logger.info("Query returned a user row");
             }
 
             rs.close();
@@ -182,9 +181,9 @@ public class SQLI {
 
         } catch (ClassNotFoundException e) {
             logger.error("Sorry, can't find the Driver!");
-            e.printStackTrace();
+            logger.error("Driver load failed: " + e.getClass().getSimpleName());
         } catch (SQLException e) {
-            logger.error("SQL error", e);
+            logger.error("SQL error: " + e.getClass().getSimpleName());
         }
         return result.toString();
     }

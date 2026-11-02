@@ -7,7 +7,6 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import org.joychou.security.SecurityUtil;
-import org.joychou.util.LogSanitizer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -35,14 +34,12 @@ public class OriginFilter implements Filter {
         HttpServletResponse response = (HttpServletResponse) res;
 
         String origin = request.getHeader("Origin");
-        logger.info("[+] Origin: {}\tCurrent url: {}", LogSanitizer.clean(origin),
-                LogSanitizer.clean(request.getRequestURL()));
+        logger.info("[+] Origin filter invoked");
 
         // 以file协议访问html，origin为字符串的null，所以依然会走安全check逻辑
         String allowedOrigin = origin == null ? null : SecurityUtil.TRUSTED_CORS_ORIGINS.get(origin);
         if (origin != null && allowedOrigin == null) {
-            logger.error("[-] Origin check error. Origin: {}\tCurrent url: {}", LogSanitizer.clean(origin),
-                    LogSanitizer.clean(request.getRequestURL()));
+            logger.error("[-] Origin check error. Origin not allowed");
             response.setStatus(response.SC_FORBIDDEN);
             response.getWriter().println("Invaid cors config by joychou.");
             return;
