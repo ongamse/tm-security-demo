@@ -3,9 +3,9 @@ package org.joychou.util;
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
 import java.io.*;
+import java.util.regex.Pattern;
 
 import com.google.common.base.Preconditions;
-import org.springframework.web.util.HtmlUtils;
 
 public class WebUtils {
 
@@ -27,8 +27,76 @@ public class WebUtils {
     }
 
 
+    // JSONP callback allowlist: a JavaScript identifier, optionally dotted (e.g. "a.b"), max 64 chars.
+    private static final Pattern JSONP_CALLBACK = Pattern.compile("^[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z_$][A-Za-z0-9_$]*)*$");
+
+    public static boolean isValidJsonpCallback(String callback) {
+        return callback != null && callback.length() <= 64 && JSONP_CALLBACK.matcher(callback).matches();
+    }
+
+    /**
+     * Wrap json in the callback. The callback must be a plain JavaScript identifier,
+     * otherwise a constant error body is returned (the callback is never echoed).
+     */
     public static String json2Jsonp(String callback, String jsonStr) {
-        return HtmlUtils.htmlEscape(callback) + "(" + jsonStr + ")";
+        if (!isValidJsonpCallback(callback)) {
+            return "error";
+        }
+        return callback + "(" + escapeJsonForScript(jsonStr) + ")";
+    }
+
+    /**
+     * Make serialised JSON safe to embed in executable JavaScript. In valid JSON the characters
+     * below can only occur inside string literals, where the \\uXXXX form is equivalent.
+     */
+    public static String escapeJsonForScript(String json) {
+        if (json == null) {
+            return "null";
+        }
+        StringBuilder sb = new StringBuilder(json.length() + 16);
+        for (int i = 0; i < json.length(); i++) {
+            char c = json.charAt(i);
+            if (c == '<' || c == '>' || c == '&' || c == 0x2028 || c == 0x2029) {
+                sb.append(String.format("\\u%04x", (int) c));
+            } else {
+                sb.append(c);
+            }
+        }
+        return sb.toString();
+    }
+
+    /** Mark a response as JavaScript that browsers must not sniff into another type. */
+    public static void setJavascriptHeaders(javax.servlet.http.HttpServletResponse response) {
+        response.setContentType("application/javascript;charset=UTF-8");
+        response.setHeader("X-Content-Type-Options", "nosniff");
+    }
+
+
+    /**
+     * Strict, anchored origin shape: scheme, host and optional port only (no CR/LF/control chars,
+     * no path/query/userinfo). Callers rebuild the header value from the captured groups.
+     */
+    public static final Pattern ORIGIN_PATTERN =
+            Pattern.compile("^(https?)://([A-Za-z0-9.-]{1,253})(?::([0-9]{1,5}))?$");
+
+    /**
+     * Make an untrusted value safe to write into an HTTP response header (or Location).
+     * Strips CR, LF and every other control / line-separator character so the value can
+     * never terminate the header line (CRLF / response splitting). Returns null for null.
+     */
+    public static String sanitizeHeaderValue(String value) {
+        if (value == null) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (Character.isISOControl(c) || c == 0x2028 || c == 0x2029) {
+                continue;
+            }
+            sb.append(c);
+        }
+        return sb.toString();
     }
 
 

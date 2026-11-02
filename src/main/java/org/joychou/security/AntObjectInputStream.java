@@ -4,6 +4,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * RASP：Hook java/io/ObjectInputStream类的resolveClass方法
@@ -14,6 +17,19 @@ import java.io.*;
 public class AntObjectInputStream extends ObjectInputStream {
 
     protected final Logger logger= LoggerFactory.getLogger(AntObjectInputStream.class);
+
+    private static final Set<String> ALLOWED_CLASSES = new HashSet<String>(Arrays.asList(
+            "org.joychou.security.AntObjectInputStream$MyObject",
+            "java.lang.String",
+            "java.lang.Number",
+            "java.lang.Integer",
+            "java.lang.Long",
+            "java.lang.Short",
+            "java.lang.Byte",
+            "java.lang.Float",
+            "java.lang.Double",
+            "java.lang.Boolean",
+            "java.lang.Character"));
 
     public AntObjectInputStream(InputStream inputStream) throws IOException {
         super(inputStream);
@@ -36,17 +52,28 @@ public class AntObjectInputStream extends ObjectInputStream {
         // Deserialize class name: org.joychou.security.AntObjectInputStream$MyObject
         logger.info("Deserialize class name: " + className);
 
-        String[] denyClasses = {"java.net.InetAddress",
-                                "org.apache.commons.collections.Transformer",
-                                "org.apache.commons.collections.functors"};
+        // Allowlist: only explicitly trusted classes may be deserialized (array types are checked by element type).
+        String checked = className;
+        while (checked.startsWith("[")) {
+            checked = checked.substring(1);
+        }
+        if (checked.startsWith("L") && checked.endsWith(";")) {
+            checked = checked.substring(1, checked.length() - 1);
+        } else if (checked.length() == 1) {
+            // primitive array element type descriptor, e.g. "[B"
+            checked = null;
+        }
 
-        for (String denyClass : denyClasses) {
-            if (className.startsWith(denyClass)) {
-                throw new InvalidClassException("Unauthorized deserialization attempt", className);
-            }
+        if (checked != null && !ALLOWED_CLASSES.contains(checked)) {
+            throw new InvalidClassException("Unauthorized deserialization attempt", className);
         }
 
         return super.resolveClass(desc);
+    }
+
+    @Override
+    protected Class<?> resolveProxyClass(String[] interfaces) throws IOException, ClassNotFoundException {
+        throw new InvalidClassException("Unauthorized deserialization attempt", "dynamic proxy");
     }
 
     public static void main(String args[]) throws Exception{

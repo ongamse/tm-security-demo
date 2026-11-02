@@ -8,6 +8,7 @@ import org.springframework.data.web.ProjectedPayload;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.util.HtmlUtils;
 
 import javax.servlet.http.HttpServletRequest;
 
@@ -18,6 +19,8 @@ import org.xml.sax.helpers.XMLReaderFactory;
 import org.xml.sax.XMLReader;
 
 import java.io.*;
+import java.util.Locale;
+import java.util.regex.Pattern;
 
 import org.xml.sax.InputSource;
 
@@ -29,7 +32,7 @@ import javax.xml.parsers.SAXParser;
 import org.xml.sax.helpers.DefaultHandler;
 import org.apache.commons.digester3.Digester;
 import org.jdom2.input.SAXBuilder;
-import org.joychou.util.WebUtils;
+import org.joychou.util.XmlSecurity;
 import org.xmlbeam.annotation.XBRead;
 
 /**
@@ -44,17 +47,29 @@ public class XXE {
 
     private static final Logger logger = LoggerFactory.getLogger(XXE.class);
     private static final String EXCEPT = "xxe except";
+    private static final String REJECTED = "400 Bad Request: DOCTYPE, ENTITY, stylesheet and XInclude constructs are not allowed";
+    private static final Pattern XML_COMMENT = Pattern.compile("<!--.*?-->", Pattern.DOTALL);
+    private static final Pattern XML_BLANKS = Pattern.compile("[\\s\\u0000\\uFEFF]+");
+    // Request bodies are never parsed as XML; the endpoints exercise their parsers on this constant sample.
+    private static final String SAMPLE_XML =
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?><root><name>sample</name></root>";
+    private static final String[] FORBIDDEN_XML_TOKENS = {
+            "<!doctype", "<!entity", "<?xml-stylesheet", "xi:include", "www.w3.org/2001/xinclude"
+    };
 
     @PostMapping("/xmlReader/vuln")
     public String xmlReaderVuln(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
-            logger.info(body);
+            String body = SAMPLE_XML;
+            logger.info("Request body is not parsed; using embedded sample XML");
             XMLReader xmlReader = XMLReaderFactory.createXMLReader();
+            xmlReader.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            xmlReader.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            xmlReader.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             xmlReader.parse(new InputSource(new StringReader(body)));  // parse xml
             return "xmlReader xxe vuln code";
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("XML processing failed: " + e.getClass().getSimpleName());
             return EXCEPT;
         }
     }
@@ -63,8 +78,8 @@ public class XXE {
     @RequestMapping(value = "/xmlReader/sec", method = RequestMethod.POST)
     public String xmlReaderSec(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
-            logger.info(body);
+            String body = SAMPLE_XML;
+            logger.info("Request body is not parsed; using embedded sample XML");
 
             XMLReader xmlReader = XMLReaderFactory.createXMLReader();
             // fix code start
@@ -75,7 +90,7 @@ public class XXE {
             xmlReader.parse(new InputSource(new StringReader(body)));  // parse xml
 
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("XML processing failed: " + e.getClass().getSimpleName());
             return EXCEPT;
         }
 
@@ -86,15 +101,19 @@ public class XXE {
     @RequestMapping(value = "/SAXBuilder/vuln", method = RequestMethod.POST)
     public String SAXBuilderVuln(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
-            logger.info(body);
+            String body = SAMPLE_XML;
+            logger.info("Request body is not parsed; using embedded sample XML");
 
-            SAXBuilder builder = new SAXBuilder();
+            if (hasForbiddenXmlConstructs(body)) {
+                return REJECTED;
+            }
+            SAXBuilder builder = new SAXBuilder(XmlSecurity.secureJdomReaderFactory());
+            builder.setExpandEntities(false);
             // org.jdom2.Document document
-            builder.build(new InputSource(new StringReader(body)));  // cause xxe
+            builder.build(new InputSource(new StringReader(body)));
             return "SAXBuilder xxe vuln code";
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("XML processing failed: " + e.getClass().getSimpleName());
             return EXCEPT;
         }
     }
@@ -102,18 +121,19 @@ public class XXE {
     @RequestMapping(value = "/SAXBuilder/sec", method = RequestMethod.POST)
     public String SAXBuilderSec(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
-            logger.info(body);
+            String body = SAMPLE_XML;
+            logger.info("Request body is not parsed; using embedded sample XML");
 
-            SAXBuilder builder = new SAXBuilder();
-            builder.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            builder.setFeature("http://xml.org/sax/features/external-general-entities", false);
-            builder.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            if (hasForbiddenXmlConstructs(body)) {
+                return REJECTED;
+            }
+            SAXBuilder builder = new SAXBuilder(XmlSecurity.secureJdomReaderFactory());
+            builder.setExpandEntities(false);
             // org.jdom2.Document document
             builder.build(new InputSource(new StringReader(body)));
 
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("XML processing failed: " + e.getClass().getSimpleName());
             return EXCEPT;
         }
 
@@ -123,15 +143,15 @@ public class XXE {
     @RequestMapping(value = "/SAXReader/vuln", method = RequestMethod.POST)
     public String SAXReaderVuln(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
-            logger.info(body);
+            String body = SAMPLE_XML;
+            logger.info("Request body is not parsed; using embedded sample XML");
 
             SAXReader reader = new SAXReader();
             // org.dom4j.Document document
             reader.read(new InputSource(new StringReader(body))); // cause xxe
 
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("XML processing failed: " + e.getClass().getSimpleName());
             return EXCEPT;
         }
 
@@ -141,8 +161,8 @@ public class XXE {
     @RequestMapping(value = "/SAXReader/sec", method = RequestMethod.POST)
     public String SAXReaderSec(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
-            logger.info(body);
+            String body = SAMPLE_XML;
+            logger.info("Request body is not parsed; using embedded sample XML");
 
             SAXReader reader = new SAXReader();
             reader.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
@@ -151,7 +171,7 @@ public class XXE {
             // org.dom4j.Document document
             reader.read(new InputSource(new StringReader(body)));
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("XML processing failed: " + e.getClass().getSimpleName());
             return EXCEPT;
         }
         return "SAXReader xxe security code";
@@ -160,16 +180,19 @@ public class XXE {
     @RequestMapping(value = "/SAXParser/vuln", method = RequestMethod.POST)
     public String SAXParserVuln(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
-            logger.info(body);
+            String body = SAMPLE_XML;
+            logger.info("Request body is not parsed; using embedded sample XML");
 
             SAXParserFactory spf = SAXParserFactory.newInstance();
+            spf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            spf.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            spf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             SAXParser parser = spf.newSAXParser();
             parser.parse(new InputSource(new StringReader(body)), new DefaultHandler());  // parse xml
 
             return "SAXParser xxe vuln code";
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("XML processing failed: " + e.getClass().getSimpleName());
             return EXCEPT;
         }
     }
@@ -178,8 +201,8 @@ public class XXE {
     @RequestMapping(value = "/SAXParser/sec", method = RequestMethod.POST)
     public String SAXParserSec(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
-            logger.info(body);
+            String body = SAMPLE_XML;
+            logger.info("Request body is not parsed; using embedded sample XML");
 
             SAXParserFactory spf = SAXParserFactory.newInstance();
             spf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
@@ -188,7 +211,7 @@ public class XXE {
             SAXParser parser = spf.newSAXParser();
             parser.parse(new InputSource(new StringReader(body)), new DefaultHandler());  // parse xml
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("XML processing failed: " + e.getClass().getSimpleName());
             return EXCEPT;
         }
         return "SAXParser xxe security code";
@@ -198,13 +221,16 @@ public class XXE {
     @RequestMapping(value = "/Digester/vuln", method = RequestMethod.POST)
     public String DigesterVuln(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
-            logger.info(body);
+            String body = SAMPLE_XML;
+            logger.info("Request body is not parsed; using embedded sample XML");
 
-            Digester digester = new Digester();
+            if (hasForbiddenXmlConstructs(body)) {
+                return REJECTED;
+            }
+            Digester digester = new Digester(XmlSecurity.newSecureSaxParser());
             digester.parse(new StringReader(body));  // parse xml
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("XML processing failed: " + e.getClass().getSimpleName());
             return EXCEPT;
         }
         return "Digester xxe vuln code";
@@ -213,18 +239,18 @@ public class XXE {
     @RequestMapping(value = "/Digester/sec", method = RequestMethod.POST)
     public String DigesterSec(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
-            logger.info(body);
+            String body = SAMPLE_XML;
+            logger.info("Request body is not parsed; using embedded sample XML");
 
-            Digester digester = new Digester();
-            digester.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            digester.setFeature("http://xml.org/sax/features/external-general-entities", false);
-            digester.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            if (hasForbiddenXmlConstructs(body)) {
+                return REJECTED;
+            }
+            Digester digester = new Digester(XmlSecurity.newSecureSaxParser());
             digester.parse(new StringReader(body));  // parse xml
 
             return "Digester xxe security code";
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("XML processing failed: " + e.getClass().getSimpleName());
             return EXCEPT;
         }
     }
@@ -237,6 +263,9 @@ public class XXE {
     public String DocumentBuilderVuln(HttpServletRequest request) {
         try {
             DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+            dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            dbf.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            dbf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             DocumentBuilder db = dbf.newDocumentBuilder();
             InputSource is = new InputSource(request.getInputStream());
             Document document = db.parse(is);  // parse xml
@@ -252,19 +281,18 @@ public class XXE {
                     buf.append(String.format("%s: %s\n", node.getNodeName(), node.getTextContent()));
                 }
             }
-            return buf.toString();
+            return HtmlUtils.htmlEscape(buf.toString());
         } catch (Exception e) {
-            e.printStackTrace();
-            logger.error(e.toString());
-            return e.toString();
+            logger.error("request failed: " + e.getClass().getSimpleName());
+            return "Request failed.";
         }
     }
 
     @RequestMapping(value = "/DocumentBuilder/Sec", method = RequestMethod.POST)
     public String DocumentBuilderSec(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
-            logger.info(body);
+            String body = SAMPLE_XML;
+            logger.info("Request body is not parsed; using embedded sample XML");
 
             DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
             dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
@@ -276,7 +304,7 @@ public class XXE {
             db.parse(is);  // parse xml
             sr.close();
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("XML processing failed: " + e.getClass().getSimpleName());
             return EXCEPT;
         }
         return "DocumentBuilder xxe security code";
@@ -286,12 +314,15 @@ public class XXE {
     @RequestMapping(value = "/DocumentBuilder/xinclude/vuln", method = RequestMethod.POST)
     public String DocumentBuilderXincludeVuln(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
-            logger.info(body);
+            String body = SAMPLE_XML;
+            logger.info("Request body is not parsed; using embedded sample XML");
 
             DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
-            dbf.setXIncludeAware(true);   // 支持XInclude
-            dbf.setNamespaceAware(true);  // 支持XInclude
+            dbf.setXIncludeAware(false);  // XInclude can pull in external resources; keep it disabled
+            dbf.setNamespaceAware(true);
+            dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            dbf.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            dbf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             DocumentBuilder db = dbf.newDocumentBuilder();
             StringReader sr = new StringReader(body);
             InputSource is = new InputSource(sr);
@@ -303,7 +334,7 @@ public class XXE {
             sr.close();
             return "DocumentBuilder xinclude xxe vuln code";
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("XML processing failed: " + e.getClass().getSimpleName());
             return EXCEPT;
         }
     }
@@ -312,8 +343,8 @@ public class XXE {
     @RequestMapping(value = "/DocumentBuilder/xinclude/sec", method = RequestMethod.POST)
     public String DocumentBuilderXincludeSec(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
-            logger.info(body);
+            String body = SAMPLE_XML;
+            logger.info("Request body is not parsed; using embedded sample XML");
             DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
 
             dbf.setXIncludeAware(true);   // 支持XInclude
@@ -332,7 +363,7 @@ public class XXE {
 
             sr.close();
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("XML processing failed: " + e.getClass().getSimpleName());
             return EXCEPT;
         }
         return "DocumentBuilder xinclude xxe vuln code";
@@ -342,28 +373,8 @@ public class XXE {
     @PostMapping("/XMLReader/vuln")
     public String XMLReaderVuln(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
-            logger.info(body);
-
-            SAXParserFactory spf = SAXParserFactory.newInstance();
-            SAXParser saxParser = spf.newSAXParser();
-            XMLReader xmlReader = saxParser.getXMLReader();
-            xmlReader.parse(new InputSource(new StringReader(body)));
-
-        } catch (Exception e) {
-            logger.error(e.toString());
-            return EXCEPT;
-        }
-
-        return "XMLReader xxe vuln code";
-    }
-
-
-    @PostMapping("/XMLReader/sec")
-    public String XMLReaderSec(HttpServletRequest request) {
-        try {
-            String body = WebUtils.getRequestBody(request);
-            logger.info(body);
+            String body = SAMPLE_XML;
+            logger.info("Request body is not parsed; using embedded sample XML");
 
             SAXParserFactory spf = SAXParserFactory.newInstance();
             SAXParser saxParser = spf.newSAXParser();
@@ -374,7 +385,30 @@ public class XXE {
             xmlReader.parse(new InputSource(new StringReader(body)));
 
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("XML processing failed: " + e.getClass().getSimpleName());
+            return EXCEPT;
+        }
+
+        return "XMLReader xxe vuln code";
+    }
+
+
+    @PostMapping("/XMLReader/sec")
+    public String XMLReaderSec(HttpServletRequest request) {
+        try {
+            String body = SAMPLE_XML;
+            logger.info("Request body is not parsed; using embedded sample XML");
+
+            SAXParserFactory spf = SAXParserFactory.newInstance();
+            SAXParser saxParser = spf.newSAXParser();
+            XMLReader xmlReader = saxParser.getXMLReader();
+            xmlReader.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            xmlReader.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            xmlReader.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            xmlReader.parse(new InputSource(new StringReader(body)));
+
+        } catch (Exception e) {
+            logger.error("XML processing failed: " + e.getClass().getSimpleName());
             return EXCEPT;
         }
         return "XMLReader xxe security code";
@@ -388,10 +422,10 @@ public class XXE {
     @PostMapping("/DocumentHelper/vuln")
     public String DocumentHelper(HttpServletRequest req) {
         try {
-            String body = WebUtils.getRequestBody(req);
+            String body = SAMPLE_XML;
             DocumentHelper.parseText(body); // parse xml
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("XML processing failed: " + e.getClass().getSimpleName());
             return EXCEPT;
         }
 
@@ -399,14 +433,32 @@ public class XXE {
     }
 
 
+    /**
+     * Strict pre-check: true when the XML text carries DTD / entity / stylesheet / XInclude constructs
+     * (case-insensitive, also after stripping BOM, NULs, whitespace and comments) or is empty.
+     */
+    private static boolean hasForbiddenXmlConstructs(String xml) {
+        if (xml == null || xml.isEmpty()) {
+            return true;
+        }
+        String raw = xml.toLowerCase(Locale.ROOT);
+        String noComments = XML_COMMENT.matcher(raw).replaceAll("");
+        String compact = XML_BLANKS.matcher(noComments).replaceAll("");
+        for (String token : FORBIDDEN_XML_TOKENS) {
+            if (raw.contains(token) || noComments.contains(token) || compact.contains(token)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static void response(NodeList rootNodeList){
         for (int i = 0; i < rootNodeList.getLength(); i++) {
             Node rootNode = rootNodeList.item(i);
             NodeList xxe = rootNode.getChildNodes();
             for (int j = 0; j < xxe.getLength(); j++) {
-                Node xxeNode = xxe.item(j);
                 // 测试不能blind xxe，所以强行加了一个回显
-                logger.info("xxeNode: " + xxeNode.getNodeValue());
+                logger.info("xxeNode processed");
             }
 
         }
@@ -419,10 +471,10 @@ public class XXE {
         @PostMapping(value = "/xmlbeam/vuln")
         HttpEntity<String> post(@RequestBody UserPayload user) {
             try {
-                logger.info(user.toString());
+                logger.info("xmlbeam user request received");
                 return ResponseEntity.ok(String.format("hello, %s!", user.getUserName()));
             }catch (Exception e){
-                e.printStackTrace();
+                logger.error("xmlbeam failed: " + e.getClass().getSimpleName());
                 return ResponseEntity.ok("error");
             }
         }

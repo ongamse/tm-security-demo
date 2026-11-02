@@ -1,13 +1,16 @@
 package org.joychou.controller;
 
-import org.apache.commons.lang.StringUtils;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseBody;
+import org.springframework.web.util.HtmlUtils;
 
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletResponse;
+import java.io.UnsupportedEncodingException;
+import java.net.URLDecoder;
+import java.net.URLEncoder;
 
 
 /**
@@ -27,7 +30,7 @@ public class XSS {
     @RequestMapping("/reflect")
     @ResponseBody
     public static String reflect(String xss) {
-        return xss;
+        return HtmlUtils.htmlEscape(xss);
     }
 
     /**
@@ -39,8 +42,12 @@ public class XSS {
      */
     @RequestMapping("/stored/store")
     @ResponseBody
-    public String store(String xss, HttpServletResponse response) {
-        Cookie cookie = new Cookie("xss", xss);
+    public String store(String xss, HttpServletResponse response) throws UnsupportedEncodingException {
+        // percent-encode so CR/LF, ';' and ',' can never reach the Set-Cookie header
+        Cookie cookie = new Cookie("xss", URLEncoder.encode(xss == null ? "" : xss, "UTF-8"));
+        cookie.setHttpOnly(true);
+        cookie.setSecure(true);
+        cookie.setPath("/");
         response.addCookie(cookie);
         return "Set param into cookie";
     }
@@ -54,27 +61,17 @@ public class XSS {
      */
     @RequestMapping("/stored/show")
     @ResponseBody
-    public String show(@CookieValue("xss") String xss) {
-        return xss;
+    public String show(@CookieValue("xss") String xss) throws UnsupportedEncodingException {
+        return HtmlUtils.htmlEscape(URLDecoder.decode(xss, "UTF-8"));
     }
 
     /**
      * safe Code.
      * http://localhost:8080/xss/safe
      */
-    @RequestMapping("/safe")
+    @RequestMapping(value = "/safe", produces = "text/plain;charset=UTF-8")
     @ResponseBody
     public static String safe(String xss) {
-        return encode(xss);
-    }
-
-    private static String encode(String origin) {
-        origin = StringUtils.replace(origin, "&", "&amp;");
-        origin = StringUtils.replace(origin, "<", "&lt;");
-        origin = StringUtils.replace(origin, ">", "&gt;");
-        origin = StringUtils.replace(origin, "\"", "&quot;");
-        origin = StringUtils.replace(origin, "'", "&#x27;");
-        origin = StringUtils.replace(origin, "/", "&#x2F;");
-        return origin;
+        return HtmlUtils.htmlEscape(xss);
     }
 }

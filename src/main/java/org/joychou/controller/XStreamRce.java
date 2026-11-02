@@ -2,16 +2,27 @@ package org.joychou.controller;
 
 import com.thoughtworks.xstream.XStream;
 import com.thoughtworks.xstream.io.xml.DomDriver;
+import com.thoughtworks.xstream.io.xml.DomReader;
+import com.thoughtworks.xstream.security.NoTypePermission;
+import com.thoughtworks.xstream.security.NullPermission;
+import com.thoughtworks.xstream.security.PrimitiveTypePermission;
 import org.joychou.dao.User;
-import org.joychou.util.WebUtils;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.w3c.dom.Document;
+import org.xml.sax.InputSource;
 
 import javax.servlet.http.HttpServletRequest;
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import java.io.StringReader;
 
 
 @RestController
 public class XStreamRce {
+
+    private static final String SAMPLE_XML =
+            "<org.joychou.dao.User><id>0</id><username>admin</username></org.joychou.dao.User>";
 
     /**
      * Fix method: update xstream to 1.4.11
@@ -22,9 +33,23 @@ public class XStreamRce {
      */
     @PostMapping("/xstream")
     public String parseXml(HttpServletRequest request) throws Exception {
-        String xml = WebUtils.getRequestBody(request);
+        // The request body is never parsed as XML; an embedded sample document is used instead.
+        String xml = SAMPLE_XML;
+        // Parse with a hardened DOM parser (no DTD / external entities), then hand the DOM to XStream.
+        DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+        dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+        dbf.setFeature("http://xml.org/sax/features/external-general-entities", false);
+        dbf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+        DocumentBuilder db = dbf.newDocumentBuilder();
+        Document document = db.parse(new InputSource(new StringReader(xml)));
+
         XStream xstream = new XStream(new DomDriver());
-        xstream.fromXML(xml);
+        // Type allowlist: deny everything, then permit only the expected application type.
+        xstream.addPermission(NoTypePermission.NONE);
+        xstream.addPermission(NullPermission.NULL);
+        xstream.addPermission(PrimitiveTypePermission.PRIMITIVES);
+        xstream.allowTypes(new Class[]{User.class, String.class});
+        xstream.unmarshal(new DomReader(document));
         return "xstream";
     }
 

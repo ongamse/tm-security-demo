@@ -1,11 +1,11 @@
 package org.joychou.controller;
 
-import org.joychou.security.SecurityUtil;
-import org.joychou.util.WebUtils;
+import org.joychou.security.SafeCommand;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.util.HtmlUtils;
 
 import javax.servlet.http.HttpServletRequest;
 import java.io.IOException;
@@ -23,12 +23,12 @@ public class CommandInject {
      */
     @GetMapping("/codeinject")
     public String codeInject(String filepath) throws IOException {
-
-        String[] cmdList = new String[]{"sh", "-c", "ls -la " + filepath};
-        ProcessBuilder builder = new ProcessBuilder(cmdList);
-        builder.redirectErrorStream(true);
-        Process process = builder.start();
-        return WebUtils.convertStreamToString(process.getInputStream());
+        // Fixed "ls -la --" argv; the strictly validated path is the only variable element.
+        String output = SafeCommand.listDirectory(filepath);
+        if (null == output) {
+            return "Bad boy. I got u.";
+        }
+        return HtmlUtils.htmlEscape(output);
     }
 
     /**
@@ -40,24 +40,19 @@ public class CommandInject {
     public String codeInjectHost(HttpServletRequest request) throws IOException {
 
         String host = request.getHeader("host");
-        logger.info(host);
-        String[] cmdList = new String[]{"sh", "-c", "curl " + host};
-        ProcessBuilder builder = new ProcessBuilder(cmdList);
-        builder.redirectErrorStream(true);
-        Process process = builder.start();
-        return WebUtils.convertStreamToString(process.getInputStream());
+        String output = SafeCommand.curlHost(host);
+        if (null == output) {
+            return "Bad boy. I got u.";
+        }
+        return HtmlUtils.htmlEscape(output);
     }
 
     @GetMapping("/codeinject/sec")
     public String codeInjectSec(String filepath) throws IOException {
-        String filterFilePath = SecurityUtil.cmdFilter(filepath);
-        if (null == filterFilePath) {
+        String output = SafeCommand.listDirectory(filepath);
+        if (null == output) {
             return "Bad boy. I got u.";
         }
-        String[] cmdList = new String[]{"sh", "-c", "ls -la " + filterFilePath};
-        ProcessBuilder builder = new ProcessBuilder(cmdList);
-        builder.redirectErrorStream(true);
-        Process process = builder.start();
-        return WebUtils.convertStreamToString(process.getInputStream());
+        return HtmlUtils.htmlEscape(output);
     }
 }

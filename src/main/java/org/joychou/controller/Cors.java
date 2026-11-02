@@ -25,15 +25,29 @@ public class Cors {
     @GetMapping("/vuln/origin")
     public String vuls1(HttpServletRequest request, HttpServletResponse response) {
         String origin = request.getHeader("origin");
-        response.setHeader("Access-Control-Allow-Origin", origin); // set origin from header
-        response.setHeader("Access-Control-Allow-Credentials", "true");  // allow cookie
+        response.addHeader("Vary", "Origin");
+        // only allowlisted origins are allowed; this demo endpoint never allows credentials (cookies)
+        // the emitted value is the allowlist's own constant, never the request text
+        String allowedOrigin = origin == null ? null : SecurityUtil.TRUSTED_CORS_ORIGINS.get(origin);
+        if (allowedOrigin != null) {
+            response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
+            response.setHeader("Access-Control-Allow-Methods", SecurityUtil.CORS_ALLOW_METHODS);
+            response.setHeader("Access-Control-Allow-Headers", SecurityUtil.CORS_ALLOW_HEADERS);
+            response.setHeader("Access-Control-Max-Age", SecurityUtil.CORS_MAX_AGE);
+        }
         return info;
     }
 
     @GetMapping("/vuln/setHeader")
-    public String vuls2(HttpServletResponse response) {
-        // 后端设置Access-Control-Allow-Origin为*的情况下，跨域的时候前端如果设置withCredentials为true会异常
-        response.setHeader("Access-Control-Allow-Origin", "*");
+    public String vuls2(HttpServletRequest request, HttpServletResponse response) {
+        // 不再使用通配符*，仅对白名单内的origin返回Access-Control-Allow-Origin，且不允许携带cookie
+        response.addHeader("Vary", "Origin");
+        String origin = request.getHeader("Origin");
+        // the emitted value is the allowlist's own constant, never the request text
+        String allowedOrigin = origin == null ? null : SecurityUtil.TRUSTED_CORS_ORIGINS.get(origin);
+        if (allowedOrigin != null) {
+            response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
+        }
         return info;
     }
 
@@ -107,11 +121,18 @@ public class Cors {
 
         // 如果origin不为空并且origin不在白名单内，认定为不安全。
         // 如果origin为空，表示是同域过来的请求或者浏览器直接发起的请求。
-        if (origin != null && SecurityUtil.checkURL(origin) == null) {
+        String allowedOrigin = origin == null ? null : SecurityUtil.TRUSTED_CORS_ORIGINS.get(origin);
+        if (origin != null && allowedOrigin == null) {
             return "Origin is not safe.";
         }
-        response.setHeader("Access-Control-Allow-Origin", origin);
-        response.setHeader("Access-Control-Allow-Credentials", "true");
+        response.addHeader("Vary", "Origin");
+        if (allowedOrigin != null) {
+            // the emitted value is the allowlist's own constant, never the request text
+            response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
+            response.setHeader("Access-Control-Allow-Methods", SecurityUtil.CORS_ALLOW_METHODS);
+            response.setHeader("Access-Control-Allow-Headers", SecurityUtil.CORS_ALLOW_HEADERS);
+            response.setHeader("Access-Control-Max-Age", SecurityUtil.CORS_MAX_AGE);
+        }
         return LoginUtils.getUserInfo2JsonStr(request);
     }
 

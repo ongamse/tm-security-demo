@@ -20,7 +20,7 @@ public class BaseCorsFilter extends CorsFilter {
 
     private static UrlBasedCorsConfigurationSource configurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowCredentials(true);
+        config.setAllowCredentials(false);
         config.addAllowedOrigin("joychou.org"); // 不支持
         config.addAllowedOrigin("http://test.joychou.me");
         config.addAllowedHeader("*");

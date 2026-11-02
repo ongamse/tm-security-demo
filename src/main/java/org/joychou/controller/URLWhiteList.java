@@ -1,15 +1,20 @@
 package org.joychou.controller;
 
 
+import org.joychou.security.SafeUrl;
 import org.joychou.security.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.util.HtmlUtils;
 
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.net.URL;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -27,6 +32,19 @@ public class URLWhiteList {
 
 
     private String domainwhitelist[] = {"joychou.org", "joychou.com"};
+
+    /** Constant fallback redirect target (site root). */
+    private static final String DEFAULT_TARGET = "/";
+
+    /** Closed set for url_bypass: exact allowed host -> complete constant redirect URL. */
+    private static final Map<String, String> TRUSTED_TARGETS;
+
+    static {
+        Map<String, String> m = new HashMap<>();
+        m.put("joychou.org", "https://joychou.org/");
+        m.put("joychou.com", "https://joychou.com/");
+        TRUSTED_TARGETS = Collections.unmodifiableMap(m);
+    }
     private static final Logger logger = LoggerFactory.getLogger(URLWhiteList.class);
 
     /**
@@ -98,23 +116,27 @@ public class URLWhiteList {
     @GetMapping("/vuln/url_bypass")
     public void url_bypass(String url, HttpServletResponse res) throws IOException {
 
-        logger.info("url:  " + url);
+        logger.info("url_bypass request received");
 
-        if (!SecurityUtil.isHttp(url)) {
+        if (url == null || !SecurityUtil.isHttp(url)) {
             return;
         }
 
-        URL u = new URL(url);
-        String host = u.getHost();
-        logger.info("host:  " + host);
-
-        // endsWith .
-        for (String domain : domainwhitelist) {
-            if (host.endsWith("." + domain)) {
-                res.sendRedirect(url);
+        // Strict host check: java.net.URI host, exact or ".domain" suffix match,
+        // no backslash / userinfo / whitespace tricks.
+        String validated = SecurityUtil.checkRedirectURL(url, Arrays.asList(domainwhitelist));
+        String target = DEFAULT_TARGET;
+        SafeUrl parsed = validated == null ? null : SafeUrl.parse(validated);
+        if (parsed != null) {
+            // the value redirected to is the map's own constant; the request only selects the entry
+            for (Map.Entry<String, String> e : TRUSTED_TARGETS.entrySet()) {
+                if (e.getKey().equals(parsed.getHost())) {
+                    target = e.getValue();
+                    break;
+                }
             }
         }
-
+        res.sendRedirect(target);
     }
 
 
@@ -135,9 +157,9 @@ public class URLWhiteList {
 
         for (String whiteHost: whiteDomainlists){
             if (whiteHost.startsWith(".") && host.endsWith(whiteHost)) {
-                return url;
+                return HtmlUtils.htmlEscape(url);
             } else if (!whiteHost.startsWith(".") && host.equals(whiteHost)) {
-                return url;
+                return HtmlUtils.htmlEscape(url);
             }
         }
 

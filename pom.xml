@@ -13,6 +13,8 @@
         <maven.compiler.source>1.8</maven.compiler.source> <!-- mvn clean package-->
         <maven.compiler.target>1.8</maven.compiler.target>
         <tomcat.version>8.5.85</tomcat.version>
+        <!-- SimpleEvaluationContext (used by SpEL controller) requires Spring Framework >= 4.3.15; Boot 1.5.1 defaults to 4.3.6 -->
+        <spring.version>4.3.30.RELEASE</spring.version>
     </properties>
 
 
@@ -233,7 +235,7 @@
         <dependency>
             <groupId>com.monitorjbl</groupId>
             <artifactId>xlsx-streamer</artifactId>
-            <version>2.0.0</version>
+            <version>2.1.0</version>
         </dependency>
 
         <!-- ssrf -->

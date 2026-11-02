@@ -34,20 +34,25 @@ public class OriginFilter implements Filter {
         HttpServletResponse response = (HttpServletResponse) res;
 
         String origin = request.getHeader("Origin");
-        logger.info("[+] Origin: " + origin + "\tCurrent url:" + request.getRequestURL());
+        logger.info("[+] Origin filter invoked");
 
         // 以file协议访问html，origin为字符串的null，所以依然会走安全check逻辑
-        if (origin != null && SecurityUtil.checkURL(origin) == null) {
-            logger.error("[-] Origin check error. " + "Origin: " + origin +
-                    "\tCurrent url:" + request.getRequestURL());
+        String allowedOrigin = origin == null ? null : SecurityUtil.TRUSTED_CORS_ORIGINS.get(origin);
+        if (origin != null && allowedOrigin == null) {
+            logger.error("[-] Origin check error. Origin not allowed");
             response.setStatus(response.SC_FORBIDDEN);
             response.getWriter().println("Invaid cors config by joychou.");
             return;
         }
 
-        response.setHeader("Access-Control-Allow-Origin", origin);
-        response.setHeader("Access-Control-Allow-Credentials", "true");
-        response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTION");
+        response.addHeader("Vary", "Origin");
+        if (allowedOrigin != null) {
+            // the emitted value is the allowlist's own constant, never the request text
+            response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
+            response.setHeader("Access-Control-Allow-Methods", SecurityUtil.CORS_ALLOW_METHODS);
+            response.setHeader("Access-Control-Allow-Headers", SecurityUtil.CORS_ALLOW_HEADERS);
+            response.setHeader("Access-Control-Max-Age", SecurityUtil.CORS_MAX_AGE);
+        }
 
         filterChain.doFilter(req, res);
     }

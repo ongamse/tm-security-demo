@@ -1,7 +1,9 @@
 package org.joychou.controller;
 
 import cn.hutool.http.HttpUtil;
+import org.joychou.security.SafeUrl;
 import org.joychou.security.SecurityUtil;
+import org.joychou.security.ssrf.SSRFChecker;
 import org.joychou.security.ssrf.SSRFException;
 import org.joychou.service.HttpService;
 import org.joychou.util.HttpUtils;
@@ -11,6 +13,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.util.HtmlUtils;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletResponse;
@@ -59,7 +62,8 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.URLConnection(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            logger.error("request failed", e);
+            return "Request failed.";
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -77,7 +81,8 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.HttpURLConnection(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            logger.error("request failed", e);
+            return "Request failed.";
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -98,9 +103,10 @@ public class SSRF {
     public String request(@RequestParam String url) {
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.request(url);
+            return HtmlUtils.htmlEscape(HttpUtils.request(url));
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            logger.error("request failed", e);
+            return "Request failed.";
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -122,12 +128,14 @@ public class SSRF {
         try {
             String downLoadImgFileName = WebUtils.getNameWithoutExtension(url) + "." + WebUtils.getFileExtension(url);
             // download
-            response.setHeader("content-disposition", "attachment;fileName=" + downLoadImgFileName);
+            // percent-encode the file name so CR/LF can never reach the header line
+            String encodedFileName = URLEncoder.encode(downLoadImgFileName, "UTF-8");
+            response.setHeader("content-disposition", "attachment;fileName=" + encodedFileName);
 
-            URL u = new URL(url);
             int length;
             byte[] bytes = new byte[1024];
-            inputStream = u.openStream(); // send request
+            // only validated http/https destinations (public addresses, redirects re-validated)
+            inputStream = HttpUtils.openValidatedStream(url); // send request
             outputStream = response.getOutputStream();
             while ((length = inputStream.read(bytes)) > 0) {
                 outputStream.write(bytes, 0, length);
@@ -156,7 +164,8 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             HttpUtils.imageIO(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            logger.error("request failed", e);
+            return "Request failed.";
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -172,7 +181,8 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.okhttp(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            logger.error("request failed", e);
+            return "Request failed.";
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -191,7 +201,8 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.httpClient(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            logger.error("request failed", e);
+            return "Request failed.";
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -211,7 +222,8 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.commonHttpClient(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            logger.error("request failed", e);
+            return "Request failed.";
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -230,7 +242,8 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.Jsoup(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            logger.error("request failed", e);
+            return "Request failed.";
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -249,7 +262,8 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             HttpUtils.IOUtils(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            logger.error("request failed", e);
+            return "Request failed.";
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -308,10 +322,13 @@ public class SSRF {
     @GetMapping("/dnsrebind/vuln")
     public String DnsRebind(String url) {
         java.security.Security.setProperty("networkaddress.cache.negative.ttl" , "0");
-        if (!SecurityUtil.checkSSRFWithoutRedirect(url)) {
+        // destination must be on the allowlisted domains and resolve only to public addresses
+        SafeUrl target = SSRFChecker.checkURLFckSSRF(url) ? SSRFChecker.validate(url) : null;
+        if (target == null) {
             return "Dangerous url";
         }
-        return HttpUtil.get(url);
+        // request the validated, rebuilt URL (no user info / fragment), not the raw string
+        return HttpUtil.get(target.toExternalForm());
     }
 
 

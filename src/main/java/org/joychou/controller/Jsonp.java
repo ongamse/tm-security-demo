@@ -21,6 +21,9 @@ import org.joychou.util.WebUtils;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.security.Principal;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 
 
 /**
@@ -35,6 +38,20 @@ public class Jsonp {
 
     private String callback = WebConfig.getBusinessCallback();
 
+    /**
+     * Closed set of JSONP callback names. The request only selects a key; the value that is
+     * written into the JavaScript response is always this map's own constant.
+     */
+    private static final Map<String, String> ALLOWED_CALLBACKS;
+
+    static {
+        Map<String, String> m = new HashMap<>();
+        for (String name : new String[]{"callback", "_callback", "jsonp", "cb", "test", "aa"}) {
+            m.put(name, name);
+        }
+        ALLOWED_CALLBACKS = Collections.unmodifiableMap(m);
+    }
+
     @Autowired
     CookieCsrfTokenRepository cookieCsrfTokenRepository;
     /**
@@ -43,9 +60,13 @@ public class Jsonp {
      * http://localhost:8080/jsonp/vuln/referer?callback_=test
      */
     @RequestMapping(value = "/vuln/referer", produces = "application/javascript")
-    public String referer(HttpServletRequest request) {
-        String callback = request.getParameter(this.callback);
-        return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
+    public String referer(HttpServletRequest request, HttpServletResponse response) {
+        WebUtils.setJavascriptHeaders(response);
+        String safeCallback = ALLOWED_CALLBACKS.get(request.getParameter(this.callback));
+        if (safeCallback == null) {
+            return "error";
+        }
+        return safeCallback + "(" + WebUtils.escapeJsonForScript(LoginUtils.getUserInfo2JsonStr(request)) + ")";
     }
 
     /**
@@ -55,14 +76,18 @@ public class Jsonp {
      * http://localhost:8080/jsonp/vuln/emptyReferer?callback_=test
      */
     @RequestMapping(value = "/vuln/emptyReferer", produces = "application/javascript")
-    public String emptyReferer(HttpServletRequest request) {
+    public String emptyReferer(HttpServletRequest request, HttpServletResponse response) {
+        WebUtils.setJavascriptHeaders(response);
         String referer = request.getHeader("referer");
 
         if (null != referer && SecurityUtil.checkURL(referer) == null) {
             return "error";
         }
-        String callback = request.getParameter(this.callback);
-        return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
+        String safeCallback = ALLOWED_CALLBACKS.get(request.getParameter(this.callback));
+        if (safeCallback == null) {
+            return "error";
+        }
+        return safeCallback + "(" + WebUtils.escapeJsonForScript(LoginUtils.getUserInfo2JsonStr(request)) + ")";
     }
 
     /**
@@ -100,14 +125,18 @@ public class Jsonp {
      * http://localhost:8080/jsonp/sec?callback_=test
      */
     @RequestMapping(value = "/sec/checkReferer", produces = "application/javascript")
-    public String safecode(HttpServletRequest request) {
+    public String safecode(HttpServletRequest request, HttpServletResponse response) {
+        WebUtils.setJavascriptHeaders(response);
         String referer = request.getHeader("referer");
 
         if (SecurityUtil.checkURL(referer) == null) {
             return "error";
         }
-        String callback = request.getParameter(this.callback);
-        return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
+        String safeCallback = ALLOWED_CALLBACKS.get(request.getParameter(this.callback));
+        if (safeCallback == null) {
+            return "error";
+        }
+        return safeCallback + "(" + WebUtils.escapeJsonForScript(LoginUtils.getUserInfo2JsonStr(request)) + ")";
     }
 
     /**
@@ -126,16 +155,22 @@ public class Jsonp {
      * fastjsonp to jsonp
      */
     @GetMapping(value = "/fastjsonp/getToken", produces = "application/javascript")
-    public String getCsrfToken2(HttpServletRequest request) {
+    public String getCsrfToken2(HttpServletRequest request, HttpServletResponse response) {
+        WebUtils.setJavascriptHeaders(response);
         CsrfToken csrfToken = cookieCsrfTokenRepository.loadToken(request); // get csrf token
 
-        String callback = request.getParameter("fastjsonpCallback");
-        if (StringUtils.isNotBlank(callback)) {
-            JSONPObject jsonpObj = new JSONPObject(callback);
+        String requested = request.getParameter("fastjsonpCallback");
+        if (StringUtils.isNotBlank(requested)) {
+            String safeCallback = ALLOWED_CALLBACKS.get(requested);
+            if (safeCallback == null) {
+                return "error";
+            }
+            JSONPObject jsonpObj = new JSONPObject(safeCallback);
             jsonpObj.addParameter(csrfToken);
-            return jsonpObj.toString();
+            return WebUtils.escapeJsonForScript(jsonpObj.toString());
         } else {
-            return csrfToken.toString();
+            // No callback: plain serialized JSON, escaped for embedding in script context.
+            return WebUtils.escapeJsonForScript(JSON.toJSONString(csrfToken));
         }
     }
 
