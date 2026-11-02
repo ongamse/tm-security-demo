@@ -6,6 +6,7 @@ import javax.servlet.annotation.WebFilter;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.util.regex.Matcher;
 import org.joychou.security.SecurityUtil;
 import org.joychou.util.WebUtils;
 import org.slf4j.Logger;
@@ -48,8 +49,11 @@ public class OriginFilter implements Filter {
         }
 
         response.addHeader("Vary", "Origin");
-        if (allowedOrigin != null) {
-            response.setHeader("Access-Control-Allow-Origin", WebUtils.sanitizeHeaderValue(allowedOrigin));
+        Matcher m = WebUtils.ORIGIN_PATTERN.matcher(allowedOrigin == null ? "" : allowedOrigin);
+        if (m.matches()) {
+            // rebuilt from strictly validated components (scheme/host/port); no CR/LF possible
+            String safeOrigin = m.group(1) + "://" + m.group(2) + (m.group(3) == null ? "" : ":" + m.group(3));
+            response.setHeader("Access-Control-Allow-Origin", safeOrigin);
             response.setHeader("Access-Control-Allow-Credentials", "true");
             response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTION");
         }

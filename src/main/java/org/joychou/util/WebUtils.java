@@ -73,6 +73,13 @@ public class WebUtils {
 
 
     /**
+     * Strict, anchored origin shape: scheme, host and optional port only (no CR/LF/control chars,
+     * no path/query/userinfo). Callers rebuild the header value from the captured groups.
+     */
+    public static final Pattern ORIGIN_PATTERN =
+            Pattern.compile("^(https?)://([A-Za-z0-9.-]{1,253})(?::([0-9]{1,5}))?$");
+
+    /**
      * Make an untrusted value safe to write into an HTTP response header (or Location).
      * Strips CR, LF and every other control / line-separator character so the value can
      * never terminate the header line (CRLF / response splitting). Returns null for null.

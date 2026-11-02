@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import java.util.regex.Matcher;
 
 /**
  * @author JoyChou (joychou@joychou.org) @2018.10.24
@@ -29,8 +30,11 @@ public class Cors {
         response.addHeader("Vary", "Origin");
         // only reflect origins that pass the allowlist; credentials only for those origins
         String allowedOrigin = SecurityUtil.checkCorsOrigin(origin);
-        if (allowedOrigin != null) {
-            response.setHeader("Access-Control-Allow-Origin", WebUtils.sanitizeHeaderValue(allowedOrigin));
+        Matcher m = WebUtils.ORIGIN_PATTERN.matcher(allowedOrigin == null ? "" : allowedOrigin);
+        if (m.matches()) {
+            // rebuilt from strictly validated components (scheme/host/port); no CR/LF possible
+            String safeOrigin = m.group(1) + "://" + m.group(2) + (m.group(3) == null ? "" : ":" + m.group(3));
+            response.setHeader("Access-Control-Allow-Origin", safeOrigin);
             response.setHeader("Access-Control-Allow-Credentials", "true");  // allow cookie
         }
         return info;
@@ -41,8 +45,11 @@ public class Cors {
         // 不再使用通配符*，仅对白名单内的origin返回Access-Control-Allow-Origin，且不允许携带cookie
         response.addHeader("Vary", "Origin");
         String allowedOrigin = SecurityUtil.checkCorsOrigin(request.getHeader("Origin"));
-        if (allowedOrigin != null) {
-            response.setHeader("Access-Control-Allow-Origin", WebUtils.sanitizeHeaderValue(allowedOrigin));
+        Matcher m = WebUtils.ORIGIN_PATTERN.matcher(allowedOrigin == null ? "" : allowedOrigin);
+        if (m.matches()) {
+            // rebuilt from strictly validated components (scheme/host/port); no CR/LF possible
+            String safeOrigin = m.group(1) + "://" + m.group(2) + (m.group(3) == null ? "" : ":" + m.group(3));
+            response.setHeader("Access-Control-Allow-Origin", safeOrigin);
         }
         return info;
     }
@@ -122,8 +129,11 @@ public class Cors {
             return "Origin is not safe.";
         }
         response.addHeader("Vary", "Origin");
-        if (allowedOrigin != null) {
-            response.setHeader("Access-Control-Allow-Origin", WebUtils.sanitizeHeaderValue(allowedOrigin));
+        Matcher m = WebUtils.ORIGIN_PATTERN.matcher(allowedOrigin == null ? "" : allowedOrigin);
+        if (m.matches()) {
+            // rebuilt from strictly validated components (scheme/host/port); no CR/LF possible
+            String safeOrigin = m.group(1) + "://" + m.group(2) + (m.group(3) == null ? "" : ":" + m.group(3));
+            response.setHeader("Access-Control-Allow-Origin", safeOrigin);
             response.setHeader("Access-Control-Allow-Credentials", "true");
         }
         return LoginUtils.getUserInfo2JsonStr(request);

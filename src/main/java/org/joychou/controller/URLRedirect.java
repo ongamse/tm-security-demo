@@ -10,9 +10,10 @@ import javax.servlet.RequestDispatcher;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
 
 import org.joychou.security.SecurityUtil;
-import org.joychou.util.WebUtils;
 
 /**
  * The vulnerability code and security code of Java url redirect.
@@ -51,8 +52,17 @@ public class URLRedirect {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             return;
         }
+        // java.net.URI rejects CR/LF/control characters at parse time; the header value is the
+        // parsed URI re-serialised in strict ASCII form (non-ASCII percent-encoded).
+        String location;
+        try {
+            location = new URI(safeUrl).toASCIIString();
+        } catch (URISyntaxException e) {
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            return;
+        }
         response.setStatus(HttpServletResponse.SC_MOVED_PERMANENTLY); // 301 redirect
-        response.setHeader("Location", WebUtils.sanitizeHeaderValue(safeUrl));
+        response.setHeader("Location", location);
     }
 
 
