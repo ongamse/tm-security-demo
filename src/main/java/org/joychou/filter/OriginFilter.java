@@ -6,9 +6,7 @@ import javax.servlet.annotation.WebFilter;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.util.regex.Matcher;
 import org.joychou.security.SecurityUtil;
-import org.joychou.util.WebUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,7 +37,7 @@ public class OriginFilter implements Filter {
         logger.info("[+] Origin: " + origin + "\tCurrent url:" + request.getRequestURL());
 
         // 以file协议访问html，origin为字符串的null，所以依然会走安全check逻辑
-        String allowedOrigin = SecurityUtil.checkCorsOrigin(origin);
+        String allowedOrigin = origin == null ? null : SecurityUtil.TRUSTED_CORS_ORIGINS.get(origin);
         if (origin != null && allowedOrigin == null) {
             logger.error("[-] Origin check error. " + "Origin: " + origin +
                     "\tCurrent url:" + request.getRequestURL());
@@ -49,11 +47,9 @@ public class OriginFilter implements Filter {
         }
 
         response.addHeader("Vary", "Origin");
-        Matcher m = WebUtils.ORIGIN_PATTERN.matcher(allowedOrigin == null ? "" : allowedOrigin);
-        if (m.matches()) {
-            // rebuilt from strictly validated components (scheme/host/port); no CR/LF possible
-            String safeOrigin = m.group(1) + "://" + m.group(2) + (m.group(3) == null ? "" : ":" + m.group(3));
-            response.setHeader("Access-Control-Allow-Origin", safeOrigin);
+        if (allowedOrigin != null) {
+            // the emitted value is the allowlist's own constant, never the request text
+            response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
             response.setHeader("Access-Control-Allow-Credentials", "true");
             response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTION");
         }

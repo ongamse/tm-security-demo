@@ -2,7 +2,6 @@ package org.joychou.controller;
 
 import org.joychou.security.SecurityUtil;
 import org.joychou.util.LoginUtils;
-import org.joychou.util.WebUtils;
 import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -11,7 +10,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
-import java.util.regex.Matcher;
 
 /**
  * @author JoyChou (joychou@joychou.org) @2018.10.24
@@ -29,12 +27,10 @@ public class Cors {
         String origin = request.getHeader("origin");
         response.addHeader("Vary", "Origin");
         // only reflect origins that pass the allowlist; credentials only for those origins
-        String allowedOrigin = SecurityUtil.checkCorsOrigin(origin);
-        Matcher m = WebUtils.ORIGIN_PATTERN.matcher(allowedOrigin == null ? "" : allowedOrigin);
-        if (m.matches()) {
-            // rebuilt from strictly validated components (scheme/host/port); no CR/LF possible
-            String safeOrigin = m.group(1) + "://" + m.group(2) + (m.group(3) == null ? "" : ":" + m.group(3));
-            response.setHeader("Access-Control-Allow-Origin", safeOrigin);
+        // the emitted value is the allowlist's own constant, never the request text
+        String allowedOrigin = origin == null ? null : SecurityUtil.TRUSTED_CORS_ORIGINS.get(origin);
+        if (allowedOrigin != null) {
+            response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
             response.setHeader("Access-Control-Allow-Credentials", "true");  // allow cookie
         }
         return info;
@@ -44,12 +40,11 @@ public class Cors {
     public String vuls2(HttpServletRequest request, HttpServletResponse response) {
         // 不再使用通配符*，仅对白名单内的origin返回Access-Control-Allow-Origin，且不允许携带cookie
         response.addHeader("Vary", "Origin");
-        String allowedOrigin = SecurityUtil.checkCorsOrigin(request.getHeader("Origin"));
-        Matcher m = WebUtils.ORIGIN_PATTERN.matcher(allowedOrigin == null ? "" : allowedOrigin);
-        if (m.matches()) {
-            // rebuilt from strictly validated components (scheme/host/port); no CR/LF possible
-            String safeOrigin = m.group(1) + "://" + m.group(2) + (m.group(3) == null ? "" : ":" + m.group(3));
-            response.setHeader("Access-Control-Allow-Origin", safeOrigin);
+        String origin = request.getHeader("Origin");
+        // the emitted value is the allowlist's own constant, never the request text
+        String allowedOrigin = origin == null ? null : SecurityUtil.TRUSTED_CORS_ORIGINS.get(origin);
+        if (allowedOrigin != null) {
+            response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
         }
         return info;
     }
@@ -124,16 +119,14 @@ public class Cors {
 
         // 如果origin不为空并且origin不在白名单内，认定为不安全。
         // 如果origin为空，表示是同域过来的请求或者浏览器直接发起的请求。
-        String allowedOrigin = SecurityUtil.checkCorsOrigin(origin);
+        String allowedOrigin = origin == null ? null : SecurityUtil.TRUSTED_CORS_ORIGINS.get(origin);
         if (origin != null && allowedOrigin == null) {
             return "Origin is not safe.";
         }
         response.addHeader("Vary", "Origin");
-        Matcher m = WebUtils.ORIGIN_PATTERN.matcher(allowedOrigin == null ? "" : allowedOrigin);
-        if (m.matches()) {
-            // rebuilt from strictly validated components (scheme/host/port); no CR/LF possible
-            String safeOrigin = m.group(1) + "://" + m.group(2) + (m.group(3) == null ? "" : ":" + m.group(3));
-            response.setHeader("Access-Control-Allow-Origin", safeOrigin);
+        if (allowedOrigin != null) {
+            // the emitted value is the allowlist's own constant, never the request text
+            response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
             response.setHeader("Access-Control-Allow-Credentials", "true");
         }
         return LoginUtils.getUserInfo2JsonStr(request);

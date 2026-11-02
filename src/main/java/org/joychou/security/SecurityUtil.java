@@ -11,6 +11,9 @@ import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.regex.Pattern;
 
 
@@ -101,28 +104,34 @@ public class SecurityUtil {
 
 
     /**
-     * Validate an untrusted CORS Origin header value. The origin must be a bare http/https origin
-     * (scheme://host[:port], no userinfo/path/query/fragment), must pass the block-list in
-     * {@link #checkURL(String)} and its host must equal a safe domain or be a sub-domain of it.
-     * The literal "null" origin and a missing origin are never allowed.
+     * Closed set of trusted CORS origins (hosts mirror url/url_safe_domain.xml). Key: the exact
+     * Origin request header value; value: the constant that may be emitted as
+     * Access-Control-Allow-Origin. The literal "null" origin and a missing origin are never trusted.
+     */
+    public static final Map<String, String> TRUSTED_CORS_ORIGINS;
+
+    static {
+        Map<String, String> m = new HashMap<>();
+        m.put("https://joychou.com", "https://joychou.com");
+        m.put("https://joychou.org", "https://joychou.org");
+        m.put("https://test.joychou.org", "https://test.joychou.org");
+        m.put("http://localhost", "http://localhost");
+        m.put("http://localhost:8080", "http://localhost:8080");
+        TRUSTED_CORS_ORIGINS = Collections.unmodifiableMap(m);
+    }
+
+    /**
+     * Look up an untrusted CORS Origin header value in {@link #TRUSTED_CORS_ORIGINS}.
      *
      * @param origin untrusted value of the Origin request header
-     * @return the original origin when trusted, otherwise null
+     * @return the trusted constant origin from the allowlist, otherwise null
      */
     public static String checkCorsOrigin(String origin) {
-        if (origin == null || origin.isEmpty() || checkURL(origin) == null
-                || checkRedirectURL(origin, WebConfig.getSafeDomains()) == null) {
+        if (origin == null) {
             return null;
         }
-        SafeUrl parsed = SafeUrl.parse(origin);
-        if (parsed == null) {
-            return null;
-        }
-        String path = parsed.getRawPath();
-        if ((path != null && !path.isEmpty()) || parsed.getRawQuery() != null || parsed.getRawFragment() != null) {
-            return null;
-        }
-        return origin;
+        // closed set: the returned value is the map's own constant, never the request text
+        return TRUSTED_CORS_ORIGINS.get(origin);
     }
 
 
