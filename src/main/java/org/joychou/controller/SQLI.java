@@ -6,11 +6,16 @@ import org.joychou.dao.User;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
+import javax.servlet.http.HttpServletRequest;
+import java.security.Principal;
 import java.sql.*;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
 
 
 /**
@@ -28,6 +33,8 @@ public class SQLI {
 
     // com.mysql.jdbc.Driver is deprecated. Change to com.mysql.cj.jdbc.Driver.
     private static final String driver = "com.mysql.cj.jdbc.Driver";
+
+    private static final Pattern USERNAME_PATTERN = Pattern.compile("^[A-Za-z0-9_.-]{1,64}$");
 
     @Value("${spring.datasource.url}")
     private String url;
@@ -92,7 +99,9 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/jdbc/sec?username=joychou">http://localhost:8080/sqli/jdbc/sec?username=joychou</a>
      */
     @RequestMapping("/jdbc/sec")
-    public String jdbc_sqli_sec(@RequestParam("username") String username) {
+    public String jdbc_sqli_sec(@RequestParam("username") String username, HttpServletRequest request) {
+
+        authorizeUserReference(request, username);
 
         StringBuilder result = new StringBuilder();
         try {
@@ -111,9 +120,9 @@ public class SQLI {
             ResultSet rs = st.executeQuery();
 
             while (rs.next()) {
+                // only return the fields needed; never expose the stored password
                 String res_name = rs.getString("username");
-                String res_pwd = rs.getString("password");
-                String info = String.format("%s: %s\n", res_name, res_pwd);
+                String info = String.format("%s\n", res_name);
                 result.append(info);
                 logger.info(info);
             }
@@ -180,8 +189,9 @@ public class SQLI {
      * <p>select * from users where username = 'joychou' or '1'='1' </p>
      */
     @GetMapping("/mybatis/vuln01")
-    public List<User> mybatisVuln01(@RequestParam("username") String username) {
-        return userMapper.findByUserNameVuln01(username);
+    public List<User> mybatisVuln01(@RequestParam("username") String username, HttpServletRequest request) {
+        authorizeUserReference(request, username);
+        return withoutPasswords(userMapper.findByUserNameVuln01(username));
     }
 
     /**
@@ -190,8 +200,17 @@ public class SQLI {
      * <p>select * from users where username like '%joychou' or '1'='1%' </p>
      */
     @GetMapping("/mybatis/vuln02")
-    public List<User> mybatisVuln02(@RequestParam("username") String username) {
-        return userMapper.findByUserNameVuln02(username);
+    public List<User> mybatisVuln02(@RequestParam("username") String username, HttpServletRequest request) {
+        validateUsernameFormat(username);
+        List<User> found = userMapper.findByUserNameVuln02(username);
+        // fuzzy search: only records the caller owns (or all, for admins) may be returned
+        List<User> visible = new ArrayList<>();
+        for (User u : found) {
+            if (isOwnerOrAdmin(request, u.getUsername())) {
+                visible.add(u);
+            }
+        }
+        return withoutPasswords(visible);
     }
 
     /**
@@ -210,8 +229,9 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/mybatis/sec01?username=joychou">http://localhost:8080/sqli/mybatis/sec01?username=joychou</a>
      */
     @GetMapping("/mybatis/sec01")
-    public User mybatisSec01(@RequestParam("username") String username) {
-        return userMapper.findByUserName(username);
+    public User mybatisSec01(@RequestParam("username") String username, HttpServletRequest request) {
+        authorizeUserReference(request, username);
+        return withoutPassword(userMapper.findByUserName(username));
     }
 
     /**
@@ -219,8 +239,14 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/mybatis/sec02?id=1">http://localhost:8080/sqli/mybatis/sec02?id=1</a>
      */
     @GetMapping("/mybatis/sec02")
-    public User mybatisSec02(@RequestParam("id") Integer id) {
-        return userMapper.findById(id);
+    public User mybatisSec02(@RequestParam("id") Integer id, HttpServletRequest request) {
+        User found = userMapper.findById(id);
+        if (found == null) {
+            return null;
+        }
+        // id is a direct object reference: caller must own the record (or be admin)
+        authorizeUserReference(request, found.getUsername());
+        return withoutPassword(found);
     }
 
 
@@ -255,6 +281,62 @@ public class SQLI {
             return "username";
         }
         return null;
+    }
+
+    /**
+     * Allowlist for a username reference (letters, digits, '_', '.', '-').
+     */
+    private static void validateUsernameFormat(String username) {
+        if (username == null || !USERNAME_PATTERN.matcher(username).matches()) {
+            throw new InvalidReferenceException();
+        }
+    }
+
+    /**
+     * True when the authenticated caller is the referenced user or has the ADMIN role.
+     */
+    private static boolean isOwnerOrAdmin(HttpServletRequest request, String referencedUsername) {
+        Principal principal = request.getUserPrincipal();
+        if (principal == null || referencedUsername == null) {
+            return false;
+        }
+        return referencedUsername.equals(principal.getName()) || request.isUserInRole("ADMIN");
+    }
+
+    /**
+     * Validate the reference format and enforce ownership; fail closed with 403.
+     */
+    private static void authorizeUserReference(HttpServletRequest request, String username) {
+        validateUsernameFormat(username);
+        if (!isOwnerOrAdmin(request, username)) {
+            throw new ReferenceAccessDeniedException();
+        }
+    }
+
+    @ResponseStatus(value = HttpStatus.BAD_REQUEST, reason = "invalid username")
+    private static class InvalidReferenceException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+    }
+
+    @ResponseStatus(value = HttpStatus.FORBIDDEN, reason = "access denied")
+    private static class ReferenceAccessDeniedException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+    }
+
+    private static User withoutPassword(User u) {
+        if (u != null) {
+            u.setPassword(null);
+        }
+        return u;
+    }
+
+    private static List<User> withoutPasswords(List<User> users) {
+        if (users != null) {
+            for (User u : users) {
+                withoutPassword(u);
+            }
+        }
+        return users;
     }
 
 }
