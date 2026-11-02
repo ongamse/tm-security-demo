@@ -52,8 +52,9 @@ public class OriginFilter implements Filter {
         if (allowedOrigin != null) {
             // the emitted value is the allowlist's own constant, never the request text
             response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
-            response.setHeader("Access-Control-Allow-Credentials", "true");
-            response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTION");
+            response.setHeader("Access-Control-Allow-Methods", SecurityUtil.CORS_ALLOW_METHODS);
+            response.setHeader("Access-Control-Allow-Headers", SecurityUtil.CORS_ALLOW_HEADERS);
+            response.setHeader("Access-Control-Max-Age", SecurityUtil.CORS_MAX_AGE);
         }
 
         filterChain.doFilter(req, res);

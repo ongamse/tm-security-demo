@@ -121,6 +121,11 @@ public class SecurityUtil {
         TRUSTED_CORS_ORIGINS = Collections.unmodifiableMap(m);
     }
 
+    /** Explicit CORS policy constants (no wildcards). */
+    public static final String CORS_ALLOW_METHODS = "GET, POST, OPTIONS";
+    public static final String CORS_ALLOW_HEADERS = "Content-Type, Authorization";
+    public static final String CORS_MAX_AGE = "3600";
+
     /**
      * Look up an untrusted CORS Origin header value in {@link #TRUSTED_CORS_ORIGINS}.
      *

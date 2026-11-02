@@ -26,12 +26,14 @@ public class Cors {
     public String vuls1(HttpServletRequest request, HttpServletResponse response) {
         String origin = request.getHeader("origin");
         response.addHeader("Vary", "Origin");
-        // only reflect origins that pass the allowlist; credentials only for those origins
+        // only allowlisted origins are allowed; this demo endpoint never allows credentials (cookies)
         // the emitted value is the allowlist's own constant, never the request text
         String allowedOrigin = origin == null ? null : SecurityUtil.TRUSTED_CORS_ORIGINS.get(origin);
         if (allowedOrigin != null) {
             response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
-            response.setHeader("Access-Control-Allow-Credentials", "true");  // allow cookie
+            response.setHeader("Access-Control-Allow-Methods", SecurityUtil.CORS_ALLOW_METHODS);
+            response.setHeader("Access-Control-Allow-Headers", SecurityUtil.CORS_ALLOW_HEADERS);
+            response.setHeader("Access-Control-Max-Age", SecurityUtil.CORS_MAX_AGE);
         }
         return info;
     }
@@ -128,6 +130,9 @@ public class Cors {
             // the emitted value is the allowlist's own constant, never the request text
             response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
             response.setHeader("Access-Control-Allow-Credentials", "true");
+            response.setHeader("Access-Control-Allow-Methods", SecurityUtil.CORS_ALLOW_METHODS);
+            response.setHeader("Access-Control-Allow-Headers", SecurityUtil.CORS_ALLOW_HEADERS);
+            response.setHeader("Access-Control-Max-Age", SecurityUtil.CORS_MAX_AGE);
         }
         return LoginUtils.getUserInfo2JsonStr(request);
     }
