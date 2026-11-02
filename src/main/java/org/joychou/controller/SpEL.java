@@ -9,6 +9,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.util.HtmlUtils;
 
+import java.util.regex.Pattern;
+
 
 /**
  * SpEL Injection
@@ -18,6 +20,8 @@ import org.springframework.web.util.HtmlUtils;
 @RestController
 public class SpEL {
 
+    private static final Pattern SAFE_EXPRESSION = Pattern.compile("^[0-9+\\-*/%().<>=!\\s]{1,128}$");
+
     /**
      * SpEL to RCE
      * http://localhost:8080/spel/vul/?expression=xxx.
@@ -26,6 +30,11 @@ public class SpEL {
      */
     @GetMapping("/spel/vuln")
     public String rce(String expression) {
+        // Only literals/arithmetic/comparison text is accepted: no identifiers, so no type, bean,
+        // method or property access is possible from request data.
+        if (expression == null || !SAFE_EXPRESSION.matcher(expression).matches()) {
+            return "Bad boy. I got u.";
+        }
         ExpressionParser parser = new SpelExpressionParser();
         // SimpleEvaluationContext: no type references (T(...)), constructors or bean references.
         EvaluationContext context = SimpleEvaluationContext.forReadOnlyDataBinding().build();

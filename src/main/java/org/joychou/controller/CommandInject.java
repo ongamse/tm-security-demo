@@ -1,8 +1,6 @@
 package org.joychou.controller;
 
 import org.joychou.security.SafeCommand;
-import org.joychou.security.SecurityUtil;
-import org.joychou.util.WebUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -25,17 +23,12 @@ public class CommandInject {
      */
     @GetMapping("/codeinject")
     public String codeInject(String filepath) throws IOException {
-
-        String checkedPath = SecurityUtil.cmdFilter(filepath);
-        if (null == checkedPath) {
+        // Fixed "ls -la --" argv; the strictly validated path is the only variable element.
+        String output = SafeCommand.listDirectory(filepath);
+        if (null == output) {
             return "Bad boy. I got u.";
         }
-        // No shell: the path is a single argv element.
-        String[] cmdList = new String[]{"ls", "-la", "--", checkedPath};
-        ProcessBuilder builder = new ProcessBuilder(cmdList);
-        builder.redirectErrorStream(true);
-        Process process = builder.start();
-        return HtmlUtils.htmlEscape(WebUtils.convertStreamToString(process.getInputStream()));
+        return HtmlUtils.htmlEscape(output);
     }
 
     /**
@@ -47,29 +40,19 @@ public class CommandInject {
     public String codeInjectHost(HttpServletRequest request) throws IOException {
 
         String host = request.getHeader("host");
-        logger.info(host);
-        String checkedHost = SafeCommand.checkHost(host);
-        if (null == checkedHost) {
+        String output = SafeCommand.curlHost(host);
+        if (null == output) {
             return "Bad boy. I got u.";
         }
-        // No shell: the validated host is a single argv element.
-        String[] cmdList = new String[]{"curl", checkedHost};
-        ProcessBuilder builder = new ProcessBuilder(cmdList);
-        builder.redirectErrorStream(true);
-        Process process = builder.start();
-        return HtmlUtils.htmlEscape(WebUtils.convertStreamToString(process.getInputStream()));
+        return HtmlUtils.htmlEscape(output);
     }
 
     @GetMapping("/codeinject/sec")
     public String codeInjectSec(String filepath) throws IOException {
-        String filterFilePath = SecurityUtil.cmdFilter(filepath);
-        if (null == filterFilePath) {
+        String output = SafeCommand.listDirectory(filepath);
+        if (null == output) {
             return "Bad boy. I got u.";
         }
-        String[] cmdList = new String[]{"ls", "-la", "--", filterFilePath};
-        ProcessBuilder builder = new ProcessBuilder(cmdList);
-        builder.redirectErrorStream(true);
-        Process process = builder.start();
-        return HtmlUtils.htmlEscape(WebUtils.convertStreamToString(process.getInputStream()));
+        return HtmlUtils.htmlEscape(output);
     }
 }

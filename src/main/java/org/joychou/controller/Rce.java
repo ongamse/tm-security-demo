@@ -1,17 +1,6 @@
 package org.joychou.controller;
 
-import groovy.lang.GroovyShell;
 import lombok.extern.slf4j.Slf4j;
-import org.codehaus.groovy.ast.expr.BinaryExpression;
-import org.codehaus.groovy.ast.expr.ConstantExpression;
-import org.codehaus.groovy.ast.expr.Expression;
-import org.codehaus.groovy.ast.stmt.BlockStatement;
-import org.codehaus.groovy.ast.stmt.ExpressionStatement;
-import org.codehaus.groovy.ast.stmt.ReturnStatement;
-import org.codehaus.groovy.ast.stmt.Statement;
-import org.codehaus.groovy.control.CompilerConfiguration;
-import org.codehaus.groovy.control.customizers.SecureASTCustomizer;
-import org.codehaus.groovy.syntax.Types;
 import org.joychou.security.SafeCommand;
 import org.joychou.security.SecurityUtil;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -25,13 +14,9 @@ import javax.script.Bindings;
 import javax.script.ScriptContext;
 import javax.script.ScriptEngine;
 import javax.script.ScriptEngineManager;
-import java.io.BufferedInputStream;
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.sql.DriverManager;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.regex.Pattern;
 
 
 /**
@@ -46,36 +31,16 @@ public class Rce {
 
     @GetMapping("/runtime/exec")
     public String CommandExec(String cmd) {
-        Runtime run = Runtime.getRuntime();
-        StringBuilder sb = new StringBuilder();
-
-        // Allowlisted command + validated args, executed as argv (no shell, no string tokenizing of raw input).
-        List<String> argv = SafeCommand.toArgv(cmd);
-        if (argv == null) {
-            return "Bad boy. I got u.";
-        }
-
+        // Allowlisted executable + allowlisted options + validated path; argv only, no shell.
         try {
-            Process p = run.exec(argv.toArray(new String[0]));
-            BufferedInputStream in = new BufferedInputStream(p.getInputStream());
-            BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
-            String tmpStr;
-
-            while ((tmpStr = inBr.readLine()) != null) {
-                sb.append(tmpStr);
+            String output = SafeCommand.runCommand(cmd, false);
+            if (output == null) {
+                return "Bad boy. I got u.";
             }
-
-            if (p.waitFor() != 0) {
-                if (p.exitValue() == 1)
-                    return "Command exec failed!!";
-            }
-
-            inBr.close();
-            in.close();
+            return HtmlUtils.htmlEscape(output);
         } catch (Exception e) {
             return HtmlUtils.htmlEscape(e.toString());
         }
-        return HtmlUtils.htmlEscape(sb.toString());
     }
 
 
@@ -85,29 +50,16 @@ public class Rce {
     @GetMapping("/ProcessBuilder")
     public String processBuilder(String cmd) {
 
-        StringBuilder sb = new StringBuilder();
-
-        // Allowlisted command + validated args; no "/bin/sh -c" so shell metacharacters are inert.
-        List<String> argv = SafeCommand.toArgv(cmd);
-        if (argv == null) {
-            return "Bad boy. I got u.";
-        }
-
+        // Allowlisted executable + allowlisted options + validated path; no "/bin/sh -c".
         try {
-            ProcessBuilder processBuilder = new ProcessBuilder(argv);
-            Process p = processBuilder.start();
-            BufferedInputStream in = new BufferedInputStream(p.getInputStream());
-            BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
-            String tmpStr;
-
-            while ((tmpStr = inBr.readLine()) != null) {
-                sb.append(tmpStr);
+            String output = SafeCommand.runCommand(cmd, false);
+            if (output == null) {
+                return "Bad boy. I got u.";
             }
+            return HtmlUtils.htmlEscape(output);
         } catch (Exception e) {
-            return e.toString();
+            return HtmlUtils.htmlEscape(e.toString());
         }
-
-        return sb.toString();
     }
 
 
@@ -154,32 +106,91 @@ public class Rce {
     }
 
     /**
-     * http://localhost:8080/rce/groovy?content="open -a Calculator".execute()
-     * @param content groovy shell
+     * http://localhost:8080/rce/groovy?content=1%2B2*3
+     *
+     * Request data is never compiled or evaluated as Groovy source. Only plain arithmetic
+     * (numbers, + - * / and parentheses) is accepted and evaluated by a small parser.
+     *
+     * @param content arithmetic expression
      */
     @GetMapping("groovy")
-    public void groovyshell(String content) {
-        // Restrict the script to plain constant/arithmetic expressions: no method calls, property
-        // access, imports, closures or class definitions, so user input cannot reach the JVM/OS.
-        SecureASTCustomizer secure = new SecureASTCustomizer();
-        secure.setMethodDefinitionAllowed(false);
-        secure.setClosuresAllowed(false);
-        secure.setPackageAllowed(false);
-        secure.setImportsWhitelist(Collections.<String>emptyList());
-        secure.setStaticImportsWhitelist(Collections.<String>emptyList());
-        secure.setStarImportsWhitelist(Collections.<String>emptyList());
-        secure.setStaticStarImportsWhitelist(Collections.<String>emptyList());
-        secure.setIndirectImportCheckEnabled(true);
-        secure.setTokensWhitelist(Arrays.asList(Types.PLUS, Types.MINUS, Types.MULTIPLY, Types.DIVIDE));
-        secure.setExpressionsWhitelist(Arrays.<Class<? extends Expression>>asList(
-                ConstantExpression.class, BinaryExpression.class));
-        secure.setStatementsWhitelist(Arrays.<Class<? extends Statement>>asList(
-                BlockStatement.class, ExpressionStatement.class, ReturnStatement.class));
+    public String groovyshell(String content) {
+        if (content == null || !ARITHMETIC.matcher(content).matches()) {
+            return "Bad boy. I got u.";
+        }
+        try {
+            return new ArithmeticParser(content.replaceAll("\\s+", "")).parse().toPlainString();
+        } catch (RuntimeException e) {
+            return "Bad expression";
+        }
+    }
 
-        CompilerConfiguration config = new CompilerConfiguration();
-        config.addCompilationCustomizers(secure);
-        GroovyShell groovyShell = new GroovyShell(config);
-        groovyShell.evaluate(content);
+    private static final Pattern ARITHMETIC = Pattern.compile("^[0-9+\\-*/().\\s]{1,128}$");
+
+    /** Minimal recursive-descent evaluator: expr = term {(+|-) term}; term = factor {(*|/) factor}. */
+    private static final class ArithmeticParser {
+        private final String src;
+        private int pos;
+
+        ArithmeticParser(String src) {
+            this.src = src;
+        }
+
+        BigDecimal parse() {
+            BigDecimal v = expr();
+            if (pos != src.length()) {
+                throw new IllegalArgumentException("unexpected input");
+            }
+            return v;
+        }
+
+        private BigDecimal expr() {
+            BigDecimal v = term();
+            while (pos < src.length() && (src.charAt(pos) == '+' || src.charAt(pos) == '-')) {
+                char op = src.charAt(pos++);
+                BigDecimal r = term();
+                v = op == '+' ? v.add(r) : v.subtract(r);
+            }
+            return v;
+        }
+
+        private BigDecimal term() {
+            BigDecimal v = factor();
+            while (pos < src.length() && (src.charAt(pos) == '*' || src.charAt(pos) == '/')) {
+                char op = src.charAt(pos++);
+                BigDecimal r = factor();
+                v = op == '*' ? v.multiply(r) : v.divide(r, 10, RoundingMode.HALF_UP);
+            }
+            return v;
+        }
+
+        private BigDecimal factor() {
+            if (pos >= src.length()) {
+                throw new IllegalArgumentException("unexpected end");
+            }
+            char c = src.charAt(pos);
+            if (c == '-') {
+                pos++;
+                return factor().negate();
+            }
+            if (c == '(') {
+                pos++;
+                BigDecimal v = expr();
+                if (pos >= src.length() || src.charAt(pos) != ')') {
+                    throw new IllegalArgumentException("missing )");
+                }
+                pos++;
+                return v;
+            }
+            int start = pos;
+            while (pos < src.length() && (Character.isDigit(src.charAt(pos)) || src.charAt(pos) == '.')) {
+                pos++;
+            }
+            if (start == pos) {
+                throw new IllegalArgumentException("number expected");
+            }
+            return new BigDecimal(src.substring(start, pos));
+        }
     }
 
 
