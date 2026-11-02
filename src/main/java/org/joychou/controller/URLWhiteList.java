@@ -1,6 +1,7 @@
 package org.joychou.controller;
 
 
+import org.joychou.security.SafeUrl;
 import org.joychou.security.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -11,6 +12,9 @@ import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -28,6 +32,16 @@ public class URLWhiteList {
 
 
     private String domainwhitelist[] = {"joychou.org", "joychou.com"};
+
+    /** Closed set of redirect origins for url_bypass: constant origin per exact allowed host. */
+    private static final Map<String, String> TRUSTED_ORIGINS;
+
+    static {
+        Map<String, String> m = new HashMap<>();
+        m.put("joychou.org", "https://joychou.org");
+        m.put("joychou.com", "https://joychou.com");
+        TRUSTED_ORIGINS = Collections.unmodifiableMap(m);
+    }
     private static final Logger logger = LoggerFactory.getLogger(URLWhiteList.class);
 
     /**
@@ -107,7 +121,15 @@ public class URLWhiteList {
 
         // Strict host check: java.net.URI host, exact or ".domain" suffix match,
         // no backslash / userinfo / whitespace tricks.
-        String safeUrl = SecurityUtil.checkRedirectURL(url, Arrays.asList(domainwhitelist));
+        String validated = SecurityUtil.checkRedirectURL(url, Arrays.asList(domainwhitelist));
+        String safeUrl = null;
+        if (validated != null) {
+            // closed set: the host is looked up in the constant allowlist, the origin comes from the map
+            SafeUrl parsed = SafeUrl.parse(validated);
+            String origin = parsed == null ? null : TRUSTED_ORIGINS.get(parsed.getHost());
+            String path = parsed == null ? null : SecurityUtil.safeRelativePath(parsed.getFile());
+            safeUrl = (origin == null || path == null) ? null : origin + path;
+        }
         if (safeUrl == null) {
             res.setStatus(HttpServletResponse.SC_FORBIDDEN);
             return;

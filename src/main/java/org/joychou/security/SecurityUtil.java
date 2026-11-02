@@ -190,6 +190,52 @@ public class SecurityUtil {
 
 
     /**
+     * Validate and URI-encode a same-site relative path (optionally with query) for use in a redirect target.
+     * The path must start with a single '/', must not start with "//" or "/\", and must not contain
+     * backslashes or control characters (CR/LF included). Existing valid percent-escapes are kept; every
+     * other character outside the RFC 3986 path/query set is percent-encoded as UTF-8.
+     *
+     * @param path untrusted relative path
+     * @return the encoded path, or null when the path is not an acceptable same-site path
+     */
+    public static String safeRelativePath(String path) {
+        if (path == null || path.isEmpty() || path.length() > 2048 || path.charAt(0) != '/') {
+            return null;
+        }
+        if (path.length() > 1 && (path.charAt(1) == '/' || path.charAt(1) == '\\')) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder(path.length() + 16);
+        for (int i = 0; i < path.length(); i++) {
+            char c = path.charAt(i);
+            if (c == '\\' || c <= 0x1f || c == 0x7f || Character.isISOControl(c)) {
+                return null;
+            }
+            boolean plain = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+                    || "-._~/!$&'()*+,;=:@?".indexOf(c) >= 0;
+            if (plain) {
+                sb.append(c);
+            } else if (c == '%' && i + 2 < path.length() &&isHexDigit(path.charAt(i + 1))
+                    && isHexDigit(path.charAt(i + 2))) {
+                sb.append(c);
+            } else {
+                int cp = path.codePointAt(i);
+                byte[] bytes = new String(Character.toChars(cp)).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                for (byte b : bytes) {
+                    sb.append('%').append(String.format("%02X", b & 0xff));
+                }
+                i += Character.charCount(cp) - 1;
+            }
+        }
+        return sb.toString();
+    }
+
+    private static boolean isHexDigit(char c) {
+        return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+    }
+
+
+    /**
      * 通过自定义白名单域名处理SSRF漏洞。如果URL范围收敛，强烈建议使用该方案。
      * 这是最简单也最有效的修复方式。因为SSRF都是发起URL请求时造成，大多数场景是图片场景，一般图片的域名都是CDN或者OSS等，所以限定域名白名单即可完成SSRF漏洞修复。
      *
