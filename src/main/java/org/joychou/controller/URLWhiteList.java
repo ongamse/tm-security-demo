@@ -34,14 +34,17 @@ public class URLWhiteList {
 
     private String domainwhitelist[] = {"joychou.org", "joychou.com"};
 
-    /** Closed set of redirect origins for url_bypass: constant origin per exact allowed host. */
-    private static final Map<String, String> TRUSTED_ORIGINS;
+    /** Constant fallback redirect target (site root). */
+    private static final String DEFAULT_TARGET = "/";
+
+    /** Closed set for url_bypass: exact allowed host -> complete constant redirect URL. */
+    private static final Map<String, String> TRUSTED_TARGETS;
 
     static {
         Map<String, String> m = new HashMap<>();
-        m.put("joychou.org", "https://joychou.org");
-        m.put("joychou.com", "https://joychou.com");
-        TRUSTED_ORIGINS = Collections.unmodifiableMap(m);
+        m.put("joychou.org", "https://joychou.org/");
+        m.put("joychou.com", "https://joychou.com/");
+        TRUSTED_TARGETS = Collections.unmodifiableMap(m);
     }
     private static final Logger logger = LoggerFactory.getLogger(URLWhiteList.class);
 
@@ -123,19 +126,18 @@ public class URLWhiteList {
         // Strict host check: java.net.URI host, exact or ".domain" suffix match,
         // no backslash / userinfo / whitespace tricks.
         String validated = SecurityUtil.checkRedirectURL(url, Arrays.asList(domainwhitelist));
-        String safeUrl = null;
-        if (validated != null) {
-            // closed set: the host is looked up in the constant allowlist, the origin comes from the map
-            SafeUrl parsed = SafeUrl.parse(validated);
-            String origin = parsed == null ? null : TRUSTED_ORIGINS.get(parsed.getHost());
-            String path = parsed == null ? null : SecurityUtil.safeRelativePath(parsed.getFile());
-            safeUrl = (origin == null || path == null) ? null : origin + path;
+        String target = DEFAULT_TARGET;
+        SafeUrl parsed = validated == null ? null : SafeUrl.parse(validated);
+        if (parsed != null) {
+            // the value redirected to is the map's own constant; the request only selects the entry
+            for (Map.Entry<String, String> e : TRUSTED_TARGETS.entrySet()) {
+                if (e.getKey().equals(parsed.getHost())) {
+                    target = e.getValue();
+                    break;
+                }
+            }
         }
-        if (safeUrl == null) {
-            res.setStatus(HttpServletResponse.SC_FORBIDDEN);
-            return;
-        }
-        res.sendRedirect(safeUrl);
+        res.sendRedirect(target);
     }
 
 

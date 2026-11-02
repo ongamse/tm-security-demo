@@ -11,7 +11,7 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.Collections;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 import org.joychou.security.SafeUrl;
@@ -29,19 +29,46 @@ import org.joychou.security.SecurityUtil;
 @RequestMapping("/urlRedirect")
 public class URLRedirect {
 
+    /** Constant fallback redirect target (site root) for anything outside the closed set. */
+    private static final String DEFAULT_TARGET = "/";
+
     /**
-     * Closed set of trusted redirect hosts (mirrors url/url_safe_domain.xml). Redirect targets are built
-     * from these constant origins plus a validated, encoded relative path - never from request text.
+     * Closed set of trusted redirect targets (hosts mirror url/url_safe_domain.xml). Key: the exact
+     * normalised host of an allowed target. Value: the complete constant redirect URL. Nothing from the
+     * request is ever appended to the value.
      */
-    private static final Map<String, String> TRUSTED_ORIGINS;
+    private static final Map<String, String> TRUSTED_TARGETS;
 
     static {
-        Map<String, String> m = new HashMap<>();
-        m.put("joychou.com", "https://joychou.com");
-        m.put("joychou.org", "https://joychou.org");
-        m.put("test.joychou.org", "https://test.joychou.org");
-        m.put("localhost", "http://localhost");
-        TRUSTED_ORIGINS = Collections.unmodifiableMap(m);
+        Map<String, String> m = new LinkedHashMap<>();
+        m.put("joychou.com", "https://joychou.com/");
+        m.put("joychou.org", "https://joychou.org/");
+        m.put("test.joychou.org", "https://test.joychou.org/");
+        m.put("localhost", "http://localhost/");
+        TRUSTED_TARGETS = Collections.unmodifiableMap(m);
+    }
+
+    /**
+     * Resolve a request-supplied url to a constant redirect target. The request value is only used to
+     * select an entry of the closed set; the returned string is always one of the map's own constants
+     * (or {@link #DEFAULT_TARGET}).
+     */
+    private static String resolveTarget(String url) {
+        String validated = SecurityUtil.checkRedirectURL(url);
+        if (validated == null || validated.startsWith("/")) {
+            return DEFAULT_TARGET; // disallowed or same-site path: fixed site root
+        }
+        SafeUrl parsed = SafeUrl.parse(validated);
+        if (parsed == null) {
+            return DEFAULT_TARGET;
+        }
+        String host = parsed.getHost();
+        for (Map.Entry<String, String> e : TRUSTED_TARGETS.entrySet()) {
+            if (e.getKey().equals(host)) {
+                return e.getValue();
+            }
+        }
+        return DEFAULT_TARGET;
     }
 
     /**
@@ -49,21 +76,7 @@ public class URLRedirect {
      */
     @GetMapping("/redirect")
     public String redirect(@RequestParam("url") String url) {
-        String validated = SecurityUtil.checkRedirectURL(url);
-        String target = null;
-        if (validated != null && validated.startsWith("/")) {
-            target = SecurityUtil.safeRelativePath(validated); // same-site path only
-        } else if (validated != null) {
-            // closed set: the host is looked up in the constant allowlist, the origin comes from the map
-            SafeUrl parsed = SafeUrl.parse(validated);
-            String origin = parsed == null ? null : TRUSTED_ORIGINS.get(parsed.getHost());
-            String path = parsed == null ? null : SecurityUtil.safeRelativePath(parsed.getFile());
-            target = (origin == null || path == null) ? null : origin + path;
-        }
-        if (target == null) {
-            return "redirect:/"; // fixed safe location for disallowed targets
-        }
-        return "redirect:" + target;
+        return "redirect:" + resolveTarget(url);
     }
 
 
@@ -74,25 +87,9 @@ public class URLRedirect {
     @ResponseBody
     public static void setHeader(HttpServletRequest request, HttpServletResponse response) {
         String url = request.getParameter("url");
-        String validated = SecurityUtil.checkRedirectURL(url);
-        String safeUrl = null;
-        if (validated != null && validated.startsWith("/")) {
-            safeUrl = SecurityUtil.safeRelativePath(validated); // same-site path only
-        } else if (validated != null) {
-            // closed set: the host is looked up in the constant allowlist, the origin comes from the map
-            SafeUrl parsed = SafeUrl.parse(validated);
-            String origin = parsed == null ? null : TRUSTED_ORIGINS.get(parsed.getHost());
-            String path = parsed == null ? null : SecurityUtil.safeRelativePath(parsed.getFile());
-            safeUrl = (origin == null || path == null) ? null : origin + path;
-        }
-        if (safeUrl == null) {
-            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-            return;
-        }
-        // safeUrl is the constant allowlist origin plus a path that SecurityUtil.safeRelativePath has
-        // validated (no CR/LF/control characters) and percent-encoded (ASCII only).
+        // the Location value is one of the closed set's constants, never request text
         response.setStatus(HttpServletResponse.SC_MOVED_PERMANENTLY); // 301 redirect
-        response.setHeader("Location", safeUrl);
+        response.setHeader("Location", resolveTarget(url));
     }
 
 
@@ -103,22 +100,7 @@ public class URLRedirect {
     @ResponseBody
     public static void sendRedirect(HttpServletRequest request, HttpServletResponse response) throws IOException {
         String url = request.getParameter("url");
-        String validated = SecurityUtil.checkRedirectURL(url);
-        String safeUrl = null;
-        if (validated != null && validated.startsWith("/")) {
-            safeUrl = SecurityUtil.safeRelativePath(validated); // same-site path only
-        } else if (validated != null) {
-            // closed set: the host is looked up in the constant allowlist, the origin comes from the map
-            SafeUrl parsed = SafeUrl.parse(validated);
-            String origin = parsed == null ? null : TRUSTED_ORIGINS.get(parsed.getHost());
-            String path = parsed == null ? null : SecurityUtil.safeRelativePath(parsed.getFile());
-            safeUrl = (origin == null || path == null) ? null : origin + path;
-        }
-        if (safeUrl == null) {
-            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-            return;
-        }
-        response.sendRedirect(safeUrl); // 302 redirect
+        response.sendRedirect(resolveTarget(url)); // 302 redirect
     }
 
 
@@ -148,22 +130,6 @@ public class URLRedirect {
     public void sendRedirect_seccode(HttpServletRequest request, HttpServletResponse response)
             throws IOException {
         String url = request.getParameter("url");
-        String validated = SecurityUtil.checkRedirectURL(url);
-        String safeUrl = null;
-        if (validated != null && validated.startsWith("/")) {
-            safeUrl = SecurityUtil.safeRelativePath(validated); // same-site path only
-        } else if (validated != null) {
-            // closed set: the host is looked up in the constant allowlist, the origin comes from the map
-            SafeUrl parsed = SafeUrl.parse(validated);
-            String origin = parsed == null ? null : TRUSTED_ORIGINS.get(parsed.getHost());
-            String path = parsed == null ? null : SecurityUtil.safeRelativePath(parsed.getFile());
-            safeUrl = (origin == null || path == null) ? null : origin + path;
-        }
-        if (safeUrl == null) {
-            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-            response.getWriter().write("url forbidden");
-            return;
-        }
-        response.sendRedirect(safeUrl);
+        response.sendRedirect(resolveTarget(url));
     }
 }
