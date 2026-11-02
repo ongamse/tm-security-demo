@@ -1,62 +1,53 @@
 package org.joychou.security;
 
+import org.joychou.util.HttpUtils;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.InetAddress;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.DirectoryStream;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.TimeUnit;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
- * Runs a small allowlist of read-only commands on behalf of untrusted text.
+ * Supports a small set of read-only "commands" on behalf of untrusted text.
  *
- * <p>No shell is ever involved. The executable and every option are taken from constant
- * allowlist tables (the untrusted text is only used as a lookup key, never copied into argv).
- * The only free-form argv elements are a path or a host that match a strict regex, cannot start
- * with '-', and cannot contain '..'; they are always placed after a fixed '--' terminator where
- * the tool supports it.
+ * <p>No child process is ever started. The command name from the request only selects a fixed
+ * branch; it is never passed on. Every result is produced by Java APIs: directory listings use
+ * java.nio.file on a path confined to an allowed base directory, "curl" uses the SSRF-validated
+ * HTTP client, and the fixed informational commands read JVM / OS properties.
  */
 public final class SafeCommand {
 
-    private static final long TIMEOUT_SECONDS = 10L;
     private static final int MAX_CMD_LENGTH = 256;
     private static final int MAX_OUTPUT_CHARS = 1 << 20;
+    private static final int MAX_ENTRIES = 1000;
 
-    /** Allowed command name -> constant executable name. */
-    private static final Map<String, String> EXECUTABLES;
-
-    /** Allowed ls option -> constant option. */
-    private static final Map<String, String> LS_OPTIONS;
+    private static final Set<String> LS_OPTIONS;
 
     static {
-        Map<String, String> exe = new HashMap<>();
-        exe.put("whoami", "whoami");
-        exe.put("id", "id");
-        exe.put("pwd", "pwd");
-        exe.put("date", "date");
-        exe.put("hostname", "hostname");
-        exe.put("uname", "uname");
-        exe.put("ls", "ls");
-        EXECUTABLES = Collections.unmodifiableMap(exe);
-
-        Map<String, String> ls = new HashMap<>();
-        ls.put("-l", "-l");
-        ls.put("-a", "-a");
-        ls.put("-la", "-la");
-        ls.put("-al", "-al");
-        ls.put("-lh", "-lh");
-        ls.put("-1", "-1");
-        LS_OPTIONS = Collections.unmodifiableMap(ls);
+        Set<String> ls = new HashSet<>();
+        ls.add("-l");
+        ls.add("-a");
+        ls.add("-la");
+        ls.add("-al");
+        ls.add("-lh");
+        ls.add("-1");
+        LS_OPTIONS = Collections.unmodifiableSet(ls);
     }
-
-    private static final String LS = "ls";
-    private static final String CURL = "curl";
-    private static final String END_OF_OPTIONS = "--";
 
     private static final Pattern PATH_PATTERN = Pattern.compile("^[A-Za-z0-9_/][A-Za-z0-9_/.-]{0,254}$");
     private static final Pattern HOST_PATTERN = Pattern.compile("^[A-Za-z0-9][A-Za-z0-9.-]{0,252}(:[0-9]{1,5})?$");
@@ -65,7 +56,7 @@ public final class SafeCommand {
     }
 
     /**
-     * Validate a filesystem path used as a single argv element.
+     * Validate a filesystem path text.
      *
      * @return the path when valid, otherwise null
      */
@@ -77,7 +68,7 @@ public final class SafeCommand {
     }
 
     /**
-     * Validate a host[:port] value (e.g. the Host header) for use as a single argv element.
+     * Validate a host[:port] value (e.g. the Host header).
      *
      * @return the host when valid, otherwise null
      */
@@ -89,52 +80,75 @@ public final class SafeCommand {
     }
 
     /**
-     * Run an allowlisted command given as text (e.g. "ls -la /tmp").
+     * Handle an allowlisted command given as text (e.g. "ls -la /tmp").
      *
      * @param cmd         untrusted command text
-     * @param mergeStderr whether stderr is merged into the returned output
-     * @return process output, or null when the command or any argument is not allowed
+     * @param mergeStderr kept for API compatibility; there is no process and hence no stderr
+     * @return the output, or null when the command or any argument is not allowed
      */
     public static String runCommand(String cmd, boolean mergeStderr) throws IOException {
         if (cmd == null || cmd.length() > MAX_CMD_LENGTH || cmd.trim().isEmpty()) {
             return null;
         }
         String[] parts = cmd.trim().split("\\s+");
-        String exe = EXECUTABLES.get(parts[0]);
-        if (exe == null) {
+        String name = parts[0];
+        if ("ls".equals(name)) {
+            return runLs(parts);
+        }
+        if (parts.length > 1) {
             return null;
         }
-        List<String> argv = new ArrayList<>();
-        argv.add(exe);
-        if (LS.equals(exe)) {
-            int i = 1;
-            while (i < parts.length && parts[i].startsWith("-")) {
-                String opt = LS_OPTIONS.get(parts[i]);
-                if (opt == null) {
-                    return null;
-                }
-                argv.add(opt);
-                i++;
-            }
-            if (i < parts.length) {
-                if (i != parts.length - 1) {
-                    return null;
-                }
-                String path = checkPath(parts[i]);
-                if (path == null) {
-                    return null;
-                }
-                argv.add(END_OF_OPTIONS);
-                argv.add(path);
-            }
-        } else if (parts.length > 1) {
-            return null;
+        // The request text only selects a branch; the returned values come from Java APIs.
+        switch (name) {
+            case "whoami":
+                return System.getProperty("user.name") + "\n";
+            case "id":
+                return "user=" + System.getProperty("user.name") + "\n";
+            case "pwd":
+                return Paths.get("").toAbsolutePath().toString() + "\n";
+            case "date":
+                return Instant.now().toString() + "\n";
+            case "hostname":
+                return InetAddress.getLocalHost().getHostName() + "\n";
+            case "uname":
+                return System.getProperty("os.name") + "\n";
+            default:
+                return null;
         }
-        return execute(argv, mergeStderr);
+    }
+
+    private static String runLs(String[] parts) throws IOException {
+        boolean longFormat = false;
+        boolean showHidden = false;
+        int i = 1;
+        while (i < parts.length && parts[i].startsWith("-")) {
+            String opt = parts[i];
+            if (!LS_OPTIONS.contains(opt)) {
+                return null;
+            }
+            if (opt.indexOf('l') >= 0) {
+                longFormat = true;
+            }
+            if (opt.indexOf('a') >= 0) {
+                showHidden = true;
+            }
+            i++;
+        }
+        String path = ".";
+        if (i < parts.length) {
+            if (i != parts.length - 1) {
+                return null;
+            }
+            path = checkPath(parts[i]);
+            if (path == null) {
+                return null;
+            }
+        }
+        return list(path, longFormat, showHidden);
     }
 
     /**
-     * List a directory with a fixed "ls -la --" command.
+     * List a directory (equivalent of "ls -la").
      *
      * @return output, or null when the path is not allowed
      */
@@ -143,52 +157,129 @@ public final class SafeCommand {
         if (checked == null) {
             return null;
         }
-        List<String> argv = new ArrayList<>();
-        argv.add(LS);
-        argv.add("-la");
-        argv.add(END_OF_OPTIONS);
-        argv.add(checked);
-        return execute(argv, true);
+        return list(checked, true, true);
     }
 
     /**
-     * Fetch a validated host with a fixed "curl" command (no extra options).
+     * Fetch a host over the SSRF-validated HTTP client (equivalent of "curl host").
      *
-     * @return output, or null when the host is not allowed
+     * @return the response body (capped), or null when the host is not allowed
      */
     public static String curlHost(String host) throws IOException {
         String checked = checkHost(host);
         if (checked == null) {
             return null;
         }
-        List<String> argv = new ArrayList<>();
-        argv.add(CURL);
-        argv.add(checked);
-        return execute(argv, true);
+        HttpURLConnection conn;
+        try {
+            // validated (scheme, host, port, public address) and redirect-checked on every hop
+            conn = HttpUtils.openValidatedConnection("http://" + checked + "/");
+        } catch (IOException e) {
+            return null;
+        }
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
+            StringBuilder sb = new StringBuilder();
+            char[] buf = new char[4096];
+            int n;
+            while (sb.length() < MAX_OUTPUT_CHARS && (n = reader.read(buf)) != -1) {
+                sb.append(buf, 0, Math.min(n, MAX_OUTPUT_CHARS - sb.length()));
+            }
+            return sb.toString();
+        } finally {
+            conn.disconnect();
+        }
     }
 
-    /** Single process-spawn site. argv[0] is always one of the constants above; no shell. */
-    private static String execute(List<String> argv, boolean mergeStderr) throws IOException {
-        ProcessBuilder builder = new ProcessBuilder(argv);
-        builder.redirectErrorStream(mergeStderr);
-        Process process = builder.start();
-        StringBuilder sb = new StringBuilder();
-        try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = reader.readLine()) != null && sb.length() < MAX_OUTPUT_CHARS) {
-                sb.append(line).append('\n');
+    /** Allowed base directories (real paths): the working directory and the temp directory. */
+    private static List<Path> allowedBases() {
+        List<Path> bases = new ArrayList<>();
+        String[] roots = {Paths.get("").toAbsolutePath().toString(), System.getProperty("java.io.tmpdir")};
+        for (String root : roots) {
+            if (root == null) {
+                continue;
             }
-        } finally {
             try {
-                if (!process.waitFor(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-                    process.destroyForcibly();
+                bases.add(Paths.get(root).toRealPath());
+            } catch (IOException e) {
+                // base does not exist: not usable
+            }
+        }
+        return bases;
+    }
+
+    /**
+     * Resolve the text to a real path (symlinks resolved) that lies under an allowed base.
+     *
+     * @return the confined real path, or null
+     */
+    private static Path confine(String text) {
+        List<Path> bases = allowedBases();
+        if (bases.isEmpty()) {
+            return null;
+        }
+        Path requested = Paths.get(text);
+        Path candidate = requested.isAbsolute() ? requested : bases.get(0).resolve(requested);
+        Path real;
+        try {
+            real = candidate.normalize().toRealPath();
+        } catch (IOException e) {
+            return null;
+        }
+        for (Path base : bases) {
+            if (real.startsWith(base)) {
+                return real;
+            }
+        }
+        return null;
+    }
+
+    private static String list(String text, boolean longFormat, boolean showHidden) throws IOException {
+        Path dir = confine(text);
+        if (dir == null) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder();
+        if (!Files.isDirectory(dir)) {
+            appendEntry(sb, dir, dir.getFileName() == null ? dir.toString() : dir.getFileName().toString(),
+                    longFormat);
+            return sb.toString();
+        }
+        List<Path> entries = new ArrayList<>();
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(dir)) {
+            for (Path entry : stream) {
+                if (entries.size() >= MAX_ENTRIES) {
+                    break;
                 }
-            } catch (InterruptedException e) {
-                process.destroyForcibly();
-                Thread.currentThread().interrupt();
+                Path name = entry.getFileName();
+                if (name == null || (!showHidden && name.toString().startsWith("."))) {
+                    continue;
+                }
+                entries.add(entry);
+            }
+        }
+        Collections.sort(entries);
+        for (Path entry : entries) {
+            appendEntry(sb, entry, entry.getFileName().toString(), longFormat);
+            if (sb.length() >= MAX_OUTPUT_CHARS) {
+                break;
             }
         }
         return sb.toString();
+    }
+
+    private static void appendEntry(StringBuilder sb, Path entry, String name, boolean longFormat) {
+        if (longFormat) {
+            try {
+                BasicFileAttributes attrs = Files.readAttributes(entry, BasicFileAttributes.class,
+                        LinkOption.NOFOLLOW_LINKS);
+                char type = attrs.isDirectory() ? 'd' : (attrs.isSymbolicLink() ? 'l' : '-');
+                sb.append(type).append(' ').append(attrs.size()).append(' ')
+                        .append(attrs.lastModifiedTime().toInstant()).append(' ');
+            } catch (IOException e) {
+                sb.append("? ");
+            }
+        }
+        sb.append(name).append('\n');
     }
 }

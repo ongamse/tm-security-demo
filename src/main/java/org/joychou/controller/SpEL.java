@@ -1,8 +1,7 @@
 package org.joychou.controller;
 
-import org.springframework.expression.EvaluationContext;
+import org.joychou.util.ArithmeticEvaluator;
 import org.springframework.expression.ExpressionParser;
-import org.springframework.expression.spel.support.SimpleEvaluationContext;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -35,10 +34,13 @@ public class SpEL {
         if (expression == null || !SAFE_EXPRESSION.matcher(expression).matches()) {
             return "Bad boy. I got u.";
         }
-        ExpressionParser parser = new SpelExpressionParser();
-        // SimpleEvaluationContext: no type references (T(...)), constructors or bean references.
-        EvaluationContext context = SimpleEvaluationContext.forReadOnlyDataBinding().build();
-        return HtmlUtils.htmlEscape(String.valueOf(parser.parseExpression(expression).getValue(context)));
+        // The text is never handed to an expression engine: a strict arithmetic/comparison
+        // evaluator handles the literal grammar only.
+        try {
+            return HtmlUtils.htmlEscape(ArithmeticEvaluator.evaluate(expression));
+        } catch (RuntimeException e) {
+            return "Bad expression";
+        }
     }
 
     public static void main(String[] args) {
