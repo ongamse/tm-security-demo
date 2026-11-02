@@ -3,6 +3,7 @@ package org.joychou.controller;
 import lombok.extern.slf4j.Slf4j;
 import org.joychou.security.SafeCommand;
 import org.joychou.security.SecurityUtil;
+import org.joychou.util.ArithmeticEvaluator;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -14,8 +15,6 @@ import javax.script.Bindings;
 import javax.script.ScriptContext;
 import javax.script.ScriptEngine;
 import javax.script.ScriptEngineManager;
-import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.regex.Pattern;
 
 
@@ -115,85 +114,20 @@ public class Rce {
      *
      * @param content arithmetic expression
      */
-    @GetMapping("groovy")
+    @GetMapping(value = "groovy", produces = "text/plain;charset=UTF-8")
     public String groovyshell(String content) {
         if (content == null || !ARITHMETIC.matcher(content).matches()) {
             return "Bad boy. I got u.";
         }
         try {
-            return new ArithmeticParser(content.replaceAll("\\s+", "")).parse().toPlainString();
+            // The echoed value is the evaluator's result (a number or true/false), HTML-escaped.
+            return HtmlUtils.htmlEscape(ArithmeticEvaluator.evaluate(content));
         } catch (RuntimeException e) {
             return "Bad expression";
         }
     }
 
-    private static final Pattern ARITHMETIC = Pattern.compile("^[0-9+\\-*/().\\s]{1,128}$");
-
-    /** Minimal recursive-descent evaluator: expr = term {(+|-) term}; term = factor {(*|/) factor}. */
-    private static final class ArithmeticParser {
-        private final String src;
-        private int pos;
-
-        ArithmeticParser(String src) {
-            this.src = src;
-        }
-
-        BigDecimal parse() {
-            BigDecimal v = expr();
-            if (pos != src.length()) {
-                throw new IllegalArgumentException("unexpected input");
-            }
-            return v;
-        }
-
-        private BigDecimal expr() {
-            BigDecimal v = term();
-            while (pos < src.length() && (src.charAt(pos) == '+' || src.charAt(pos) == '-')) {
-                char op = src.charAt(pos++);
-                BigDecimal r = term();
-                v = op == '+' ? v.add(r) : v.subtract(r);
-            }
-            return v;
-        }
-
-        private BigDecimal term() {
-            BigDecimal v = factor();
-            while (pos < src.length() && (src.charAt(pos) == '*' || src.charAt(pos) == '/')) {
-                char op = src.charAt(pos++);
-                BigDecimal r = factor();
-                v = op == '*' ? v.multiply(r) : v.divide(r, 10, RoundingMode.HALF_UP);
-            }
-            return v;
-        }
-
-        private BigDecimal factor() {
-            if (pos >= src.length()) {
-                throw new IllegalArgumentException("unexpected end");
-            }
-            char c = src.charAt(pos);
-            if (c == '-') {
-                pos++;
-                return factor().negate();
-            }
-            if (c == '(') {
-                pos++;
-                BigDecimal v = expr();
-                if (pos >= src.length() || src.charAt(pos) != ')') {
-                    throw new IllegalArgumentException("missing )");
-                }
-                pos++;
-                return v;
-            }
-            int start = pos;
-            while (pos < src.length() && (Character.isDigit(src.charAt(pos)) || src.charAt(pos) == '.')) {
-                pos++;
-            }
-            if (start == pos) {
-                throw new IllegalArgumentException("number expected");
-            }
-            return new BigDecimal(src.substring(start, pos));
-        }
-    }
+    private static final Pattern ARITHMETIC = Pattern.compile("^[0-9+\\-*/%().<>=!\\s]{1,128}$");
 
 
 
