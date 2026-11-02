@@ -21,6 +21,7 @@ import java.security.SecureRandom;
 import java.util.regex.Pattern;
 
 import org.joychou.security.SecurityUtil;
+import org.joychou.util.LogSanitizer;
 
 
 /**
@@ -70,7 +71,7 @@ public class FileUpload {
 
         } catch (IOException e) {
             redirectAttributes.addFlashAttribute("message", "upload failed");
-            logger.error(e.toString());
+            logger.error("upload failed", e);
         }
 
         return "redirect:/file/status";
@@ -113,7 +114,7 @@ public class FileUpload {
             }
         }
         if (!suffixFlag) {
-            logger.error("[-] Suffix error: " + Suffix);
+            logger.error("[-] Suffix error: {}", LogSanitizer.clean(Suffix));
             deleteFile(filePath);
             return "Upload failed. Illeagl picture.";
         }
@@ -131,7 +132,7 @@ public class FileUpload {
         for (String blackMimeType : mimeTypeBlackList) {
             // 用contains是为了防止text/html;charset=UTF-8绕过
             if (SecurityUtil.replaceSpecialStr(mimeType).toLowerCase().contains(blackMimeType)) {
-                logger.error("[-] Mime type error: " + mimeType);
+                logger.error("[-] Mime type error: {}", LogSanitizer.clean(mimeType));
                 deleteFile(filePath);
                 return "Upload failed. Illeagl picture.";
             }
@@ -153,13 +154,13 @@ public class FileUpload {
             byte[] bytes = multifile.getBytes();
             Files.write(safePath, bytes);
         } catch (IOException e) {
-            logger.error(e.toString());
+            logger.error("saving picture failed", e);
             deleteFile(filePath);
             return "Upload failed";
         }
 
-        logger.info("[+] Safe file. Suffix: {}, MIME: {}", Suffix, mimeType);
-        logger.info("[+] Successfully uploaded {}", filePath);
+        logger.info("[+] Safe file. Suffix: {}, MIME: {}", LogSanitizer.clean(Suffix), LogSanitizer.clean(mimeType));
+        logger.info("[+] Successfully uploaded {}", LogSanitizer.clean(filePath));
         return HtmlUtils.htmlEscape(String.format("You successfully uploaded '%s'", filePath));
     }
 
@@ -207,13 +208,13 @@ public class FileUpload {
         // Delete directly (no check-then-delete) and handle the failure.
         try {
             if (Files.deleteIfExists(target)) {
-                logger.info("[+] " + filePath + " delete successfully!");
+                logger.info("[+] {} delete successfully!", LogSanitizer.clean(filePath));
                 return;
             }
         } catch (IOException e) {
-            logger.error(e.toString());
+            logger.error("delete failed", e);
         }
-        logger.info(filePath + " delete failed!");
+        logger.info("{} delete failed!", LogSanitizer.clean(filePath));
     }
 
     /**
