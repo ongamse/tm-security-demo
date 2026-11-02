@@ -1,11 +1,11 @@
 package org.joychou.controller;
 
 import lombok.extern.slf4j.Slf4j;
+import org.joychou.security.SafeUrl;
 import org.joychou.security.ssrf.SSRFChecker;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.sql.DriverManager;
 import java.util.Arrays;
@@ -19,6 +19,9 @@ import java.util.Set;
 @RestController
 @RequestMapping("/jdbc")
 public class Jdbc {
+
+    /** Database ports that a user supplied jdbc url may use (-1 means the driver default). */
+    private static final Set<Integer> ALLOWED_PORTS = new HashSet<>(Arrays.asList(5432, 50000));
 
     /**
      * Connection properties accepted in a user supplied PostgreSQL jdbc url. Class loading / file / socket
@@ -35,38 +38,43 @@ public class Jdbc {
      * @param jdbcUrl        the decoded jdbc url
      * @param prefix         the required prefix, such as <code>jdbc:postgresql://</code>
      * @param allowedParams  allowed query parameter names (lower case); null rejects any query/properties
+     * @return the jdbc url rebuilt from the validated components
      * @throws IllegalArgumentException if the url is not allowed
      */
-    static void validateJdbcUrl(String jdbcUrl, String prefix, Set<String> allowedParams) {
+    static String validateJdbcUrl(String jdbcUrl, String prefix, Set<String> allowedParams) {
         if (jdbcUrl == null || !jdbcUrl.startsWith(prefix)) {
             throw new IllegalArgumentException("Illegal jdbc url");
         }
-        try {
-            // jdbc:xxx://host:port/db?params -> xxx://host:port/db?params
-            URI uri = new URI(jdbcUrl.substring("jdbc:".length()));
-            if (uri.getUserInfo() != null || !SSRFChecker.isSafeHost(uri.getHost())) {
-                throw new IllegalArgumentException("Illegal jdbc host");
-            }
-            String query = uri.getRawQuery();
-            if (query != null) {
-                if (allowedParams == null) {
-                    throw new IllegalArgumentException("Illegal jdbc properties");
-                }
-                for (String pair : query.split("&")) {
-                    String key = pair.split("=", 2)[0].toLowerCase();
-                    if (!allowedParams.contains(key)) {
-                        throw new IllegalArgumentException("Illegal jdbc property");
-                    }
-                }
-            }
-            // DB2 style properties are appended with ':' or ';' after the database name.
-            String path = uri.getRawPath();
-            if (allowedParams == null && path != null && (path.contains(";") || path.contains(":"))) {
-                throw new IllegalArgumentException("Illegal jdbc properties");
-            }
-        } catch (java.net.URISyntaxException e) {
+        // jdbc:xxx://host:port/db?params -> parsed into immutable components (no URI/URL from raw text)
+        SafeUrl parsed = SafeUrl.parse(jdbcUrl.substring("jdbc:".length()));
+        if (parsed == null || parsed.getUserInfo() != null || parsed.getRawFragment() != null) {
             throw new IllegalArgumentException("Illegal jdbc url");
         }
+        if (parsed.getPort() != -1 && !ALLOWED_PORTS.contains(parsed.getPort())) {
+            throw new IllegalArgumentException("Illegal jdbc port");
+        }
+        if (!SSRFChecker.isSafeHost(parsed.getHost())) {
+            throw new IllegalArgumentException("Illegal jdbc host");
+        }
+        String query = parsed.getRawQuery();
+        if (query != null) {
+            if (allowedParams == null) {
+                throw new IllegalArgumentException("Illegal jdbc properties");
+            }
+            for (String pair : query.split("&")) {
+                String key = pair.split("=", 2)[0].toLowerCase();
+                if (!allowedParams.contains(key)) {
+                    throw new IllegalArgumentException("Illegal jdbc property");
+                }
+            }
+        }
+        // DB2 style properties are appended with ':' or ';' after the database name.
+        String path = parsed.getRawPath();
+        if (allowedParams == null && (path.contains(";") || path.contains(":"))) {
+            throw new IllegalArgumentException("Illegal jdbc properties");
+        }
+        // the connection url is rebuilt from the validated components
+        return "jdbc:" + parsed.toExternalForm();
     }
 
     /**
@@ -76,8 +84,8 @@ public class Jdbc {
     public void postgresql(String jdbcUrlBase64) throws Exception{
         byte[] b = java.util.Base64.getDecoder().decode(jdbcUrlBase64);
         String jdbcUrl = new String(b, StandardCharsets.UTF_8);
-        validateJdbcUrl(jdbcUrl, "jdbc:postgresql://", POSTGRESQL_ALLOWED_PARAMS);
-        DriverManager.getConnection(jdbcUrl);
+        String safeJdbcUrl = validateJdbcUrl(jdbcUrl, "jdbc:postgresql://", POSTGRESQL_ALLOWED_PARAMS);
+        DriverManager.getConnection(safeJdbcUrl);
     }
 
     @RequestMapping("/db2")
@@ -85,7 +93,7 @@ public class Jdbc {
         Class.forName("com.ibm.db2.jcc.DB2Driver");
         byte[] b = java.util.Base64.getDecoder().decode(jdbcUrlBase64);
         String jdbcUrl = new String(b, StandardCharsets.UTF_8);
-        validateJdbcUrl(jdbcUrl, "jdbc:db2://", null);
-        DriverManager.getConnection(jdbcUrl);
+        String safeJdbcUrl = validateJdbcUrl(jdbcUrl, "jdbc:db2://", null);
+        DriverManager.getConnection(safeJdbcUrl);
     }
 }

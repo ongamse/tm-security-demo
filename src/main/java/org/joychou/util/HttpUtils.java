@@ -14,6 +14,8 @@ import org.apache.http.impl.nio.client.HttpAsyncClients;
 import org.apache.http.util.EntityUtils;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
+import org.apache.http.HttpHost;
+import org.joychou.security.SafeUrl;
 import org.joychou.security.ssrf.SSRFChecker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,7 +26,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
-import java.net.URL;
+import java.net.InetAddress;
 import java.net.URLConnection;
 import java.util.concurrent.*;
 
@@ -63,11 +65,12 @@ public class HttpUtils {
     public static HttpURLConnection openValidatedConnection(String url) throws IOException {
         String current = url;
         for (int i = 0; i <= MAX_REDIRECTS; i++) {
-            if (!SSRFChecker.isSafeUrl(current)) {
+            // the connection is built from the parsed and validated components, not from the raw text
+            SafeUrl target = SSRFChecker.validate(current);
+            if (target == null) {
                 throw new IOException(SSRF_BLOCKED_MSG);
             }
-            URL u = new URL(current);
-            URLConnection urlConnection = u.openConnection();
+            URLConnection urlConnection = target.toURL().openConnection();
             if (!(urlConnection instanceof HttpURLConnection)) {
                 throw new IOException(SSRF_BLOCKED_MSG);
             }
@@ -84,12 +87,57 @@ public class HttpUtils {
                 if (location == null) {
                     throw new IOException("Redirect without Location header");
                 }
-                current = new URL(u, location).toString();
+                current = resolveLocation(target, location);
                 continue;
             }
             return conn;
         }
         throw new IOException("Too many redirects");
+    }
+
+
+    /**
+     * Resolve a Location header against the validated url. The result is validated again on the next hop.
+     */
+    private static String resolveLocation(SafeUrl base, String location) throws IOException {
+        if (location.startsWith("//") || location.indexOf('\\') >= 0) {
+            throw new IOException(SSRF_BLOCKED_MSG);
+        }
+        if (location.startsWith("/")) {
+            return base.getOrigin() + location;
+        }
+        if (location.contains("://")) {
+            return location;
+        }
+        throw new IOException(SSRF_BLOCKED_MSG);
+    }
+
+
+    /**
+     * Validated destination for the Apache clients: the request host is built from the validated
+     * components and pinned to an address that was checked to be public (no second DNS lookup).
+     */
+    private static final class Pinned {
+        final SafeUrl url;
+        final HttpHost host;
+
+        Pinned(SafeUrl url, HttpHost host) {
+            this.url = url;
+            this.host = host;
+        }
+    }
+
+
+    private static Pinned pin(String url) {
+        SafeUrl parsed = SSRFChecker.validate(url);
+        if (parsed == null) {
+            return null;
+        }
+        InetAddress[] addresses = SSRFChecker.resolvePublicAddresses(parsed.getHost());
+        if (addresses == null) {
+            return null;
+        }
+        return new Pinned(parsed, new HttpHost(addresses[0], parsed.getHost(), parsed.getPort(), parsed.getScheme()));
     }
 
 
@@ -105,12 +153,17 @@ public class HttpUtils {
 
     public static String commonHttpClient(String url) {
 
-        if (!SSRFChecker.isSafeUrl(url)) {
+        Pinned pinned = pin(url);
+        if (pinned == null) {
             return SSRF_BLOCKED_MSG;
         }
 
         HttpClient client = new HttpClient();
-        GetMethod method = new GetMethod(url);
+        // build the request from the validated components
+        client.getHostConfiguration().setHost(pinned.url.getHost(), pinned.url.getPort() < 0
+                ? ("https".equals(pinned.url.getScheme()) ? 443 : 80) : pinned.url.getPort(),
+                pinned.url.getScheme());
+        GetMethod method = new GetMethod(pinned.url.getFile());
         method.setFollowRedirects(false);
 
         try {
@@ -128,13 +181,14 @@ public class HttpUtils {
 
 
     public static String request(String url) {
-        if (!SSRFChecker.isSafeUrl(url)) {
+        Pinned pinned = pin(url);
+        if (pinned == null) {
             return SSRF_BLOCKED_MSG;
         }
         try (CloseableHttpClient client = HttpClients.custom().setDefaultRequestConfig(NO_REDIRECT_CONFIG).build()) {
-            HttpGet httpGet = new HttpGet(url);
+            HttpGet httpGet = new HttpGet(pinned.url.getFile());
             httpGet.setConfig(NO_REDIRECT_CONFIG);
-            return EntityUtils.toString(client.execute(httpGet).getEntity()); // send request
+            return EntityUtils.toString(client.execute(pinned.host, httpGet).getEntity()); // send request
         } catch (Exception e) {
             return e.getMessage();
         }
@@ -145,16 +199,17 @@ public class HttpUtils {
 
         StringBuilder result = new StringBuilder();
 
-        if (!SSRFChecker.isSafeUrl(url)) {
+        Pinned pinned = pin(url);
+        if (pinned == null) {
             return SSRF_BLOCKED_MSG;
         }
 
         try (CloseableHttpClient client = HttpClients.createDefault()) {
 
-            HttpGet httpGet = new HttpGet(url);
+            HttpGet httpGet = new HttpGet(pinned.url.getFile());
             // redirects are not followed because the target would not be validated
             httpGet.setConfig(NO_REDIRECT_CONFIG);
-            HttpResponse httpResponse = client.execute(httpGet); // send request
+            HttpResponse httpResponse = client.execute(pinned.host, httpGet); // send request
             BufferedReader rd = new BufferedReader(new InputStreamReader(httpResponse.getEntity().getContent()));
 
             String line;
@@ -220,11 +275,12 @@ public class HttpUtils {
      * @param url http request url
      */
     public static String Jsoup(String url) {
-        if (!SSRFChecker.isSafeUrl(url)) {
+        SafeUrl target = SSRFChecker.validate(url);
+        if (target == null) {
             return SSRF_BLOCKED_MSG;
         }
         try {
-            Document doc = Jsoup.connect(url)
+            Document doc = Jsoup.connect(target.toExternalForm())
                     .followRedirects(false)
                     .timeout(3000)
                     .cookie("name", "joychou") // request cookies
@@ -242,14 +298,15 @@ public class HttpUtils {
      * UserAgent is <code>okhttp/2.5.0</code>.
      */
     public static String okhttp(String url) throws IOException {
-        if (!SSRFChecker.isSafeUrl(url)) {
+        SafeUrl target = SSRFChecker.validate(url);
+        if (target == null) {
             throw new IOException(SSRF_BLOCKED_MSG);
         }
         OkHttpClient client = new OkHttpClient();
         // redirects are not followed because the target would not be validated
         client.setFollowRedirects(false);
         client.setFollowSslRedirects(false);
-        com.squareup.okhttp.Request ok_http = new com.squareup.okhttp.Request.Builder().url(url).build();
+        com.squareup.okhttp.Request ok_http = new com.squareup.okhttp.Request.Builder().url(target.toURL()).build();
         return client.newCall(ok_http).execute().body().string();
     }
 
@@ -291,16 +348,17 @@ public class HttpUtils {
 
 
     public static String HttpAsyncClients(String url) {
-        if (!SSRFChecker.isSafeUrl(url)) {
+        Pinned pinned = pin(url);
+        if (pinned == null) {
             return SSRF_BLOCKED_MSG;
         }
         CloseableHttpAsyncClient httpclient = HttpAsyncClients.createDefault();
         try {
             httpclient.start();
-            final HttpGet request = new HttpGet(url);
+            final HttpGet request = new HttpGet(pinned.url.getFile());
             // redirects are not followed because the target would not be validated
             request.setConfig(NO_REDIRECT_CONFIG);
-            Future<HttpResponse> future = httpclient.execute(request, null);
+            Future<HttpResponse> future = httpclient.execute(pinned.host, request, null);
             HttpResponse response = future.get(6000, TimeUnit.MILLISECONDS);
             return EntityUtils.toString(response.getEntity());
         } catch (Exception e) {

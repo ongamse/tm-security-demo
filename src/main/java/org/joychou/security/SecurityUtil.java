@@ -8,8 +8,6 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -40,12 +38,12 @@ public class SecurityUtil {
      * @return host
      */
     public static String gethost(String url) {
-        try {
-            URI uri = new URI(url);
-            return uri.getHost().toLowerCase();
-        } catch (URISyntaxException e) {
+        // strict component parser: no URI/URL object is built from the raw request data
+        SafeUrl parsed = SafeUrl.parse(url);
+        if (parsed == null) {
             return "";
         }
+        return parsed.getHost();
     }
 
 
@@ -116,16 +114,15 @@ public class SecurityUtil {
                 || checkRedirectURL(origin, WebConfig.getSafeDomains()) == null) {
             return null;
         }
-        try {
-            URI uri = new URI(origin);
-            String path = uri.getRawPath();
-            if ((path != null && !path.isEmpty()) || uri.getRawQuery() != null || uri.getRawFragment() != null) {
-                return null;
-            }
-            return origin;
-        } catch (URISyntaxException e) {
+        SafeUrl parsed = SafeUrl.parse(origin);
+        if (parsed == null) {
             return null;
         }
+        String path = parsed.getRawPath();
+        if ((path != null && !path.isEmpty()) || parsed.getRawQuery() != null || parsed.getRawFragment() != null) {
+            return null;
+        }
+        return origin;
     }
 
 
@@ -177,23 +174,18 @@ public class SecurityUtil {
             return null;
         }
 
-        try {
-            URI uri = new URI(url);
-            String host = uri.getHost();
-            if (host == null || uri.getRawUserInfo() != null) {
-                return null;
-            }
-            host = host.toLowerCase();
-            for (String domain : allowedDomains) {
-                String d = domain.toLowerCase();
-                if (host.equals(d) || host.endsWith("." + d)) {
-                    return url;
-                }
-            }
-            return null;
-        } catch (URISyntaxException e) {
+        SafeUrl parsed = SafeUrl.parse(url);
+        if (parsed == null || !parsed.isHttp() || parsed.getUserInfo() != null) {
             return null;
         }
+        String host = parsed.getHost();
+        for (String domain : allowedDomains) {
+            String d = domain.toLowerCase();
+            if (host.equals(d) || host.endsWith("." + d)) {
+                return url;
+            }
+        }
+        return null;
     }
 
 
