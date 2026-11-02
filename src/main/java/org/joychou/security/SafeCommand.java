@@ -11,6 +11,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
+import java.nio.file.NotDirectoryException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.attribute.BasicFileAttributes;
@@ -220,18 +221,41 @@ public final class SafeCommand {
         }
         Path requested = Paths.get(text);
         Path candidate = requested.isAbsolute() ? requested : bases.get(0).resolve(requested);
-        Path real;
-        try {
-            real = candidate.normalize().toRealPath();
-        } catch (IOException e) {
-            return null;
-        }
+        // Pure path arithmetic against the (real) base directories: no filesystem existence/type check.
+        Path normalized = candidate.normalize();
         for (Path base : bases) {
-            if (real.startsWith(base)) {
-                return real;
+            if (normalized.startsWith(base)) {
+                return rejectSymlinks(base, normalized);
             }
         }
         return null;
+    }
+
+    /**
+     * Walk the components below base and read each one's attributes without following links; any
+     * symbolic link (which could lead outside the allowed base) or unreadable component rejects
+     * the path.
+     *
+     * @return the path when no component is a symbolic link, otherwise null
+     */
+    private static Path rejectSymlinks(Path base, Path normalized) {
+        Path current = base;
+        for (Path part : base.relativize(normalized)) {
+            if (part.toString().isEmpty()) {
+                continue;
+            }
+            current = current.resolve(part);
+            try {
+                BasicFileAttributes attrs = Files.readAttributes(current, BasicFileAttributes.class,
+                        LinkOption.NOFOLLOW_LINKS);
+                if (attrs.isSymbolicLink()) {
+                    return null;
+                }
+            } catch (IOException e) {
+                return null;
+            }
+        }
+        return normalized;
     }
 
     private static String list(String text, boolean longFormat, boolean showHidden) throws IOException {
@@ -240,12 +264,8 @@ public final class SafeCommand {
             return null;
         }
         StringBuilder sb = new StringBuilder();
-        if (!Files.isDirectory(dir)) {
-            appendEntry(sb, dir, dir.getFileName() == null ? dir.toString() : dir.getFileName().toString(),
-                    longFormat);
-            return sb.toString();
-        }
         List<Path> entries = new ArrayList<>();
+        // Single attempt to open the directory; no separate exists/isDirectory pre-check.
         try (DirectoryStream<Path> stream = Files.newDirectoryStream(dir)) {
             for (Path entry : stream) {
                 if (entries.size() >= MAX_ENTRIES) {
@@ -257,6 +277,13 @@ public final class SafeCommand {
                 }
                 entries.add(entry);
             }
+        } catch (NotDirectoryException e) {
+            // A plain file: report the single entry (attributes are read once, without following links).
+            appendEntry(sb, dir, dir.getFileName() == null ? dir.toString() : dir.getFileName().toString(),
+                    longFormat);
+            return sb.toString();
+        } catch (IOException e) {
+            return null;
         }
         Collections.sort(entries);
         for (Path entry : entries) {
