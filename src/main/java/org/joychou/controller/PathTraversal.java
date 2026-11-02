@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
@@ -45,10 +46,12 @@ public class PathTraversal {
         if (safePath == null) {
             return "Bad boy. Illegal file path.";
         }
-        if (Files.isRegularFile(safePath)) {
+        // Read directly (no check-then-read) and handle the failure.
+        try {
             byte[] data = Files.readAllBytes(safePath);
             return new String(Base64.encodeBase64(data));
-        } else {
+        } catch (IOException e) {
+            logger.info("Cannot read file: " + e.getClass().getSimpleName());
             return "File doesn't exist or is not a file.";
         }
     }
@@ -73,10 +76,13 @@ public class PathTraversal {
         if (!resolved.startsWith(base)) {
             return null;
         }
-        if (!Files.exists(resolved)) {
+        Path real;
+        try {
+            real = resolved.toRealPath();
+        } catch (NoSuchFileException e) {
+            // Does not exist: lexically confined path; the caller's read will fail cleanly.
             return resolved;
         }
-        Path real = resolved.toRealPath();
         return real.startsWith(base) ? real : null;
     }
 

@@ -198,12 +198,20 @@ public class FileUpload {
             logger.info("Refuse to delete file outside upload folder");
             return;
         }
-        File delFile = new File(filePath);
-        if(delFile.isFile() && delFile.exists()) {
-            if (delFile.delete()) {
+        Path target = Paths.get(filePath).toAbsolutePath().normalize();
+        Path root = Paths.get(UPLOADED_FOLDER).toAbsolutePath().normalize();
+        if (target.equals(root)) {
+            logger.info("Refuse to delete the upload folder itself");
+            return;
+        }
+        // Delete directly (no check-then-delete) and handle the failure.
+        try {
+            if (Files.deleteIfExists(target)) {
                 logger.info("[+] " + filePath + " delete successfully!");
                 return;
             }
+        } catch (IOException e) {
+            logger.error(e.toString());
         }
         logger.info(filePath + " delete failed!");
     }
