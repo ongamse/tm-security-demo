@@ -10,8 +10,6 @@ import javax.servlet.RequestDispatcher;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -91,17 +89,10 @@ public class URLRedirect {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             return;
         }
-        // java.net.URI rejects CR/LF/control characters at parse time; the header value is the
-        // parsed URI re-serialised in strict ASCII form (non-ASCII percent-encoded).
-        String location;
-        try {
-            location = new URI(safeUrl).toASCIIString();
-        } catch (URISyntaxException e) {
-            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-            return;
-        }
+        // safeUrl is the constant allowlist origin plus a path that SecurityUtil.safeRelativePath has
+        // validated (no CR/LF/control characters) and percent-encoded (ASCII only).
         response.setStatus(HttpServletResponse.SC_MOVED_PERMANENTLY); // 301 redirect
-        response.setHeader("Location", location);
+        response.setHeader("Location", safeUrl);
     }
 
 

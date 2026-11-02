@@ -9,8 +9,12 @@ import org.springframework.web.bind.annotation.RestController;
 import java.nio.charset.StandardCharsets;
 import java.sql.DriverManager;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /**
  * Jdbc Attack @2023.04
@@ -31,17 +35,41 @@ public class Jdbc {
             "user", "password", "ssl", "sslmode", "connecttimeout", "logintimeout", "sockettimeout",
             "applicationname"));
 
+    /** Closed set of trusted PostgreSQL targets: host -> constant jdbc base url (no request text). */
+    private static final Map<String, String> POSTGRESQL_TARGETS;
+
+    /** Closed set of trusted DB2 targets: host -> constant jdbc base url (no request text). */
+    private static final Map<String, String> DB2_TARGETS;
+
+    static {
+        Map<String, String> pg = new HashMap<>();
+        pg.put("db.joychou.org", "jdbc:postgresql://db.joychou.org:5432");
+        POSTGRESQL_TARGETS = Collections.unmodifiableMap(pg);
+
+        Map<String, String> db2 = new HashMap<>();
+        db2.put("db.joychou.org", "jdbc:db2://db.joychou.org:50000");
+        DB2_TARGETS = Collections.unmodifiableMap(db2);
+    }
+
+    private static final Pattern DB_NAME = Pattern.compile("^/[A-Za-z0-9_]{1,63}$");
+    private static final Pattern PARAM_VALUE = Pattern.compile("^[A-Za-z0-9_.\\-]{1,64}$");
+
     /**
-     * Validate a user supplied jdbc url: the scheme prefix must match, the host must be a single
-     * public host (no loopback/private/link-local/metadata addresses), and there must be no user info.
+     * Validate a user supplied jdbc url and build the connection url from constants: the scheme prefix must
+     * match, the host must be a single public host that is a key of the trusted target map, and there must be
+     * no user info. The returned url consists of the map's constant base url (host and port), a database name
+     * that matches a strict pattern and, for PostgreSQL only, allow-listed property names (constants) with
+     * strictly validated values.
      *
      * @param jdbcUrl        the decoded jdbc url
      * @param prefix         the required prefix, such as <code>jdbc:postgresql://</code>
+     * @param targets        trusted host -> constant jdbc base url
      * @param allowedParams  allowed query parameter names (lower case); null rejects any query/properties
-     * @return the jdbc url rebuilt from the validated components
+     * @return the jdbc url rebuilt from constants and validated components
      * @throws IllegalArgumentException if the url is not allowed
      */
-    static String validateJdbcUrl(String jdbcUrl, String prefix, Set<String> allowedParams) {
+    static String validateJdbcUrl(String jdbcUrl, String prefix, Map<String, String> targets,
+                                  Set<String> allowedParams) {
         if (jdbcUrl == null || !jdbcUrl.startsWith(prefix)) {
             throw new IllegalArgumentException("Illegal jdbc url");
         }
@@ -56,25 +84,40 @@ public class Jdbc {
         if (!SSRFChecker.isSafeHost(parsed.getHost())) {
             throw new IllegalArgumentException("Illegal jdbc host");
         }
+        // closed set: the host/port part of the connection url is the map's constant
+        String base = targets.get(parsed.getHost());
+        if (base == null) {
+            throw new IllegalArgumentException("Illegal jdbc host");
+        }
+        // database name only (this also rejects DB2 style ':' / ';' properties after the name)
+        String path = parsed.getRawPath();
+        if (!DB_NAME.matcher(path).matches()) {
+            throw new IllegalArgumentException("Illegal jdbc database");
+        }
+        StringBuilder result = new StringBuilder(base).append(path);
         String query = parsed.getRawQuery();
         if (query != null) {
             if (allowedParams == null) {
                 throw new IllegalArgumentException("Illegal jdbc properties");
             }
-            for (String pair : query.split("&")) {
-                String key = pair.split("=", 2)[0].toLowerCase();
-                if (!allowedParams.contains(key)) {
+            char separator = '?';
+            for (String pair : query.split("&", -1)) {
+                String[] kv = pair.split("=", 2);
+                String name = null;
+                for (String allowed : allowedParams) { // the property name is the allow-list constant
+                    if (allowed.equalsIgnoreCase(kv[0])) {
+                        name = allowed;
+                        break;
+                    }
+                }
+                if (name == null || kv.length != 2 || !PARAM_VALUE.matcher(kv[1]).matches()) {
                     throw new IllegalArgumentException("Illegal jdbc property");
                 }
+                result.append(separator).append(name).append('=').append(kv[1]);
+                separator = '&';
             }
         }
-        // DB2 style properties are appended with ':' or ';' after the database name.
-        String path = parsed.getRawPath();
-        if (allowedParams == null && (path.contains(";") || path.contains(":"))) {
-            throw new IllegalArgumentException("Illegal jdbc properties");
-        }
-        // the connection url is rebuilt from the validated components
-        return "jdbc:" + parsed.toExternalForm();
+        return result.toString();
     }
 
     /**
@@ -84,7 +127,8 @@ public class Jdbc {
     public void postgresql(String jdbcUrlBase64) throws Exception{
         byte[] b = java.util.Base64.getDecoder().decode(jdbcUrlBase64);
         String jdbcUrl = new String(b, StandardCharsets.UTF_8);
-        String safeJdbcUrl = validateJdbcUrl(jdbcUrl, "jdbc:postgresql://", POSTGRESQL_ALLOWED_PARAMS);
+        String safeJdbcUrl = validateJdbcUrl(jdbcUrl, "jdbc:postgresql://", POSTGRESQL_TARGETS,
+                POSTGRESQL_ALLOWED_PARAMS);
         DriverManager.getConnection(safeJdbcUrl);
     }
 
@@ -93,7 +137,7 @@ public class Jdbc {
         Class.forName("com.ibm.db2.jcc.DB2Driver");
         byte[] b = java.util.Base64.getDecoder().decode(jdbcUrlBase64);
         String jdbcUrl = new String(b, StandardCharsets.UTF_8);
-        String safeJdbcUrl = validateJdbcUrl(jdbcUrl, "jdbc:db2://", null);
+        String safeJdbcUrl = validateJdbcUrl(jdbcUrl, "jdbc:db2://", DB2_TARGETS, null);
         DriverManager.getConnection(safeJdbcUrl);
     }
 }
