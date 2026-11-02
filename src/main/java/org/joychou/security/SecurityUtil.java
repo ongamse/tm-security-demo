@@ -12,6 +12,7 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.regex.Pattern;
 
 
@@ -96,6 +97,74 @@ public class SecurityUtil {
             return null;
         } catch (NullPointerException e) {
             logger.error(e.toString());
+            return null;
+        }
+    }
+
+
+    /**
+     * Validate an untrusted redirect target against the configured safe/block domain lists
+     * (url/url_safe_domain.xml). See {@link #checkRedirectURL(String, Collection)}.
+     *
+     * @param url untrusted redirect target
+     * @return the original url when safe, otherwise null
+     */
+    public static String checkRedirectURL(String url) {
+        // Absolute URLs must also pass the block-list in checkURL; same-site paths have no host.
+        if (url != null && !url.startsWith("/") && checkURL(url) == null) {
+            return null;
+        }
+        return checkRedirectURL(url, WebConfig.getSafeDomains());
+    }
+
+
+    /**
+     * Strictly validate an untrusted redirect target.
+     * Allowed: a same-site absolute path (single leading slash), or an http/https URL whose
+     * host (parsed by java.net.URI) equals an allowed domain or is a sub-domain of it (leading dot match).
+     * Rejected: backslashes, whitespace/control characters, userinfo, protocol-relative (//) tricks,
+     * other schemes and unparsable URLs.
+     *
+     * @param url            untrusted redirect target
+     * @param allowedDomains allowed domains
+     * @return the original url when safe, otherwise null
+     */
+    public static String checkRedirectURL(String url, Collection<String> allowedDomains) {
+        if (url == null || url.isEmpty() || allowedDomains == null) {
+            return null;
+        }
+
+        for (int i = 0; i < url.length(); i++) {
+            char c = url.charAt(i);
+            if (c == '\\' || c <= 0x20 || c == 0x7f || Character.isISOControl(c) || Character.isWhitespace(c)) {
+                return null;
+            }
+        }
+
+        // Same-site path: "/a/b" is fine, "//evil.com" is not.
+        if (url.charAt(0) == '/') {
+            return (url.length() == 1 || url.charAt(1) != '/') ? url : null;
+        }
+
+        if (!isHttp(url)) {
+            return null;
+        }
+
+        try {
+            URI uri = new URI(url);
+            String host = uri.getHost();
+            if (host == null || uri.getRawUserInfo() != null) {
+                return null;
+            }
+            host = host.toLowerCase();
+            for (String domain : allowedDomains) {
+                String d = domain.toLowerCase();
+                if (host.equals(d) || host.endsWith("." + d)) {
+                    return url;
+                }
+            }
+            return null;
+        } catch (URISyntaxException e) {
             return null;
         }
     }
