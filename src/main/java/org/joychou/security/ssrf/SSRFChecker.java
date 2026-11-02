@@ -66,7 +66,7 @@ public class SSRFChecker {
         try {
             do {
                 // 判断当前请求的URL是否是内网ip
-                if (isInternalIpByUrl(finalUrl)) {
+                if (!isSafeUrl(finalUrl)) {
                     logger.error("[-] SSRF check failed. Dangerous url: " + finalUrl);
                     return false;  // 内网ip直接return，非内网ip继续判断是否有重定向
                 }
@@ -96,6 +96,119 @@ public class SSRFChecker {
             return true;  // 如果异常了，认为是安全的，防止是超时导致的异常而验证不成功。
         }
         return true; // 默认返回true
+    }
+
+
+    /**
+     * Validate a destination URL before any outbound request is made.
+     * The URL must be an absolute http/https URI without user info, and the host must resolve
+     * only to public addresses (no loopback, link-local, site-local, unique-local, carrier-grade NAT,
+     * multicast, wildcard or configured blocked subnets/domains). Callers must also disable
+     * automatic redirects (or validate each hop) when using the URL.
+     *
+     * @param url the url to check
+     * @return true if the url is safe to request, otherwise false (fail closed).
+     */
+    public static boolean isSafeUrl(String url) {
+        if (null == url) {
+            return false;
+        }
+        try {
+            URI u = new URI(url);
+            String scheme = u.getScheme();
+            if (!"http".equalsIgnoreCase(scheme) && !"https".equalsIgnoreCase(scheme)) {
+                return false;
+            }
+            if (u.getUserInfo() != null) {
+                return false;
+            }
+            return isSafeHost(u.getHost());
+        } catch (Exception e) {
+            logger.error("[-] SSRF check failed. Illegal url: " + e.getMessage());
+            return false;
+        }
+    }
+
+
+    /**
+     * Validate a host name or ip literal. Resolves the host and rejects it when any resolved
+     * address is not a public address.
+     *
+     * @param host host name or ip literal (IPv6 literals may be wrapped in brackets)
+     * @return true if the host is safe to connect to, otherwise false (fail closed).
+     */
+    public static boolean isSafeHost(String host) {
+        if (StringUtils.isEmpty(host)) {
+            return false;
+        }
+        String h = host.toLowerCase();
+        if (h.startsWith("[") && h.endsWith("]")) {
+            h = h.substring(1, h.length() - 1);
+        }
+
+        // Only canonical dotted-quad IPv4 literals are accepted (reject octal, short and overflow forms).
+        if (isNumberOrDot(h) && !isCanonicalIPv4(h)) {
+            logger.error("[-] SSRF check failed. Non canonical ip: " + h);
+            return false;
+        }
+
+        for (String blockDomain : WebConfig.getSsrfBlockDomainsDomains()) {
+            if (h.equals(blockDomain) || h.endsWith("." + blockDomain)) {
+                logger.error("[-] SSRF check failed. Blocked domain: " + h);
+                return false;
+            }
+        }
+
+        try {
+            InetAddress[] addresses = InetAddress.getAllByName(h);
+            if (addresses.length == 0) {
+                return false;
+            }
+            for (InetAddress address : addresses) {
+                if (isNonPublicAddress(address)) {
+                    logger.error("[-] SSRF check failed. Internal IP: " + address.getHostAddress());
+                    return false;
+                }
+            }
+            return true;
+        } catch (Exception e) {
+            logger.error("[-] SSRF check failed. Host resolution failed: " + e.getMessage());
+            return false;
+        }
+    }
+
+
+    private static boolean isNonPublicAddress(InetAddress address) {
+        if (address.isAnyLocalAddress() || address.isLoopbackAddress() || address.isLinkLocalAddress()
+                || address.isSiteLocalAddress() || address.isMulticastAddress()) {
+            return true;
+        }
+        byte[] b = address.getAddress();
+        if (b.length == 16 && (b[0] & 0xfe) == 0xfc) {
+            return true; // IPv6 unique local fc00::/7
+        }
+        if (b.length == 4) {
+            if ((b[0] & 0xff) == 100 && (b[1] & 0xc0) == 64) {
+                return true; // 100.64.0.0/10 carrier-grade NAT (includes cloud metadata 100.100.100.200)
+            }
+            return isInternalIp(address.getHostAddress());
+        }
+        return false;
+    }
+
+
+    private static boolean isCanonicalIPv4(String host) {
+        String[] parts = host.split("\\.", -1);
+        if (parts.length != 4) {
+            return false;
+        }
+        for (String part : parts) {
+            if (!isNumber(part) || part.length() > 3 || (part.length() > 1 && part.startsWith("0"))
+                    || Integer.parseInt(part) > 255) {
+                return false;
+            }
+        }
+        return true;
     }
 
 

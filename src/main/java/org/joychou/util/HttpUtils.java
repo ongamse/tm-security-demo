@@ -5,7 +5,7 @@ import org.apache.commons.httpclient.HttpClient;
 import org.apache.commons.httpclient.methods.GetMethod;
 import org.apache.commons.io.IOUtils;
 import org.apache.http.HttpResponse;
-import org.apache.http.client.fluent.Request;
+import org.apache.http.client.config.RequestConfig;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
@@ -14,6 +14,7 @@ import org.apache.http.impl.nio.client.HttpAsyncClients;
 import org.apache.http.util.EntityUtils;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
+import org.joychou.security.ssrf.SSRFChecker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -23,7 +24,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
-import java.net.URI;
 import java.net.URL;
 import java.net.URLConnection;
 import java.util.concurrent.*;
@@ -35,10 +35,83 @@ public class HttpUtils {
 
     private final static Logger logger = LoggerFactory.getLogger(HttpUtils.class);
 
+    private static final int MAX_REDIRECTS = 5;
+    private static final int CONNECT_TIMEOUT_MS = 5000;
+    private static final int READ_TIMEOUT_MS = 10000;
+
+    /**
+     * Redirects are never followed automatically by the Apache clients, because the redirect
+     * target would not be validated.
+     */
+    private static final RequestConfig NO_REDIRECT_CONFIG = RequestConfig.custom()
+            .setRedirectsEnabled(false)
+            .setConnectTimeout(CONNECT_TIMEOUT_MS)
+            .setSocketTimeout(READ_TIMEOUT_MS)
+            .build();
+
+    private static final String SSRF_BLOCKED_MSG = "[-] SSRF check failed";
+
+
+    /**
+     * Open a connection to the url after validating it. Redirects are followed manually and
+     * every hop is validated (http/https only, no loopback/private/link-local/metadata addresses).
+     *
+     * @param url http request url
+     * @return a connected HttpURLConnection whose response is not a redirect
+     * @throws IOException if the url (or any redirect target) is not allowed
+     */
+    public static HttpURLConnection openValidatedConnection(String url) throws IOException {
+        String current = url;
+        for (int i = 0; i <= MAX_REDIRECTS; i++) {
+            if (!SSRFChecker.isSafeUrl(current)) {
+                throw new IOException(SSRF_BLOCKED_MSG);
+            }
+            URL u = new URL(current);
+            URLConnection urlConnection = u.openConnection();
+            if (!(urlConnection instanceof HttpURLConnection)) {
+                throw new IOException(SSRF_BLOCKED_MSG);
+            }
+            HttpURLConnection conn = (HttpURLConnection) urlConnection;
+            conn.setInstanceFollowRedirects(false);
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(READ_TIMEOUT_MS);
+
+            int code = conn.getResponseCode(); // send request
+            if (code == HttpURLConnection.HTTP_MOVED_PERM || code == HttpURLConnection.HTTP_MOVED_TEMP
+                    || code == HttpURLConnection.HTTP_SEE_OTHER || code == 307 || code == 308) {
+                String location = conn.getHeaderField("Location");
+                conn.disconnect();
+                if (location == null) {
+                    throw new IOException("Redirect without Location header");
+                }
+                current = new URL(u, location).toString();
+                continue;
+            }
+            return conn;
+        }
+        throw new IOException("Too many redirects");
+    }
+
+
+    /**
+     * Open an input stream for the validated url (see {@link #openValidatedConnection(String)}).
+     *
+     * @param url http request url
+     */
+    public static InputStream openValidatedStream(String url) throws IOException {
+        return openValidatedConnection(url).getInputStream();
+    }
+
+
     public static String commonHttpClient(String url) {
+
+        if (!SSRFChecker.isSafeUrl(url)) {
+            return SSRF_BLOCKED_MSG;
+        }
 
         HttpClient client = new HttpClient();
         GetMethod method = new GetMethod(url);
+        method.setFollowRedirects(false);
 
         try {
             client.executeMethod(method); // send request
@@ -55,8 +128,13 @@ public class HttpUtils {
 
 
     public static String request(String url) {
-        try {
-            return Request.Get(url).execute().returnContent().toString();
+        if (!SSRFChecker.isSafeUrl(url)) {
+            return SSRF_BLOCKED_MSG;
+        }
+        try (CloseableHttpClient client = HttpClients.custom().setDefaultRequestConfig(NO_REDIRECT_CONFIG).build()) {
+            HttpGet httpGet = new HttpGet(url);
+            httpGet.setConfig(NO_REDIRECT_CONFIG);
+            return EntityUtils.toString(client.execute(httpGet).getEntity()); // send request
         } catch (Exception e) {
             return e.getMessage();
         }
@@ -67,12 +145,15 @@ public class HttpUtils {
 
         StringBuilder result = new StringBuilder();
 
-        try {
+        if (!SSRFChecker.isSafeUrl(url)) {
+            return SSRF_BLOCKED_MSG;
+        }
 
-            CloseableHttpClient client = HttpClients.createDefault();
+        try (CloseableHttpClient client = HttpClients.createDefault()) {
+
             HttpGet httpGet = new HttpGet(url);
-            // set redirect enable false
-            // httpGet.setConfig(RequestConfig.custom().setRedirectsEnabled(false).build());
+            // redirects are not followed because the target would not be validated
+            httpGet.setConfig(NO_REDIRECT_CONFIG);
             HttpResponse httpResponse = client.execute(httpGet); // send request
             BufferedReader rd = new BufferedReader(new InputStreamReader(httpResponse.getEntity().getContent()));
 
@@ -91,8 +172,7 @@ public class HttpUtils {
 
     public static String URLConnection(String url) {
         try {
-            URL u = new URL(url);
-            URLConnection urlConnection = u.openConnection();
+            HttpURLConnection urlConnection = openValidatedConnection(url);
             BufferedReader in = new BufferedReader(new InputStreamReader(urlConnection.getInputStream())); //send request
             String inputLine;
             StringBuilder html = new StringBuilder();
@@ -115,11 +195,8 @@ public class HttpUtils {
      */
     public static String HttpURLConnection(String url) {
         try {
-            URL u = new URL(url);
-            URLConnection urlConnection = u.openConnection();
-            HttpURLConnection conn = (HttpURLConnection) urlConnection;
-//             conn.setInstanceFollowRedirects(false);
-//             Many HttpURLConnection methods can send http request, such as getResponseCode, getHeaderField
+            // validated connection; redirects are followed manually and each hop is validated
+            HttpURLConnection conn = openValidatedConnection(url);
             InputStream is = conn.getInputStream();  // send request
             BufferedReader in = new BufferedReader(new InputStreamReader(is));
             String inputLine;
@@ -143,9 +220,12 @@ public class HttpUtils {
      * @param url http request url
      */
     public static String Jsoup(String url) {
+        if (!SSRFChecker.isSafeUrl(url)) {
+            return SSRF_BLOCKED_MSG;
+        }
         try {
             Document doc = Jsoup.connect(url)
-//                    .followRedirects(false)
+                    .followRedirects(false)
                     .timeout(3000)
                     .cookie("name", "joychou") // request cookies
                     .execute().parse();
@@ -162,8 +242,13 @@ public class HttpUtils {
      * UserAgent is <code>okhttp/2.5.0</code>.
      */
     public static String okhttp(String url) throws IOException {
+        if (!SSRFChecker.isSafeUrl(url)) {
+            throw new IOException(SSRF_BLOCKED_MSG);
+        }
         OkHttpClient client = new OkHttpClient();
-//         client.setFollowRedirects(false);
+        // redirects are not followed because the target would not be validated
+        client.setFollowRedirects(false);
+        client.setFollowSslRedirects(false);
         com.squareup.okhttp.Request ok_http = new com.squareup.okhttp.Request.Builder().url(url).build();
         return client.newCall(ok_http).execute().body().string();
     }
@@ -178,8 +263,9 @@ public class HttpUtils {
      */
     public static void imageIO(String url) {
         try {
-            URL u = new URL(url);
-            ImageIO.read(u); // send request
+            try (InputStream is = openValidatedStream(url)) {
+                ImageIO.read(is); // send request
+            }
         } catch (IOException e) {
             logger.error(e.getMessage());
         }
@@ -195,7 +281,9 @@ public class HttpUtils {
      */
     public static void IOUtils(String url) {
         try {
-            IOUtils.toByteArray(URI.create(url));
+            try (InputStream is = openValidatedStream(url)) {
+                IOUtils.toByteArray(is);
+            }
         } catch (IOException e) {
             logger.error(e.getMessage());
         }
@@ -203,10 +291,15 @@ public class HttpUtils {
 
 
     public static String HttpAsyncClients(String url) {
+        if (!SSRFChecker.isSafeUrl(url)) {
+            return SSRF_BLOCKED_MSG;
+        }
         CloseableHttpAsyncClient httpclient = HttpAsyncClients.createDefault();
         try {
             httpclient.start();
             final HttpGet request = new HttpGet(url);
+            // redirects are not followed because the target would not be validated
+            request.setConfig(NO_REDIRECT_CONFIG);
             Future<HttpResponse> future = httpclient.execute(request, null);
             HttpResponse response = future.get(6000, TimeUnit.MILLISECONDS);
             return EntityUtils.toString(response.getEntity());
