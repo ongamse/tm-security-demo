@@ -2,6 +2,18 @@ package org.joychou.controller;
 
 import groovy.lang.GroovyShell;
 import lombok.extern.slf4j.Slf4j;
+import org.codehaus.groovy.ast.expr.BinaryExpression;
+import org.codehaus.groovy.ast.expr.ConstantExpression;
+import org.codehaus.groovy.ast.expr.Expression;
+import org.codehaus.groovy.ast.stmt.BlockStatement;
+import org.codehaus.groovy.ast.stmt.ExpressionStatement;
+import org.codehaus.groovy.ast.stmt.ReturnStatement;
+import org.codehaus.groovy.ast.stmt.Statement;
+import org.codehaus.groovy.control.CompilerConfiguration;
+import org.codehaus.groovy.control.customizers.SecureASTCustomizer;
+import org.codehaus.groovy.syntax.Types;
+import org.joychou.security.SafeCommand;
+import org.joychou.security.SecurityUtil;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -16,6 +28,9 @@ import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.sql.DriverManager;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 
 
 /**
@@ -33,8 +48,14 @@ public class Rce {
         Runtime run = Runtime.getRuntime();
         StringBuilder sb = new StringBuilder();
 
+        // Allowlisted command + validated args, executed as argv (no shell, no string tokenizing of raw input).
+        List<String> argv = SafeCommand.toArgv(cmd);
+        if (argv == null) {
+            return "Bad boy. I got u.";
+        }
+
         try {
-            Process p = run.exec(cmd);
+            Process p = run.exec(argv.toArray(new String[0]));
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
             String tmpStr;
@@ -65,9 +86,14 @@ public class Rce {
 
         StringBuilder sb = new StringBuilder();
 
+        // Allowlisted command + validated args; no "/bin/sh -c" so shell metacharacters are inert.
+        List<String> argv = SafeCommand.toArgv(cmd);
+        if (argv == null) {
+            return "Bad boy. I got u.";
+        }
+
         try {
-            String[] arrCmd = {"/bin/sh", "-c", cmd};
-            ProcessBuilder processBuilder = new ProcessBuilder(arrCmd);
+            ProcessBuilder processBuilder = new ProcessBuilder(argv);
             Process p = processBuilder.start();
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
@@ -95,10 +121,15 @@ public class Rce {
     @GetMapping("/jscmd")
     public void jsEngine(String jsurl) throws Exception{
         // js nashorn javascript ecmascript
+        // Only load scripts from allowlisted (trusted) domains; never splice user text into script source.
+        String safeUrl = SecurityUtil.checkURL(jsurl);
+        if (safeUrl == null) {
+            throw new IllegalArgumentException("jsurl is not allowed");
+        }
         ScriptEngine engine = new ScriptEngineManager().getEngineByName("js");
         Bindings bindings = engine.getBindings(ScriptContext.ENGINE_SCOPE);
-        String cmd = String.format("load(\"%s\")", jsurl);
-        engine.eval(cmd, bindings);
+        bindings.put("jsurl", safeUrl);
+        engine.eval("load(jsurl)", bindings);
     }
 
 
@@ -126,7 +157,26 @@ public class Rce {
      */
     @GetMapping("groovy")
     public void groovyshell(String content) {
-        GroovyShell groovyShell = new GroovyShell();
+        // Restrict the script to plain constant/arithmetic expressions: no method calls, property
+        // access, imports, closures or class definitions, so user input cannot reach the JVM/OS.
+        SecureASTCustomizer secure = new SecureASTCustomizer();
+        secure.setMethodDefinitionAllowed(false);
+        secure.setClosuresAllowed(false);
+        secure.setPackageAllowed(false);
+        secure.setImportsWhitelist(Collections.<String>emptyList());
+        secure.setStaticImportsWhitelist(Collections.<String>emptyList());
+        secure.setStarImportsWhitelist(Collections.<String>emptyList());
+        secure.setStaticStarImportsWhitelist(Collections.<String>emptyList());
+        secure.setIndirectImportCheckEnabled(true);
+        secure.setTokensWhitelist(Arrays.asList(Types.PLUS, Types.MINUS, Types.MULTIPLY, Types.DIVIDE));
+        secure.setExpressionsWhitelist(Arrays.<Class<? extends Expression>>asList(
+                ConstantExpression.class, BinaryExpression.class));
+        secure.setStatementsWhitelist(Arrays.<Class<? extends Statement>>asList(
+                BlockStatement.class, ExpressionStatement.class, ReturnStatement.class));
+
+        CompilerConfiguration config = new CompilerConfiguration();
+        config.addCompilationCustomizers(secure);
+        GroovyShell groovyShell = new GroovyShell(config);
         groovyShell.evaluate(content);
     }
 
