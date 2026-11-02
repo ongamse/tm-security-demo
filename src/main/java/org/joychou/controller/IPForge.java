@@ -32,38 +32,15 @@ public class IPForge {
     @RequestMapping("/proxy")
     @ResponseBody
     public static String proxy(HttpServletRequest request) {
+        // Forwarding headers are never read here. When running behind a reverse proxy,
+        // enable the container's RemoteIpValve (server.use-forward-headers and
+        // server.tomcat.internal-proxies in application.properties), which only
+        // rewrites getRemoteAddr() for requests coming from trusted internal proxies.
         String remoteAddr = request.getRemoteAddr();
-        // Only honour X-Real-IP when the direct peer is a configured trusted proxy.
-        if (isTrustedProxy(remoteAddr)) {
-            String ip = request.getHeader("X-Real-IP");
-            if (StringUtils.isNotBlank(ip)) {
-                return HtmlUtils.htmlEscape(ip.trim());
-            }
-        }
         if (StringUtils.isNotBlank(remoteAddr)) {
             return HtmlUtils.htmlEscape(remoteAddr);
         }
         return "";
-    }
-
-    /**
-     * Trusted proxy addresses come from the TRUSTED_PROXIES environment variable
-     * (comma-separated exact IPs). Empty by default, so forwarding headers are ignored.
-     */
-    private static boolean isTrustedProxy(String remoteAddr) {
-        if (StringUtils.isBlank(remoteAddr)) {
-            return false;
-        }
-        String trusted = System.getenv("TRUSTED_PROXIES");
-        if (StringUtils.isBlank(trusted)) {
-            return false;
-        }
-        for (String proxyAddr : trusted.split(",")) {
-            if (remoteAddr.equals(proxyAddr.trim())) {
-                return true;
-            }
-        }
-        return false;
     }
 
 
