@@ -120,6 +120,36 @@ public class SecurityUtil {
         TRUSTED_CORS_ORIGINS = Collections.unmodifiableMap(m);
     }
 
+    /**
+     * Closed set of trusted outbound destinations (hosts mirror url/ssrf_safe_domain.xml). Key: the exact
+     * normalised host of an allowed destination; value: the complete constant url that is requested.
+     * Nothing from the request (path, query, ...) is ever appended to a value.
+     */
+    public static final Map<String, String> TRUSTED_OUTBOUND_URLS;
+
+    static {
+        Map<String, String> m = new HashMap<>();
+        m.put("img.alicdn.com", "https://img.alicdn.com/");
+        m.put("www.example.com", "https://www.example.com/");
+        TRUSTED_OUTBOUND_URLS = Collections.unmodifiableMap(m);
+    }
+
+    /**
+     * Select a trusted outbound url for an untrusted url. The request text is only used to look up an
+     * entry of {@link #TRUSTED_OUTBOUND_URLS} (after the http/https, port and public host validation of
+     * {@link SSRFChecker#validate(String)}); the returned string is always one of the map's constants.
+     *
+     * @param url untrusted url
+     * @return the constant outbound url, or null (fail closed)
+     */
+    public static String trustedOutboundUrl(String url) {
+        SafeUrl parsed = SSRFChecker.validate(url);
+        if (parsed == null) {
+            return null;
+        }
+        return TRUSTED_OUTBOUND_URLS.get(parsed.getHost());
+    }
+
     /** Explicit CORS policy constants (no wildcards). */
     public static final String CORS_ALLOW_METHODS = "GET, POST, OPTIONS";
     public static final String CORS_ALLOW_HEADERS = "Content-Type, Authorization";

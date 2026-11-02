@@ -14,7 +14,6 @@ import org.apache.http.impl.nio.client.HttpAsyncClients;
 import org.apache.http.util.EntityUtils;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
-import org.apache.http.HttpHost;
 import org.joychou.security.SafeUrl;
 import org.joychou.security.SecurityUtil;
 import org.joychou.security.ssrf.SSRFChecker;
@@ -27,11 +26,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
-import java.net.InetAddress;
 import java.net.URLConnection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.concurrent.*;
 
 /**
@@ -119,100 +114,18 @@ public class HttpUtils {
 
 
     /**
-     * A trusted outbound destination (constant scheme, host and port).
-     */
-    private static final class Target {
-        final String scheme;
-        final String host;
-        final int port;
-
-        Target(String scheme, String host, int port) {
-            this.scheme = scheme;
-            this.host = host;
-            this.port = port;
-        }
-
-        String origin() {
-            return scheme + "://" + host + ":" + port;
-        }
-    }
-
-    /**
-     * Closed set of trusted outbound hosts (mirrors url/ssrf_safe_domain.xml). The destination of every
-     * Apache / Jsoup request is taken from these constants, never from the request text; only a
-     * validated and percent-encoded path/query is taken from the request.
-     */
-    private static final Map<String, Target> TRUSTED_TARGETS;
-
-    static {
-        Map<String, Target> m = new HashMap<>();
-        m.put("img.alicdn.com", new Target("https", "img.alicdn.com", 443));
-        TRUSTED_TARGETS = Collections.unmodifiableMap(m);
-    }
-
-    /**
-     * Trusted destination plus the encoded request path of an untrusted url.
-     */
-    private static final class Resolved {
-        final Target target;
-        final String file;
-
-        Resolved(Target target, String file) {
-            this.target = target;
-            this.file = file;
-        }
-    }
-
-
-    /**
-     * Validate the untrusted url (http/https, port, public host) and look its host up in the closed set
-     * of trusted targets.
+     * Select the constant outbound url for an untrusted url. The request text is only used to look up an
+     * entry of the closed set {@link SecurityUtil#TRUSTED_OUTBOUND_URLS}; no part of it (host, path, query)
+     * is ever copied into the url that is requested.
      *
-     * @return the constant destination and the validated, encoded path/query, or null (fail closed)
+     * @return the complete constant url, or null (fail closed)
      */
-    private static Resolved resolveTrusted(String url) {
-        SafeUrl parsed = SSRFChecker.validate(url);
-        if (parsed == null) {
-            return null;
-        }
-        Target target = TRUSTED_TARGETS.get(parsed.getHost());
-        String file = SecurityUtil.safeRelativePath(parsed.getFile());
-        if (target == null || file == null) {
+    private static String pin(String url) {
+        String trusted = SecurityUtil.trustedOutboundUrl(url);
+        if (trusted == null) {
             logger.error("[-] SSRF check failed. Host not trusted");
-            return null;
         }
-        return new Resolved(target, file);
-    }
-
-
-    /**
-     * Destination for the Apache clients: the host comes from the trusted constant set and is pinned to
-     * an address that was checked to be public (no second DNS lookup).
-     */
-    private static final class Pinned {
-        final Target target;
-        final String file;
-        final HttpHost host;
-
-        Pinned(Target target, String file, HttpHost host) {
-            this.target = target;
-            this.file = file;
-            this.host = host;
-        }
-    }
-
-
-    private static Pinned pin(String url) {
-        Resolved resolved = resolveTrusted(url);
-        if (resolved == null) {
-            return null;
-        }
-        Target target = resolved.target;
-        InetAddress[] addresses = SSRFChecker.resolvePublicAddresses(target.host);
-        if (addresses == null) {
-            return null;
-        }
-        return new Pinned(target, resolved.file, new HttpHost(addresses[0], target.host, target.port, target.scheme));
+        return trusted;
     }
 
 
@@ -228,15 +141,14 @@ public class HttpUtils {
 
     public static String commonHttpClient(String url) {
 
-        Pinned pinned = pin(url);
-        if (pinned == null) {
+        String target = pin(url);
+        if (target == null) {
             return SSRF_BLOCKED_MSG;
         }
 
         HttpClient client = new HttpClient();
-        // build the request from the validated components
-        client.getHostConfiguration().setHost(pinned.target.host, pinned.target.port, pinned.target.scheme);
-        GetMethod method = new GetMethod(pinned.file);
+        // the request url is a constant of the closed set
+        GetMethod method = new GetMethod(target);
         method.setFollowRedirects(false);
 
         try {
@@ -255,14 +167,14 @@ public class HttpUtils {
 
 
     public static String request(String url) {
-        Pinned pinned = pin(url);
-        if (pinned == null) {
+        String target = pin(url);
+        if (target == null) {
             return SSRF_BLOCKED_MSG;
         }
         try (CloseableHttpClient client = HttpClients.custom().setDefaultRequestConfig(NO_REDIRECT_CONFIG).build()) {
-            HttpGet httpGet = new HttpGet(pinned.file);
+            HttpGet httpGet = new HttpGet(target);
             httpGet.setConfig(NO_REDIRECT_CONFIG);
-            return EntityUtils.toString(client.execute(pinned.host, httpGet).getEntity()); // send request
+            return EntityUtils.toString(client.execute(httpGet).getEntity()); // send request
         } catch (Exception e) {
             logger.error("request failed", e);
             return REQUEST_FAILED_MSG;
@@ -274,17 +186,17 @@ public class HttpUtils {
 
         StringBuilder result = new StringBuilder();
 
-        Pinned pinned = pin(url);
-        if (pinned == null) {
+        String target = pin(url);
+        if (target == null) {
             return SSRF_BLOCKED_MSG;
         }
 
         try (CloseableHttpClient client = HttpClients.createDefault()) {
 
-            HttpGet httpGet = new HttpGet(pinned.file);
+            HttpGet httpGet = new HttpGet(target);
             // redirects are not followed because the target would not be validated
             httpGet.setConfig(NO_REDIRECT_CONFIG);
-            HttpResponse httpResponse = client.execute(pinned.host, httpGet); // send request
+            HttpResponse httpResponse = client.execute(httpGet); // send request
             BufferedReader rd = new BufferedReader(new InputStreamReader(httpResponse.getEntity().getContent()));
 
             String line;
@@ -351,13 +263,13 @@ public class HttpUtils {
      * @param url http request url
      */
     public static String Jsoup(String url) {
-        Resolved resolved = resolveTrusted(url);
-        if (resolved == null) {
+        String target = pin(url);
+        if (target == null) {
             return SSRF_BLOCKED_MSG;
         }
         try {
-            // constant trusted origin + validated, encoded path/query
-            Document doc = Jsoup.connect(resolved.target.origin() + resolved.file)
+            // the request url is a constant of the closed set
+            Document doc = Jsoup.connect(target)
                     .followRedirects(false)
                     .timeout(3000)
                     .cookie("name", "joychou") // request cookies
@@ -426,17 +338,17 @@ public class HttpUtils {
 
 
     public static String HttpAsyncClients(String url) {
-        Pinned pinned = pin(url);
-        if (pinned == null) {
+        String target = pin(url);
+        if (target == null) {
             return SSRF_BLOCKED_MSG;
         }
         CloseableHttpAsyncClient httpclient = HttpAsyncClients.createDefault();
         try {
             httpclient.start();
-            final HttpGet request = new HttpGet(pinned.file);
+            final HttpGet request = new HttpGet(target);
             // redirects are not followed because the target would not be validated
             request.setConfig(NO_REDIRECT_CONFIG);
-            Future<HttpResponse> future = httpclient.execute(pinned.host, request, null);
+            Future<HttpResponse> future = httpclient.execute(request, null);
             HttpResponse response = future.get(6000, TimeUnit.MILLISECONDS);
             return EntityUtils.toString(response.getEntity());
         } catch (Exception e) {
