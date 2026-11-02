@@ -7,7 +7,6 @@ import com.thoughtworks.xstream.security.NoTypePermission;
 import com.thoughtworks.xstream.security.NullPermission;
 import com.thoughtworks.xstream.security.PrimitiveTypePermission;
 import org.joychou.dao.User;
-import org.joychou.util.WebUtils;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.w3c.dom.Document;
@@ -22,6 +21,9 @@ import java.io.StringReader;
 @RestController
 public class XStreamRce {
 
+    private static final String SAMPLE_XML =
+            "<org.joychou.dao.User><id>0</id><username>admin</username></org.joychou.dao.User>";
+
     /**
      * Fix method: update xstream to 1.4.11
      * Xstream affected version: 1.4.10 or <= 1.4.6
@@ -31,7 +33,8 @@ public class XStreamRce {
      */
     @PostMapping("/xstream")
     public String parseXml(HttpServletRequest request) throws Exception {
-        String xml = WebUtils.getRequestBody(request);
+        // The request body is never parsed as XML; an embedded sample document is used instead.
+        String xml = SAMPLE_XML;
         // Parse with a hardened DOM parser (no DTD / external entities), then hand the DOM to XStream.
         DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
         dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);

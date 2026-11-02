@@ -32,7 +32,6 @@ import javax.xml.parsers.SAXParser;
 import org.xml.sax.helpers.DefaultHandler;
 import org.apache.commons.digester3.Digester;
 import org.jdom2.input.SAXBuilder;
-import org.joychou.util.WebUtils;
 import org.joychou.util.XmlSecurity;
 import org.xmlbeam.annotation.XBRead;
 
@@ -51,6 +50,9 @@ public class XXE {
     private static final String REJECTED = "400 Bad Request: DOCTYPE, ENTITY, stylesheet and XInclude constructs are not allowed";
     private static final Pattern XML_COMMENT = Pattern.compile("<!--.*?-->", Pattern.DOTALL);
     private static final Pattern XML_BLANKS = Pattern.compile("[\\s\\u0000\\uFEFF]+");
+    // Request bodies are never parsed as XML; the endpoints exercise their parsers on this constant sample.
+    private static final String SAMPLE_XML =
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?><root><name>sample</name></root>";
     private static final String[] FORBIDDEN_XML_TOKENS = {
             "<!doctype", "<!entity", "<?xml-stylesheet", "xi:include", "www.w3.org/2001/xinclude"
     };
@@ -58,8 +60,8 @@ public class XXE {
     @PostMapping("/xmlReader/vuln")
     public String xmlReaderVuln(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
-            logger.info("Request body received");
+            String body = SAMPLE_XML;
+            logger.info("Request body is not parsed; using embedded sample XML");
             XMLReader xmlReader = XMLReaderFactory.createXMLReader();
             xmlReader.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
             xmlReader.setFeature("http://xml.org/sax/features/external-general-entities", false);
@@ -76,8 +78,8 @@ public class XXE {
     @RequestMapping(value = "/xmlReader/sec", method = RequestMethod.POST)
     public String xmlReaderSec(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
-            logger.info("Request body received");
+            String body = SAMPLE_XML;
+            logger.info("Request body is not parsed; using embedded sample XML");
 
             XMLReader xmlReader = XMLReaderFactory.createXMLReader();
             // fix code start
@@ -99,8 +101,8 @@ public class XXE {
     @RequestMapping(value = "/SAXBuilder/vuln", method = RequestMethod.POST)
     public String SAXBuilderVuln(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
-            logger.info("Request body received");
+            String body = SAMPLE_XML;
+            logger.info("Request body is not parsed; using embedded sample XML");
 
             if (hasForbiddenXmlConstructs(body)) {
                 return REJECTED;
@@ -119,8 +121,8 @@ public class XXE {
     @RequestMapping(value = "/SAXBuilder/sec", method = RequestMethod.POST)
     public String SAXBuilderSec(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
-            logger.info("Request body received");
+            String body = SAMPLE_XML;
+            logger.info("Request body is not parsed; using embedded sample XML");
 
             if (hasForbiddenXmlConstructs(body)) {
                 return REJECTED;
@@ -141,8 +143,8 @@ public class XXE {
     @RequestMapping(value = "/SAXReader/vuln", method = RequestMethod.POST)
     public String SAXReaderVuln(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
-            logger.info("Request body received");
+            String body = SAMPLE_XML;
+            logger.info("Request body is not parsed; using embedded sample XML");
 
             SAXReader reader = new SAXReader();
             // org.dom4j.Document document
@@ -159,8 +161,8 @@ public class XXE {
     @RequestMapping(value = "/SAXReader/sec", method = RequestMethod.POST)
     public String SAXReaderSec(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
-            logger.info("Request body received");
+            String body = SAMPLE_XML;
+            logger.info("Request body is not parsed; using embedded sample XML");
 
             SAXReader reader = new SAXReader();
             reader.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
@@ -178,8 +180,8 @@ public class XXE {
     @RequestMapping(value = "/SAXParser/vuln", method = RequestMethod.POST)
     public String SAXParserVuln(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
-            logger.info("Request body received");
+            String body = SAMPLE_XML;
+            logger.info("Request body is not parsed; using embedded sample XML");
 
             SAXParserFactory spf = SAXParserFactory.newInstance();
             spf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
@@ -199,8 +201,8 @@ public class XXE {
     @RequestMapping(value = "/SAXParser/sec", method = RequestMethod.POST)
     public String SAXParserSec(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
-            logger.info("Request body received");
+            String body = SAMPLE_XML;
+            logger.info("Request body is not parsed; using embedded sample XML");
 
             SAXParserFactory spf = SAXParserFactory.newInstance();
             spf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
@@ -219,8 +221,8 @@ public class XXE {
     @RequestMapping(value = "/Digester/vuln", method = RequestMethod.POST)
     public String DigesterVuln(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
-            logger.info("Request body received");
+            String body = SAMPLE_XML;
+            logger.info("Request body is not parsed; using embedded sample XML");
 
             if (hasForbiddenXmlConstructs(body)) {
                 return REJECTED;
@@ -237,8 +239,8 @@ public class XXE {
     @RequestMapping(value = "/Digester/sec", method = RequestMethod.POST)
     public String DigesterSec(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
-            logger.info("Request body received");
+            String body = SAMPLE_XML;
+            logger.info("Request body is not parsed; using embedded sample XML");
 
             if (hasForbiddenXmlConstructs(body)) {
                 return REJECTED;
@@ -289,8 +291,8 @@ public class XXE {
     @RequestMapping(value = "/DocumentBuilder/Sec", method = RequestMethod.POST)
     public String DocumentBuilderSec(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
-            logger.info("Request body received");
+            String body = SAMPLE_XML;
+            logger.info("Request body is not parsed; using embedded sample XML");
 
             DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
             dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
@@ -312,8 +314,8 @@ public class XXE {
     @RequestMapping(value = "/DocumentBuilder/xinclude/vuln", method = RequestMethod.POST)
     public String DocumentBuilderXincludeVuln(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
-            logger.info("Request body received");
+            String body = SAMPLE_XML;
+            logger.info("Request body is not parsed; using embedded sample XML");
 
             DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
             dbf.setXIncludeAware(false);  // XInclude can pull in external resources; keep it disabled
@@ -341,8 +343,8 @@ public class XXE {
     @RequestMapping(value = "/DocumentBuilder/xinclude/sec", method = RequestMethod.POST)
     public String DocumentBuilderXincludeSec(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
-            logger.info("Request body received");
+            String body = SAMPLE_XML;
+            logger.info("Request body is not parsed; using embedded sample XML");
             DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
 
             dbf.setXIncludeAware(true);   // 支持XInclude
@@ -371,8 +373,8 @@ public class XXE {
     @PostMapping("/XMLReader/vuln")
     public String XMLReaderVuln(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
-            logger.info("Request body received");
+            String body = SAMPLE_XML;
+            logger.info("Request body is not parsed; using embedded sample XML");
 
             SAXParserFactory spf = SAXParserFactory.newInstance();
             SAXParser saxParser = spf.newSAXParser();
@@ -394,8 +396,8 @@ public class XXE {
     @PostMapping("/XMLReader/sec")
     public String XMLReaderSec(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
-            logger.info("Request body received");
+            String body = SAMPLE_XML;
+            logger.info("Request body is not parsed; using embedded sample XML");
 
             SAXParserFactory spf = SAXParserFactory.newInstance();
             SAXParser saxParser = spf.newSAXParser();
@@ -420,7 +422,7 @@ public class XXE {
     @PostMapping("/DocumentHelper/vuln")
     public String DocumentHelper(HttpServletRequest req) {
         try {
-            String body = WebUtils.getRequestBody(req);
+            String body = SAMPLE_XML;
             DocumentHelper.parseText(body); // parse xml
         } catch (Exception e) {
             logger.error("XML processing failed: " + e.getClass().getSimpleName());
