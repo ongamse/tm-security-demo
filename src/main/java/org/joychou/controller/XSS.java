@@ -8,6 +8,9 @@ import org.springframework.web.util.HtmlUtils;
 
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletResponse;
+import java.io.UnsupportedEncodingException;
+import java.net.URLDecoder;
+import java.net.URLEncoder;
 
 
 /**
@@ -39,8 +42,9 @@ public class XSS {
      */
     @RequestMapping("/stored/store")
     @ResponseBody
-    public String store(String xss, HttpServletResponse response) {
-        Cookie cookie = new Cookie("xss", xss);
+    public String store(String xss, HttpServletResponse response) throws UnsupportedEncodingException {
+        // percent-encode so CR/LF, ';' and ',' can never reach the Set-Cookie header
+        Cookie cookie = new Cookie("xss", URLEncoder.encode(xss == null ? "" : xss, "UTF-8"));
         cookie.setHttpOnly(true);
         cookie.setSecure(true);
         cookie.setPath("/");
@@ -57,8 +61,8 @@ public class XSS {
      */
     @RequestMapping("/stored/show")
     @ResponseBody
-    public String show(@CookieValue("xss") String xss) {
-        return HtmlUtils.htmlEscape(xss);
+    public String show(@CookieValue("xss") String xss) throws UnsupportedEncodingException {
+        return HtmlUtils.htmlEscape(URLDecoder.decode(xss, "UTF-8"));
     }
 
     /**

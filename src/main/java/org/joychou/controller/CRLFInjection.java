@@ -31,7 +31,7 @@ public class CRLFInjection {
         response.addHeader("test1", encTest1);
         response.setHeader("test2", encTest2);
         String author = request.getParameter("test3");
-        Cookie cookie = new Cookie("test3", author);
+        Cookie cookie = new Cookie("test3", URLEncoder.encode(author == null ? "" : author, "UTF-8"));
         cookie.setHttpOnly(true);
         cookie.setSecure(true);
         cookie.setPath("/");
