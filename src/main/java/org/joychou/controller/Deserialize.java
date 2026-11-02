@@ -45,9 +45,13 @@ public class Deserialize {
         byte[] decoded = Base64.getDecoder().decode(rememberMe);
 
         ByteArrayInputStream bytes = new ByteArrayInputStream(decoded);
-        ObjectInputStream in = new ObjectInputStream(bytes);
-        in.readObject();
-        in.close();
+        // Class allowlist enforced in resolveClass; untrusted classes are rejected before instantiation.
+        try (ObjectInputStream in = new AntObjectInputStream(bytes)) {
+            in.readObject();
+        } catch (InvalidClassException e) {
+            logger.info(e.toString());
+            return e.toString();
+        }
 
         return "Are u ok?";
     }
