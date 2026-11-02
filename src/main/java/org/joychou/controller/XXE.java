@@ -19,6 +19,8 @@ import org.xml.sax.helpers.XMLReaderFactory;
 import org.xml.sax.XMLReader;
 
 import java.io.*;
+import java.util.Locale;
+import java.util.regex.Pattern;
 
 import org.xml.sax.InputSource;
 
@@ -47,6 +49,12 @@ public class XXE {
 
     private static final Logger logger = LoggerFactory.getLogger(XXE.class);
     private static final String EXCEPT = "xxe except";
+    private static final String REJECTED = "400 Bad Request: DOCTYPE, ENTITY, stylesheet and XInclude constructs are not allowed";
+    private static final Pattern XML_COMMENT = Pattern.compile("<!--.*?-->", Pattern.DOTALL);
+    private static final Pattern XML_BLANKS = Pattern.compile("[\\s\\u0000\\uFEFF]+");
+    private static final String[] FORBIDDEN_XML_TOKENS = {
+            "<!doctype", "<!entity", "<?xml-stylesheet", "xi:include", "www.w3.org/2001/xinclude"
+    };
 
     @PostMapping("/xmlReader/vuln")
     public String xmlReaderVuln(HttpServletRequest request) {
@@ -95,6 +103,9 @@ public class XXE {
             String body = WebUtils.getRequestBody(request);
             logger.info("Request body: {}", LogSanitizer.clean(body));
 
+            if (hasForbiddenXmlConstructs(body)) {
+                return REJECTED;
+            }
             SAXBuilder builder = new SAXBuilder(XmlSecurity.secureJdomReaderFactory());
             builder.setExpandEntities(false);
             // org.jdom2.Document document
@@ -112,6 +123,9 @@ public class XXE {
             String body = WebUtils.getRequestBody(request);
             logger.info("Request body: {}", LogSanitizer.clean(body));
 
+            if (hasForbiddenXmlConstructs(body)) {
+                return REJECTED;
+            }
             SAXBuilder builder = new SAXBuilder(XmlSecurity.secureJdomReaderFactory());
             builder.setExpandEntities(false);
             // org.jdom2.Document document
@@ -209,6 +223,9 @@ public class XXE {
             String body = WebUtils.getRequestBody(request);
             logger.info("Request body: {}", LogSanitizer.clean(body));
 
+            if (hasForbiddenXmlConstructs(body)) {
+                return REJECTED;
+            }
             Digester digester = new Digester(XmlSecurity.newSecureSaxParser());
             digester.parse(new StringReader(body));  // parse xml
         } catch (Exception e) {
@@ -224,6 +241,9 @@ public class XXE {
             String body = WebUtils.getRequestBody(request);
             logger.info("Request body: {}", LogSanitizer.clean(body));
 
+            if (hasForbiddenXmlConstructs(body)) {
+                return REJECTED;
+            }
             Digester digester = new Digester(XmlSecurity.newSecureSaxParser());
             digester.parse(new StringReader(body));  // parse xml
 
@@ -411,6 +431,25 @@ public class XXE {
         return "DocumentHelper xxe vuln code";
     }
 
+
+    /**
+     * Strict pre-check: true when the XML text carries DTD / entity / stylesheet / XInclude constructs
+     * (case-insensitive, also after stripping BOM, NULs, whitespace and comments) or is empty.
+     */
+    private static boolean hasForbiddenXmlConstructs(String xml) {
+        if (xml == null || xml.isEmpty()) {
+            return true;
+        }
+        String raw = xml.toLowerCase(Locale.ROOT);
+        String noComments = XML_COMMENT.matcher(raw).replaceAll("");
+        String compact = XML_BLANKS.matcher(noComments).replaceAll("");
+        for (String token : FORBIDDEN_XML_TOKENS) {
+            if (raw.contains(token) || noComments.contains(token) || compact.contains(token)) {
+                return true;
+            }
+        }
+        return false;
+    }
 
     private static void response(NodeList rootNodeList){
         for (int i = 0; i < rootNodeList.getLength(); i++) {
