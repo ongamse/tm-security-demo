@@ -103,6 +103,33 @@ public class SecurityUtil {
 
 
     /**
+     * Validate an untrusted CORS Origin header value. The origin must be a bare http/https origin
+     * (scheme://host[:port], no userinfo/path/query/fragment), must pass the block-list in
+     * {@link #checkURL(String)} and its host must equal a safe domain or be a sub-domain of it.
+     * The literal "null" origin and a missing origin are never allowed.
+     *
+     * @param origin untrusted value of the Origin request header
+     * @return the original origin when trusted, otherwise null
+     */
+    public static String checkCorsOrigin(String origin) {
+        if (origin == null || origin.isEmpty() || checkURL(origin) == null
+                || checkRedirectURL(origin, WebConfig.getSafeDomains()) == null) {
+            return null;
+        }
+        try {
+            URI uri = new URI(origin);
+            String path = uri.getRawPath();
+            if ((path != null && !path.isEmpty()) || uri.getRawQuery() != null || uri.getRawFragment() != null) {
+                return null;
+            }
+            return origin;
+        } catch (URISyntaxException e) {
+            return null;
+        }
+    }
+
+
+    /**
      * Validate an untrusted redirect target against the configured safe/block domain lists
      * (url/url_safe_domain.xml). See {@link #checkRedirectURL(String, Collection)}.
      *
