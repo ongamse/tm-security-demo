@@ -52,6 +52,7 @@ public class HttpUtils {
             .build();
 
     private static final String SSRF_BLOCKED_MSG = "[-] SSRF check failed";
+    private static final String REQUEST_FAILED_MSG = "Request failed.";
 
 
     /**
@@ -172,7 +173,8 @@ public class HttpUtils {
             return new String(resBody);
 
         } catch (IOException e) {
-            return "Error: " + e.getMessage();
+            logger.error("request failed", e);
+            return REQUEST_FAILED_MSG;
         } finally {
             // Release the connection.
             method.releaseConnection();
@@ -190,7 +192,8 @@ public class HttpUtils {
             httpGet.setConfig(NO_REDIRECT_CONFIG);
             return EntityUtils.toString(client.execute(pinned.host, httpGet).getEntity()); // send request
         } catch (Exception e) {
-            return e.getMessage();
+            logger.error("request failed", e);
+            return REQUEST_FAILED_MSG;
         }
     }
 
@@ -220,7 +223,8 @@ public class HttpUtils {
             return result.toString();
 
         } catch (Exception e) {
-            return e.getMessage();
+            logger.error("request failed", e);
+            return REQUEST_FAILED_MSG;
         }
     }
 
@@ -238,8 +242,8 @@ public class HttpUtils {
             in.close();
             return html.toString();
         } catch (Exception e) {
-            logger.error(e.getMessage());
-            return e.getMessage();
+            logger.error("request failed", e);
+            return REQUEST_FAILED_MSG;
         }
     }
 
@@ -263,8 +267,8 @@ public class HttpUtils {
             in.close();
             return html.toString();
         } catch (IOException e) {
-            logger.error(e.getMessage());
-            return e.getMessage();
+            logger.error("request failed", e);
+            return REQUEST_FAILED_MSG;
         }
     }
 
@@ -287,7 +291,8 @@ public class HttpUtils {
                     .execute().parse();
             return doc.outerHtml();
         } catch (IOException e) {
-            return e.getMessage();
+            logger.error("request failed", e);
+            return REQUEST_FAILED_MSG;
         }
     }
 
@@ -362,7 +367,8 @@ public class HttpUtils {
             HttpResponse response = future.get(6000, TimeUnit.MILLISECONDS);
             return EntityUtils.toString(response.getEntity());
         } catch (Exception e) {
-            return e.getMessage();
+            logger.error("request failed", e);
+            return REQUEST_FAILED_MSG;
         } finally {
             try {
                 httpclient.close();

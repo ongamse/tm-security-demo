@@ -39,7 +39,8 @@ public class Rce {
             }
             return HtmlUtils.htmlEscape(output);
         } catch (Exception e) {
-            return HtmlUtils.htmlEscape(e.toString());
+            log.error("request failed", e);
+            return "Request failed.";
         }
     }
 
@@ -58,7 +59,8 @@ public class Rce {
             }
             return HtmlUtils.htmlEscape(output);
         } catch (Exception e) {
-            return HtmlUtils.htmlEscape(e.toString());
+            log.error("request failed", e);
+            return "Request failed.";
         }
     }
 
