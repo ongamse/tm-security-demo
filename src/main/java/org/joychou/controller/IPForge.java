@@ -18,9 +18,9 @@ import javax.servlet.http.HttpServletRequest;
 public class IPForge {
 
     // no any proxy
-    @RequestMapping("/noproxy")
+    @RequestMapping(value = "/noproxy", produces = "text/plain;charset=UTF-8")
     public static String noProxy(HttpServletRequest request) {
-        return request.getRemoteAddr();
+        return HtmlUtils.htmlEscape(request.getRemoteAddr());
     }
 
 

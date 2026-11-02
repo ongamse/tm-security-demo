@@ -47,7 +47,7 @@ public class Rce {
     /**
      * <a href="http://localhost:8080/rce/ProcessBuilder?cmd=whoami">POC</a>
      */
-    @GetMapping("/ProcessBuilder")
+    @GetMapping(value = "/ProcessBuilder", produces = "text/plain;charset=UTF-8")
     public String processBuilder(String cmd) {
 
         // Allowlisted executable + allowlisted options + validated path; no "/bin/sh -c".

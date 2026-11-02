@@ -42,7 +42,33 @@ public class WebUtils {
         if (!isValidJsonpCallback(callback)) {
             return "error";
         }
-        return callback + "(" + jsonStr + ")";
+        return callback + "(" + escapeJsonForScript(jsonStr) + ")";
+    }
+
+    /**
+     * Make serialised JSON safe to embed in executable JavaScript. In valid JSON the characters
+     * below can only occur inside string literals, where the \\uXXXX form is equivalent.
+     */
+    public static String escapeJsonForScript(String json) {
+        if (json == null) {
+            return "null";
+        }
+        StringBuilder sb = new StringBuilder(json.length() + 16);
+        for (int i = 0; i < json.length(); i++) {
+            char c = json.charAt(i);
+            if (c == '<' || c == '>' || c == '&' || c == 0x2028 || c == 0x2029) {
+                sb.append(String.format("\\u%04x", (int) c));
+            } else {
+                sb.append(c);
+            }
+        }
+        return sb.toString();
+    }
+
+    /** Mark a response as JavaScript that browsers must not sniff into another type. */
+    public static void setJavascriptHeaders(javax.servlet.http.HttpServletResponse response) {
+        response.setContentType("application/javascript;charset=UTF-8");
+        response.setHeader("X-Content-Type-Options", "nosniff");
     }
 
 
