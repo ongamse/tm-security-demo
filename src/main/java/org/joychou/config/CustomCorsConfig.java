@@ -26,7 +26,9 @@ public class CustomCorsConfig extends WebMvcRegistrationsAdapter {
                 registry.addMapping("/cors/sec/webMvcConfigurer") // /**表示所有路由path
                         .allowedOrigins(allowOrigins)
                         .allowedMethods("GET", "POST")
-                        .allowCredentials(true);
+                        .allowedHeaders("Content-Type", "Accept", "X-Requested-With")
+                        .allowCredentials(true)
+                        .maxAge(1800);
             }
         };
     }

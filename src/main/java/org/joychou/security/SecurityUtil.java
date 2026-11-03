@@ -286,6 +286,36 @@ public class SecurityUtil {
     }
 
 
+    /**
+     * Exact-match CORS allowlist lookup. The Origin request header must be a valid bare origin
+     * (see {@link #checkOrigin(String)}) AND equal, character for character, one of the
+     * origins built on the server from the configured safe domains (http and https for every
+     * entry of url_safe_domain.xml). The returned value is the server-side allowlist entry, never
+     * the request string. Sub-domains and other ports are not implicitly trusted.
+     *
+     * @param origin the value of the Origin request header
+     * @return the matching allowlist entry; null when the origin is absent or not allowlisted
+     */
+    public static String corsAllowedOrigin(String origin) {
+        if (origin == null || checkOrigin(origin) == null) {
+            return null;
+        }
+        ArrayList<String> safeDomains = WebConfig.getSafeDomains();
+        if (safeDomains == null) {
+            return null;
+        }
+        for (String domain : safeDomains) {
+            for (String scheme : new String[]{"https", "http"}) {
+                String allowed = scheme + "://" + domain;
+                if (allowed.equals(origin)) {
+                    return allowed;
+                }
+            }
+        }
+        return null;
+    }
+
+
     private static final String LABEL_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789.-";
 
     /**

@@ -40,11 +40,13 @@ public class CustomCorsProcessor extends DefaultCorsProcessor {
      */
     private String customCheckOrigin(String requestOrigin) {
 
-        if ( SecurityUtil.checkURL(requestOrigin) != null) {
-            logger.info("[+] Origin: "  + requestOrigin );
-            return requestOrigin;
+        // 只返回与静态白名单完全匹配的origin（服务端的白名单项，而不是请求里的字符串）
+        String allowed = SecurityUtil.corsAllowedOrigin(requestOrigin);
+        if (allowed != null) {
+            logger.info("[+] Origin allowed: " + allowed);
+            return allowed;
         }
-        logger.error("[-] Origin: " + requestOrigin );
+        logger.error("[-] Origin rejected");
         return null;
     }
 

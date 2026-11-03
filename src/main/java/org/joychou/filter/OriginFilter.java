@@ -38,7 +38,8 @@ public class OriginFilter implements Filter {
         logger.info("[+] Origin: " + WebUtils.sanitizeLog(origin) + "\tCurrent url:" + WebUtils.sanitizeLog(request.getRequestURL()));
 
         // 以file协议访问html，origin为字符串的null，所以依然会走安全check逻辑
-        String safeOrigin = SecurityUtil.checkOrigin(origin);
+        String safeOrigin = SecurityUtil.corsAllowedOrigin(origin);
+        response.addHeader("Vary", "Origin");
         if (origin != null && safeOrigin == null) {
             logger.error("[-] Origin check error. " + "Origin: " + WebUtils.sanitizeLog(origin) +
                     "\tCurrent url:" + WebUtils.sanitizeLog(request.getRequestURL()));
@@ -51,8 +52,8 @@ public class OriginFilter implements Filter {
         if (safeOrigin != null) {
             response.setHeader("Access-Control-Allow-Origin", safeOrigin);
             response.setHeader("Access-Control-Allow-Credentials", "true");
-            response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTION");
-            response.addHeader("Vary", "Origin");
+            response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+            response.setHeader("Access-Control-Allow-Headers", "Content-Type, Accept, X-Requested-With");
         }
 
         filterChain.doFilter(req, res);
