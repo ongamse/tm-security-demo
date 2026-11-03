@@ -185,10 +185,14 @@ public class FileUpload {
             logger.info("Path outside upload folder, delete skipped");
             return;
         }
-        File delFile = normalized.toFile();
-        if (delFile.isFile() && delFile.delete()) {
-            logger.info("[+] {} delete successfully!", WebUtils.sanitizeLog(normalized.getFileName().toString()));
-            return;
+        try {
+            // Atomic delete of the validated Path (a symlink is removed, never followed)
+            if (Files.deleteIfExists(normalized)) {
+                logger.info("[+] {} delete successfully!", WebUtils.sanitizeLog(normalized.getFileName().toString()));
+                return;
+            }
+        } catch (IOException e) {
+            logger.debug("Delete failed: {}", e.toString());
         }
         logger.info("{} delete failed!", WebUtils.sanitizeLog(normalized.getFileName().toString()));
     }
