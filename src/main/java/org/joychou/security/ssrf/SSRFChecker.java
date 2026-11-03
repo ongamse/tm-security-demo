@@ -59,14 +59,67 @@ public class SSRFChecker {
         if (parsed == null) {
             return null;
         }
-        String host = parsed.getHost();
-        if (host.startsWith("[") && host.endsWith("]")) {
-            host = host.substring(1, host.length() - 1);
-        }
-        if (!isSafeOutboundHost(host)) {
+        // the host must be an exact member of the server-side allowlist and resolve to public
+        // addresses only; the host used below is the allowlist's own entry, never the request text
+        String allowedHost = allowlistedOutboundHost(parsed.getHost());
+        if (allowedHost == null) {
             return null;
         }
-        return parsed.toOutboundString();
+        int port = parsed.getPort();
+        if (port != -1 && (port < 1 || port > 65535)) {
+            return null;
+        }
+        // scheme: server constant; path / query: re-built character by character from server-side alphabets
+        String path = WebUtils.rebuildFromAllowed(parsed.getPath(), OUTBOUND_PATH_CHARS);
+        if (path == null) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("https".equals(parsed.getScheme()) ? "https" : "http").append("://").append(allowedHost);
+        if (port != -1) {
+            sb.append(':').append(port);
+        }
+        sb.append(path);
+        if (parsed.getQuery() != null) {
+            String query = WebUtils.rebuildFromAllowed(parsed.getQuery(), OUTBOUND_QUERY_CHARS);
+            if (query == null) {
+                return null;
+            }
+            sb.append('?').append(query);
+        }
+        return sb.toString();
+    }
+
+    // Server-side alphabets (RFC 3986 pchar subset, no backslash / whitespace / control characters).
+    private static final String OUTBOUND_PATH_CHARS =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._~!$&'()*+,;=:@%/-";
+    private static final String OUTBOUND_QUERY_CHARS = OUTBOUND_PATH_CHARS + "?";
+
+    /**
+     * Server-side outbound allowlist lookup. The host must equal (case-insensitively) an entry of
+     * the configured safe domains (url_safe_domain.xml or ssrf_safe_domain.xml) and that entry must
+     * only resolve to public addresses.
+     *
+     * @param host host taken from a request url
+     * @return the allowlist's own entry (never the request string), or null (fails closed)
+     */
+    public static String allowlistedOutboundHost(String host) {
+        if (host == null || host.isEmpty()) {
+            return null;
+        }
+        ArrayList<String> allowed = new ArrayList<>();
+        if (WebConfig.getSafeDomains() != null) {
+            allowed.addAll(WebConfig.getSafeDomains());
+        }
+        if (WebConfig.getSsrfSafeDomains() != null) {
+            allowed.addAll(WebConfig.getSsrfSafeDomains());
+        }
+        for (String entry : allowed) {
+            if (entry != null && entry.equalsIgnoreCase(host)) {
+                return isSafeOutboundHost(entry) ? entry : null;
+            }
+        }
+        return null;
     }
 
     /**
