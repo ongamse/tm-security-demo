@@ -180,7 +180,7 @@ public class SQLI {
             PreparedStatement st = con.prepareStatement(sql);
             st.setString(1, username);
 
-            logger.info(st.toString());  // sql after prepare statement
+            logger.info(WebUtils.sanitizeLog(st));  // sql after prepare statement
             ResultSet rs = st.executeQuery();
 
             while (rs.next()) {

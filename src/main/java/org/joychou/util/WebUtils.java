@@ -174,6 +174,10 @@ public class WebUtils {
 
     private static final int MAX_LOG_VALUE_LENGTH = 2048;
 
+    /** Printable ASCII 0x20-0x7E, indexed by (code - 0x20). */
+    private static final String SAFE_LOG_CHARS =
+            " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
+
     /**
      * Neutralize an untrusted value before it is written to a log, to prevent log forging
      * (CWE-117). CR, LF and all other ISO control characters are replaced by an underscore
@@ -187,8 +191,15 @@ public class WebUtils {
         int len = Math.min(s.length(), MAX_LOG_VALUE_LENGTH);
         StringBuilder sb = new StringBuilder(len + 3);
         for (int i = 0; i < len; i++) {
-            char c = s.charAt(i);
-            sb.append(Character.isISOControl(c) ? '_' : c);
+            int c = s.charAt(i);
+            if (c >= 0x20 && c <= 0x7E) {
+                // emit the server-side constant character, never the request character itself
+                sb.append(SAFE_LOG_CHARS.charAt(c - 0x20));
+            } else if (c < 0x20 || c == 0x7F) {
+                sb.append('_');
+            } else {
+                sb.append('?');
+            }
         }
         if (s.length() > len) {
             sb.append("...");
