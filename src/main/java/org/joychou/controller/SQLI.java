@@ -65,6 +65,35 @@ public class SQLI {
         return request.isUserInRole("ADMIN") || principal.getName().equals(username);
     }
 
+    private static final String USERNAME_CHARS =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.-";
+
+    /**
+     * Derive the user record that the lookup may use. The key never comes straight from the
+     * request: a non-admin caller always gets the server-side authenticated principal name (and a
+     * request for a different user is rejected); an admin may select another user, but the
+     * requested name is re-built from a server-side alphabet (^[A-Za-z0-9_.-]{1,64}$).
+     * Fails closed (AccessDeniedException) when there is no principal.
+     */
+    private static String effectiveUsername(HttpServletRequest request, String requested) {
+        Principal principal = request.getUserPrincipal();
+        if (principal == null || principal.getName() == null) {
+            throw new AccessDeniedException("Access denied");
+        }
+        if (request.isUserInRole("ADMIN")) {
+            String rebuilt = (requested == null || requested.isEmpty() || requested.length() > 64)
+                    ? null : WebUtils.rebuildFromAllowed(requested, USERNAME_CHARS);
+            if (rebuilt == null || rebuilt.isEmpty()) {
+                throw new AccessDeniedException("Access denied");
+            }
+            return rebuilt;
+        }
+        if (!principal.getName().equals(requested)) {
+            throw new AccessDeniedException("Access denied");
+        }
+        return principal.getName();
+    }
+
     /**
      * Object-level authorization for a numeric user id: the id must belong to the
      * authenticated caller, unless they hold the ADMIN role. Fails closed.
@@ -90,8 +119,9 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/jdbc/vuln?username=joychou">http://localhost:8080/sqli/jdbc/vuln?username=joychou</a>
      */
     @RequestMapping("/jdbc/vuln")
-    public String jdbc_sqli_vul(@RequestParam("username") String username) {
+    public String jdbc_sqli_vul(HttpServletRequest request, @RequestParam("username") String username) {
 
+        final String lookupUser = effectiveUsername(request, username);
         StringBuilder result = new StringBuilder();
 
         try {
@@ -104,7 +134,7 @@ public class SQLI {
             // bind the user input as a parameter instead of concatenating it
             String sql = "select * from users where username = ?";
             PreparedStatement statement = con.prepareStatement(sql);
-            statement.setString(1, username);
+            statement.setString(1, lookupUser);
             logger.info(WebUtils.sanitizeLog(statement));
             ResultSet rs = statement.executeQuery();
 
@@ -179,8 +209,9 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/jdbc/ps/vuln?username=joychou' or 'a'='a">http://localhost:8080/sqli/jdbc/ps/vuln?username=joychou' or 'a'='a</a>
      */
     @RequestMapping("/jdbc/ps/vuln")
-    public String jdbc_ps_vuln(@RequestParam("username") String username) {
+    public String jdbc_ps_vuln(HttpServletRequest request, @RequestParam("username") String username) {
 
+        final String lookupUser = effectiveUsername(request, username);
         StringBuilder result = new StringBuilder();
         try {
             Class.forName(driver);
@@ -191,7 +222,7 @@ public class SQLI {
 
             String sql = "select * from users where username = ?";
             PreparedStatement st = con.prepareStatement(sql);
-            st.setString(1, username);
+            st.setString(1, lookupUser);
 
             logger.info(WebUtils.sanitizeLog(st));
             ResultSet rs = st.executeQuery();

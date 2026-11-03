@@ -1,6 +1,7 @@
 package org.joychou.controller;
 
 import cn.hutool.http.HttpUtil;
+import org.joychou.config.WebConfig;
 import org.joychou.security.SecurityUtil;
 import org.joychou.security.ssrf.SSRFChecker;
 import org.joychou.security.ssrf.SSRFException;
@@ -335,7 +336,25 @@ public class SSRF {
         if (safeUrl == null) {
             return "Dangerous url";
         }
-        return HttpUtil.get(safeUrl);
+        // the target host must also be an exact member of the server-side allowlist (fails closed);
+        // the outbound url is built from the allowlist entry, not from the request string
+        SecurityUtil.HttpUrl parsed = SecurityUtil.parseHttpUrl(safeUrl);
+        String allowedHost = null;
+        if (parsed != null && WebConfig.getSafeDomains() != null) {
+            for (String domain : WebConfig.getSafeDomains()) {
+                if (domain.equals(parsed.getHost())) {
+                    allowedHost = domain;
+                    break;
+                }
+            }
+        }
+        if (allowedHost == null) {
+            return "Dangerous url";
+        }
+        String allowlistedUrl = ("https".equals(parsed.getScheme()) ? "https" : "http") + "://" + allowedHost
+                + (parsed.getPort() >= 0 ? ":" + parsed.getPort() : "")
+                + parsed.getPath() + (parsed.getQuery() != null ? "?" + parsed.getQuery() : "");
+        return HttpUtil.get(allowlistedUrl);
     }
 
 
