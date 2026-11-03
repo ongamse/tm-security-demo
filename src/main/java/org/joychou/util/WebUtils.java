@@ -50,6 +50,26 @@ public class WebUtils {
     }
 
 
+    /**
+     * Remove CR, LF and all other ISO control characters (except horizontal tab) from a value
+     * that is placed into an HTTP response header, to prevent header injection / response splitting.
+     * Returns null for null input.
+     */
+    public static String sanitizeHeaderValue(String value) {
+        if (value == null) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (c == '\t' || !Character.isISOControl(c)) {
+                sb.append(c);
+            }
+        }
+        return sb.toString();
+    }
+
+
     public static String getFileExtension(String fullName) {
         Preconditions.checkNotNull(fullName);
         String fileName = (new File(fullName)).getName();
