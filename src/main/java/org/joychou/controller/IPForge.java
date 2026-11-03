@@ -20,9 +20,22 @@ public class IPForge {
     private static final String IP_ALPHABET = "0123456789abcdefABCDEF:.%";
 
     // no any proxy
-    @RequestMapping("/noproxy")
+    @RequestMapping(value = "/noproxy", produces = "text/plain;charset=UTF-8")
+    @ResponseBody
     public static String noProxy(HttpServletRequest request) {
-        return request.getRemoteAddr();
+        return sanitizeAddr(request.getRemoteAddr());
+    }
+
+    /**
+     * Rebuild the address from an IPv4/IPv6 literal alphabet (anything else is dropped)
+     * and HTML-encode the result. Returns an empty string for a blank address.
+     */
+    private static String sanitizeAddr(String addr) {
+        if (StringUtils.isNotBlank(addr)) {
+            String rebuilt = WebUtils.rebuildFromAllowed(addr, IP_ALPHABET);
+            return rebuilt == null ? "" : WebUtils.htmlEncode(rebuilt);
+        }
+        return "";
     }
 
 
@@ -38,13 +51,7 @@ public class IPForge {
         // so they are never trusted here. Behind a trusted reverse proxy, configure the
         // container (e.g. server.forward-headers-strategy / RemoteIpValve with an
         // internal-proxies allowlist) so getRemoteAddr() reflects the real client.
-        String remoteAddr = request.getRemoteAddr();
-        if (StringUtils.isNotBlank(remoteAddr)) {
-            // Rebuild from an IPv4/IPv6 literal alphabet; anything else is dropped.
-            String rebuilt = WebUtils.rebuildFromAllowed(remoteAddr, IP_ALPHABET);
-            return rebuilt == null ? "" : WebUtils.htmlEncode(rebuilt);
-        }
-        return "";
+        return sanitizeAddr(request.getRemoteAddr());
     }
 
 
