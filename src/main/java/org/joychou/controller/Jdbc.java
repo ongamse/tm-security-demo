@@ -2,7 +2,6 @@ package org.joychou.controller;
 
 import lombok.extern.slf4j.Slf4j;
 import org.joychou.security.ssrf.SSRFChecker;
-import org.joychou.util.WebUtils;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -31,8 +30,39 @@ public class Jdbc {
      * Only a plain jdbc url whose host resolves to a public address is accepted, so the server
      * cannot be made to connect to internal hosts or load driver classes via url properties.
      */
-    private static final String DB_NAME_CHARS =
-            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_";
+    // Server-side table: index = input char (ASCII), value = the char built here, or 0 if not allowed.
+    // Allowed database name chars are [A-Za-z0-9_].
+    private static final char[] DB_NAME_TABLE = new char[128];
+
+    static {
+        for (char c = 'A'; c <= 'Z'; c++) {
+            DB_NAME_TABLE[c] = c;
+        }
+        for (char c = 'a'; c <= 'z'; c++) {
+            DB_NAME_TABLE[c] = c;
+        }
+        for (char c = '0'; c <= '9'; c++) {
+            DB_NAME_TABLE[c] = c;
+        }
+        DB_NAME_TABLE['_'] = '_';
+    }
+
+    /** Rebuilds the database name from the server-side table; returns null on any disallowed char. */
+    private static String rebuildDbName(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder(raw.length());
+        for (int i = 0; i < raw.length(); i++) {
+            char in = raw.charAt(i);
+            char safe = in < DB_NAME_TABLE.length ? DB_NAME_TABLE[in] : 0;
+            if (safe == 0) {
+                return null;
+            }
+            sb.append(safe);
+        }
+        return sb.toString();
+    }
 
     private static String requireSafeJdbcUrl(String jdbcUrlBase64, String driverPrefix, Pattern allowed) {
         String jdbcUrl = new String(java.util.Base64.getDecoder().decode(jdbcUrlBase64),
@@ -54,7 +84,7 @@ public class Jdbc {
                 throw new IllegalArgumentException("Illegal jdbc url");
             }
         }
-        String dbName = WebUtils.rebuildFromAllowed(m.group(3), DB_NAME_CHARS);
+        String dbName = rebuildDbName(m.group(3));
         if (dbName == null || dbName.isEmpty()) {
             throw new IllegalArgumentException("Illegal jdbc url");
         }
