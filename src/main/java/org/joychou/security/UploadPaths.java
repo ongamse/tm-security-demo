@@ -4,23 +4,40 @@ import java.io.IOException;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.security.SecureRandom;
 import java.util.Locale;
 import java.util.Set;
-import java.util.UUID;
 import java.util.regex.Pattern;
 
 /**
  * Shared control for stored upload paths.
  *
  * The client supplied file name is never used to build a File/Path. The stored
- * name is generated server side (random UUID + an extension taken from a fixed
+ * name is generated server side (SecureRandom hex + an extension taken from a fixed
  * allowlist) and resolved against a fixed, canonical upload base directory.
  */
 public final class UploadPaths {
 
     private static final Pattern EXTENSION_FORMAT = Pattern.compile("[A-Za-z0-9]{1,8}");
 
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+    private static final int NAME_BYTES = 16;
+
     private UploadPaths() {
+    }
+
+    /**
+     * Unpredictable file base name: 16 bytes from SecureRandom, hex encoded (32 chars).
+     */
+    private static String randomHexName() {
+        byte[] bytes = new byte[NAME_BYTES];
+        SECURE_RANDOM.nextBytes(bytes);
+        StringBuilder sb = new StringBuilder(NAME_BYTES * 2);
+        for (byte b : bytes) {
+            sb.append(Character.forDigit((b >> 4) & 0xF, 16));
+            sb.append(Character.forDigit(b & 0xF, 16));
+        }
+        return sb.toString();
     }
 
     /**
@@ -52,7 +69,7 @@ public final class UploadPaths {
     }
 
     /**
-     * Build a new server generated path (UUID + allowlisted extension) inside the upload base.
+     * Build a new server generated path (SecureRandom hex + allowlisted extension) inside the upload base.
      * Fails closed when the result is not a direct child of the canonical base directory.
      */
     public static Path newUploadPath(String baseDir, String allowedExtension) throws IOException {
@@ -61,7 +78,7 @@ public final class UploadPaths {
         }
         try {
             Path base = Paths.get(baseDir).toRealPath();
-            Path target = base.resolve(UUID.randomUUID() + "." + allowedExtension).normalize();
+            Path target = base.resolve(randomHexName() + "." + allowedExtension).normalize();
             if (!target.startsWith(base) || !base.equals(target.getParent())) {
                 throw new IOException("Invalid upload path");
             }
