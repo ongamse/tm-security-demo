@@ -4,6 +4,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * RASP：Hook java/io/ObjectInputStream类的resolveClass方法
@@ -15,12 +18,20 @@ public class AntObjectInputStream extends ObjectInputStream {
 
     protected final Logger logger= LoggerFactory.getLogger(AntObjectInputStream.class);
 
+    private static final Set<String> ALLOWED_CLASSES = new HashSet<>(Arrays.asList(
+            "org.joychou.security.AntObjectInputStream$MyObject",
+            "org.joychou.dao.User",
+            "java.lang.String",
+            "java.lang.Number",
+            "java.lang.Integer"
+    ));
+
     public AntObjectInputStream(InputStream inputStream) throws IOException {
         super(inputStream);
     }
 
     /**
-     * 只允许反序列化SerialObject class
+     * 只允许反序列化白名单中的class (allowlist only)
      *
      * 在应用上使用黑白名单校验方案比较局限，因为只有使用自己定义的AntObjectInputStream类，进行反序列化才能进行校验。
      * 类似fastjson通用类的反序列化就不能校验。
@@ -36,14 +47,21 @@ public class AntObjectInputStream extends ObjectInputStream {
         // Deserialize class name: org.joychou.security.AntObjectInputStream$MyObject
         logger.info("Deserialize class name: " + className);
 
-        String[] denyClasses = {"java.net.InetAddress",
-                                "org.apache.commons.collections.Transformer",
-                                "org.apache.commons.collections.functors"};
+        // Allowlist: deny everything that is not explicitly expected.
+        String baseName = className;
+        while (baseName.startsWith("[")) {
+            baseName = baseName.substring(1);
+        }
+        if (baseName.length() == 1) {
+            // primitive array component type (e.g. "[I")
+            return super.resolveClass(desc);
+        }
+        if (baseName.startsWith("L") && baseName.endsWith(";")) {
+            baseName = baseName.substring(1, baseName.length() - 1);
+        }
 
-        for (String denyClass : denyClasses) {
-            if (className.startsWith(denyClass)) {
-                throw new InvalidClassException("Unauthorized deserialization attempt", className);
-            }
+        if (!ALLOWED_CLASSES.contains(baseName)) {
+            throw new InvalidClassException("Unauthorized deserialization attempt", className);
         }
 
         return super.resolveClass(desc);
