@@ -58,7 +58,7 @@ public class CommandInject {
         return WebUtils.htmlEncode(WebUtils.convertStreamToString(process.getInputStream()));
     }
 
-    @GetMapping("/codeinject/sec")
+    @GetMapping(value = "/codeinject/sec", produces = "text/plain;charset=UTF-8")
     public String codeInjectSec(String filepath) throws IOException {
         String[] cmdList = SecurityUtil.lsArgv(filepath);
         if (null == cmdList) {
@@ -67,6 +67,6 @@ public class CommandInject {
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);
         Process process = builder.start();
-        return WebUtils.convertStreamToString(process.getInputStream());
+        return WebUtils.htmlEncode(WebUtils.convertStreamToString(process.getInputStream()));
     }
 }

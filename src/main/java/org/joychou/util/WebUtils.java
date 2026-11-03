@@ -35,18 +35,64 @@ public class WebUtils {
         return callback != null && callback.length() <= 128 && JSONP_CALLBACK.matcher(callback).matches();
     }
 
-    public static String json2Jsonp(String callback, String jsonStr) {
+    private static final String JSONP_CALLBACK_ALPHABET =
+            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_$.";
+
+    /**
+     * Re-build a JSONP callback name from a server-side alphabet. Returns null (fail closed)
+     * when the callback is not a plain JavaScript identifier path.
+     */
+    public static String rebuildJsonpCallback(String callback) {
         if (!isSafeJsonpCallback(callback)) {
+            return null;
+        }
+        return rebuildFromAllowed(callback, JSONP_CALLBACK_ALPHABET);
+    }
+
+    /**
+     * Make serialized JSON safe to embed in a script / JSONP response: the characters that can
+     * break out of a script context or terminate a JavaScript string are written as unicode
+     * escapes (still valid JSON string escapes).
+     */
+    public static String escapeJsonForScript(String json) {
+        if (json == null) {
+            return "null";
+        }
+        StringBuilder sb = new StringBuilder(json.length() + 16);
+        for (int i = 0; i < json.length(); i++) {
+            char c = json.charAt(i);
+            switch ((int) c) {
+                case 0x3c: sb.append("\\u003c"); break;
+                case 0x3e: sb.append("\\u003e"); break;
+                case 0x26: sb.append("\\u0026"); break;
+                case 0x27: sb.append("\\u0027"); break;
+                case 0x60: sb.append("\\u0060"); break;
+                case 0x2028: sb.append("\\u2028"); break;
+                case 0x2029: sb.append("\\u2029"); break;
+                default: sb.append(c);
+            }
+        }
+        return sb.toString();
+    }
+
+    public static String json2Jsonp(String callback, String jsonStr) {
+        String safeCallback = rebuildJsonpCallback(callback);
+        if (safeCallback == null) {
             throw new IllegalArgumentException("Illegal jsonp callback");
         }
-        return callback + "(" + jsonStr + ")";
+        return safeCallback + "(" + escapeJsonForScript(jsonStr) + ")";
     }
 
     /**
      * Contextual HTML encoding for text that is returned to a browser as an HTML body.
+     * Escapes the Spring HTML set (& < > " ') plus '/' and backtick.
      */
     public static String htmlEncode(String s) {
-        return HtmlUtils.htmlEscape(s);
+        String encoded = HtmlUtils.htmlEscape(s);
+        if (encoded == null) {
+            return null;
+        }
+        return encoded.replace("/", "&#x2F;").replace("`", "&#x60;");
     }
 
 

@@ -1,6 +1,7 @@
 package org.joychou.controller;
 
 import org.apache.commons.lang.StringUtils;
+import org.joychou.util.WebUtils;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.RestController;
@@ -16,6 +17,8 @@ import javax.servlet.http.HttpServletRequest;
 @RequestMapping("/ip")
 public class IPForge {
 
+    private static final String IP_ALPHABET = "0123456789abcdefABCDEF:.%";
+
     // no any proxy
     @RequestMapping("/noproxy")
     public static String noProxy(HttpServletRequest request) {
@@ -28,7 +31,7 @@ public class IPForge {
      * proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for
      * if code used X-Forwarded-For to get ip, the code must be vulnerable.
      */
-    @RequestMapping("/proxy")
+    @RequestMapping(value = "/proxy", produces = "text/plain;charset=UTF-8")
     @ResponseBody
     public static String proxy(HttpServletRequest request) {
         // Client-supplied forwarding headers (X-Real-IP / X-Forwarded-For) are spoofable,
@@ -37,7 +40,9 @@ public class IPForge {
         // internal-proxies allowlist) so getRemoteAddr() reflects the real client.
         String remoteAddr = request.getRemoteAddr();
         if (StringUtils.isNotBlank(remoteAddr)) {
-            return remoteAddr;
+            // Rebuild from an IPv4/IPv6 literal alphabet; anything else is dropped.
+            String rebuilt = WebUtils.rebuildFromAllowed(remoteAddr, IP_ALPHABET);
+            return rebuilt == null ? "" : WebUtils.htmlEncode(rebuilt);
         }
         return "";
     }
