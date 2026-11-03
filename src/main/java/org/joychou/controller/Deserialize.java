@@ -11,7 +11,6 @@ import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.io.InvalidClassException;
 import java.util.Base64;
 
 import static org.springframework.web.util.WebUtils.getCookie;
@@ -27,6 +26,8 @@ public class Deserialize {
 
     protected final Logger logger = LoggerFactory.getLogger(this.getClass());
 
+    private static final int MAX_COOKIE_LENGTH = 8192;
+
     /**
      * java -jar ysoserial.jar CommonsCollections5 "open -a Calculator" | base64 <br>
      * <a href="http://localhost:8080/deserialize/rememberMe/vuln">http://localhost:8080/deserialize/rememberMe/vuln</a>
@@ -40,16 +41,18 @@ public class Deserialize {
             return "No rememberMe cookie. Right?";
         }
 
-        String rememberMe = cookie.getValue();
-        byte[] decoded = Base64.getDecoder().decode(rememberMe);
+        byte[] decoded = decodeCookie(cookie.getValue());
+        if (decoded == null) {
+            return "Invalid rememberMe cookie.";
+        }
 
         ByteArrayInputStream bytes = new ByteArrayInputStream(decoded);
-        // Allowlist-based deserialization: unexpected classes are rejected.
+        // Allowlist-based deserialization: unexpected classes are rejected (fail closed).
         try (AntObjectInputStream in = new AntObjectInputStream(bytes)) {
             in.readObject();
-        } catch (InvalidClassException e) {
-            logger.info(e.toString());
-            return e.toString();
+        } catch (IOException | ClassNotFoundException | RuntimeException e) {
+            logger.info("Rejected rememberMe cookie: {}", e.getClass().getSimpleName());
+            return "Invalid rememberMe cookie.";
         }
 
         return "Are u ok?";
@@ -69,19 +72,38 @@ public class Deserialize {
         if (null == cookie) {
             return "No rememberMe cookie. Right?";
         }
-        String rememberMe = cookie.getValue();
-        byte[] decoded = Base64.getDecoder().decode(rememberMe);
+        byte[] decoded = decodeCookie(cookie.getValue());
+        if (decoded == null) {
+            return "Invalid rememberMe cookie.";
+        }
 
         ByteArrayInputStream bytes = new ByteArrayInputStream(decoded);
 
-        try (AntObjectInputStream in = new AntObjectInputStream(bytes)) {  // throw InvalidClassException
+        // Allowlist-based deserialization (resolveClass throws InvalidClassException for unexpected classes).
+        try (AntObjectInputStream in = new AntObjectInputStream(bytes)) {
             in.readObject();
-        } catch (InvalidClassException e) {
-            logger.info(e.toString());
-            return e.toString();
+        } catch (IOException | ClassNotFoundException | RuntimeException e) {
+            logger.info("Rejected rememberMe cookie: {}", e.getClass().getSimpleName());
+            return "Invalid rememberMe cookie.";
         }
 
         return "I'm very OK.";
+    }
+
+    /**
+     * Base64-decode the cookie value, enforcing a size limit before deserialization.
+     *
+     * @return decoded bytes, or null when the value is oversized or not valid Base64
+     */
+    private static byte[] decodeCookie(String value) {
+        if (value == null || value.length() > MAX_COOKIE_LENGTH) {
+            return null;
+        }
+        try {
+            return Base64.getDecoder().decode(value);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 
 }

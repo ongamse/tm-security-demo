@@ -31,6 +31,8 @@ import java.util.regex.Pattern;
 @RequestMapping("/rce")
 public class Rce {
 
+    private static final int MAX_YAML_LENGTH = 65536;
+
     private static final Pattern SAFE_JS_URL = Pattern.compile("^[a-zA-Z0-9:/._~?&=%+-]+$");
 
     @GetMapping("/runtime/exec")
@@ -109,13 +111,14 @@ public class Rce {
     @GetMapping("/jscmd")
     public void jsEngine(String jsurl) throws Exception{
         // Only load scripts from allowlisted domains; reject characters that could break out of the string literal.
-        if (jsurl == null || SecurityUtil.checkURL(jsurl) == null || !SAFE_JS_URL.matcher(jsurl).matches()) {
+        String safeJsUrl = SecurityUtil.checkURL(jsurl);
+        if (safeJsUrl == null || !SAFE_JS_URL.matcher(safeJsUrl).matches()) {
             throw new IllegalArgumentException("Illegal jsurl");
         }
         // js nashorn javascript ecmascript
         ScriptEngine engine = new ScriptEngineManager().getEngineByName("js");
         Bindings bindings = engine.getBindings(ScriptContext.ENGINE_SCOPE);
-        String cmd = String.format("load(\"%s\")", jsurl);
+        String cmd = String.format("load(\"%s\")", safeJsUrl);
         engine.eval(cmd, bindings);
     }
 
@@ -128,14 +131,27 @@ public class Rce {
      */
     @GetMapping("/vuln/yarm")
     public void yarm(String content) {
-        Yaml y = new Yaml();
-        y.load(content);
+        loadYamlSafely(content);
     }
 
     @GetMapping("/sec/yarm")
     public void secYarm(String content) {
+        loadYamlSafely(content);
+    }
+
+    /**
+     * Parse YAML with SafeConstructor: only standard YAML types, no arbitrary class instantiation.
+     */
+    private static void loadYamlSafely(String content) {
+        if (content == null || content.length() > MAX_YAML_LENGTH) {
+            throw new IllegalArgumentException("Illegal content");
+        }
         Yaml y = new Yaml(new SafeConstructor());
-        y.load(content);
+        try {
+            y.load(content);
+        } catch (RuntimeException e) {
+            throw new IllegalArgumentException("Illegal content");
+        }
     }
 
     /**
