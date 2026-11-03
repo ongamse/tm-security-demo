@@ -1,6 +1,5 @@
 package org.joychou.controller;
 
-import com.fasterxml.uuid.Generators;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Controller;
@@ -17,9 +16,12 @@ import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.UUID;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 
 import org.joychou.security.SecurityUtil;
+import org.joychou.security.UploadPaths;
 import org.joychou.util.WebUtils;
 
 
@@ -35,7 +37,10 @@ public class FileUpload {
     // Save the uploaded file to this folder
     private static final String UPLOADED_FOLDER = "/tmp/";
     private final Logger logger = LoggerFactory.getLogger(this.getClass());
-    private static String randomFilePath = "";
+    // Extensions accepted by the upload endpoints (lower case, no dot)
+    private static final Set<String> PIC_EXTENSIONS = new HashSet<>(Arrays.asList("jpg", "png", "jpeg", "gif", "bmp", "ico"));
+    private static final Set<String> ANY_EXTENSIONS = new HashSet<>(Arrays.asList("jpg", "png", "jpeg", "gif", "bmp", "ico",
+            "txt", "pdf", "doc", "docx", "xls", "xlsx", "csv", "zip"));
 
     // uplaod any file
     @GetMapping("/any")
@@ -59,13 +64,18 @@ public class FileUpload {
         }
 
         try {
-            // Get the file and save it somewhere
+            // Stored name is generated server side; the client file name is never used in a path
+            String ext = UploadPaths.allowedExtension(file.getOriginalFilename(), ANY_EXTENSIONS);
+            if (ext == null) {
+                redirectAttributes.addFlashAttribute("message", "upload failed: file type not allowed");
+                return "redirect:/file/status";
+            }
             byte[] bytes = file.getBytes();
-            Path path = resolveUploadPath(file.getOriginalFilename());
+            Path path = UploadPaths.newUploadPath(UPLOADED_FOLDER, ext);
             Files.write(path, bytes);
 
             redirectAttributes.addFlashAttribute("message",
-                    "You successfully uploaded '" + path + "'");
+                    "You successfully uploaded '" + path.getFileName() + "'");
 
         } catch (IOException e) {
             redirectAttributes.addFlashAttribute("message", "upload failed");
@@ -89,33 +99,28 @@ public class FileUpload {
         }
 
         String fileName = multifile.getOriginalFilename();
-        String filePath;
-        try {
-            // Reject file names that would escape the upload folder
-            filePath = resolveUploadPath(fileName).toString();
-        } catch (IOException e) {
-            logger.error("[-] Illegal file name");
-            return "Upload failed. Illeagl picture.";
-        }
-        String Suffix = fileName.substring(fileName.lastIndexOf(".")); // 获取文件后缀名
-        String mimeType = multifile.getContentType(); // 获取MIME类型
-        File excelFile = convert(multifile);
-
 
         // 判断文件后缀名是否在白名单内  校验1
-        String[] picSuffixList = {".jpg", ".png", ".jpeg", ".gif", ".bmp", ".ico"};
-        boolean suffixFlag = false;
-        for (String white_suffix : picSuffixList) {
-            if (Suffix.toLowerCase().equals(white_suffix)) {
-                suffixFlag = true;
-                break;
-            }
-        }
-        if (!suffixFlag) {
-            logger.error("[-] Suffix error: " + WebUtils.sanitizeLog(Suffix));
-            deleteFile(filePath);
+        // The extension is mapped to a constant from the allowlist; the client name is never used in a path.
+        String ext = UploadPaths.allowedExtension(fileName, PIC_EXTENSIONS);
+        if (ext == null) {
+            logger.error("[-] Suffix error: " + WebUtils.sanitizeLog(fileName));
             return "Upload failed. Illeagl picture.";
         }
+        String Suffix = "." + ext;
+        String mimeType = multifile.getContentType(); // 获取MIME类型
+
+        Path finalPath;
+        Path tempPath;
+        try {
+            finalPath = UploadPaths.newUploadPath(UPLOADED_FOLDER, ext);
+            tempPath = UploadPaths.newUploadPath(UPLOADED_FOLDER, ext);
+        } catch (IOException e) {
+            logger.error("[-] Illegal upload path");
+            return "Upload failed. Illeagl picture.";
+        }
+        String filePath = finalPath.getFileName().toString();
+        File excelFile = convert(multifile, tempPath);
 
 
         // 判断MIME类型是否在黑名单内 校验2
@@ -131,30 +136,28 @@ public class FileUpload {
             // 用contains是为了防止text/html;charset=UTF-8绕过
             if (SecurityUtil.replaceSpecialStr(mimeType).toLowerCase().contains(blackMimeType)) {
                 logger.error("[-] Mime type error: " + WebUtils.sanitizeLog(mimeType));
-                deleteFile(filePath);
+                deleteFile(tempPath);
                 return "Upload failed. Illeagl picture.";
             }
         }
 
         // 判断文件内容是否是图片 校验3
         boolean isImageFlag = isImage(excelFile);
-        deleteFile(randomFilePath);
+        deleteFile(tempPath);
 
         if (!isImageFlag) {
             logger.error("[-] File is not Image");
-            deleteFile(filePath);
             return "Upload failed. Illeagl picture.";
         }
 
 
         try {
-            // Get the file and save it somewhere
+            // Save under the server generated name only
             byte[] bytes = multifile.getBytes();
-            Path path = resolveUploadPath(multifile.getOriginalFilename());
-            Files.write(path, bytes);
+            Files.write(finalPath, bytes);
         } catch (IOException e) {
             logger.error(e.toString());
-            deleteFile(filePath);
+            deleteFile(finalPath);
             return "Upload failed";
         }
 
@@ -164,46 +167,30 @@ public class FileUpload {
     }
 
     /**
-     * Resolve a client supplied file name against the upload folder.
-     * Only a plain file name directly inside the upload folder is accepted;
-     * anything that escapes it (separators, "..", absolute paths) is rejected.
+     * Delete a server generated upload path (never a client supplied one).
      */
-    private static Path resolveUploadPath(String name) throws IOException {
-        if (name == null || name.isEmpty()) {
-            throw new IOException("Invalid file name");
-        }
-        try {
-            Path base = Paths.get(UPLOADED_FOLDER).toAbsolutePath().normalize();
-            Path target = base.resolve(name).normalize();
-            if (!base.equals(target.getParent())) {
-                throw new IOException("Invalid file name");
-            }
-            return target;
-        } catch (InvalidPathException e) {
-            throw new IOException("Invalid file name", e);
-        }
-    }
-
-    private void deleteFile(String filePath) {
-        Path delPath;
-        try {
-            delPath = Paths.get(filePath).toAbsolutePath().normalize();
-        } catch (InvalidPathException e) {
-            logger.info("Illegal path, delete skipped");
+    private void deleteFile(Path delPath) {
+        if (delPath == null) {
             return;
         }
-        if (!Paths.get(UPLOADED_FOLDER).toAbsolutePath().normalize().equals(delPath.getParent())) {
+        Path base;
+        try {
+            base = Paths.get(UPLOADED_FOLDER).toRealPath();
+        } catch (IOException | InvalidPathException e) {
+            logger.info("Upload folder unavailable, delete skipped");
+            return;
+        }
+        Path normalized = delPath.toAbsolutePath().normalize();
+        if (!normalized.startsWith(base) || !base.equals(normalized.getParent())) {
             logger.info("Path outside upload folder, delete skipped");
             return;
         }
-        File delFile = delPath.toFile();
-        if(delFile.isFile() && delFile.exists()) {
-            if (delFile.delete()) {
-                logger.info("[+] " + WebUtils.sanitizeLog(filePath) + " delete successfully!");
-                return;
-            }
+        File delFile = normalized.toFile();
+        if (delFile.isFile() && delFile.delete()) {
+            logger.info("[+] {} delete successfully!", WebUtils.sanitizeLog(normalized.getFileName().toString()));
+            return;
         }
-        logger.info(WebUtils.sanitizeLog(filePath) + " delete failed!");
+        logger.info("{} delete failed!", WebUtils.sanitizeLog(normalized.getFileName().toString()));
     }
 
     /**
@@ -212,21 +199,16 @@ public class FileUpload {
      * 不建议使用transferTo，因为原始的MultipartFile会被覆盖
      * https://stackoverflow.com/questions/24339990/how-to-convert-a-multipart-file-to-file
      */
-    private File convert(MultipartFile multiFile) throws Exception {
-        String fileName = multiFile.getOriginalFilename();
-        String suffix = fileName.substring(fileName.lastIndexOf("."));
-        UUID uuid = Generators.timeBasedGenerator().generate();
-        Path randomPath = resolveUploadPath(uuid + suffix);
-        randomFilePath = randomPath.toString();
-        // 随机生成一个同后缀名的文件
-        File convFile = randomPath.toFile();
+    private File convert(MultipartFile multiFile, Path tempPath) throws Exception {
+        // 随机生成一个同后缀名的文件 (server generated path)
+        File convFile = tempPath.toFile();
         boolean ret = convFile.createNewFile();
         if (!ret) {
             return null;
         }
-        FileOutputStream fos = new FileOutputStream(convFile);
-        fos.write(multiFile.getBytes());
-        fos.close();
+        try (FileOutputStream fos = new FileOutputStream(convFile)) {
+            fos.write(multiFile.getBytes());
+        }
         return convFile;
     }
 
