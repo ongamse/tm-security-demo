@@ -28,6 +28,8 @@ public class URLWhiteList {
 
     private String domainwhitelist[] = {"joychou.org", "joychou.com"};
     private static final Logger logger = LoggerFactory.getLogger(URLWhiteList.class);
+    private static final String LOCATION_CHARS =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._~!$&'()*+,;=:@%/-?#[]";
 
     /**
      * bypass poc: bypassjoychou.org
@@ -107,10 +109,13 @@ public class URLWhiteList {
         // SecurityUtil.gethost uses a strict http(s) url grammar: backslash tricks, user info
         // and malformed urls yield an empty host instead of a different host than the browser uses.
         // Allowed: exact match or a real subdomain (dot boundary); control chars/backslash rejected.
-        String target = SecurityUtil.redirectUrlIfHostIn(url, domainwhitelist);
-        if (target != null) {
-            res.sendRedirect(target);
+        String target = WebUtils.rebuildFromAllowed(
+                SecurityUtil.redirectUrlIfHostIn(url, domainwhitelist), LOCATION_CHARS);
+        if (target == null) {
+            res.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            return;
         }
+        res.sendRedirect(target);
 
     }
 

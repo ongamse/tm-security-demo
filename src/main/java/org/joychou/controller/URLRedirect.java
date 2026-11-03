@@ -31,7 +31,9 @@ public class URLRedirect {
      */
     @GetMapping("/redirect")
     public String redirect(@RequestParam("url") String url, HttpServletResponse response) throws IOException {
-        String target = SecurityUtil.safeRedirectUrl(url);
+        String safe = SecurityUtil.safeRedirectUrl(url);
+        // Target is re-built character by character from the server-side alphabet; fail closed
+        String target = WebUtils.rebuildFromAllowed(safe, LOCATION_CHARS);
         if (target == null) {
             response.sendError(HttpServletResponse.SC_FORBIDDEN, "url forbidden");
             return null;
@@ -71,7 +73,8 @@ public class URLRedirect {
     @RequestMapping("/sendRedirect")
     @ResponseBody
     public static void sendRedirect(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        String url = SecurityUtil.safeRedirectUrl(request.getParameter("url"));
+        String safe = SecurityUtil.safeRedirectUrl(request.getParameter("url"));
+        String url = WebUtils.rebuildFromAllowed(safe, LOCATION_CHARS);
         if (url == null) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             return;
@@ -105,7 +108,8 @@ public class URLRedirect {
     @ResponseBody
     public void sendRedirect_seccode(HttpServletRequest request, HttpServletResponse response)
             throws IOException {
-        String url = SecurityUtil.safeRedirectUrl(request.getParameter("url"));
+        String safe = SecurityUtil.safeRedirectUrl(request.getParameter("url"));
+        String url = WebUtils.rebuildFromAllowed(safe, LOCATION_CHARS);
         if (url == null) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             response.getWriter().write("url forbidden");

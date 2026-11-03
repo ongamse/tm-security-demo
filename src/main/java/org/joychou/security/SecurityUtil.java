@@ -102,6 +102,11 @@ public class SecurityUtil {
             return host;
         }
 
+        /** Port number, or -1 when the url has no explicit port. */
+        public int getPort() {
+            return port;
+        }
+
         public String getPath() {
             return path;
         }
@@ -176,14 +181,112 @@ public class SecurityUtil {
             return null;
         }
         if (url.charAt(0) == '/') {
-            // same-site absolute path: restrictive grammar, never "//host" and no backslash.
-            Matcher m = SAME_SITE_PATH.matcher(url);
-            if (!m.matches()) {
+            // same-site absolute path: rebuilt from a strict server-side alphabet,
+            // never "//host" and no backslash.
+            return rebuildSameSitePath(url);
+        }
+        if (checkURL(url) == null) {
+            return null;
+        }
+        return rebuildAllowlistedRedirect(url, WebConfig.getSafeDomains());
+    }
+
+
+    // Server-side alphabets used to re-build redirect targets character by character.
+    private static final String REDIRECT_PATH_CHARS =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789/_.~-";
+    private static final String REDIRECT_QUERY_CHARS = REDIRECT_PATH_CHARS + "=&%+,";
+    private static final String REDIRECT_HOST_LABEL_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789.-";
+
+
+    /**
+     * Re-build a same-site redirect path (optionally with a query) from the server-side alphabets.
+     * The result always begins with a single '/' (never "//" or "/\"), contains only characters
+     * of the alphabets, and the fragment is dropped.
+     *
+     * @return the re-built path, or null when the input does not fit (fail closed)
+     */
+    private static String rebuildSameSitePath(String value) {
+        if (value == null || value.isEmpty() || value.charAt(0) != '/') {
+            return null;
+        }
+        if (value.length() > 1 && (value.charAt(1) == '/' || value.charAt(1) == '\\')) {
+            return null;
+        }
+        int q = value.indexOf('?');
+        int hash = value.indexOf('#');
+        if (hash >= 0 && (q < 0 || hash < q)) {
+            return null;
+        }
+        String rawPath = q < 0 ? value : value.substring(0, q);
+        String path = WebUtils.rebuildFromAllowed(rawPath, REDIRECT_PATH_CHARS);
+        if (path == null) {
+            return null;
+        }
+        if (q < 0) {
+            return path;
+        }
+        String rawQuery = hash < 0 ? value.substring(q + 1) : value.substring(q + 1, hash);
+        String query = WebUtils.rebuildFromAllowed(rawQuery, REDIRECT_QUERY_CHARS);
+        if (query == null) {
+            return null;
+        }
+        return path + "?" + query;
+    }
+
+
+    /**
+     * Build a redirect target for an absolute http(s) url whose strictly parsed host equals an
+     * allowlist entry or is a real subdomain of one. The scheme and the allowlist domain are
+     * the server-side strings; only the subdomain label(s) and the path / query are re-built
+     * from strict server-side alphabets. The user info, fragment and any other characters are never copied.
+     *
+     * @return the re-built url, or null when the host is not allowlisted or a component does not fit
+     */
+    private static String rebuildAllowlistedRedirect(String url, java.util.Collection<String> allowedDomains) {
+        HttpUrl parsed = parseHttpUrl(url);
+        if (parsed == null || allowedDomains == null) {
+            return null;
+        }
+        String host = parsed.getHost();
+        String safeHost = null;
+        for (String entry : allowedDomains) {
+            if (host.equals(entry)) {
+                safeHost = entry;
+                break;
+            }
+            String suffix = "." + entry;
+            if (host.endsWith(suffix)) {
+                String label = WebUtils.rebuildFromAllowed(
+                        host.substring(0, host.length() - suffix.length()), REDIRECT_HOST_LABEL_CHARS);
+                if (label == null || label.isEmpty() || label.startsWith(".") || label.startsWith("-")) {
+                    return null;
+                }
+                safeHost = label + suffix;
+                break;
+            }
+        }
+        if (safeHost == null) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("https".equals(parsed.getScheme()) ? "https" : "http").append("://").append(safeHost);
+        if (parsed.getPort() >= 0) {
+            sb.append(':').append(parsed.getPort());
+        }
+        String path = WebUtils.rebuildFromAllowed(parsed.getPath(), REDIRECT_PATH_CHARS);
+        if (path == null) {
+            return null;
+        }
+        sb.append(path);
+        if (parsed.getQuery() != null) {
+            String query = WebUtils.rebuildFromAllowed(parsed.getQuery(), REDIRECT_QUERY_CHARS);
+            if (query == null) {
                 return null;
             }
-            return m.group();
+            sb.append('?').append(query);
         }
-        return checkURL(url);
+        return sb.toString();
     }
 
 
@@ -197,17 +300,7 @@ public class SecurityUtil {
      * @return the original url when allowed; null otherwise
      */
     public static String redirectUrlIfHostIn(String url, String[] domains) {
-        HttpUrl parsed = parseHttpUrl(url);
-        if (parsed == null) {
-            return null;
-        }
-        String host = parsed.getHost();
-        for (String domain : domains) {
-            if (host.equals(domain) || host.endsWith("." + domain)) {
-                return parsed.toString();
-            }
-        }
-        return null;
+        return rebuildAllowlistedRedirect(url, Arrays.asList(domains));
     }
 
 
