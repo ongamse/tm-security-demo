@@ -104,7 +104,7 @@ public class URLWhiteList {
             return;
         }
 
-        // SecurityUtil.gethost uses the strict java.net.URI parser: backslash tricks, user info
+        // SecurityUtil.gethost uses a strict http(s) url grammar: backslash tricks, user info
         // and malformed urls yield an empty host instead of a different host than the browser uses.
         // Allowed: exact match or a real subdomain (dot boundary); control chars/backslash rejected.
         String target = SecurityUtil.redirectUrlIfHostIn(url, domainwhitelist);

@@ -126,11 +126,12 @@ public class SSRF {
             response.setHeader("content-disposition", "attachment;fileName=" + WebUtils.sanitizeHeaderValue(downLoadImgFileName));
 
             // http/https only, public ip only, redirects are not followed
-            if (!SSRFChecker.isSafeOutboundUrl(url)) {
-                logger.error("[-] SSRF check failed. Dangerous url: " + url);
+            String safeUrl = SSRFChecker.canonicalOutboundUrl(url);
+            if (safeUrl == null) {
+                logger.error("[-] SSRF check failed. Dangerous url: " + WebUtils.sanitizeLog(url));
                 return;
             }
-            HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+            HttpURLConnection conn = (HttpURLConnection) new URL(safeUrl).openConnection();
             conn.setInstanceFollowRedirects(false);
             conn.setConnectTimeout(10 * 1000);
             conn.setReadTimeout(10 * 1000);
@@ -320,7 +321,12 @@ public class SSRF {
         if (!SecurityUtil.checkSSRFWithoutRedirect(url)) {
             return "Dangerous url";
         }
-        return HttpUtil.get(url);
+        // only request the canonical url re-constructed from the validated parts
+        String safeUrl = SSRFChecker.canonicalOutboundUrl(url);
+        if (safeUrl == null) {
+            return "Dangerous url";
+        }
+        return HttpUtil.get(safeUrl);
     }
 
 

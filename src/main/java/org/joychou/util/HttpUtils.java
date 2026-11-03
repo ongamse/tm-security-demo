@@ -42,23 +42,24 @@ public class HttpUtils {
 
     /**
      * Central outbound-URL gate: http/https only and the host must only resolve to public
-     * addresses. Redirects are disabled on every client below, because a redirect target
-     * would not have been validated.
+     * addresses. Returns the canonical url re-constructed from the validated parts, which is
+     * the only value the clients below may request (null when rejected). Redirects are
+     * disabled on every client below, because a redirect target would not have been validated.
      */
-    private static boolean isAllowed(String url) {
-        if (!SSRFChecker.isSafeOutboundUrl(url)) {
-            logger.error(BLOCKED_MSG + ". Dangerous url: " + url);
-            return false;
+    private static String validated(String url) {
+        String safeUrl = SSRFChecker.canonicalOutboundUrl(url);
+        if (safeUrl == null) {
+            logger.error(BLOCKED_MSG + ". Dangerous url: " + WebUtils.sanitizeLog(url));
         }
-        return true;
+        return safeUrl;
     }
 
     /**
      * Open a connection to a validated url without following redirects.
      */
-    private static HttpURLConnection openValidated(String url) throws IOException {
-        // url has been validated by isAllowed (http/https scheme, public ip only).
-        HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+    private static HttpURLConnection openValidated(String safeUrl) throws IOException {
+        // safeUrl is the canonical value returned by validated() (http/https scheme, public ip only).
+        HttpURLConnection conn = (HttpURLConnection) new URL(safeUrl).openConnection();
         conn.setInstanceFollowRedirects(false);
         conn.setConnectTimeout(TIMEOUT_MS);
         conn.setReadTimeout(TIMEOUT_MS);
@@ -67,11 +68,12 @@ public class HttpUtils {
 
     public static String commonHttpClient(String url) {
 
-        if (!isAllowed(url)) {
+        final String safeUrl = validated(url);
+        if (safeUrl == null) {
             return BLOCKED_MSG;
         }
         HttpClient client = new HttpClient();
-        GetMethod method = new GetMethod(url);
+        GetMethod method = new GetMethod(safeUrl);
         method.setFollowRedirects(false);
 
         try {
@@ -89,12 +91,13 @@ public class HttpUtils {
 
 
     public static String request(String url) {
-        if (!isAllowed(url)) {
+        final String safeUrl = validated(url);
+        if (safeUrl == null) {
             return BLOCKED_MSG;
         }
         try {
             Executor executor = Executor.newInstance(HttpClients.custom().disableRedirectHandling().build());
-            return executor.execute(Request.Get(url)).returnContent().toString();
+            return executor.execute(Request.Get(safeUrl)).returnContent().toString();
         } catch (Exception e) {
             return e.getMessage();
         }
@@ -105,14 +108,15 @@ public class HttpUtils {
 
         StringBuilder result = new StringBuilder();
 
-        if (!isAllowed(url)) {
+        final String safeUrl = validated(url);
+        if (safeUrl == null) {
             return BLOCKED_MSG;
         }
 
         try {
 
             CloseableHttpClient client = HttpClients.createDefault();
-            HttpGet httpGet = new HttpGet(url);
+            HttpGet httpGet = new HttpGet(safeUrl);
             // redirects are not followed: the redirect target would not be validated
             httpGet.setConfig(RequestConfig.custom().setRedirectsEnabled(false).build());
             HttpResponse httpResponse = client.execute(httpGet); // send request
@@ -132,11 +136,12 @@ public class HttpUtils {
 
 
     public static String URLConnection(String url) {
-        if (!isAllowed(url)) {
+        final String safeUrl = validated(url);
+        if (safeUrl == null) {
             return BLOCKED_MSG;
         }
         try {
-            URLConnection urlConnection = openValidated(url);
+            URLConnection urlConnection = openValidated(safeUrl);
             BufferedReader in = new BufferedReader(new InputStreamReader(urlConnection.getInputStream())); //send request
             String inputLine;
             StringBuilder html = new StringBuilder();
@@ -158,11 +163,12 @@ public class HttpUtils {
      * UserAgent is Java/1.8.0_102.
      */
     public static String HttpURLConnection(String url) {
-        if (!isAllowed(url)) {
+        final String safeUrl = validated(url);
+        if (safeUrl == null) {
             return BLOCKED_MSG;
         }
         try {
-            HttpURLConnection conn = openValidated(url);
+            HttpURLConnection conn = openValidated(safeUrl);
 //             Many HttpURLConnection methods can send http request, such as getResponseCode, getHeaderField
             InputStream is = conn.getInputStream();  // send request
             BufferedReader in = new BufferedReader(new InputStreamReader(is));
@@ -187,11 +193,12 @@ public class HttpUtils {
      * @param url http request url
      */
     public static String Jsoup(String url) {
-        if (!isAllowed(url)) {
+        final String safeUrl = validated(url);
+        if (safeUrl == null) {
             return BLOCKED_MSG;
         }
         try {
-            Document doc = Jsoup.connect(url)
+            Document doc = Jsoup.connect(safeUrl)
                     .followRedirects(false)
                     .timeout(3000)
                     .cookie("name", "joychou") // request cookies
@@ -209,13 +216,14 @@ public class HttpUtils {
      * UserAgent is <code>okhttp/2.5.0</code>.
      */
     public static String okhttp(String url) throws IOException {
-        if (!isAllowed(url)) {
+        final String safeUrl = validated(url);
+        if (safeUrl == null) {
             return BLOCKED_MSG;
         }
         OkHttpClient client = new OkHttpClient();
         client.setFollowRedirects(false);
         client.setFollowSslRedirects(false);
-        com.squareup.okhttp.Request ok_http = new com.squareup.okhttp.Request.Builder().url(url).build();
+        com.squareup.okhttp.Request ok_http = new com.squareup.okhttp.Request.Builder().url(safeUrl).build();
         return client.newCall(ok_http).execute().body().string();
     }
 
@@ -228,11 +236,12 @@ public class HttpUtils {
      * @param url http request url
      */
     public static void imageIO(String url) {
-        if (!isAllowed(url)) {
+        final String safeUrl = validated(url);
+        if (safeUrl == null) {
             return;
         }
         try {
-            HttpURLConnection conn = openValidated(url);
+            HttpURLConnection conn = openValidated(safeUrl);
             try (InputStream is = conn.getInputStream()) {
                 ImageIO.read(is); // send request
             }
@@ -250,11 +259,12 @@ public class HttpUtils {
      * @param url http request url
      */
     public static void IOUtils(String url) {
-        if (!isAllowed(url)) {
+        final String safeUrl = validated(url);
+        if (safeUrl == null) {
             return;
         }
         try {
-            IOUtils.toByteArray(openValidated(url));
+            IOUtils.toByteArray(openValidated(safeUrl));
         } catch (IOException e) {
             logger.error(e.getMessage());
         }
@@ -262,13 +272,14 @@ public class HttpUtils {
 
 
     public static String HttpAsyncClients(String url) {
-        if (!isAllowed(url)) {
+        final String safeUrl = validated(url);
+        if (safeUrl == null) {
             return BLOCKED_MSG;
         }
         CloseableHttpAsyncClient httpclient = HttpAsyncClients.createDefault();
         try {
             httpclient.start();
-            final HttpGet request = new HttpGet(url);
+            final HttpGet request = new HttpGet(safeUrl);
             request.setConfig(RequestConfig.custom().setRedirectsEnabled(false).build());
             Future<HttpResponse> future = httpclient.execute(request, null);
             HttpResponse response = future.get(6000, TimeUnit.MILLISECONDS);
