@@ -3,18 +3,18 @@ package org.joychou.security;
 import org.joychou.config.WebConfig;
 import org.joychou.security.ssrf.SSRFChecker;
 import org.joychou.security.ssrf.SocketHook;
+import org.joychou.util.WebUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 
@@ -51,20 +51,113 @@ public class SecurityUtil {
      * @return host
      */
     public static String gethost(String url) {
-        if (!isHttp(url)) {
-            return "";
+        HttpUrl parsed = parseHttpUrl(url);
+        return parsed == null ? "" : parsed.getHost();
+    }
+
+
+    // Characters allowed in an url path / query / fragment (RFC 3986 pchar + '/' and '?').
+    // Backslash, whitespace, control characters and non-ASCII are never accepted.
+    private static final String URL_CHARS = "A-Za-z0-9._~!$&'()*+,;=:@%/\\-";
+    private static final Pattern HTTP_URL = Pattern.compile(
+            "^(https?)://"                                              // 1 scheme (no user info allowed)
+            + "(\\[[0-9A-Fa-f:.]+\\]|[A-Za-z0-9][A-Za-z0-9.-]*)"        // 2 host or ipv6 literal
+            + "(?::([0-9]{1,5}))?"                                      // 3 port
+            + "(/[" + URL_CHARS + "]*)?"                                // 4 path
+            + "(?:\\?([" + URL_CHARS + "?]*))?"                         // 5 query
+            + "(?:#([" + URL_CHARS + "?]*))?$",                         // 6 fragment
+            Pattern.CASE_INSENSITIVE);
+    private static final Pattern SAME_SITE_PATH = Pattern.compile(
+            "^/(?!/)[" + URL_CHARS + "]*(?:\\?[" + URL_CHARS + "?]*)?(?:#[" + URL_CHARS + "?]*)?$");
+
+
+    /**
+     * An http(s) url that has been strictly parsed. Every component is either a constant
+     * (scheme) or matched a restrictive character set, so {@link #toString()} builds a
+     * canonical url that is re-constructed from the validated parts and never contains user
+     * info, backslashes or control characters.
+     */
+    public static final class HttpUrl {
+        private final String scheme;
+        private final String host;
+        private final int port;
+        private final String path;
+        private final String query;
+        private final String fragment;
+
+        private HttpUrl(String scheme, String host, int port, String path, String query, String fragment) {
+            this.scheme = scheme;
+            this.host = host;
+            this.port = port;
+            this.path = path;
+            this.query = query;
+            this.fragment = fragment;
         }
-        try {
-            // java.net.URI is strict (rejects backslashes etc.), so the host cannot differ from
-            // what the http client will connect to. User info is never accepted.
-            URI uri = new URI(url);
-            if (uri.getRawUserInfo() != null || uri.getHost() == null) {
-                return "";
+
+        public String getScheme() {
+            return scheme;
+        }
+
+        /** Lower case host; ipv6 literals keep their brackets. */
+        public String getHost() {
+            return host;
+        }
+
+        public String getPath() {
+            return path;
+        }
+
+        public String getQuery() {
+            return query;
+        }
+
+        public String getFragment() {
+            return fragment;
+        }
+
+        /** scheme://host[:port] */
+        public String origin() {
+            return scheme + "://" + host + (port >= 0 ? ":" + port : "");
+        }
+
+        /** Canonical url without the fragment (what an http client needs). */
+        public String toOutboundString() {
+            return origin() + path + (query != null ? "?" + query : "");
+        }
+
+        @Override
+        public String toString() {
+            return toOutboundString() + (fragment != null ? "#" + fragment : "");
+        }
+    }
+
+
+    /**
+     * Strictly parse an http(s) url. The host cannot differ from what the http client will
+     * connect to because only a restrictive grammar is accepted: no user info, no backslash,
+     * no whitespace / control characters.
+     *
+     * @param url the url
+     * @return the parsed url, or null when the url is not a well formed http(s) url
+     */
+    public static HttpUrl parseHttpUrl(String url) {
+        if (url == null) {
+            return null;
+        }
+        Matcher m = HTTP_URL.matcher(url);
+        if (!m.matches()) {
+            return null;
+        }
+        int port = -1;
+        if (m.group(3) != null) {
+            port = Integer.parseInt(m.group(3));
+            if (port > 65535) {
+                return null;
             }
-            return uri.getHost().toLowerCase();
-        } catch (URISyntaxException e) {
-            return "";
         }
+        String scheme = "https".equalsIgnoreCase(m.group(1)) ? "https" : "http";
+        String path = m.group(4) == null ? "" : m.group(4);
+        return new HttpUrl(scheme, m.group(2).toLowerCase(), port, path, m.group(5), m.group(6));
     }
 
 
@@ -83,25 +176,13 @@ public class SecurityUtil {
         if (url == null || url.isEmpty()) {
             return null;
         }
-        for (int i = 0; i < url.length(); i++) {
-            char c = url.charAt(i);
-            if (Character.isISOControl(c) || c == '\\') {
-                return null;
-            }
-        }
         if (url.charAt(0) == '/') {
-            if (url.length() > 1 && url.charAt(1) == '/') {
+            // same-site absolute path: restrictive grammar, never "//host" and no backslash.
+            Matcher m = SAME_SITE_PATH.matcher(url);
+            if (!m.matches()) {
                 return null;
             }
-            try {
-                URI uri = new URI(url);
-                if (uri.getScheme() != null || uri.getRawAuthority() != null) {
-                    return null;
-                }
-                return url;
-            } catch (URISyntaxException e) {
-                return null;
-            }
+            return m.group();
         }
         return checkURL(url);
     }
@@ -117,22 +198,14 @@ public class SecurityUtil {
      * @return the original url when allowed; null otherwise
      */
     public static String redirectUrlIfHostIn(String url, String[] domains) {
-        if (url == null) {
+        HttpUrl parsed = parseHttpUrl(url);
+        if (parsed == null) {
             return null;
         }
-        for (int i = 0; i < url.length(); i++) {
-            char c = url.charAt(i);
-            if (Character.isISOControl(c) || c == '\\') {
-                return null;
-            }
-        }
-        String host = gethost(url);
-        if (host.isEmpty()) {
-            return null;
-        }
+        String host = parsed.getHost();
         for (String domain : domains) {
             if (host.equals(domain) || host.endsWith("." + domain)) {
-                return url;
+                return parsed.toString();
             }
         }
         return null;
@@ -156,12 +229,12 @@ public class SecurityUtil {
         ArrayList<String> blockDomains = WebConfig.getBlockDomains();
 
         try {
-            String host = gethost(url);
-
-            // 必须http/https
-            if (!isHttp(url)) {
+            // 必须http/https，并且使用严格解析，返回值由校验后的各部分重新构造
+            HttpUrl parsed = parseHttpUrl(url);
+            if (parsed == null) {
                 return null;
             }
+            String host = parsed.getHost();
 
             // 如果满足黑名单返回null
             if (blockDomains.contains(host)){
@@ -175,13 +248,13 @@ public class SecurityUtil {
 
             // 支持多级域名
             if (safeDomains.contains(host)){
-                return url;
+                return parsed.toString();
             }
 
             // 支持一级域名
             for(String safedomain: safeDomains) {
                 if(host.endsWith("." + safedomain)) {
-                    return url;
+                    return parsed.toString();
                 }
             }
             return null;
@@ -201,26 +274,13 @@ public class SecurityUtil {
      * @return the original origin when it is allowed; null otherwise (including the literal "null" origin)
      */
     public static String checkOrigin(String origin) {
-        if (origin == null || origin.isEmpty()) {
+        HttpUrl parsed = parseHttpUrl(origin);
+        if (parsed == null || !parsed.getPath().isEmpty() || parsed.getQuery() != null
+                || parsed.getFragment() != null) {
             return null;
         }
-        for (int i = 0; i < origin.length(); i++) {
-            char c = origin.charAt(i);
-            if (Character.isISOControl(c) || c == '\\' || Character.isWhitespace(c)) {
-                return null;
-            }
-        }
-        try {
-            URI uri = new URI(origin);
-            String path = uri.getRawPath();
-            if (uri.getRawUserInfo() != null || uri.getRawQuery() != null
-                    || uri.getRawFragment() != null || (path != null && !path.isEmpty())) {
-                return null;
-            }
-        } catch (URISyntaxException e) {
-            return null;
-        }
-        return checkURL(origin);
+        // bare origin only: re-constructed from the validated scheme, host and port
+        return checkURL(parsed.origin());
     }
 
 
@@ -306,7 +366,7 @@ public class SecurityUtil {
             try {
                 temp = URLDecoder.decode(temp, "utf-8");
             } catch (UnsupportedEncodingException e) {
-                logger.info("Unsupported encoding exception: " + filepath);
+                logger.info("Unsupported encoding exception: " + WebUtils.sanitizeLog(filepath));
                 return null;
             } catch (Exception e) {
                 logger.info(e.toString());
