@@ -12,12 +12,20 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 
 public class SecurityUtil {
 
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
+    private static final Set<String> ALLOWED_COMMANDS = new HashSet<String>(
+            Arrays.asList("whoami", "id", "hostname", "uname", "date", "pwd"));
+    // An argument must start with an alphanumeric char so it can never be parsed as an option.
+    private static final Pattern CMD_ARG_PATTERN = Pattern.compile("^[a-zA-Z0-9][a-zA-Z0-9_./=:-]*$");
+    private static final int MAX_CMD_ARGS = 8;
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
 
 
@@ -200,11 +208,36 @@ public class SecurityUtil {
 
 
     public static String cmdFilter(String input) {
-        if (!FILTER_PATTERN.matcher(input).matches()) {
+        if (input == null || !FILTER_PATTERN.matcher(input).matches()) {
             return null;
         }
 
         return input;
+    }
+
+
+    /**
+     * Convert a user supplied command line to an argv array that is safe to pass to
+     * ProcessBuilder / Runtime.exec(String[]) without a shell. The program must be in a fixed
+     * allowlist and every argument must match a strict character set and not start with '-'.
+     *
+     * @param cmd the user supplied command line
+     * @return argv array, or null if the command is not allowed
+     */
+    public static String[] cmdToArgv(String cmd) {
+        if (cmd == null) {
+            return null;
+        }
+        String[] parts = cmd.trim().split("\\s+");
+        if (parts.length == 0 || parts.length > MAX_CMD_ARGS || !ALLOWED_COMMANDS.contains(parts[0])) {
+            return null;
+        }
+        for (int i = 1; i < parts.length; i++) {
+            if (!CMD_ARG_PATTERN.matcher(parts[i]).matches()) {
+                return null;
+            }
+        }
+        return parts;
     }
 
 
