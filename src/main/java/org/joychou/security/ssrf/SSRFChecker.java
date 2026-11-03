@@ -1,10 +1,13 @@
 package org.joychou.security.ssrf;
 
 import java.net.HttpURLConnection;
+import java.net.Inet4Address;
+import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.URI;
 import java.net.URL;
 import java.util.ArrayList;
+import java.util.regex.Pattern;
 
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.net.util.SubnetUtils;
@@ -18,6 +21,99 @@ public class SSRFChecker {
 
     private static final Logger logger = LoggerFactory.getLogger(SSRFChecker.class);
     private static String decimalIp;
+
+    // Hosts made only of decimal / hex numbers and dots (e.g. 2130706433, 0x7f.1, 017700000001).
+    private static final Pattern NUMERIC_HOST =
+            Pattern.compile("^(0[xX][0-9a-fA-F]+|[0-9]+)(\\.(0[xX][0-9a-fA-F]+|[0-9]+))*$");
+    // Canonical dotted-quad IPv4 without leading zeros.
+    private static final Pattern DOTTED_QUAD = Pattern.compile(
+            "^(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(\\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])){3}$");
+
+    /**
+     * Central outbound-URL validation. The URL must be a http/https URL without user info and
+     * its host must not be (or resolve to) a loopback, link-local, private, metadata or other
+     * non-public address. Every resolved address is checked, not only the first one.
+     * Callers must also disable automatic redirects (or re-validate every hop).
+     *
+     * @param url the url that is about to be requested
+     * @return true if the url may be requested, false otherwise (fails closed)
+     */
+    public static boolean isSafeOutboundUrl(String url) {
+        if (null == url) {
+            return false;
+        }
+        try {
+            URI u = new URI(url);
+            String scheme = u.getScheme();
+            if (scheme == null || !(scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"))) {
+                return false;
+            }
+            if (u.getRawUserInfo() != null) {
+                return false;
+            }
+            return isSafeOutboundHost(u.getHost());
+        } catch (Exception e) {
+            logger.error("isSafeOutboundUrl exception: " + e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Check that a host name or ip literal only resolves to public addresses.
+     *
+     * @param host host name, IPv4 literal or bracketed IPv6 literal
+     * @return true if every resolved address is public, false otherwise (fails closed)
+     */
+    public static boolean isSafeOutboundHost(String host) {
+        if (host == null || host.isEmpty()) {
+            return false;
+        }
+        try {
+            // Reject octal / hex / decimal-integer IPv4 notations that resolvers parse differently.
+            if (NUMERIC_HOST.matcher(host).matches() && !DOTTED_QUAD.matcher(host).matches()) {
+                return false;
+            }
+            InetAddress[] addresses = InetAddress.getAllByName(host);
+            if (addresses.length == 0) {
+                return false;
+            }
+            for (InetAddress address : addresses) {
+                if (isBlockedAddress(address)) {
+                    logger.error("[-] SSRF check failed. Internal IP: " + address.getHostAddress());
+                    return false;
+                }
+            }
+            return true;
+        } catch (Exception e) {
+            logger.error("isSafeOutboundHost exception: " + e.getMessage());
+            return false;
+        }
+    }
+
+    private static boolean isBlockedAddress(InetAddress address) {
+        if (address.isAnyLocalAddress() || address.isLoopbackAddress() || address.isLinkLocalAddress()
+                || address.isSiteLocalAddress() || address.isMulticastAddress()) {
+            return true;
+        }
+        byte[] b = address.getAddress();
+        if (address instanceof Inet4Address) {
+            int b0 = b[0] & 0xff;
+            int b1 = b[1] & 0xff;
+            int b2 = b[2] & 0xff;
+            if (b0 == 0                                   // 0.0.0.0/8
+                    || (b0 == 100 && (b1 & 0xc0) == 64)   // 100.64.0.0/10 carrier-grade NAT
+                    || (b0 == 192 && b1 == 0 && b2 == 0)  // 192.0.0.0/24
+                    || (b0 == 198 && (b1 & 0xfe) == 18)   // 198.18.0.0/15
+                    || b0 >= 240) {                       // reserved + broadcast
+                return true;
+            }
+            return isInternalIp(address.getHostAddress()); // configured block subnets
+        }
+        if (address instanceof Inet6Address) {
+            return (b[0] & 0xfe) == 0xfc;                 // fc00::/7 unique local
+        }
+        return true;
+    }
 
     public static boolean checkURLFckSSRF(String url) {
         if (null == url) {
@@ -66,11 +162,12 @@ public class SSRFChecker {
         try {
             do {
                 // 判断当前请求的URL是否是内网ip
-                if (isInternalIpByUrl(finalUrl)) {
+                if (isInternalIpByUrl(finalUrl) || !isSafeOutboundUrl(finalUrl)) {
                     logger.error("[-] SSRF check failed. Dangerous url: " + finalUrl);
                     return false;  // 内网ip直接return，非内网ip继续判断是否有重定向
                 }
 
+                // finalUrl has just been validated by isSafeOutboundUrl (http/https, public ip only).
                 connection = (HttpURLConnection) new URL(finalUrl).openConnection();
                 connection.setInstanceFollowRedirects(false);
                 connection.setUseCaches(false); // 设置为false，手动处理跳转，可以拿到每个跳转的URL
@@ -93,7 +190,8 @@ public class SSRFChecker {
             } while (connection.getResponseCode() != HttpURLConnection.HTTP_OK);
             connection.disconnect();
         } catch (Exception e) {
-            return true;  // 如果异常了，认为是安全的，防止是超时导致的异常而验证不成功。
+            logger.error("checkSSRF exception: " + e.getMessage());
+            return false;  // fail closed: an url that cannot be verified is not safe
         }
         return true; // 默认返回true
     }
@@ -291,7 +389,9 @@ public class SSRFChecker {
         try {
             // use URI instead of URL
             URI u = new URI(url);
-            if (SecurityUtil.isHttp(url)) {
+            String scheme = u.getScheme();
+            if (scheme != null && (scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"))
+                    && u.getRawUserInfo() == null && u.getHost() != null) {
                 return u.getHost();
             }
             return "";

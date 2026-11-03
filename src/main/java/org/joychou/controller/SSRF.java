@@ -2,6 +2,7 @@ package org.joychou.controller;
 
 import cn.hutool.http.HttpUtil;
 import org.joychou.security.SecurityUtil;
+import org.joychou.security.ssrf.SSRFChecker;
 import org.joychou.security.ssrf.SSRFException;
 import org.joychou.service.HttpService;
 import org.joychou.util.HttpUtils;
@@ -124,10 +125,18 @@ public class SSRF {
             // download
             response.setHeader("content-disposition", "attachment;fileName=" + downLoadImgFileName);
 
-            URL u = new URL(url);
+            // http/https only, public ip only, redirects are not followed
+            if (!SSRFChecker.isSafeOutboundUrl(url)) {
+                logger.error("[-] SSRF check failed. Dangerous url: " + url);
+                return;
+            }
+            HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+            conn.setInstanceFollowRedirects(false);
+            conn.setConnectTimeout(10 * 1000);
+            conn.setReadTimeout(10 * 1000);
             int length;
             byte[] bytes = new byte[1024];
-            inputStream = u.openStream(); // send request
+            inputStream = conn.getInputStream(); // send request
             outputStream = response.getOutputStream();
             while ((length = inputStream.read(bytes)) > 0) {
                 outputStream.write(bytes, 0, length);

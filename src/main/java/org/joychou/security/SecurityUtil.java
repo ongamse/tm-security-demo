@@ -36,7 +36,11 @@ public class SecurityUtil {
      * @return true or false
      */
     public static boolean isHttp(String url) {
-        return url.startsWith("http://") || url.startsWith("https://");
+        if (url == null) {
+            return false;
+        }
+        String lower = url.toLowerCase();
+        return lower.startsWith("http://") || lower.startsWith("https://");
     }
 
 
@@ -47,8 +51,16 @@ public class SecurityUtil {
      * @return host
      */
     public static String gethost(String url) {
+        if (!isHttp(url)) {
+            return "";
+        }
         try {
+            // java.net.URI is strict (rejects backslashes etc.), so the host cannot differ from
+            // what the http client will connect to. User info is never accepted.
             URI uri = new URI(url);
+            if (uri.getRawUserInfo() != null || uri.getHost() == null) {
+                return "";
+            }
             return uri.getHost().toLowerCase();
         } catch (URISyntaxException e) {
             return "";
