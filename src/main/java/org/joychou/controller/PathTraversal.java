@@ -2,6 +2,7 @@ package org.joychou.controller;
 
 import org.apache.commons.codec.binary.Base64;
 import org.joychou.security.SecurityUtil;
+import org.joychou.util.WebUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -30,7 +31,7 @@ public class PathTraversal {
     @GetMapping("/path_traversal/sec")
     public String getImageSec(String filepath) throws IOException {
         if (SecurityUtil.pathFilter(filepath) == null) {
-            logger.info("Illegal file path: " + filepath);
+            logger.info("Illegal file path: " + WebUtils.sanitizeLog(filepath));
             return "Bad boy. Illegal file path.";
         }
         return getImgBase64(filepath);
@@ -39,7 +40,7 @@ public class PathTraversal {
     private String getImgBase64(String imgFile) throws IOException {
 
         logger.info("Working directory: " + System.getProperty("user.dir"));
-        logger.info("File path: " + imgFile);
+        logger.info("File path: " + WebUtils.sanitizeLog(imgFile));
 
         if (imgFile == null) {
             return "File doesn't exist or is not a file.";
@@ -51,13 +52,13 @@ public class PathTraversal {
         try {
             target = base.resolve(imgFile).normalize();
             if (!target.startsWith(base)) {
-                logger.info("Illegal file path: " + imgFile);
+                logger.info("Illegal file path: " + WebUtils.sanitizeLog(imgFile));
                 return "Bad boy. Illegal file path.";
             }
             if (Files.exists(target)) {
                 target = target.toRealPath();
                 if (!target.startsWith(base)) {
-                    logger.info("Illegal file path: " + imgFile);
+                    logger.info("Illegal file path: " + WebUtils.sanitizeLog(imgFile));
                     return "Bad boy. Illegal file path.";
                 }
             }

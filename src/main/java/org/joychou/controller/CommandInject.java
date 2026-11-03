@@ -48,7 +48,7 @@ public class CommandInject {
     public String codeInjectHost(HttpServletRequest request) throws IOException {
 
         String host = request.getHeader("host");
-        logger.info(host);
+        logger.info(WebUtils.sanitizeLog(host));
         if (host == null || !HOST_PATTERN.matcher(host).matches()) {
             return "Bad boy. I got u.";
         }

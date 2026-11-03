@@ -112,7 +112,7 @@ public class FileUpload {
             }
         }
         if (!suffixFlag) {
-            logger.error("[-] Suffix error: " + Suffix);
+            logger.error("[-] Suffix error: " + WebUtils.sanitizeLog(Suffix));
             deleteFile(filePath);
             return "Upload failed. Illeagl picture.";
         }
@@ -130,7 +130,7 @@ public class FileUpload {
         for (String blackMimeType : mimeTypeBlackList) {
             // 用contains是为了防止text/html;charset=UTF-8绕过
             if (SecurityUtil.replaceSpecialStr(mimeType).toLowerCase().contains(blackMimeType)) {
-                logger.error("[-] Mime type error: " + mimeType);
+                logger.error("[-] Mime type error: " + WebUtils.sanitizeLog(mimeType));
                 deleteFile(filePath);
                 return "Upload failed. Illeagl picture.";
             }
@@ -158,8 +158,8 @@ public class FileUpload {
             return "Upload failed";
         }
 
-        logger.info("[+] Safe file. Suffix: {}, MIME: {}", Suffix, mimeType);
-        logger.info("[+] Successfully uploaded {}", filePath);
+        logger.info("[+] Safe file. Suffix: {}, MIME: {}", WebUtils.sanitizeLog(Suffix), WebUtils.sanitizeLog(mimeType));
+        logger.info("[+] Successfully uploaded {}", WebUtils.sanitizeLog(filePath));
         return String.format("You successfully uploaded '%s'", WebUtils.htmlEncode(filePath));
     }
 
@@ -199,11 +199,11 @@ public class FileUpload {
         File delFile = delPath.toFile();
         if(delFile.isFile() && delFile.exists()) {
             if (delFile.delete()) {
-                logger.info("[+] " + filePath + " delete successfully!");
+                logger.info("[+] " + WebUtils.sanitizeLog(filePath) + " delete successfully!");
                 return;
             }
         }
-        logger.info(filePath + " delete failed!");
+        logger.info(WebUtils.sanitizeLog(filePath) + " delete failed!");
     }
 
     /**
