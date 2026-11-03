@@ -66,7 +66,7 @@ public class Rce {
             inBr.close();
             in.close();
         } catch (Exception e) {
-            return WebUtils.htmlEncode(e.toString());
+            return WebUtils.logAndGenericError(log, e);
         }
         return WebUtils.htmlEncode(sb.toString());
     }
@@ -96,7 +96,7 @@ public class Rce {
                 sb.append(tmpStr);
             }
         } catch (Exception e) {
-            return WebUtils.htmlEncode(e.toString());
+            return WebUtils.logAndGenericError(log, e);
         }
 
         return WebUtils.htmlEncode(sb.toString());

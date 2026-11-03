@@ -4,6 +4,8 @@ import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.alibaba.fastjson.parser.Feature;
 import org.joychou.util.WebUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -15,6 +17,8 @@ import org.springframework.web.bind.annotation.ResponseBody;
 @RequestMapping("/fastjson")
 public class Fastjson {
 
+    private static final Logger logger = LoggerFactory.getLogger(Fastjson.class);
+
     @RequestMapping(value = "/deserialize", method = {RequestMethod.POST})
     @ResponseBody
     public String Deserialize(@RequestBody String params) {
@@ -24,7 +28,7 @@ public class Fastjson {
             JSONObject ob = JSON.parseObject(params);
             return WebUtils.htmlEncode(ob.get("name").toString());
         } catch (Exception e) {
-            return WebUtils.htmlEncode(e.toString());
+            return WebUtils.logAndGenericError(logger, e);
         }
     }
 

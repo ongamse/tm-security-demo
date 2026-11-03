@@ -157,6 +157,21 @@ public class WebUtils {
     }
 
 
+    /**
+     * Fixed message returned to clients when a request fails. Exception messages, class names and
+     * stack traces must never be written into an HTTP response (CWE-209).
+     */
+    public static final String GENERIC_ERROR = "Request failed.";
+
+    /**
+     * Log an exception server-side (sanitized class name and message only) and return the fixed
+     * generic error string, which is the only thing that may be sent to the client.
+     */
+    public static String logAndGenericError(org.slf4j.Logger log, Throwable e) {
+        log.error("Request failed: {}: {}", e.getClass().getName(), sanitizeLog(e.getMessage()));
+        return GENERIC_ERROR;
+    }
+
     private static final int MAX_LOG_VALUE_LENGTH = 2048;
 
     /**

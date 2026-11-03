@@ -82,7 +82,7 @@ public class HttpUtils {
             return new String(resBody);
 
         } catch (IOException e) {
-            return "Error: " + e.getMessage();
+            return WebUtils.logAndGenericError(logger, e);
         } finally {
             // Release the connection.
             method.releaseConnection();
@@ -99,7 +99,7 @@ public class HttpUtils {
             Executor executor = Executor.newInstance(HttpClients.custom().disableRedirectHandling().build());
             return executor.execute(Request.Get(safeUrl)).returnContent().toString();
         } catch (Exception e) {
-            return e.getMessage();
+            return WebUtils.logAndGenericError(logger, e);
         }
     }
 
@@ -130,7 +130,7 @@ public class HttpUtils {
             return result.toString();
 
         } catch (Exception e) {
-            return e.getMessage();
+            return WebUtils.logAndGenericError(logger, e);
         }
     }
 
@@ -152,8 +152,7 @@ public class HttpUtils {
             in.close();
             return html.toString();
         } catch (Exception e) {
-            logger.error(e.getMessage());
-            return e.getMessage();
+            return WebUtils.logAndGenericError(logger, e);
         }
     }
 
@@ -181,8 +180,7 @@ public class HttpUtils {
             in.close();
             return html.toString();
         } catch (IOException e) {
-            logger.error(e.getMessage());
-            return e.getMessage();
+            return WebUtils.logAndGenericError(logger, e);
         }
     }
 
@@ -205,7 +203,7 @@ public class HttpUtils {
                     .execute().parse();
             return doc.outerHtml();
         } catch (IOException e) {
-            return e.getMessage();
+            return WebUtils.logAndGenericError(logger, e);
         }
     }
 
@@ -285,12 +283,12 @@ public class HttpUtils {
             HttpResponse response = future.get(6000, TimeUnit.MILLISECONDS);
             return EntityUtils.toString(response.getEntity());
         } catch (Exception e) {
-            return e.getMessage();
+            return WebUtils.logAndGenericError(logger, e);
         } finally {
             try {
                 httpclient.close();
             } catch (Exception e) {
-                logger.error(e.getMessage());
+                logger.error("Failed to close http client: {}", e.getClass().getName());
             }
         }
     }

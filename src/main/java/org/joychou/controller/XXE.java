@@ -258,9 +258,7 @@ public class XXE {
             }
             return WebUtils.htmlEncode(buf.toString());
         } catch (Exception e) {
-            e.printStackTrace();
-            logger.error(e.toString());
-            return WebUtils.htmlEncode(e.toString());
+            return WebUtils.logAndGenericError(logger, e);
         }
     }
 
