@@ -3,7 +3,6 @@ package org.joychou.controller;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 
-import com.alibaba.fastjson.JSONPObject;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang.StringUtils;
 import org.joychou.security.SecurityUtil;
@@ -115,7 +114,7 @@ public class Jsonp {
      *
      * object to jsonp
      */
-    @GetMapping("/getToken")
+    @GetMapping(value = "/getToken", produces = MediaType.APPLICATION_JSON_VALUE)
     public CsrfToken getCsrfToken1(CsrfToken token) {
         return token;
     }
@@ -131,11 +130,14 @@ public class Jsonp {
 
         String callback = request.getParameter("fastjsonpCallback");
         if (StringUtils.isNotBlank(callback)) {
-            JSONPObject jsonpObj = new JSONPObject(callback);
-            jsonpObj.addParameter(csrfToken);
-            return jsonpObj.toString();
+            // Only a plain JavaScript identifier may be used as the callback name.
+            if (!WebUtils.isSafeJsonpCallback(callback)) {
+                return "error";
+            }
+            // Serialize the token with a JSON serializer and escape script-significant characters.
+            return WebUtils.json2Jsonp(callback, JSON.toJSONString(csrfToken));
         } else {
-            return csrfToken.toString();
+            return WebUtils.escapeJsonForScript(JSON.toJSONString(csrfToken));
         }
     }
 

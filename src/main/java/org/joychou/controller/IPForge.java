@@ -1,6 +1,7 @@
 package org.joychou.controller;
 
 import org.apache.commons.lang.StringUtils;
+import org.joychou.util.WebUtils;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.RestController;
@@ -16,10 +17,25 @@ import javax.servlet.http.HttpServletRequest;
 @RequestMapping("/ip")
 public class IPForge {
 
+    private static final String IP_ALPHABET = "0123456789abcdefABCDEF:.%";
+
     // no any proxy
-    @RequestMapping("/noproxy")
+    @RequestMapping(value = "/noproxy", produces = "text/plain;charset=UTF-8")
+    @ResponseBody
     public static String noProxy(HttpServletRequest request) {
-        return request.getRemoteAddr();
+        return sanitizeAddr(request.getRemoteAddr());
+    }
+
+    /**
+     * Rebuild the address from an IPv4/IPv6 literal alphabet (anything else is dropped)
+     * and HTML-encode the result. Returns an empty string for a blank address.
+     */
+    private static String sanitizeAddr(String addr) {
+        if (StringUtils.isNotBlank(addr)) {
+            String rebuilt = WebUtils.rebuildFromAllowed(addr, IP_ALPHABET);
+            return rebuilt == null ? "" : WebUtils.htmlEncode(rebuilt);
+        }
+        return "";
     }
 
 
@@ -28,19 +44,14 @@ public class IPForge {
      * proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for
      * if code used X-Forwarded-For to get ip, the code must be vulnerable.
      */
-    @RequestMapping("/proxy")
+    @RequestMapping(value = "/proxy", produces = "text/plain;charset=UTF-8")
     @ResponseBody
     public static String proxy(HttpServletRequest request) {
-        String ip = request.getHeader("X-Real-IP");
-        if (StringUtils.isNotBlank(ip)) {
-            return ip;
-        } else {
-            String remoteAddr = request.getRemoteAddr();
-            if (StringUtils.isNotBlank(remoteAddr)) {
-                return remoteAddr;
-            }
-        }
-        return "";
+        // Client-supplied forwarding headers (X-Real-IP / X-Forwarded-For) are spoofable,
+        // so they are never trusted here. Behind a trusted reverse proxy, configure the
+        // container (e.g. server.forward-headers-strategy / RemoteIpValve with an
+        // internal-proxies allowlist) so getRemoteAddr() reflects the real client.
+        return sanitizeAddr(request.getRemoteAddr());
     }
 
 

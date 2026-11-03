@@ -4,14 +4,19 @@ package org.joychou.controller;
 import org.joychou.mapper.UserMapper;
 import org.joychou.dao.User;
 import org.joychou.security.SecurityUtil;
+import org.joychou.util.WebUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
+import javax.servlet.http.HttpServletRequest;
+import java.security.Principal;
 import java.sql.*;
 import java.util.List;
+import java.util.stream.Collectors;
 
 
 /**
@@ -42,6 +47,71 @@ public class SQLI {
     @Resource
     private UserMapper userMapper;
 
+    /**
+     * Object-level authorization: the caller may only reference their own user record
+     * (by username), unless they hold the ADMIN role. Fails closed.
+     */
+    private static void requireSelfOrAdmin(HttpServletRequest request, String username) {
+        if (!isSelfOrAdmin(request, username)) {
+            throw new AccessDeniedException("Access denied");
+        }
+    }
+
+    private static boolean isSelfOrAdmin(HttpServletRequest request, String username) {
+        Principal principal = request.getUserPrincipal();
+        if (principal == null) {
+            return false;
+        }
+        return request.isUserInRole("ADMIN") || principal.getName().equals(username);
+    }
+
+    private static final String USERNAME_CHARS =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.-";
+
+    /**
+     * Derive the user record that the lookup may use. The key never comes straight from the
+     * request: a non-admin caller always gets the server-side authenticated principal name (and a
+     * request for a different user is rejected); an admin may select another user, but the
+     * requested name is re-built from a server-side alphabet (^[A-Za-z0-9_.-]{1,64}$).
+     * Fails closed (AccessDeniedException) when there is no principal.
+     */
+    private static String effectiveUsername(HttpServletRequest request, String requested) {
+        Principal principal = request.getUserPrincipal();
+        if (principal == null || principal.getName() == null) {
+            throw new AccessDeniedException("Access denied");
+        }
+        if (request.isUserInRole("ADMIN")) {
+            String rebuilt = (requested == null || requested.isEmpty() || requested.length() > 64)
+                    ? null : WebUtils.rebuildFromAllowed(requested, USERNAME_CHARS);
+            if (rebuilt == null || rebuilt.isEmpty()) {
+                throw new AccessDeniedException("Access denied");
+            }
+            return rebuilt;
+        }
+        if (!principal.getName().equals(requested)) {
+            throw new AccessDeniedException("Access denied");
+        }
+        return principal.getName();
+    }
+
+    /**
+     * Object-level authorization for a numeric user id: the id must belong to the
+     * authenticated caller, unless they hold the ADMIN role. Fails closed.
+     */
+    private void requireOwnIdOrAdmin(HttpServletRequest request, Integer id) {
+        Principal principal = request.getUserPrincipal();
+        if (principal == null || id == null) {
+            throw new AccessDeniedException("Access denied");
+        }
+        if (request.isUserInRole("ADMIN")) {
+            return;
+        }
+        User self = userMapper.findByUserName(principal.getName());
+        if (self == null || !id.equals(self.getId())) {
+            throw new AccessDeniedException("Access denied");
+        }
+    }
+
 
     /**
      * <p>Sql injection jbdc vuln code.</p><br>
@@ -49,8 +119,9 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/jdbc/vuln?username=joychou">http://localhost:8080/sqli/jdbc/vuln?username=joychou</a>
      */
     @RequestMapping("/jdbc/vuln")
-    public String jdbc_sqli_vul(@RequestParam("username") String username) {
+    public String jdbc_sqli_vul(HttpServletRequest request, @RequestParam("username") String username) {
 
+        final String lookupUser = effectiveUsername(request, username);
         StringBuilder result = new StringBuilder();
 
         try {
@@ -60,11 +131,12 @@ public class SQLI {
             if (!con.isClosed())
                 System.out.println("Connect to database successfully.");
 
-            // sqli vuln code
-            Statement statement = con.createStatement();
-            String sql = "select * from users where username = '" + username + "'";
-            logger.info(sql);
-            ResultSet rs = statement.executeQuery(sql);
+            // bind the user input as a parameter instead of concatenating it
+            String sql = "select * from users where username = ?";
+            PreparedStatement statement = con.prepareStatement(sql);
+            statement.setString(1, lookupUser);
+            logger.info(WebUtils.sanitizeLog(statement));
+            ResultSet rs = statement.executeQuery();
 
             while (rs.next()) {
                 String res_name = rs.getString("username");
@@ -92,8 +164,9 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/jdbc/sec?username=joychou">http://localhost:8080/sqli/jdbc/sec?username=joychou</a>
      */
     @RequestMapping("/jdbc/sec")
-    public String jdbc_sqli_sec(@RequestParam("username") String username) {
+    public String jdbc_sqli_sec(HttpServletRequest request, @RequestParam("username") String username) {
 
+        requireSelfOrAdmin(request, username);
         StringBuilder result = new StringBuilder();
         try {
             Class.forName(driver);
@@ -107,7 +180,7 @@ public class SQLI {
             PreparedStatement st = con.prepareStatement(sql);
             st.setString(1, username);
 
-            logger.info(st.toString());  // sql after prepare statement
+            logger.info(WebUtils.sanitizeLog(st));  // sql after prepare statement
             ResultSet rs = st.executeQuery();
 
             while (rs.next()) {
@@ -136,8 +209,9 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/jdbc/ps/vuln?username=joychou' or 'a'='a">http://localhost:8080/sqli/jdbc/ps/vuln?username=joychou' or 'a'='a</a>
      */
     @RequestMapping("/jdbc/ps/vuln")
-    public String jdbc_ps_vuln(@RequestParam("username") String username) {
+    public String jdbc_ps_vuln(HttpServletRequest request, @RequestParam("username") String username) {
 
+        final String lookupUser = effectiveUsername(request, username);
         StringBuilder result = new StringBuilder();
         try {
             Class.forName(driver);
@@ -146,10 +220,11 @@ public class SQLI {
             if (!con.isClosed())
                 System.out.println("Connecting to Database successfully.");
 
-            String sql = "select * from users where username = '" + username + "'";
+            String sql = "select * from users where username = ?";
             PreparedStatement st = con.prepareStatement(sql);
+            st.setString(1, lookupUser);
 
-            logger.info(st.toString());
+            logger.info(WebUtils.sanitizeLog(st));
             ResultSet rs = st.executeQuery();
 
             while (rs.next()) {
@@ -179,7 +254,8 @@ public class SQLI {
      * <p>select * from users where username = 'joychou' or '1'='1' </p>
      */
     @GetMapping("/mybatis/vuln01")
-    public List<User> mybatisVuln01(@RequestParam("username") String username) {
+    public List<User> mybatisVuln01(HttpServletRequest request, @RequestParam("username") String username) {
+        requireSelfOrAdmin(request, username);
         return userMapper.findByUserNameVuln01(username);
     }
 
@@ -189,8 +265,19 @@ public class SQLI {
      * <p>select * from users where username like '%joychou' or '1'='1%' </p>
      */
     @GetMapping("/mybatis/vuln02")
-    public List<User> mybatisVuln02(@RequestParam("username") String username) {
-        return userMapper.findByUserNameVuln02(username);
+    public List<User> mybatisVuln02(HttpServletRequest request, @RequestParam("username") String username) {
+        Principal principal = request.getUserPrincipal();
+        if (principal == null) {
+            throw new AccessDeniedException("Access denied");
+        }
+        List<User> users = userMapper.findByUserNameVuln02(username);
+        if (request.isUserInRole("ADMIN")) {
+            return users;
+        }
+        // Pattern search: only return the caller's own record, never other users' data.
+        return users.stream()
+                .filter(u -> principal.getName().equals(u.getUsername()))
+                .collect(Collectors.toList());
     }
 
     /**
@@ -209,7 +296,8 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/mybatis/sec01?username=joychou">http://localhost:8080/sqli/mybatis/sec01?username=joychou</a>
      */
     @GetMapping("/mybatis/sec01")
-    public User mybatisSec01(@RequestParam("username") String username) {
+    public User mybatisSec01(HttpServletRequest request, @RequestParam("username") String username) {
+        requireSelfOrAdmin(request, username);
         return userMapper.findByUserName(username);
     }
 
@@ -218,7 +306,8 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/mybatis/sec02?id=1">http://localhost:8080/sqli/mybatis/sec02?id=1</a>
      */
     @GetMapping("/mybatis/sec02")
-    public User mybatisSec02(@RequestParam("id") Integer id) {
+    public User mybatisSec02(HttpServletRequest request, @RequestParam("id") Integer id) {
+        requireOwnIdOrAdmin(request, id);
         return userMapper.findById(id);
     }
 

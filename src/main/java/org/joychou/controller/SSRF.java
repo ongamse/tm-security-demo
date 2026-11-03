@@ -1,7 +1,9 @@
 package org.joychou.controller;
 
 import cn.hutool.http.HttpUtil;
+import org.joychou.config.WebConfig;
 import org.joychou.security.SecurityUtil;
+import org.joychou.security.ssrf.SSRFChecker;
 import org.joychou.security.ssrf.SSRFException;
 import org.joychou.service.HttpService;
 import org.joychou.util.HttpUtils;
@@ -29,6 +31,9 @@ import java.net.*;
 public class SSRF {
 
     private static final Logger logger = LoggerFactory.getLogger(SSRF.class);
+
+    private static final String FILENAME_CHARS =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-";
 
     @Resource
     private HttpService httpService;
@@ -59,7 +64,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.URLConnection(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return WebUtils.logAndGenericError(logger, e);
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -77,7 +82,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.HttpURLConnection(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return WebUtils.logAndGenericError(logger, e);
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -98,9 +103,9 @@ public class SSRF {
     public String request(@RequestParam String url) {
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.request(url);
+            return WebUtils.htmlEncode(HttpUtils.request(url));
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return WebUtils.logAndGenericError(logger, e);
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -122,12 +127,27 @@ public class SSRF {
         try {
             String downLoadImgFileName = WebUtils.getNameWithoutExtension(url) + "." + WebUtils.getFileExtension(url);
             // download
-            response.setHeader("content-disposition", "attachment;fileName=" + downLoadImgFileName);
+            // file name is re-built from a server-side alphabet; other characters become '_'
+            String safeFileName = WebUtils.rebuildFromAllowedOrReplace(downLoadImgFileName, FILENAME_CHARS, '_');
+            if (safeFileName == null || safeFileName.length() > 200) {
+                response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+                return;
+            }
+            response.setHeader("content-disposition", "attachment;fileName=" + safeFileName);
 
-            URL u = new URL(url);
+            // http/https only, public ip only, redirects are not followed
+            String safeUrl = SSRFChecker.canonicalOutboundUrl(url);
+            if (safeUrl == null) {
+                logger.error("[-] SSRF check failed. Dangerous url: " + WebUtils.sanitizeLog(url));
+                return;
+            }
+            HttpURLConnection conn = (HttpURLConnection) new URL(safeUrl).openConnection();
+            conn.setInstanceFollowRedirects(false);
+            conn.setConnectTimeout(10 * 1000);
+            conn.setReadTimeout(10 * 1000);
             int length;
             byte[] bytes = new byte[1024];
-            inputStream = u.openStream(); // send request
+            inputStream = conn.getInputStream(); // send request
             outputStream = response.getOutputStream();
             while ((length = inputStream.read(bytes)) > 0) {
                 outputStream.write(bytes, 0, length);
@@ -156,7 +176,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             HttpUtils.imageIO(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return WebUtils.logAndGenericError(logger, e);
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -172,7 +192,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.okhttp(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return WebUtils.logAndGenericError(logger, e);
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -191,7 +211,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.httpClient(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return WebUtils.logAndGenericError(logger, e);
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -211,7 +231,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.commonHttpClient(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return WebUtils.logAndGenericError(logger, e);
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -230,7 +250,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.Jsoup(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return WebUtils.logAndGenericError(logger, e);
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -249,7 +269,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             HttpUtils.IOUtils(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return WebUtils.logAndGenericError(logger, e);
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -311,7 +331,30 @@ public class SSRF {
         if (!SecurityUtil.checkSSRFWithoutRedirect(url)) {
             return "Dangerous url";
         }
-        return HttpUtil.get(url);
+        // only request the canonical url re-constructed from the validated parts
+        String safeUrl = SSRFChecker.canonicalOutboundUrl(url);
+        if (safeUrl == null) {
+            return "Dangerous url";
+        }
+        // the target host must also be an exact member of the server-side allowlist (fails closed);
+        // the outbound url is built from the allowlist entry, not from the request string
+        SecurityUtil.HttpUrl parsed = SecurityUtil.parseHttpUrl(safeUrl);
+        String allowedHost = null;
+        if (parsed != null && WebConfig.getSafeDomains() != null) {
+            for (String domain : WebConfig.getSafeDomains()) {
+                if (domain.equals(parsed.getHost())) {
+                    allowedHost = domain;
+                    break;
+                }
+            }
+        }
+        if (allowedHost == null) {
+            return "Dangerous url";
+        }
+        String allowlistedUrl = ("https".equals(parsed.getScheme()) ? "https" : "http") + "://" + allowedHost
+                + (parsed.getPort() >= 0 ? ":" + parsed.getPort() : "")
+                + parsed.getPath() + (parsed.getQuery() != null ? "?" + parsed.getQuery() : "");
+        return HttpUtil.get(allowlistedUrl);
     }
 
 

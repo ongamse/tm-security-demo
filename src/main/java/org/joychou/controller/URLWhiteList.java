@@ -2,13 +2,13 @@ package org.joychou.controller;
 
 
 import org.joychou.security.SecurityUtil;
+import org.joychou.util.WebUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.*;
 
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.net.URL;
 import java.util.ArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -28,6 +28,8 @@ public class URLWhiteList {
 
     private String domainwhitelist[] = {"joychou.org", "joychou.com"};
     private static final Logger logger = LoggerFactory.getLogger(URLWhiteList.class);
+    private static final String LOCATION_CHARS =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._~!$&'()*+,;=:@%/-?#[]";
 
     /**
      * bypass poc: bypassjoychou.org
@@ -98,22 +100,22 @@ public class URLWhiteList {
     @GetMapping("/vuln/url_bypass")
     public void url_bypass(String url, HttpServletResponse res) throws IOException {
 
-        logger.info("url:  " + url);
+        logger.info("url:  " + WebUtils.sanitizeLog(url));
 
         if (!SecurityUtil.isHttp(url)) {
             return;
         }
 
-        URL u = new URL(url);
-        String host = u.getHost();
-        logger.info("host:  " + host);
-
-        // endsWith .
-        for (String domain : domainwhitelist) {
-            if (host.endsWith("." + domain)) {
-                res.sendRedirect(url);
-            }
+        // SecurityUtil.gethost uses a strict http(s) url grammar: backslash tricks, user info
+        // and malformed urls yield an empty host instead of a different host than the browser uses.
+        // Allowed: exact match or a real subdomain (dot boundary); control chars/backslash rejected.
+        String target = WebUtils.rebuildFromAllowed(
+                SecurityUtil.redirectUrlIfHostIn(url, domainwhitelist), LOCATION_CHARS);
+        if (target == null) {
+            res.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            return;
         }
+        res.sendRedirect(target);
 
     }
 
@@ -135,9 +137,9 @@ public class URLWhiteList {
 
         for (String whiteHost: whiteDomainlists){
             if (whiteHost.startsWith(".") && host.endsWith(whiteHost)) {
-                return url;
+                return WebUtils.htmlEncode(url);
             } else if (!whiteHost.startsWith(".") && host.equals(whiteHost)) {
-                return url;
+                return WebUtils.htmlEncode(url);
             }
         }
 

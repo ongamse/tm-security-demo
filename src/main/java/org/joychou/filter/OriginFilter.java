@@ -7,6 +7,7 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import org.joychou.security.SecurityUtil;
+import org.joychou.util.WebUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,20 +35,25 @@ public class OriginFilter implements Filter {
         HttpServletResponse response = (HttpServletResponse) res;
 
         String origin = request.getHeader("Origin");
-        logger.info("[+] Origin: " + origin + "\tCurrent url:" + request.getRequestURL());
+        logger.info("[+] Origin: " + WebUtils.sanitizeLog(origin) + "\tCurrent url:" + WebUtils.sanitizeLog(request.getRequestURL()));
 
         // 以file协议访问html，origin为字符串的null，所以依然会走安全check逻辑
-        if (origin != null && SecurityUtil.checkURL(origin) == null) {
-            logger.error("[-] Origin check error. " + "Origin: " + origin +
-                    "\tCurrent url:" + request.getRequestURL());
+        String safeOrigin = SecurityUtil.corsAllowedOrigin(origin);
+        response.addHeader("Vary", "Origin");
+        if (origin != null && safeOrigin == null) {
+            logger.error("[-] Origin check error. " + "Origin: " + WebUtils.sanitizeLog(origin) +
+                    "\tCurrent url:" + WebUtils.sanitizeLog(request.getRequestURL()));
             response.setStatus(response.SC_FORBIDDEN);
             response.getWriter().println("Invaid cors config by joychou.");
             return;
         }
 
-        response.setHeader("Access-Control-Allow-Origin", origin);
-        response.setHeader("Access-Control-Allow-Credentials", "true");
-        response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTION");
+        // 只有校验通过的origin才会被回写；没有Origin头(同域请求)时不设置任何cors头。
+        if (safeOrigin != null) {
+            response.setHeader("Access-Control-Allow-Origin", safeOrigin);
+            response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+            response.setHeader("Access-Control-Allow-Headers", "Content-Type, Accept, X-Requested-With");
+        }
 
         filterChain.doFilter(req, res);
     }

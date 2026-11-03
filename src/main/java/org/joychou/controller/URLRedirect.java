@@ -12,6 +12,7 @@ import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 
 import org.joychou.security.SecurityUtil;
+import org.joychou.util.WebUtils;
 
 /**
  * The vulnerability code and security code of Java url redirect.
@@ -29,8 +30,15 @@ public class URLRedirect {
      * http://localhost:8080/urlRedirect/redirect?url=http://www.baidu.com
      */
     @GetMapping("/redirect")
-    public String redirect(@RequestParam("url") String url) {
-        return "redirect:" + url;
+    public String redirect(@RequestParam("url") String url, HttpServletResponse response) throws IOException {
+        String safe = SecurityUtil.safeRedirectUrl(url);
+        // Target is re-built character by character from the server-side alphabet; fail closed
+        String target = WebUtils.rebuildFromAllowed(safe, LOCATION_CHARS);
+        if (target == null) {
+            response.sendError(HttpServletResponse.SC_FORBIDDEN, "url forbidden");
+            return null;
+        }
+        return "redirect:" + target;
     }
 
 
@@ -40,10 +48,23 @@ public class URLRedirect {
     @RequestMapping("/setHeader")
     @ResponseBody
     public static void setHeader(HttpServletRequest request, HttpServletResponse response) {
-        String url = request.getParameter("url");
+        String url = SecurityUtil.safeRedirectUrl(request.getParameter("url"));
+        if (url == null) {
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            return;
+        }
+        // Location is re-built from the server-side url alphabet; fail closed when it does not fit
+        String location = WebUtils.rebuildFromAllowed(url, LOCATION_CHARS);
+        if (location == null) {
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            return;
+        }
         response.setStatus(HttpServletResponse.SC_MOVED_PERMANENTLY); // 301 redirect
-        response.setHeader("Location", url);
+        response.setHeader("Location", location);
     }
+
+    private static final String LOCATION_CHARS =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._~!$&'()*+,;=:@%/-?#[]";
 
 
     /**
@@ -52,7 +73,12 @@ public class URLRedirect {
     @RequestMapping("/sendRedirect")
     @ResponseBody
     public static void sendRedirect(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        String url = request.getParameter("url");
+        String safe = SecurityUtil.safeRedirectUrl(request.getParameter("url"));
+        String url = WebUtils.rebuildFromAllowed(safe, LOCATION_CHARS);
+        if (url == null) {
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            return;
+        }
         response.sendRedirect(url); // 302 redirect
     }
 
@@ -82,8 +108,9 @@ public class URLRedirect {
     @ResponseBody
     public void sendRedirect_seccode(HttpServletRequest request, HttpServletResponse response)
             throws IOException {
-        String url = request.getParameter("url");
-        if (SecurityUtil.checkURL(url) == null) {
+        String safe = SecurityUtil.safeRedirectUrl(request.getParameter("url"));
+        String url = WebUtils.rebuildFromAllowed(safe, LOCATION_CHARS);
+        if (url == null) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             response.getWriter().write("url forbidden");
             return;

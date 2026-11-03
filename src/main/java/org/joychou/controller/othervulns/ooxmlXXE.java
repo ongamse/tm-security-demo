@@ -4,6 +4,7 @@ import org.apache.poi.xssf.usermodel.XSSFCell;
 import org.apache.poi.xssf.usermodel.XSSFRow;
 import org.apache.poi.xssf.usermodel.XSSFSheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.joychou.util.WebUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Controller;
@@ -70,6 +71,6 @@ public class ooxmlXXE {
             }
         }
 
-        return sbResult.toString();
+        return WebUtils.htmlEncode(sbResult.toString());
     }
 }

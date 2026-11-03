@@ -3,6 +3,9 @@ package org.joychou.controller;
 import org.apache.tomcat.websocket.server.WsServerContainer;
 import org.joychou.config.WebSocketsProxyEndpoint;
 import org.joychou.config.WebSocketsCmdEndpoint;
+import org.joychou.util.WebUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -14,6 +17,8 @@ import javax.websocket.server.ServerEndpointConfig;
 
 @RestController
 public class WebSockets {
+
+    private static final Logger logger = LoggerFactory.getLogger(WebSockets.class);
 
     /**
      * <p>动态添加WebSockets实现命令执行</p>
@@ -40,13 +45,13 @@ public class WebSockets {
             if (wsc.findMapping(path) == null) {
                 wsc.addEndpoint(sec);
                 System.out.println("[+] Websocket: " + path + " inject success!!!");
-                return "[+] Websocket: " + path + " inject success!!!";
+                return "[+] Websocket: " + WebUtils.htmlEncode(path) + " inject success!!!";
             } else {
                 System.out.println("[-] Websocket: " + path + " has been injected!");
-                return "[-] Websocket: " + path + " has been injected!";
+                return "[-] Websocket: " + WebUtils.htmlEncode(path) + " has been injected!";
             }
         } catch (Exception e) {
-            return e.toString();
+            return WebUtils.logAndGenericError(logger, e);
         }
     }
 
@@ -63,13 +68,13 @@ public class WebSockets {
             if (wsc.findMapping(path) == null) {
                 wsc.addEndpoint(sec);
                 System.out.println("[+] Websocket: " + path + " inject success!!!");
-                return "[+] Websocket: " + path + " inject success!!!";
+                return "[+] Websocket: " + WebUtils.htmlEncode(path) + " inject success!!!";
             } else {
                 System.out.println("[-] Websocket: " + path + " has been injected!");
-                return "[-] Websocket: " + path + " has been injected!";
+                return "[-] Websocket: " + WebUtils.htmlEncode(path) + " has been injected!";
             }
         } catch (Exception e) {
-            return e.toString();
+            return WebUtils.logAndGenericError(logger, e);
         }
     }
 

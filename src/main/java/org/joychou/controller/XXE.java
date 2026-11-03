@@ -29,6 +29,7 @@ import javax.xml.parsers.SAXParser;
 import org.xml.sax.helpers.DefaultHandler;
 import org.apache.commons.digester3.Digester;
 import org.jdom2.input.SAXBuilder;
+import org.joychou.security.XmlSecurity;
 import org.joychou.util.WebUtils;
 import org.xmlbeam.annotation.XBRead;
 
@@ -49,8 +50,11 @@ public class XXE {
     public String xmlReaderVuln(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info(body);
+            logger.info(WebUtils.sanitizeLog(body));
             XMLReader xmlReader = XMLReaderFactory.createXMLReader();
+            xmlReader.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            xmlReader.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            xmlReader.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             xmlReader.parse(new InputSource(new StringReader(body)));  // parse xml
             return "xmlReader xxe vuln code";
         } catch (Exception e) {
@@ -64,7 +68,7 @@ public class XXE {
     public String xmlReaderSec(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info(body);
+            logger.info(WebUtils.sanitizeLog(body));
 
             XMLReader xmlReader = XMLReaderFactory.createXMLReader();
             // fix code start
@@ -86,12 +90,13 @@ public class XXE {
     @RequestMapping(value = "/SAXBuilder/vuln", method = RequestMethod.POST)
     public String SAXBuilderVuln(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
-            logger.info(body);
+            String body = XmlSecurity.readBody(request);
+            logger.info(WebUtils.sanitizeLog(body));
 
-            SAXBuilder builder = new SAXBuilder();
+            String canonical = XmlSecurity.canonicalize(body);
+            SAXBuilder builder = XmlSecurity.newSAXBuilder();
             // org.jdom2.Document document
-            builder.build(new InputSource(new StringReader(body)));  // cause xxe
+            builder.build(new InputSource(new StringReader(canonical)));
             return "SAXBuilder xxe vuln code";
         } catch (Exception e) {
             logger.error(e.toString());
@@ -102,15 +107,13 @@ public class XXE {
     @RequestMapping(value = "/SAXBuilder/sec", method = RequestMethod.POST)
     public String SAXBuilderSec(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
-            logger.info(body);
+            String body = XmlSecurity.readBody(request);
+            logger.info(WebUtils.sanitizeLog(body));
 
-            SAXBuilder builder = new SAXBuilder();
-            builder.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            builder.setFeature("http://xml.org/sax/features/external-general-entities", false);
-            builder.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            String canonical = XmlSecurity.canonicalize(body);
+            SAXBuilder builder = XmlSecurity.newSAXBuilder();
             // org.jdom2.Document document
-            builder.build(new InputSource(new StringReader(body)));
+            builder.build(new InputSource(new StringReader(canonical)));
 
         } catch (Exception e) {
             logger.error(e.toString());
@@ -124,7 +127,7 @@ public class XXE {
     public String SAXReaderVuln(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info(body);
+            logger.info(WebUtils.sanitizeLog(body));
 
             SAXReader reader = new SAXReader();
             // org.dom4j.Document document
@@ -142,7 +145,7 @@ public class XXE {
     public String SAXReaderSec(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info(body);
+            logger.info(WebUtils.sanitizeLog(body));
 
             SAXReader reader = new SAXReader();
             reader.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
@@ -161,9 +164,12 @@ public class XXE {
     public String SAXParserVuln(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info(body);
+            logger.info(WebUtils.sanitizeLog(body));
 
             SAXParserFactory spf = SAXParserFactory.newInstance();
+            spf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            spf.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            spf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             SAXParser parser = spf.newSAXParser();
             parser.parse(new InputSource(new StringReader(body)), new DefaultHandler());  // parse xml
 
@@ -179,7 +185,7 @@ public class XXE {
     public String SAXParserSec(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info(body);
+            logger.info(WebUtils.sanitizeLog(body));
 
             SAXParserFactory spf = SAXParserFactory.newInstance();
             spf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
@@ -198,11 +204,12 @@ public class XXE {
     @RequestMapping(value = "/Digester/vuln", method = RequestMethod.POST)
     public String DigesterVuln(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
-            logger.info(body);
+            String body = XmlSecurity.readBody(request);
+            logger.info(WebUtils.sanitizeLog(body));
 
-            Digester digester = new Digester();
-            digester.parse(new StringReader(body));  // parse xml
+            String canonical = XmlSecurity.canonicalize(body);
+            Digester digester = XmlSecurity.newDigester();
+            digester.parse(new StringReader(canonical));
         } catch (Exception e) {
             logger.error(e.toString());
             return EXCEPT;
@@ -213,14 +220,12 @@ public class XXE {
     @RequestMapping(value = "/Digester/sec", method = RequestMethod.POST)
     public String DigesterSec(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
-            logger.info(body);
+            String body = XmlSecurity.readBody(request);
+            logger.info(WebUtils.sanitizeLog(body));
 
-            Digester digester = new Digester();
-            digester.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            digester.setFeature("http://xml.org/sax/features/external-general-entities", false);
-            digester.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
-            digester.parse(new StringReader(body));  // parse xml
+            String canonical = XmlSecurity.canonicalize(body);
+            Digester digester = XmlSecurity.newDigester();
+            digester.parse(new StringReader(canonical));
 
             return "Digester xxe security code";
         } catch (Exception e) {
@@ -237,6 +242,9 @@ public class XXE {
     public String DocumentBuilderVuln(HttpServletRequest request) {
         try {
             DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+            dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            dbf.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            dbf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             DocumentBuilder db = dbf.newDocumentBuilder();
             InputSource is = new InputSource(request.getInputStream());
             Document document = db.parse(is);  // parse xml
@@ -252,11 +260,9 @@ public class XXE {
                     buf.append(String.format("%s: %s\n", node.getNodeName(), node.getTextContent()));
                 }
             }
-            return buf.toString();
+            return WebUtils.htmlEncode(buf.toString());
         } catch (Exception e) {
-            e.printStackTrace();
-            logger.error(e.toString());
-            return e.toString();
+            return WebUtils.logAndGenericError(logger, e);
         }
     }
 
@@ -264,7 +270,7 @@ public class XXE {
     public String DocumentBuilderSec(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info(body);
+            logger.info(WebUtils.sanitizeLog(body));
 
             DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
             dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
@@ -287,11 +293,14 @@ public class XXE {
     public String DocumentBuilderXincludeVuln(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info(body);
+            logger.info(WebUtils.sanitizeLog(body));
 
             DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
-            dbf.setXIncludeAware(true);   // 支持XInclude
-            dbf.setNamespaceAware(true);  // 支持XInclude
+            dbf.setXIncludeAware(false);  // XInclude can pull in local/remote resources
+            dbf.setNamespaceAware(true);
+            dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            dbf.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            dbf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             DocumentBuilder db = dbf.newDocumentBuilder();
             StringReader sr = new StringReader(body);
             InputSource is = new InputSource(sr);
@@ -313,7 +322,7 @@ public class XXE {
     public String DocumentBuilderXincludeSec(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info(body);
+            logger.info(WebUtils.sanitizeLog(body));
             DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
 
             dbf.setXIncludeAware(true);   // 支持XInclude
@@ -343,11 +352,14 @@ public class XXE {
     public String XMLReaderVuln(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info(body);
+            logger.info(WebUtils.sanitizeLog(body));
 
             SAXParserFactory spf = SAXParserFactory.newInstance();
             SAXParser saxParser = spf.newSAXParser();
             XMLReader xmlReader = saxParser.getXMLReader();
+            xmlReader.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            xmlReader.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            xmlReader.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             xmlReader.parse(new InputSource(new StringReader(body)));
 
         } catch (Exception e) {
@@ -363,7 +375,7 @@ public class XXE {
     public String XMLReaderSec(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info(body);
+            logger.info(WebUtils.sanitizeLog(body));
 
             SAXParserFactory spf = SAXParserFactory.newInstance();
             SAXParser saxParser = spf.newSAXParser();
@@ -406,7 +418,7 @@ public class XXE {
             for (int j = 0; j < xxe.getLength(); j++) {
                 Node xxeNode = xxe.item(j);
                 // 测试不能blind xxe，所以强行加了一个回显
-                logger.info("xxeNode: " + xxeNode.getNodeValue());
+                logger.info("xxeNode: " + WebUtils.sanitizeLog(xxeNode.getNodeValue()));
             }
 
         }
@@ -419,7 +431,7 @@ public class XXE {
         @PostMapping(value = "/xmlbeam/vuln")
         HttpEntity<String> post(@RequestBody UserPayload user) {
             try {
-                logger.info(user.toString());
+                logger.info(WebUtils.sanitizeLog(user));
                 return ResponseEntity.ok(String.format("hello, %s!", user.getUserName()));
             }catch (Exception e){
                 e.printStackTrace();
