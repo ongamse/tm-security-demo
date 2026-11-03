@@ -69,6 +69,77 @@ public class SecurityUtil {
 
 
     /**
+     * Validate a user supplied redirect target. Only two forms are accepted:
+     * <ul>
+     * <li>a same-site absolute path such as <code>/a/b</code> (not <code>//host</code>, no backslash);</li>
+     * <li>an http(s) url whose strictly parsed host passes {@link #checkURL(String)}.</li>
+     * </ul>
+     * Any control character or backslash is rejected.
+     *
+     * @param url the redirect target
+     * @return the original url when safe; null otherwise
+     */
+    public static String safeRedirectUrl(String url) {
+        if (url == null || url.isEmpty()) {
+            return null;
+        }
+        for (int i = 0; i < url.length(); i++) {
+            char c = url.charAt(i);
+            if (Character.isISOControl(c) || c == '\\') {
+                return null;
+            }
+        }
+        if (url.charAt(0) == '/') {
+            if (url.length() > 1 && url.charAt(1) == '/') {
+                return null;
+            }
+            try {
+                URI uri = new URI(url);
+                if (uri.getScheme() != null || uri.getRawAuthority() != null) {
+                    return null;
+                }
+                return url;
+            } catch (URISyntaxException e) {
+                return null;
+            }
+        }
+        return checkURL(url);
+    }
+
+
+    /**
+     * Return the url only when it is an http(s) url without control characters or backslashes
+     * and its strictly parsed host equals one of the domains or is a real subdomain of it
+     * (dot boundary).
+     *
+     * @param url     the redirect target
+     * @param domains allowed domains
+     * @return the original url when allowed; null otherwise
+     */
+    public static String redirectUrlIfHostIn(String url, String[] domains) {
+        if (url == null) {
+            return null;
+        }
+        for (int i = 0; i < url.length(); i++) {
+            char c = url.charAt(i);
+            if (Character.isISOControl(c) || c == '\\') {
+                return null;
+            }
+        }
+        String host = gethost(url);
+        if (host.isEmpty()) {
+            return null;
+        }
+        for (String domain : domains) {
+            if (host.equals(domain) || host.endsWith("." + domain)) {
+                return url;
+            }
+        }
+        return null;
+    }
+
+
+    /**
      * 同时支持一级域名和多级域名，相关配置在resources目录下url/url_safe_domain.xml文件。
      * 优先判断黑名单，如果满足黑名单return null。
      *
