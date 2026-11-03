@@ -3,12 +3,14 @@ package org.joychou.controller.othervulns;
 import com.monitorjbl.xlsx.StreamingReader;
 import org.apache.poi.ss.usermodel.Workbook;
 
+import org.joychou.security.XmlSecurity;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.multipart.MultipartFile;
 
+import javax.servlet.http.HttpServletResponse;
 import java.io.ByteArrayInputStream;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -40,10 +42,15 @@ public class xlsxStreamerXXE {
 
 
     @PostMapping("/readxlsx")
-    public void xllx_streamer_xxe(MultipartFile file) throws IOException {
-        byte[] data = file.getBytes();
-        rejectDtd(data);
-        StreamingReader.builder().open(new ByteArrayInputStream(data));
+    public void xllx_streamer_xxe(MultipartFile file, HttpServletResponse response) throws IOException {
+        try {
+            byte[] data = file.getBytes();
+            rejectDtd(data);
+            StreamingReader.builder().open(new ByteArrayInputStream(data));
+        } catch (Exception e) {
+            // Do not echo parser/exception details to the client.
+            response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Invalid xlsx");
+        }
     }
 
     /**
@@ -68,6 +75,13 @@ public class xlsxStreamerXXE {
                 String text = new String(part, StandardCharsets.ISO_8859_1);
                 if (text.contains("<!DOCTYPE") || text.contains("<!ENTITY")) {
                     throw new IOException("DTD not allowed in " + entry.getName());
+                }
+                // Pre-validate the part with the shared hardened parser (no DOCTYPE, no external
+                // entities, no external DTD/schema, no XInclude).
+                try {
+                    XmlSecurity.requireSafeXml(part);
+                } catch (Exception e) {
+                    throw new IOException("unsafe XML in " + entry.getName());
                 }
             }
         }

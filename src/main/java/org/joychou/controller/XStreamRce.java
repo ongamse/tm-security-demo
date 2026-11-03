@@ -7,7 +7,7 @@ import com.thoughtworks.xstream.security.NoTypePermission;
 import com.thoughtworks.xstream.security.NullPermission;
 import com.thoughtworks.xstream.security.PrimitiveTypePermission;
 import org.joychou.dao.User;
-import org.joychou.util.WebUtils;
+import org.joychou.security.XmlSecurity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -16,6 +16,8 @@ import javax.servlet.http.HttpServletRequest;
 
 @RestController
 public class XStreamRce {
+
+    private static final int MAX_BODY_LENGTH = 65536;
 
     /**
      * Fix method: update xstream to 1.4.11
@@ -26,14 +28,35 @@ public class XStreamRce {
      */
     @PostMapping("/xstream")
     public String parseXml(HttpServletRequest request) throws Exception {
-        String xml = WebUtils.getRequestBody(request);
+        if (request.getContentLength() > MAX_BODY_LENGTH) {
+            return "Request body too large";
+        }
+        String xml;
+        try {
+            xml = XmlSecurity.readBody(request);
+        } catch (java.io.IOException e) {
+            return "Request body too large";
+        }
+        if (xml.length() > MAX_BODY_LENGTH) {
+            return "Request body too large";
+        }
+        try {
+            // Reject DOCTYPE / external entities before the document reaches XStream.
+            XmlSecurity.requireSafeXml(xml);
+        } catch (Exception e) {
+            return "Invalid XML";
+        }
         XStream xstream = new XStream(new XppDriver());
         // Security framework: deny everything by default, allow only the expected types.
         xstream.addPermission(NoTypePermission.NONE);
         xstream.addPermission(NullPermission.NULL);
         xstream.addPermission(PrimitiveTypePermission.PRIMITIVES);
         xstream.allowTypes(new Class[]{String.class, User.class});
-        xstream.fromXML(xml);
+        try {
+            xstream.fromXML(xml);
+        } catch (RuntimeException e) {
+            return "Invalid XML";
+        }
         return "xstream";
     }
 
