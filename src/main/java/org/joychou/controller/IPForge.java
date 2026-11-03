@@ -1,7 +1,6 @@
 package org.joychou.controller;
 
 import org.apache.commons.lang.StringUtils;
-import org.joychou.util.WebUtils;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.RestController;
@@ -32,14 +31,13 @@ public class IPForge {
     @RequestMapping("/proxy")
     @ResponseBody
     public static String proxy(HttpServletRequest request) {
-        String ip = request.getHeader("X-Real-IP");
-        if (StringUtils.isNotBlank(ip)) {
-            return WebUtils.htmlEncode(ip);
-        } else {
-            String remoteAddr = request.getRemoteAddr();
-            if (StringUtils.isNotBlank(remoteAddr)) {
-                return remoteAddr;
-            }
+        // Client-supplied forwarding headers (X-Real-IP / X-Forwarded-For) are spoofable,
+        // so they are never trusted here. Behind a trusted reverse proxy, configure the
+        // container (e.g. server.forward-headers-strategy / RemoteIpValve with an
+        // internal-proxies allowlist) so getRemoteAddr() reflects the real client.
+        String remoteAddr = request.getRemoteAddr();
+        if (StringUtils.isNotBlank(remoteAddr)) {
+            return remoteAddr;
         }
         return "";
     }
