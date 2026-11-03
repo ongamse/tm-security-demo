@@ -3,6 +3,7 @@ package org.joychou.controller;
 import groovy.lang.GroovyShell;
 import lombok.extern.slf4j.Slf4j;
 import org.joychou.security.SecurityUtil;
+import org.joychou.security.ssrf.SSRFChecker;
 import org.joychou.util.WebUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -32,6 +33,8 @@ import java.util.regex.Pattern;
 public class Rce {
 
     private static final int MAX_YAML_LENGTH = 65536;
+
+    private static final String JS_LOAD_SCRIPT = "load(validatedJsUrl)";
 
     private static final Pattern SAFE_JS_URL = Pattern.compile("^[a-zA-Z0-9:/._~?&=%+-]+$");
 
@@ -111,15 +114,18 @@ public class Rce {
     @GetMapping("/jscmd")
     public void jsEngine(String jsurl) throws Exception{
         // Only load scripts from allowlisted domains; reject characters that could break out of the string literal.
-        String safeJsUrl = SecurityUtil.checkURL(jsurl);
+        String allowedUrl = SecurityUtil.checkURL(jsurl);
+        String safeJsUrl = allowedUrl == null ? null : SSRFChecker.canonicalOutboundUrl(allowedUrl);
         if (safeJsUrl == null || !SAFE_JS_URL.matcher(safeJsUrl).matches()) {
             throw new IllegalArgumentException("Illegal jsurl");
         }
         // js nashorn javascript ecmascript
         ScriptEngine engine = new ScriptEngineManager().getEngineByName("js");
         Bindings bindings = engine.getBindings(ScriptContext.ENGINE_SCOPE);
-        String cmd = String.format("load(\"%s\")", safeJsUrl);
-        engine.eval(cmd, bindings);
+        // The script text is a server-side constant; the validated url is passed as a binding value,
+        // never concatenated into the evaluated source.
+        bindings.put("validatedJsUrl", safeJsUrl);
+        engine.eval(JS_LOAD_SCRIPT, bindings);
     }
 
 
@@ -155,13 +161,22 @@ public class Rce {
     }
 
     /**
-     * http://localhost:8080/rce/groovy?content="open -a Calculator".execute()
-     * @param content groovy shell
+     * http://localhost:8080/rce/groovy?content=now
+     * The request value only selects one of the server-defined scripts below; it is never evaluated.
+     * @param content script name: "hello" or "now"
      */
     @GetMapping("groovy")
     public void groovyshell(String content) {
+        String script;
+        if ("hello".equals(content)) {
+            script = "'Hello, Groovy'.toUpperCase()";
+        } else if ("now".equals(content)) {
+            script = "new Date().toString()";
+        } else {
+            throw new IllegalArgumentException("Illegal content");
+        }
         GroovyShell groovyShell = new GroovyShell();
-        groovyShell.evaluate(content);
+        groovyShell.evaluate(script);
     }
 
 

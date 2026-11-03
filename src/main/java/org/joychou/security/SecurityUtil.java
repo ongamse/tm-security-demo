@@ -7,6 +7,7 @@ import org.joychou.util.WebUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
@@ -21,11 +22,9 @@ import java.util.regex.Pattern;
 public class SecurityUtil {
 
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
-    private static final Set<String> ALLOWED_COMMANDS = new HashSet<String>(
-            Arrays.asList("whoami", "id", "hostname", "uname", "date", "pwd"));
-    // An argument must start with an alphanumeric char so it can never be parsed as an option.
-    private static final Pattern CMD_ARG_PATTERN = Pattern.compile("^[a-zA-Z0-9][a-zA-Z0-9_./=:-]*$");
-    private static final int MAX_CMD_ARGS = 8;
+    private static final int MAX_CMD_LENGTH = 64;
+    private static final Pattern HOST_PORT_PATTERN =
+            Pattern.compile("^([a-zA-Z0-9][a-zA-Z0-9.-]*)(?::([0-9]{1,5}))?$");
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
 
 
@@ -392,27 +391,146 @@ public class SecurityUtil {
 
 
     /**
-     * Convert a user supplied command line to an argv array that is safe to pass to
-     * ProcessBuilder / Runtime.exec(String[]) without a shell. The program must be in a fixed
-     * allowlist and every argument must match a strict character set and not start with '-'.
+     * Map a user supplied command line to one of a fixed set of server-defined argv arrays that is
+     * safe to pass to ProcessBuilder / Runtime.exec(String[]) without a shell. The user text is only
+     * used as a selector: the returned argv is always built from constants, never from the input.
      *
      * @param cmd the user supplied command line
-     * @return argv array, or null if the command is not allowed
+     * @return a constant argv array, or null if the command is not in the allowlist
      */
     public static String[] cmdToArgv(String cmd) {
-        if (cmd == null) {
+        if (cmd == null || cmd.length() > MAX_CMD_LENGTH) {
             return null;
         }
-        String[] parts = cmd.trim().split("\\s+");
-        if (parts.length == 0 || parts.length > MAX_CMD_ARGS || !ALLOWED_COMMANDS.contains(parts[0])) {
+        switch (cmd.trim().replaceAll("\\s+", " ")) {
+            case "whoami":
+                return new String[]{"whoami"};
+            case "id":
+                return new String[]{"id"};
+            case "id -u":
+                return new String[]{"id", "-u"};
+            case "id -un":
+                return new String[]{"id", "-un"};
+            case "hostname":
+                return new String[]{"hostname"};
+            case "uname":
+                return new String[]{"uname"};
+            case "uname -a":
+                return new String[]{"uname", "-a"};
+            case "uname -s":
+                return new String[]{"uname", "-s"};
+            case "uname -r":
+                return new String[]{"uname", "-r"};
+            case "date":
+                return new String[]{"date"};
+            case "pwd":
+                return new String[]{"pwd"};
+            default:
+                return null;
+        }
+    }
+
+
+    /**
+     * Build a constant "ls -la -- path" argv for a path below the server temp directory. The user
+     * text is only a selector: every path segment is matched against the real directory entries
+     * returned by the file system and the argv is built from those entries, never from the input.
+     * Absolute paths, "..", and symlinks that leave the base directory are rejected.
+     *
+     * @param filepath user supplied path (relative to, or inside, the temp directory)
+     * @return argv array, or null if the path is not allowed
+     */
+    public static String[] lsArgv(String filepath) {
+        if (cmdFilter(filepath) == null) {
             return null;
         }
-        for (int i = 1; i < parts.length; i++) {
-            if (!CMD_ARG_PATTERN.matcher(parts[i]).matches()) {
+        try {
+            File base = new File(System.getProperty("java.io.tmpdir")).getCanonicalFile();
+            String basePath = base.getPath();
+            String relative = filepath;
+            if (relative.equals(basePath)) {
+                relative = "";
+            } else if (relative.startsWith(basePath + File.separator)) {
+                relative = relative.substring(basePath.length() + 1);
+            } else if (relative.startsWith("/")) {
                 return null;
             }
+            File current = base;
+            for (String segment : relative.split("/")) {
+                if (segment.isEmpty() || segment.equals(".")) {
+                    continue;
+                }
+                if (segment.equals("..")) {
+                    return null;
+                }
+                String[] names = current.list();
+                if (names == null) {
+                    return null;
+                }
+                File next = null;
+                for (String name : names) {
+                    if (name.equals(segment)) {
+                        next = new File(current, name);
+                        break;
+                    }
+                }
+                if (next == null) {
+                    return null;
+                }
+                current = next;
+            }
+            String canonical = current.getCanonicalPath();
+            if (!canonical.equals(basePath) && !canonical.startsWith(basePath + File.separator)) {
+                return null;
+            }
+            return new String[]{"ls", "-la", "--", canonical};
+        } catch (IOException e) {
+            return null;
         }
-        return parts;
+    }
+
+
+    /**
+     * Build a constant "curl -- url" argv for a Host header value. The header is only a selector:
+     * the host must equal one of the configured safe domains (the configured value is used, never the
+     * header text), must only resolve to public addresses, and an optional port is re-built from a
+     * parsed integer.
+     *
+     * @param hostHeader the Host header value
+     * @return argv array, or null if the host is not allowed
+     */
+    public static String[] curlArgv(String hostHeader) {
+        if (hostHeader == null) {
+            return null;
+        }
+        Matcher m = HOST_PORT_PATTERN.matcher(hostHeader);
+        if (!m.matches()) {
+            return null;
+        }
+        String host = m.group(1);
+        ArrayList<String> safeDomains = WebConfig.getSafeDomains();
+        if (safeDomains == null) {
+            return null;
+        }
+        String allowed = null;
+        for (String domain : safeDomains) {
+            if (domain.equalsIgnoreCase(host)) {
+                allowed = domain;
+                break;
+            }
+        }
+        if (allowed == null || !SSRFChecker.isSafeOutboundHost(allowed)) {
+            return null;
+        }
+        StringBuilder target = new StringBuilder("http://").append(allowed);
+        if (m.group(2) != null) {
+            int port = Integer.parseInt(m.group(2));
+            if (port < 1 || port > 65535) {
+                return null;
+            }
+            target.append(':').append(port);
+        }
+        return new String[]{"curl", "--max-time", "10", "--proto", "=http,https", "--", target.toString()};
     }
 
 

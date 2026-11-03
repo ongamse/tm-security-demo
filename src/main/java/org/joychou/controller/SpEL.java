@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Collections;
+import java.util.regex.Pattern;
 
 
 /**
@@ -25,6 +26,10 @@ import java.util.Collections;
  */
 @RestController
 public class SpEL {
+
+    private static final int MAX_EXPRESSION_LENGTH = 100;
+    private static final Pattern SAFE_EXPRESSION = Pattern.compile(
+            "^[0-9+\\-*/%()<>=!?:. ]*(?:'[a-zA-Z0-9 ]*'[0-9+\\-*/%()<>=!?:. ]*)*$");
 
     /**
      * SpEL to RCE
@@ -49,6 +54,12 @@ public class SpEL {
         context.setMethodResolvers(Collections.<MethodResolver>emptyList());
         context.setPropertyAccessors(Collections.<PropertyAccessor>emptyList());
         context.setBeanResolver(null);
+        // Expression allowlist: only numbers, operators and single-quoted literals; identifiers (T(..), new,
+        // bean names, method names) can never appear outside a quoted literal.
+        if (expression == null || expression.length() > MAX_EXPRESSION_LENGTH
+                || !SAFE_EXPRESSION.matcher(expression).matches()) {
+            return "Bad boy. I got u.";
+        }
         return WebUtils.htmlEncode(String.valueOf(parser.parseExpression(expression).getValue(context)));
     }
 
