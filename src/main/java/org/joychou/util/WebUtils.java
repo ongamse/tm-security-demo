@@ -70,6 +70,31 @@ public class WebUtils {
     }
 
 
+    private static final int MAX_LOG_VALUE_LENGTH = 2048;
+
+    /**
+     * Neutralize an untrusted value before it is written to a log, to prevent log forging
+     * (CWE-117). CR, LF and all other ISO control characters are replaced by an underscore
+     * and the value is truncated. Never returns null ("null" is returned for null input).
+     */
+    public static String sanitizeLog(Object value) {
+        if (value == null) {
+            return "null";
+        }
+        String s = String.valueOf(value);
+        int len = Math.min(s.length(), MAX_LOG_VALUE_LENGTH);
+        StringBuilder sb = new StringBuilder(len + 3);
+        for (int i = 0; i < len; i++) {
+            char c = s.charAt(i);
+            sb.append(Character.isISOControl(c) ? '_' : c);
+        }
+        if (s.length() > len) {
+            sb.append("...");
+        }
+        return sb.toString();
+    }
+
+
     public static String getFileExtension(String fullName) {
         Preconditions.checkNotNull(fullName);
         String fileName = (new File(fullName)).getName();
