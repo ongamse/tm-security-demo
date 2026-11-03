@@ -51,7 +51,6 @@ public class OriginFilter implements Filter {
         // 只有校验通过的origin才会被回写；没有Origin头(同域请求)时不设置任何cors头。
         if (safeOrigin != null) {
             response.setHeader("Access-Control-Allow-Origin", safeOrigin);
-            response.setHeader("Access-Control-Allow-Credentials", "true");
             response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
             response.setHeader("Access-Control-Allow-Headers", "Content-Type, Accept, X-Requested-With");
         }

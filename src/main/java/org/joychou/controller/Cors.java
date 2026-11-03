@@ -30,7 +30,6 @@ public class Cors {
         String safeOrigin = SecurityUtil.corsAllowedOrigin(origin);
         if (safeOrigin != null) {
             response.setHeader("Access-Control-Allow-Origin", safeOrigin);
-            response.setHeader("Access-Control-Allow-Credentials", "true");  // allow cookie, exact allowlisted origin only
             response.setHeader("Access-Control-Allow-Methods", "GET");
         }
         return info;
@@ -126,7 +125,6 @@ public class Cors {
         }
         if (safeOrigin != null) {
             response.setHeader("Access-Control-Allow-Origin", safeOrigin);
-            response.setHeader("Access-Control-Allow-Credentials", "true");
             response.setHeader("Access-Control-Allow-Methods", "GET");
         }
         return LoginUtils.getUserInfo2JsonStr(request);

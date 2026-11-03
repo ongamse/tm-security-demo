@@ -21,13 +21,13 @@ public class CustomCorsConfig extends WebMvcRegistrationsAdapter {
             @Override
             public void addCorsMappings(CorsRegistry registry) {
                 // 显式指定白名单；为了支持一级域名，CustomCorsProcessor重写了checkOrigin。
-                // 不使用通配符*，因为allowCredentials(true)不能和*同时使用。
+                // 不使用通配符*；凭证(cookie)跨域被刻意禁用(cookie-less CORS)。
                 String[] allowOrigins = {"https://joychou.org", "http://test.joychou.me"};
                 registry.addMapping("/cors/sec/webMvcConfigurer") // /**表示所有路由path
                         .allowedOrigins(allowOrigins)
                         .allowedMethods("GET", "POST")
                         .allowedHeaders("Content-Type", "Accept", "X-Requested-With")
-                        .allowCredentials(true)
+                        .allowCredentials(false)
                         .maxAge(1800);
             }
         };
