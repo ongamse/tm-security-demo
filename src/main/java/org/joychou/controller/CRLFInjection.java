@@ -44,7 +44,11 @@ public class CRLFInjection {
             response.setHeader("test2", test2);
         }
         if (test3 != null) {
-            response.addCookie(new Cookie("test3", test3.trim().replace(' ', '_')));
+            Cookie cookie = new Cookie("test3", test3.trim().replace(' ', '_'));
+            cookie.setSecure(true);
+            cookie.setHttpOnly(true);
+            cookie.setPath("/");
+            response.addCookie(cookie);
         }
     }
 
