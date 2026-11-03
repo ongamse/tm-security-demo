@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.ResponseBody;
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import java.util.regex.Pattern;
 
 /**
  * Java 1.7/1.8 no CRLF vulns (test in Java 1.7/1.8)
@@ -21,10 +22,38 @@ public class CRLFInjection {
     @RequestMapping("/safecode")
     @ResponseBody
     public void crlf(HttpServletRequest request, HttpServletResponse response) {
-        response.addHeader("test1", WebUtils.sanitizeHeaderValue(request.getParameter("test1")));
-        response.setHeader("test2", WebUtils.sanitizeHeaderValue(request.getParameter("test2")));
-        String author = request.getParameter("test3");
-        Cookie cookie = new Cookie("test3", author);
-        response.addCookie(cookie);
+        String raw1 = request.getParameter("test1");
+        String raw2 = request.getParameter("test2");
+        String raw3 = request.getParameter("test3");
+
+        // whitelist validation first; reject (400) and write nothing on mismatch (fail closed)
+        if (!isValid(raw1) || !isValid(raw2) || !isValid(raw3)) {
+            response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+            return;
+        }
+
+        // the written values are re-built from the server-side alphabet, not copied from the request
+        String test1 = WebUtils.rebuildFromAllowed(raw1, ALLOWED_CHARS);
+        String test2 = WebUtils.rebuildFromAllowed(raw2, ALLOWED_CHARS);
+        String test3 = WebUtils.rebuildFromAllowed(raw3, ALLOWED_CHARS);
+
+        if (test1 != null) {
+            response.addHeader("test1", test1);
+        }
+        if (test2 != null) {
+            response.setHeader("test2", test2);
+        }
+        if (test3 != null) {
+            response.addCookie(new Cookie("test3", test3.trim().replace(' ', '_')));
+        }
+    }
+
+    private static final String ALLOWED_CHARS =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._~ -";
+    private static final Pattern SAFE_VALUE = Pattern.compile("[A-Za-z0-9._~ -]{0,100}");
+
+    /** A missing parameter is valid (no header is written); otherwise the whitelist regex must match. */
+    private static boolean isValid(String value) {
+        return value == null || SAFE_VALUE.matcher(value).matches();
     }
 }

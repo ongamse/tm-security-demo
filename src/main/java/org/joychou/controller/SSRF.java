@@ -31,6 +31,9 @@ public class SSRF {
 
     private static final Logger logger = LoggerFactory.getLogger(SSRF.class);
 
+    private static final String FILENAME_CHARS =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-";
+
     @Resource
     private HttpService httpService;
 
@@ -123,7 +126,13 @@ public class SSRF {
         try {
             String downLoadImgFileName = WebUtils.getNameWithoutExtension(url) + "." + WebUtils.getFileExtension(url);
             // download
-            response.setHeader("content-disposition", "attachment;fileName=" + WebUtils.sanitizeHeaderValue(downLoadImgFileName));
+            // file name is re-built from a server-side alphabet; other characters become '_'
+            String safeFileName = WebUtils.rebuildFromAllowedOrReplace(downLoadImgFileName, FILENAME_CHARS, '_');
+            if (safeFileName == null || safeFileName.length() > 200) {
+                response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+                return;
+            }
+            response.setHeader("content-disposition", "attachment;fileName=" + safeFileName);
 
             // http/https only, public ip only, redirects are not followed
             String safeUrl = SSRFChecker.canonicalOutboundUrl(url);

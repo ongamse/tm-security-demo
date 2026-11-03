@@ -278,8 +278,59 @@ public class SecurityUtil {
                 || parsed.getFragment() != null) {
             return null;
         }
-        // bare origin only: re-constructed from the validated scheme, host and port
-        return checkURL(parsed.origin());
+        // bare origin only: must pass the safe / block domain check
+        if (checkURL(parsed.origin()) == null) {
+            return null;
+        }
+        return allowlistedOrigin(parsed);
+    }
+
+
+    private static final String LABEL_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789.-";
+
+    /**
+     * Build the value that is written to a CORS response header. The string is constructed on
+     * the server: constant scheme literal, the allowlist's own domain entry (looked up from the
+     * configured safe domains), a sub-domain prefix re-built from a server-side alphabet and the
+     * numeric port. The request's Origin string is never copied.
+     */
+    private static String allowlistedOrigin(HttpUrl parsed) {
+        String host = parsed.getHost();
+        String allowedHost = null;
+        for (String safeDomain : WebConfig.getSafeDomains()) {
+            if (host.equals(safeDomain)) {
+                allowedHost = safeDomain;
+                break;
+            }
+        }
+        if (allowedHost == null) {
+            for (String safeDomain : WebConfig.getSafeDomains()) {
+                if (host.endsWith("." + safeDomain)) {
+                    String prefix = WebUtils.rebuildFromAllowed(
+                            host.substring(0, host.length() - safeDomain.length() - 1), LABEL_CHARS);
+                    if (prefix == null || prefix.isEmpty()) {
+                        return null;
+                    }
+                    allowedHost = prefix + "." + safeDomain;
+                    break;
+                }
+            }
+        }
+        if (allowedHost == null) {
+            return null;
+        }
+        String origin = ("https".equals(parsed.getScheme()) ? "https" : "http") + "://" + allowedHost;
+        String origin0 = parsed.origin();
+        int portIdx = origin0.lastIndexOf(':');
+        // a port is present when the last ':' follows the "://" and the host is not an ipv6 literal
+        if (portIdx > origin0.indexOf("://") + 2 && origin0.indexOf(']', portIdx) < 0) {
+            try {
+                origin = origin + ":" + Integer.parseInt(origin0.substring(portIdx + 1));
+            } catch (NumberFormatException e) {
+                return null;
+            }
+        }
+        return origin;
     }
 
 

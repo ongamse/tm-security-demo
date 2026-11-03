@@ -51,9 +51,18 @@ public class URLRedirect {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             return;
         }
+        // Location is re-built from the server-side url alphabet; fail closed when it does not fit
+        String location = WebUtils.rebuildFromAllowed(url, LOCATION_CHARS);
+        if (location == null) {
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            return;
+        }
         response.setStatus(HttpServletResponse.SC_MOVED_PERMANENTLY); // 301 redirect
-        response.setHeader("Location", WebUtils.sanitizeHeaderValue(url));
+        response.setHeader("Location", location);
     }
+
+    private static final String LOCATION_CHARS =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._~!$&'()*+,;=:@%/-?#[]";
 
 
     /**

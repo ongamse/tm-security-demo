@@ -70,6 +70,47 @@ public class WebUtils {
     }
 
 
+    /**
+     * Re-build a value for an HTTP response header from a server-side alphabet. Every output
+     * character is taken from {@code allowedChars} (a server constant), never copied from the
+     * input. Returns null (fail closed, the caller must not write the header) when the input is
+     * null or contains any character that is not in the alphabet, which includes CR, LF and all
+     * other control characters.
+     */
+    public static String rebuildFromAllowed(String value, String allowedChars) {
+        if (value == null) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            int idx = allowedChars.indexOf(value.charAt(i));
+            if (idx < 0) {
+                return null;
+            }
+            sb.append(allowedChars.charAt(idx));
+        }
+        return sb.toString();
+    }
+
+
+    /**
+     * Same as {@link #rebuildFromAllowed(String, String)} but characters outside the alphabet
+     * (including CR, LF and other control characters) are replaced by the given server-side
+     * constant character instead of rejecting the value. Returns null for null input.
+     */
+    public static String rebuildFromAllowedOrReplace(String value, String allowedChars, char replacement) {
+        if (value == null) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            int idx = allowedChars.indexOf(value.charAt(i));
+            sb.append(idx < 0 ? replacement : allowedChars.charAt(idx));
+        }
+        return sb.toString();
+    }
+
+
     private static final int MAX_LOG_VALUE_LENGTH = 2048;
 
     /**
