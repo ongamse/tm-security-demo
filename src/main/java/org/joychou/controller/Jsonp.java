@@ -115,7 +115,7 @@ public class Jsonp {
      *
      * object to jsonp
      */
-    @GetMapping("/getToken")
+    @GetMapping(value = "/getToken", produces = MediaType.APPLICATION_JSON_VALUE)
     public CsrfToken getCsrfToken1(CsrfToken token) {
         return token;
     }
@@ -131,6 +131,10 @@ public class Jsonp {
 
         String callback = request.getParameter("fastjsonpCallback");
         if (StringUtils.isNotBlank(callback)) {
+            // Only a plain JavaScript identifier may be used as the callback name.
+            if (!WebUtils.isSafeJsonpCallback(callback)) {
+                return "error";
+            }
             JSONPObject jsonpObj = new JSONPObject(callback);
             jsonpObj.addParameter(csrfToken);
             return jsonpObj.toString();

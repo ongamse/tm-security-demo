@@ -10,6 +10,7 @@ import org.springframework.expression.spel.SpelEvaluationException;
 import org.springframework.expression.spel.SpelMessage;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
 import org.springframework.expression.spel.support.StandardEvaluationContext;
+import org.joychou.util.WebUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -48,7 +49,7 @@ public class SpEL {
         context.setMethodResolvers(Collections.<MethodResolver>emptyList());
         context.setPropertyAccessors(Collections.<PropertyAccessor>emptyList());
         context.setBeanResolver(null);
-        return String.valueOf(parser.parseExpression(expression).getValue(context));
+        return WebUtils.htmlEncode(String.valueOf(parser.parseExpression(expression).getValue(context)));
     }
 
     public static void main(String[] args) {

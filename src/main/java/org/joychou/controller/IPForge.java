@@ -1,6 +1,7 @@
 package org.joychou.controller;
 
 import org.apache.commons.lang.StringUtils;
+import org.joychou.util.WebUtils;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.RestController;
@@ -33,7 +34,7 @@ public class IPForge {
     public static String proxy(HttpServletRequest request) {
         String ip = request.getHeader("X-Real-IP");
         if (StringUtils.isNotBlank(ip)) {
-            return ip;
+            return WebUtils.htmlEncode(ip);
         } else {
             String remoteAddr = request.getRemoteAddr();
             if (StringUtils.isNotBlank(remoteAddr)) {
