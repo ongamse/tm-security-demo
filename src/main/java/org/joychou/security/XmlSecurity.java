@@ -9,6 +9,8 @@ import org.xml.sax.helpers.DefaultHandler;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.xml.XMLConstants;
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.SAXParser;
 import javax.xml.parsers.SAXParserFactory;
 import java.io.ByteArrayInputStream;
@@ -111,6 +113,28 @@ public final class XmlSecurity {
             return spf;
         } catch (Exception e) {
             throw new IllegalStateException("unable to harden SAXParserFactory", e);
+        }
+    }
+
+    /** DocumentBuilder with DTDs, external entities and XInclude disabled. */
+    public static DocumentBuilder newDocumentBuilder() {
+        try {
+            DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+            dbf.setNamespaceAware(true);
+            dbf.setXIncludeAware(false);
+            dbf.setExpandEntityReferences(false);
+            dbf.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+            dbf.setFeature(FEATURE_DISALLOW_DOCTYPE, true);
+            dbf.setFeature(FEATURE_EXTERNAL_GENERAL, false);
+            dbf.setFeature(FEATURE_EXTERNAL_PARAMETER, false);
+            dbf.setFeature(FEATURE_LOAD_EXTERNAL_DTD, false);
+            dbf.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+            dbf.setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
+            DocumentBuilder db = dbf.newDocumentBuilder();
+            db.setEntityResolver((publicId, systemId) -> new InputSource(new StringReader("")));
+            return db;
+        } catch (Exception e) {
+            throw new IllegalStateException("unable to harden DocumentBuilder", e);
         }
     }
 

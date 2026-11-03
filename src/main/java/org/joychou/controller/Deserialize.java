@@ -1,7 +1,8 @@
 package org.joychou.controller;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.joychou.config.Constants;
-import org.joychou.security.AntObjectInputStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -9,14 +10,17 @@ import org.springframework.web.bind.annotation.RestController;
 
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.charset.CodingErrorAction;
+import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.regex.Pattern;
 
 import static org.springframework.web.util.WebUtils.getCookie;
 
 /**
- * Deserialize RCE using Commons-Collections gadget.
+ * rememberMe cookie handling. The cookie is Base64(JSON) and is parsed as plain data only.
  *
  * @author JoyChou @2018-06-14
  */
@@ -27,6 +31,8 @@ public class Deserialize {
     protected final Logger logger = LoggerFactory.getLogger(this.getClass());
 
     private static final int MAX_COOKIE_LENGTH = 8192;
+    private static final Pattern USERNAME_PATTERN = Pattern.compile("^[A-Za-z0-9_.-]{1,64}$");
+    private static final ObjectMapper JSON = new ObjectMapper();
 
     /**
      * java -jar ysoserial.jar CommonsCollections5 "open -a Calculator" | base64 <br>
@@ -46,12 +52,7 @@ public class Deserialize {
             return "Invalid rememberMe cookie.";
         }
 
-        ByteArrayInputStream bytes = new ByteArrayInputStream(decoded);
-        // Allowlist-based deserialization: unexpected classes are rejected (fail closed).
-        try (AntObjectInputStream in = new AntObjectInputStream(bytes)) {
-            in.readObject();
-        } catch (IOException | ClassNotFoundException | RuntimeException e) {
-            logger.info("Rejected rememberMe cookie: {}", e.getClass().getSimpleName());
+        if (parseRememberMe(decoded) == null) {
             return "Invalid rememberMe cookie.";
         }
 
@@ -77,13 +78,7 @@ public class Deserialize {
             return "Invalid rememberMe cookie.";
         }
 
-        ByteArrayInputStream bytes = new ByteArrayInputStream(decoded);
-
-        // Allowlist-based deserialization (resolveClass throws InvalidClassException for unexpected classes).
-        try (AntObjectInputStream in = new AntObjectInputStream(bytes)) {
-            in.readObject();
-        } catch (IOException | ClassNotFoundException | RuntimeException e) {
-            logger.info("Rejected rememberMe cookie: {}", e.getClass().getSimpleName());
+        if (parseRememberMe(decoded) == null) {
             return "Invalid rememberMe cookie.";
         }
 
@@ -91,7 +86,34 @@ public class Deserialize {
     }
 
     /**
-     * Base64-decode the cookie value, enforcing a size limit before deserialization.
+     * Parse the rememberMe cookie as plain JSON data (no object deserialization, no class
+     * instantiation) and return the validated username, or null when the cookie is invalid.
+     */
+    private String parseRememberMe(byte[] decoded) {
+        try {
+            String text = StandardCharsets.UTF_8.newDecoder()
+                    .onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT)
+                    .decode(ByteBuffer.wrap(decoded))
+                    .toString();
+            JsonNode root = JSON.readTree(text);
+            if (root == null || !root.isObject()) {
+                return null;
+            }
+            JsonNode name = root.get("username");
+            if (name == null || !name.isTextual()) {
+                return null;
+            }
+            String username = name.asText();
+            return USERNAME_PATTERN.matcher(username).matches() ? username : null;
+        } catch (IOException | RuntimeException e) {
+            logger.info("Rejected rememberMe cookie: {}", e.getClass().getSimpleName());
+            return null;
+        }
+    }
+
+    /**
+     * Base64-decode the cookie value, enforcing a size limit before parsing.
      *
      * @return decoded bytes, or null when the value is oversized or not valid Base64
      */
