@@ -12,7 +12,10 @@ import org.springframework.web.multipart.MultipartFile;
 
 import javax.servlet.http.HttpServletResponse;
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.FileInputStream;
+import java.util.Locale;
+import java.util.zip.ZipOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -44,9 +47,10 @@ public class xlsxStreamerXXE {
     @PostMapping("/readxlsx")
     public void xllx_streamer_xxe(MultipartFile file, HttpServletResponse response) throws IOException {
         try {
-            byte[] data = file.getBytes();
-            rejectDtd(data);
-            StreamingReader.builder().open(new ByteArrayInputStream(data));
+            // Rebuild the package so the streaming reader only ever sees XML parts that were
+            // gated and re-serialized by the hardened parser, never the uploaded XML bytes.
+            byte[] rebuilt = rebuildPackage(file.getBytes());
+            StreamingReader.builder().open(new ByteArrayInputStream(rebuilt));
         } catch (Exception e) {
             // Do not echo parser/exception details to the client.
             response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Invalid xlsx");
@@ -54,37 +58,44 @@ public class xlsxStreamerXXE {
     }
 
     /**
-     * Fail closed if any XML part of the OOXML package is not plain UTF-8/ASCII-compatible
-     * or contains a DOCTYPE / ENTITY declaration.
+     * Fail closed if any XML part of the OOXML package is not plain UTF-8/ASCII, contains a
+     * DOCTYPE / ENTITY / XInclude / stylesheet construct, or is not well formed. Every XML part
+     * is replaced by the canonical document re-serialized from the hardened parse; all other
+     * entries are copied unchanged.
      */
-    private static void rejectDtd(byte[] data) throws IOException {
-        try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(data))) {
+    private static byte[] rebuildPackage(byte[] data) throws IOException {
+        ByteArrayOutputStream result = new ByteArrayOutputStream();
+        try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(data));
+             ZipOutputStream zos = new ZipOutputStream(result)) {
             ZipEntry entry;
+            long total = 0;
             while ((entry = zis.getNextEntry()) != null) {
-                String name = entry.getName().toLowerCase();
-                if (entry.isDirectory() || !(name.endsWith(".xml") || name.endsWith(".rels"))) {
+                String entryName = entry.getName();
+                if (entryName.contains("..") || entryName.startsWith("/") || entryName.contains("\\")) {
+                    throw new IOException("illegal zip entry name");
+                }
+                String lower = entryName.toLowerCase(Locale.ROOT);
+                if (entry.isDirectory()) {
                     continue;
                 }
                 byte[] part = readBounded(zis);
-                int off = (part.length >= 3 && (part[0] & 0xFF) == 0xEF && (part[1] & 0xFF) == 0xBB
-                        && (part[2] & 0xFF) == 0xBF) ? 3 : 0;
-                // Reject UTF-16/32/EBCDIC encoded parts that could hide a DTD from the byte search.
-                if (part.length < off + 2 || part[off] != '<' || part[off + 1] == 0) {
-                    throw new IOException("unsupported XML encoding in " + entry.getName());
+                total += part.length;
+                if (total > MAX_XML_PART_BYTES) {
+                    throw new IOException("package too large");
                 }
-                String text = new String(part, StandardCharsets.ISO_8859_1);
-                if (text.contains("<!DOCTYPE") || text.contains("<!ENTITY")) {
-                    throw new IOException("DTD not allowed in " + entry.getName());
+                if (lower.endsWith(".xml") || lower.endsWith(".rels")) {
+                    try {
+                        part = XmlSecurity.canonicalize(part).getBytes(StandardCharsets.UTF_8);
+                    } catch (Exception e) {
+                        throw new IOException("unsafe XML in package part", e);
+                    }
                 }
-                // Pre-validate the part with the shared hardened parser (no DOCTYPE, no external
-                // entities, no external DTD/schema, no XInclude).
-                try {
-                    XmlSecurity.requireSafeXml(part);
-                } catch (Exception e) {
-                    throw new IOException("unsafe XML in " + entry.getName());
-                }
+                zos.putNextEntry(new ZipEntry(entryName));
+                zos.write(part);
+                zos.closeEntry();
             }
         }
+        return result.toByteArray();
     }
 
     private static byte[] readBounded(InputStream in) throws IOException {

@@ -40,9 +40,11 @@ public class XStreamRce {
         if (xml.length() > MAX_BODY_LENGTH) {
             return "Request body too large";
         }
+        String canonical;
         try {
-            // Reject DOCTYPE / external entities before the document reaches XStream.
-            XmlSecurity.requireSafeXml(xml);
+            // Reject DOCTYPE / external entities, then hand XStream only the canonical
+            // document re-serialized from the hardened parse.
+            canonical = XmlSecurity.canonicalize(xml);
         } catch (Exception e) {
             return "Invalid XML";
         }
@@ -53,7 +55,7 @@ public class XStreamRce {
         xstream.addPermission(PrimitiveTypePermission.PRIMITIVES);
         xstream.allowTypes(new Class[]{String.class, User.class});
         try {
-            xstream.fromXML(xml);
+            xstream.fromXML(canonical);
         } catch (RuntimeException e) {
             return "Invalid XML";
         }

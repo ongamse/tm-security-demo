@@ -93,9 +93,10 @@ public class XXE {
             String body = XmlSecurity.readBody(request);
             logger.info(WebUtils.sanitizeLog(body));
 
+            String canonical = XmlSecurity.canonicalize(body);
             SAXBuilder builder = XmlSecurity.newSAXBuilder();
             // org.jdom2.Document document
-            builder.build(new InputSource(new StringReader(body)));
+            builder.build(new InputSource(new StringReader(canonical)));
             return "SAXBuilder xxe vuln code";
         } catch (Exception e) {
             logger.error(e.toString());
@@ -109,9 +110,10 @@ public class XXE {
             String body = XmlSecurity.readBody(request);
             logger.info(WebUtils.sanitizeLog(body));
 
+            String canonical = XmlSecurity.canonicalize(body);
             SAXBuilder builder = XmlSecurity.newSAXBuilder();
             // org.jdom2.Document document
-            builder.build(new InputSource(new StringReader(body)));
+            builder.build(new InputSource(new StringReader(canonical)));
 
         } catch (Exception e) {
             logger.error(e.toString());
@@ -205,8 +207,9 @@ public class XXE {
             String body = XmlSecurity.readBody(request);
             logger.info(WebUtils.sanitizeLog(body));
 
+            String canonical = XmlSecurity.canonicalize(body);
             Digester digester = XmlSecurity.newDigester();
-            digester.parse(new StringReader(body));
+            digester.parse(new StringReader(canonical));
         } catch (Exception e) {
             logger.error(e.toString());
             return EXCEPT;
@@ -220,8 +223,9 @@ public class XXE {
             String body = XmlSecurity.readBody(request);
             logger.info(WebUtils.sanitizeLog(body));
 
+            String canonical = XmlSecurity.canonicalize(body);
             Digester digester = XmlSecurity.newDigester();
-            digester.parse(new StringReader(body));
+            digester.parse(new StringReader(canonical));
 
             return "Digester xxe security code";
         } catch (Exception e) {
