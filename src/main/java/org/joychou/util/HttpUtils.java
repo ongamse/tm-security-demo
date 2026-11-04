@@ -45,6 +45,8 @@ public class HttpUtils {
 
     private static final String ILLEGAL_URL = "Illegal url";
 
+    private static final String REQUEST_FAILED = "Request failed.";
+
     /**
      * Outbound url gate shared by all request helpers. Every sink below calls this right before the
      * request is built and then uses ONLY the returned {@link URI}. {@link SSRFChecker#requireSafeOutboundUri}
@@ -122,7 +124,7 @@ public class HttpUtils {
             return new String(resBody);
 
         } catch (IOException e) {
-            return "Error: " + e.getMessage();
+            return REQUEST_FAILED;
         } finally {
             // Release the connection.
             method.releaseConnection();
@@ -141,7 +143,7 @@ public class HttpUtils {
             return Executor.newInstance(noRedirectClient)
                     .execute(Request.Get(safeUri)).returnContent().toString();
         } catch (Exception e) {
-            return e.getMessage();
+            return REQUEST_FAILED;
         }
     }
 
@@ -170,7 +172,7 @@ public class HttpUtils {
             return result.toString();
 
         } catch (Exception e) {
-            return e.getMessage();
+            return REQUEST_FAILED;
         }
     }
 
@@ -189,7 +191,7 @@ public class HttpUtils {
             return html.toString();
         } catch (Exception e) {
             logger.error(e.getMessage());
-            return e.getMessage();
+            return REQUEST_FAILED;
         }
     }
 
@@ -215,7 +217,7 @@ public class HttpUtils {
             return html.toString();
         } catch (IOException e) {
             logger.error(e.getMessage());
-            return e.getMessage();
+            return REQUEST_FAILED;
         }
     }
 
@@ -235,7 +237,7 @@ public class HttpUtils {
                     .execute().parse();
             return doc.outerHtml();
         } catch (IOException e) {
-            return e.getMessage();
+            return REQUEST_FAILED;
         }
     }
 
@@ -314,7 +316,7 @@ public class HttpUtils {
             HttpResponse response = future.get(6000, TimeUnit.MILLISECONDS);
             return EntityUtils.toString(response.getEntity());
         } catch (Exception e) {
-            return e.getMessage();
+            return REQUEST_FAILED;
         } finally {
             try {
                 httpclient.close();

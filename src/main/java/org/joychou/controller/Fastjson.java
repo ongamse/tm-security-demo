@@ -23,7 +23,7 @@ public class Fastjson {
             JSONObject ob = JSON.parseObject(params);
             return HtmlUtils.htmlEscape(ob.get("name").toString());
         } catch (Exception e) {
-            return HtmlUtils.htmlEscape(e.toString());
+            return "Request failed.";
         }
     }
 }

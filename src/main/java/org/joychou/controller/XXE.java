@@ -303,7 +303,7 @@ public class XXE {
         } catch (Exception e) {
             e.printStackTrace();
             logger.error(e.toString());
-            return HtmlUtils.htmlEscape(e.toString());
+            return "Request failed.";
         }
     }
 

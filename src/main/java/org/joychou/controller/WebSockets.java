@@ -47,7 +47,7 @@ public class WebSockets {
                 return "[-] Websocket: " + HtmlUtils.htmlEscape(path) + " has been injected!";
             }
         } catch (Exception e) {
-            return HtmlUtils.htmlEscape(e.toString());
+            return "Request failed.";
         }
     }
 
@@ -70,7 +70,7 @@ public class WebSockets {
                 return "[-] Websocket: " + HtmlUtils.htmlEscape(path) + " has been injected!";
             }
         } catch (Exception e) {
-            return HtmlUtils.htmlEscape(e.toString());
+            return "Request failed.";
         }
     }
 

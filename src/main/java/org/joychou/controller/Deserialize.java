@@ -72,7 +72,7 @@ public class Deserialize {
             in.readObject();
         } catch (InvalidClassException e) {
             logger.info(e.toString());
-            return e.toString();
+            return "Invalid rememberMe payload.";
         }
 
         return "Are u ok?";
@@ -113,7 +113,7 @@ public class Deserialize {
             in.readObject();  // throws InvalidClassException for non-allowlisted classes
         } catch (InvalidClassException e) {
             logger.info(e.toString());
-            return e.toString();
+            return "Invalid rememberMe payload.";
         }
 
         return "I'm very OK.";
