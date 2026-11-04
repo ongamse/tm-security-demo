@@ -1,6 +1,7 @@
 package org.joychou.security.ssrf;
 
 import java.net.HttpURLConnection;
+import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.URI;
 import java.net.URL;
@@ -96,6 +97,81 @@ public class SSRFChecker {
             return true;  // 如果异常了，认为是安全的，防止是超时导致的异常而验证不成功。
         }
         return true; // 默认返回true
+    }
+
+
+    /**
+     * Check whether a url is safe to be requested by the server side.
+     * The url must be http:// or https://, and every address the host resolves to
+     * must not be an internal, loopback, link-local, metadata or other special address.
+     * Callers must also disable automatic redirects (or validate every hop).
+     *
+     * @param url the url that needs to check
+     * @return safe url returns true. Dangerous or malformed url returns false.
+     */
+    public static boolean isSafeOutboundUrl(String url) {
+        if (null == url) {
+            return false;
+        }
+        try {
+            if (!SecurityUtil.isHttp(url)) {
+                return false;
+            }
+            return isSafeOutboundHost(url2host(url));
+        } catch (Exception e) {
+            logger.error("isSafeOutboundUrl exception " + e.getMessage());
+            return false;
+        }
+    }
+
+
+    /**
+     * Check whether every address of the host is a public address. Fail closed.
+     *
+     * @param host host name or ip literal
+     * @return public host returns true. Others return false.
+     */
+    public static boolean isSafeOutboundHost(String host) {
+        if (null == host || host.isEmpty()) {
+            return false;
+        }
+        try {
+            // host2ip also handles the octal ip bypass.
+            String ip = host2ip(host);
+            if (ip.isEmpty() || isBlockedAddress(InetAddress.getByName(ip))) {
+                logger.error("[-] SSRF check failed. Dangerous host: " + host);
+                return false;
+            }
+            for (InetAddress addr : InetAddress.getAllByName(host)) {
+                if (isBlockedAddress(addr)) {
+                    logger.error("[-] SSRF check failed. Dangerous host: " + host);
+                    return false;
+                }
+            }
+            return true;
+        } catch (Exception e) {
+            logger.error("isSafeOutboundHost exception " + e.getMessage());
+            return false;
+        }
+    }
+
+
+    private static boolean isBlockedAddress(InetAddress addr) {
+        if (addr.isAnyLocalAddress() || addr.isLoopbackAddress() || addr.isLinkLocalAddress()
+                || addr.isSiteLocalAddress() || addr.isMulticastAddress()) {
+            return true;
+        }
+        byte[] b = addr.getAddress();
+        if (addr instanceof Inet4Address) {
+            // shared address space 100.64.0.0/10 (e.g. 100.100.100.200 cloud metadata)
+            if ((b[0] & 0xff) == 100 && (b[1] & 0xc0) == 64) {
+                return true;
+            }
+            // configured blocked subnets
+            return isInternalIp(addr.getHostAddress());
+        }
+        // IPv6 unique local fc00::/7
+        return b.length == 16 && (b[0] & 0xfe) == 0xfc;
     }
 
 
