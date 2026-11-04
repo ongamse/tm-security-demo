@@ -1,6 +1,5 @@
 package org.joychou.controller;
 
-import com.fasterxml.uuid.Generators;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Controller;
@@ -20,7 +19,7 @@ import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
-import java.util.UUID;
+import java.security.SecureRandom;
 import java.util.regex.Pattern;
 
 import org.joychou.security.SecurityUtil;
@@ -39,6 +38,7 @@ public class FileUpload {
     private static final String UPLOADED_FOLDER = "/tmp/";
     private final Logger logger = LoggerFactory.getLogger(this.getClass());
     private static String randomFilePath = "";
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     // uplaod any file
     @GetMapping("/any")
@@ -211,14 +211,28 @@ public class FileUpload {
     }
 
     /**
-     * Build a server generated file path inside the upload folder. The name is a random UUID plus
+     * Build a server generated file path inside the upload folder. The name is a SecureRandom hex string plus
      * a validated extension; no part of the client file name is used.
      */
     private static Path newUploadPath(String validatedExt) throws IOException {
         if (validatedExt == null || !EXT_PATTERN.matcher(validatedExt).matches()) {
             throw new IOException("Illegal file extension");
         }
-        return requireInUploadRoot(resolveUploadPath(UUID.randomUUID().toString() + validatedExt));
+        return requireInUploadRoot(resolveUploadPath(randomFileName() + validatedExt));
+    }
+
+    /**
+     * Unpredictable file base name: 16 bytes (128 bits) from SecureRandom, hex encoded.
+     */
+    private static String randomFileName() {
+        byte[] buf = new byte[16];
+        SECURE_RANDOM.nextBytes(buf);
+        StringBuilder sb = new StringBuilder(buf.length * 2);
+        for (byte b : buf) {
+            sb.append(Character.forDigit((b >> 4) & 0xF, 16));
+            sb.append(Character.forDigit(b & 0xF, 16));
+        }
+        return sb.toString();
     }
 
     /**
@@ -276,9 +290,8 @@ public class FileUpload {
      * https://stackoverflow.com/questions/24339990/how-to-convert-a-multipart-file-to-file
      */
     private File convert(MultipartFile multiFile, String validatedSuffix) throws Exception {
-        UUID uuid = Generators.timeBasedGenerator().generate();
         // Server generated name + validated extension; containment re-checked right before creating.
-        Path convPath = requireInUploadRoot(resolveUploadPath(uuid + validatedSuffix));
+        Path convPath = requireInUploadRoot(resolveUploadPath(randomFileName() + validatedSuffix));
         randomFilePath = convPath.toString();
         // 随机生成一个同后缀名的文件
         File convFile = convPath.toFile();
