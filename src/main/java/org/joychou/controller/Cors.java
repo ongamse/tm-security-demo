@@ -43,7 +43,8 @@ public class Cors {
     @GetMapping("/vuln/origin")
     public String vuls1(HttpServletRequest request, HttpServletResponse response) {
         String origin = request.getHeader("origin");
-        if (!WebUtils.isSafeHeaderValue(origin)) {
+        // A missing Origin header (same-origin request) is fine; a present one must be short printable ASCII.
+        if (origin != null && !WebUtils.isStrictHeaderValue(origin)) {
             response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
             return "Invalid Origin header.";
         }
@@ -146,7 +147,7 @@ public class Cors {
         if (origin != null && SecurityUtil.checkURL(origin) == null) {
             return "Origin is not safe.";
         }
-        if (!WebUtils.isSafeHeaderValue(origin)) {
+        if (origin != null && !WebUtils.isStrictHeaderValue(origin)) {
             response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
             return "Invalid Origin header.";
         }

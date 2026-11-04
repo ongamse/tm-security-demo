@@ -122,7 +122,9 @@ public class SSRF {
         OutputStream outputStream = null;
         try {
             String downLoadImgFileName = WebUtils.getNameWithoutExtension(url) + "." + WebUtils.getFileExtension(url);
-            if (!WebUtils.isSafeHeaderValue(downLoadImgFileName)) {
+            // Reject (never sanitise) anything that is not a short, plain file name before it reaches the header.
+            if (!WebUtils.isStrictHeaderValue(downLoadImgFileName)
+                    || !downLoadImgFileName.matches("[A-Za-z0-9._-]{1,255}")) {
                 response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
                 return;
             }

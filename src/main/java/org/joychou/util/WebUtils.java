@@ -90,6 +90,36 @@ public class WebUtils {
     }
 
 
+    private static final int MAX_HEADER_VALUE_LENGTH = 2048;
+
+    private static final Pattern COOKIE_VALUE = Pattern.compile("^[A-Za-z0-9_-]{1,256}$");
+
+    /**
+     * Strict check for a value that is about to be written to a response header.
+     * Rejects (never sanitises) null/empty values, values longer than 2048 chars and any char outside
+     * printable ASCII (0x20-0x7e), which excludes CR, LF, other control chars, DEL and non-ASCII.
+     */
+    public static boolean isStrictHeaderValue(String value) {
+        if (value == null || value.isEmpty() || value.length() > MAX_HEADER_VALUE_LENGTH) {
+            return false;
+        }
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (c < 0x20 || c > 0x7e) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Strict check for a cookie value: URL-safe base64 style characters only, 1-256 chars.
+     */
+    public static boolean isStrictCookieValue(String value) {
+        return value != null && COOKIE_VALUE.matcher(value).matches();
+    }
+
+
     public static String getFileExtension(String fullName) {
         Preconditions.checkNotNull(fullName);
         String fileName = (new File(fullName)).getName();

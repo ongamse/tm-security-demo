@@ -6,7 +6,6 @@ import org.springframework.web.bind.annotation.ResponseBody;
 
 import org.joychou.util.WebUtils;
 
-import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
@@ -24,14 +23,24 @@ public class CRLFInjection {
     public void crlf(HttpServletRequest request, HttpServletResponse response) {
         String test1 = request.getParameter("test1");
         String test2 = request.getParameter("test2");
-        if (!WebUtils.isSafeHeaderValue(test1) || !WebUtils.isSafeHeaderValue(test2)) {
+        String author = request.getParameter("test3");
+        // Reject (never sanitise) anything that is not short printable ASCII, so no CR/LF/control/non-ASCII
+        // character can reach a header or cookie.
+        if (!WebUtils.isStrictHeaderValue(test1) || !WebUtils.isStrictHeaderValue(test2)
+                || !WebUtils.isStrictCookieValue(author)) {
             response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
             return;
         }
         response.addHeader("test1", test1);
         response.setHeader("test2", test2);
-        String author = request.getParameter("test3");
-        Cookie cookie = new Cookie("test3", author);
-        response.addCookie(cookie);
+
+        // Servlet 3.1 Cookie has no SameSite attribute, so the cookie is written as a Set-Cookie header.
+        // The name is a constant and the value matched [A-Za-z0-9_-]{1,256} above.
+        StringBuilder setCookie = new StringBuilder("test3=").append(author)
+                .append("; Path=/; HttpOnly; SameSite=Lax");
+        if (request.isSecure()) {
+            setCookie.append("; Secure");
+        }
+        response.addHeader("Set-Cookie", setCookie.toString());
     }
 }

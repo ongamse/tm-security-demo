@@ -61,7 +61,7 @@ public class OriginFilter implements Filter {
             return;
         }
 
-        if (!WebUtils.isSafeHeaderValue(origin)) {
+        if (origin != null && !WebUtils.isStrictHeaderValue(origin)) {
             response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
             return;
         }

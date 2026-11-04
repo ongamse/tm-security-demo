@@ -107,13 +107,18 @@ public class URLRedirect {
     @ResponseBody
     public static void setHeader(HttpServletRequest request, HttpServletResponse response) {
         String url = request.getParameter("url");
-        if (!WebUtils.isSafeHeaderValue(url)) {
+        if (!WebUtils.isStrictHeaderValue(url)) {
             response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
             return;
         }
         String safeUrl = safeRedirectTarget(url);
         if (safeUrl == null) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            return;
+        }
+        // Reject (never sanitise) null/empty, over-long, control-char or non-ASCII values right before the sink.
+        if (!WebUtils.isStrictHeaderValue(safeUrl)) {
+            response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
             return;
         }
         response.setStatus(HttpServletResponse.SC_MOVED_PERMANENTLY); // 301 redirect
