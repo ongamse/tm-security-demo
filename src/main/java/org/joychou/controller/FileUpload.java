@@ -12,13 +12,16 @@ import org.springframework.web.util.HtmlUtils;
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.InvalidPathException;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 import org.joychou.security.SecurityUtil;
 
@@ -61,11 +64,17 @@ public class FileUpload {
         try {
             // Get the file and save it somewhere
             byte[] bytes = file.getBytes();
-            Path path = resolveUploadPath(file.getOriginalFilename());
-            Files.write(path, bytes);
+            // The client file name is never used on disk: server generated name + validated extension.
+            String ext = extensionOf(file.getOriginalFilename());
+            if (ext == null) {
+                redirectAttributes.addFlashAttribute("message", "upload failed");
+                return "redirect:/file/status";
+            }
+            Path path = requireInUploadRoot(newUploadPath(ext));
+            Files.write(path, bytes, StandardOpenOption.CREATE_NEW, LinkOption.NOFOLLOW_LINKS);
 
             redirectAttributes.addFlashAttribute("message",
-                    "You successfully uploaded '" + UPLOADED_FOLDER + file.getOriginalFilename() + "'");
+                    "You successfully uploaded '" + path.toString() + "'");
 
         } catch (IOException e) {
             redirectAttributes.addFlashAttribute("message", "upload failed");
@@ -88,35 +97,33 @@ public class FileUpload {
             return "Please select a file to upload";
         }
 
-        String fileName = multifile.getOriginalFilename();
-        Path safePath;
-        try {
-            // Reject file names that escape the upload folder.
-            safePath = resolveUploadPath(fileName);
-        } catch (IOException e) {
-            logger.error("[-] Illegal file name");
-            return "Upload failed. Illeagl picture.";
-        }
-        String Suffix = fileName.substring(fileName.lastIndexOf(".")); // 获取文件后缀名
-        String mimeType = multifile.getContentType(); // 获取MIME类型
-        String filePath = safePath.toString();
-        File excelFile = convert(multifile);
-
-
         // 判断文件后缀名是否在白名单内  校验1
+        // Only the validated extension of the client file name is kept; the on-disk name is server generated.
         String[] picSuffixList = {".jpg", ".png", ".jpeg", ".gif", ".bmp", ".ico"};
+        String Suffix = extensionOf(multifile.getOriginalFilename());
         boolean suffixFlag = false;
         for (String white_suffix : picSuffixList) {
-            if (Suffix.toLowerCase().equals(white_suffix)) {
+            if (white_suffix.equals(Suffix)) {
                 suffixFlag = true;
                 break;
             }
         }
         if (!suffixFlag) {
-            logger.error("[-] Suffix error: " + Suffix);
-            deleteFile(filePath);
+            logger.error("[-] Suffix error");
             return "Upload failed. Illeagl picture.";
         }
+
+        Path safePath;
+        try {
+            safePath = newUploadPath(Suffix);
+        } catch (IOException e) {
+            logger.error("[-] Illegal file name");
+            return "Upload failed. Illeagl picture.";
+        }
+        String mimeType = multifile.getContentType(); // 获取MIME类型
+        String filePath = safePath.toString();
+        File excelFile = convert(multifile, Suffix);
+
 
 
         // 判断MIME类型是否在黑名单内 校验2
@@ -151,7 +158,9 @@ public class FileUpload {
         try {
             // Get the file and save it somewhere
             byte[] bytes = multifile.getBytes();
-            Files.write(safePath, bytes);
+            // Re-check containment right before writing; never follow or overwrite existing links/files.
+            Path writePath = requireInUploadRoot(safePath);
+            Files.write(writePath, bytes, StandardOpenOption.CREATE_NEW, LinkOption.NOFOLLOW_LINKS);
         } catch (IOException e) {
             logger.error(e.toString());
             deleteFile(filePath);
@@ -183,15 +192,70 @@ public class FileUpload {
         }
     }
 
+    // Only a short, lower-case alphanumeric extension is accepted from the client file name.
+    private static final Pattern EXT_PATTERN = Pattern.compile("^\\.[a-z0-9]{1,8}$");
+
+    /**
+     * Return the validated, lower-case extension (with leading dot) of a client supplied
+     * file name, or null if it does not have one. Nothing else of the name is ever used.
+     */
+    private static String extensionOf(String clientName) {
+        if (clientName == null) {
+            return null;
+        }
+        int idx = clientName.lastIndexOf('.');
+        if (idx < 0) {
+            return null;
+        }
+        String ext = clientName.substring(idx).toLowerCase();
+        return EXT_PATTERN.matcher(ext).matches() ? ext : null;
+    }
+
+    /**
+     * Build a server generated file path inside the upload folder. The name is a random UUID plus
+     * a validated extension; no part of the client file name is used.
+     */
+    private static Path newUploadPath(String validatedExt) throws IOException {
+        if (validatedExt == null || !EXT_PATTERN.matcher(validatedExt).matches()) {
+            throw new IOException("Illegal file extension");
+        }
+        return requireInUploadRoot(resolveUploadPath(UUID.randomUUID().toString() + validatedExt));
+    }
+
+    /**
+     * Resolve the real (symlink free) location of the given path and require that it is a regular
+     * (non-link) entry directly inside the real upload root. Reject, never sanitise. Call this
+     * immediately before the path is opened, written or deleted.
+     */
+    private static Path requireInUploadRoot(Path candidate) throws IOException {
+        try {
+            Path root = Paths.get(UPLOADED_FOLDER).toRealPath();
+            Path abs = candidate.toAbsolutePath().normalize();
+            Path parent = abs.getParent();
+            Path name = abs.getFileName();
+            if (parent == null || name == null) {
+                throw new IOException("Illegal file path");
+            }
+            Path target = parent.toRealPath().resolve(name.toString());
+            if (!target.startsWith(root) || !root.equals(target.getParent())) {
+                throw new IOException("Illegal file path");
+            }
+            if (Files.isSymbolicLink(target)) {
+                throw new IOException("Illegal file path");
+            }
+            return target;
+        } catch (InvalidPathException e) {
+            throw new IOException("Illegal file path", e);
+        }
+    }
+
     private void deleteFile(String filePath) {
         Path delPath;
         try {
-            Path base = Paths.get(UPLOADED_FOLDER).toAbsolutePath().normalize();
-            delPath = Paths.get(filePath).toAbsolutePath().normalize();
-            if (!base.equals(delPath.getParent())) {
-                logger.info("Refuse to delete file outside upload folder");
-                return;
-            }
+            delPath = requireInUploadRoot(Paths.get(filePath));
+        } catch (IOException e) {
+            logger.info("Refuse to delete file outside upload folder");
+            return;
         } catch (InvalidPathException e) {
             logger.info("Refuse to delete illegal file path");
             return;
@@ -212,21 +276,18 @@ public class FileUpload {
      * 不建议使用transferTo，因为原始的MultipartFile会被覆盖
      * https://stackoverflow.com/questions/24339990/how-to-convert-a-multipart-file-to-file
      */
-    private File convert(MultipartFile multiFile) throws Exception {
-        String fileName = multiFile.getOriginalFilename();
-        String suffix = fileName.substring(fileName.lastIndexOf("."));
+    private File convert(MultipartFile multiFile, String validatedSuffix) throws Exception {
         UUID uuid = Generators.timeBasedGenerator().generate();
-        Path convPath = resolveUploadPath(uuid + suffix);
+        // Server generated name + validated extension; containment re-checked right before creating.
+        Path convPath = requireInUploadRoot(resolveUploadPath(uuid + validatedSuffix));
         randomFilePath = convPath.toString();
         // 随机生成一个同后缀名的文件
         File convFile = convPath.toFile();
-        boolean ret = convFile.createNewFile();
-        if (!ret) {
+        try {
+            Files.write(convPath, multiFile.getBytes(), StandardOpenOption.CREATE_NEW, LinkOption.NOFOLLOW_LINKS);
+        } catch (FileAlreadyExistsException e) {
             return null;
         }
-        FileOutputStream fos = new FileOutputStream(convFile);
-        fos.write(multiFile.getBytes());
-        fos.close();
         return convFile;
     }
 
@@ -234,7 +295,9 @@ public class FileUpload {
      * Check if the file is a picture.
      */
     private static boolean isImage(File file) throws IOException {
-        BufferedImage bi = ImageIO.read(file);
+        // Re-check containment right before the file is opened for reading.
+        File safeFile = requireInUploadRoot(file.toPath()).toFile();
+        BufferedImage bi = ImageIO.read(safeFile);
         return bi != null;
     }
 }
