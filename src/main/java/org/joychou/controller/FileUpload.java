@@ -273,12 +273,15 @@ public class FileUpload {
             logger.info("Refuse to delete illegal file path");
             return;
         }
-        File delFile = delPath.toFile();
-        if(delFile.isFile() && delFile.exists()) {
-            if (delFile.delete()) {
+        try {
+            // Single atomic operation instead of a check followed by delete.
+            if (Files.deleteIfExists(delPath)) {
                 logger.info("[+] File deleted successfully!");
                 return;
             }
+        } catch (IOException e) {
+            logger.info("File delete failed!");
+            return;
         }
         logger.info("File delete failed!");
     }
