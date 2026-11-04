@@ -7,9 +7,14 @@ import org.joychou.security.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
+import javax.servlet.http.HttpServletRequest;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.Principal;
 import java.sql.*;
 import java.util.Arrays;
 import java.util.List;
@@ -96,8 +101,9 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/jdbc/sec?username=joychou">http://localhost:8080/sqli/jdbc/sec?username=joychou</a>
      */
     @RequestMapping("/jdbc/sec")
-    public String jdbc_sqli_sec(@RequestParam("username") String username) {
+    public String jdbc_sqli_sec(@RequestParam("username") String username, HttpServletRequest request) {
 
+        authorizeUsernameReference(request, username);
         StringBuilder result = new StringBuilder();
         try {
             Class.forName(driver);
@@ -184,7 +190,8 @@ public class SQLI {
      * <p>select * from users where username = 'joychou' or '1'='1' </p>
      */
     @GetMapping("/mybatis/vuln01")
-    public List<User> mybatisVuln01(@RequestParam("username") String username) {
+    public List<User> mybatisVuln01(@RequestParam("username") String username, HttpServletRequest request) {
+        authorizeUsernameReference(request, username);
         return userMapper.findByUserNameVuln01(username);
     }
 
@@ -194,7 +201,8 @@ public class SQLI {
      * <p>select * from users where username like '%joychou' or '1'='1%' </p>
      */
     @GetMapping("/mybatis/vuln02")
-    public List<User> mybatisVuln02(@RequestParam("username") String username) {
+    public List<User> mybatisVuln02(@RequestParam("username") String username, HttpServletRequest request) {
+        authorizeUsernameReference(request, username);
         return userMapper.findByUserNameVuln02(username);
     }
 
@@ -214,7 +222,8 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/mybatis/sec01?username=joychou">http://localhost:8080/sqli/mybatis/sec01?username=joychou</a>
      */
     @GetMapping("/mybatis/sec01")
-    public User mybatisSec01(@RequestParam("username") String username) {
+    public User mybatisSec01(@RequestParam("username") String username, HttpServletRequest request) {
+        authorizeUsernameReference(request, username);
         return userMapper.findByUserName(username);
     }
 
@@ -245,6 +254,26 @@ public class SQLI {
     @GetMapping("/mybatis/orderby/sec04")
     public List<User> mybatisOrderBySec04(@RequestParam("sort") String sort) {
         return userMapper.findByUserNameVuln03(orderByColumn(SecurityUtil.sqlFilter(sort)));
+    }
+
+    /**
+     * Authorize a user-supplied username used as a direct reference to a users row.
+     * Only the authenticated principal's own record may be requested, unless the caller has ROLE_ADMIN.
+     * Fails closed (403 via Spring Security's access denied handling).
+     */
+    private static void authorizeUsernameReference(HttpServletRequest request, String username) {
+        Principal principal = request.getUserPrincipal();
+        if (principal == null || username == null) {
+            throw new AccessDeniedException("Access denied");
+        }
+        if (request.isUserInRole("ADMIN")) {
+            return;
+        }
+        byte[] expected = principal.getName().getBytes(StandardCharsets.UTF_8);
+        byte[] actual = username.getBytes(StandardCharsets.UTF_8);
+        if (!MessageDigest.isEqual(expected, actual)) {
+            throw new AccessDeniedException("Access denied");
+        }
     }
 
     /**
