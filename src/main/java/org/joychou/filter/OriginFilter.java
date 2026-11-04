@@ -7,6 +7,7 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import org.joychou.security.SecurityUtil;
+import org.joychou.util.WebUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -42,6 +43,11 @@ public class OriginFilter implements Filter {
                     "\tCurrent url:" + request.getRequestURL());
             response.setStatus(response.SC_FORBIDDEN);
             response.getWriter().println("Invaid cors config by joychou.");
+            return;
+        }
+
+        if (!WebUtils.isSafeHeaderValue(origin)) {
+            response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
             return;
         }
 

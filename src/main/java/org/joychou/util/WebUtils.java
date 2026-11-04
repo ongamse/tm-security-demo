@@ -42,6 +42,25 @@ public class WebUtils {
     }
 
 
+    /**
+     * Check that a request-derived value is safe to write into an HTTP response header.
+     * Rejects CR, LF and other control characters (tab is allowed) to prevent header injection / response splitting.
+     * A null value is considered safe.
+     */
+    public static boolean isSafeHeaderValue(String value) {
+        if (value == null) {
+            return true;
+        }
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if ((c < 0x20 && c != '\t') || c == 0x7f) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+
     public static String getFileExtension(String fullName) {
         Preconditions.checkNotNull(fullName);
         String fileName = (new File(fullName)).getName();

@@ -2,6 +2,7 @@ package org.joychou.controller;
 
 import org.joychou.security.SecurityUtil;
 import org.joychou.util.LoginUtils;
+import org.joychou.util.WebUtils;
 import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -25,6 +26,10 @@ public class Cors {
     @GetMapping("/vuln/origin")
     public String vuls1(HttpServletRequest request, HttpServletResponse response) {
         String origin = request.getHeader("origin");
+        if (!WebUtils.isSafeHeaderValue(origin)) {
+            response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+            return "Invalid Origin header.";
+        }
         response.setHeader("Access-Control-Allow-Origin", origin); // set origin from header
         response.setHeader("Access-Control-Allow-Credentials", "true");  // allow cookie
         return info;
@@ -109,6 +114,10 @@ public class Cors {
         // 如果origin为空，表示是同域过来的请求或者浏览器直接发起的请求。
         if (origin != null && SecurityUtil.checkURL(origin) == null) {
             return "Origin is not safe.";
+        }
+        if (!WebUtils.isSafeHeaderValue(origin)) {
+            response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+            return "Invalid Origin header.";
         }
         response.setHeader("Access-Control-Allow-Origin", origin);
         response.setHeader("Access-Control-Allow-Credentials", "true");
