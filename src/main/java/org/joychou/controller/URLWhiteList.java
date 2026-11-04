@@ -12,6 +12,10 @@ import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -30,6 +34,21 @@ public class URLWhiteList {
 
     private String domainwhitelist[] = {"joychou.org", "joychou.com"};
     private static final Logger logger = LoggerFactory.getLogger(URLWhiteList.class);
+
+    /** Exact (equals) host allowlist for redirect targets. */
+    private static final Set<String> REDIRECT_ALLOWED_HOSTS = Collections.unmodifiableSet(
+            new HashSet<String>(Arrays.asList("joychou.org", "www.joychou.org", "test.joychou.org",
+                    "joychou.com", "www.joychou.com", "localhost")));
+
+    private static boolean hasUnsafeRedirectChars(String s) {
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c < 0x20 || c == 0x7f || c == '\\') {
+                return true;
+            }
+        }
+        return false;
+    }
 
     /**
      * bypass poc: bypassjoychou.org
@@ -129,13 +148,15 @@ public class URLWhiteList {
         // endsWith .
         for (String domain : domainwhitelist) {
             if (host.endsWith("." + domain)) {
-                // Re-validate with the strict URI-based allowlist before redirecting.
-                String safeUrl = SecurityUtil.checkURL(url);
-                if (safeUrl == null) {
+                // Re-validate before redirecting: exact host allowlist, no backslash/control
+                // characters, and the configured URI-based allowlist. Reject, never sanitise.
+                if (!REDIRECT_ALLOWED_HOSTS.contains(host) || hasUnsafeRedirectChars(url)
+                        || SecurityUtil.checkURL(url) == null) {
                     res.setStatus(HttpServletResponse.SC_FORBIDDEN);
                     return;
                 }
-                res.sendRedirect(safeUrl);
+                // Redirect to the parsed URI (ASCII form), never the raw request string.
+                res.sendRedirect(parsed.toASCIIString());
                 return;
             }
         }
