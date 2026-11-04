@@ -30,8 +30,12 @@ public class Cors {
             response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
             return "Invalid Origin header.";
         }
-        response.setHeader("Access-Control-Allow-Origin", origin); // set origin from header
-        response.setHeader("Access-Control-Allow-Credentials", "true");  // allow cookie
+        // Only echo an origin that is in the safe-domain allowlist.
+        if (origin != null && SecurityUtil.checkURL(origin) != null) {
+            response.setHeader("Access-Control-Allow-Origin", origin);
+            response.setHeader("Access-Control-Allow-Credentials", "true");  // allow cookie
+            response.addHeader("Vary", "Origin");
+        }
         return info;
     }
 
@@ -119,8 +123,11 @@ public class Cors {
             response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
             return "Invalid Origin header.";
         }
-        response.setHeader("Access-Control-Allow-Origin", origin);
-        response.setHeader("Access-Control-Allow-Credentials", "true");
+        if (origin != null) {
+            response.setHeader("Access-Control-Allow-Origin", origin);
+            response.setHeader("Access-Control-Allow-Credentials", "true");
+            response.addHeader("Vary", "Origin");
+        }
         return LoginUtils.getUserInfo2JsonStr(request);
     }
 
