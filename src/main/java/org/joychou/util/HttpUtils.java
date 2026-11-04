@@ -9,8 +9,14 @@ import org.apache.http.client.config.RequestConfig;
 import org.apache.http.client.fluent.Executor;
 import org.apache.http.client.fluent.Request;
 import org.apache.http.client.methods.HttpGet;
+import org.apache.http.config.Registry;
+import org.apache.http.config.RegistryBuilder;
+import org.apache.http.conn.socket.ConnectionSocketFactory;
+import org.apache.http.conn.socket.PlainConnectionSocketFactory;
+import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
+import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
 import org.apache.http.impl.nio.client.CloseableHttpAsyncClient;
 import org.apache.http.impl.nio.client.HttpAsyncClients;
 import org.apache.http.util.EntityUtils;
@@ -27,7 +33,6 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URI;
-import java.net.URL;
 import java.net.URLConnection;
 import java.util.concurrent.*;
 
@@ -41,35 +46,45 @@ public class HttpUtils {
     private static final String ILLEGAL_URL = "Illegal url";
 
     /**
-     * Outbound url check shared by all request helpers: http/https only and the host must resolve
-     * only to public addresses (no loopback, link-local, private, metadata). Callers must also
-     * disable automatic redirects so that a redirect cannot reach an internal address.
-     * The host is parsed with both {@link URI} and {@link URL} and must be identical, to avoid
-     * parser differential bypasses.
+     * Outbound url gate shared by all request helpers. Every sink below calls this right before the
+     * request is built and then uses ONLY the returned {@link URI}. {@link SSRFChecker#requireSafeOutboundUri}
+     * enforces: http/https only, no userinfo, non-empty host, ports 80/443/8080/8443 only, and every
+     * resolved address must be public (no loopback, link-local, private, metadata, CGNAT, ULA, mapped).
+     * The url is rejected, never sanitised. Callers must also disable automatic redirects so that a
+     * redirect cannot reach an internal address. The url is never logged (log forging).
+     *
+     * @throws IOException if the url is not allowed
      */
-    private static boolean isSafeUrl(String url) {
-        if (url == null || !SSRFChecker.isSafeOutboundUrl(url)) {
-            logger.error("SSRF check failed. Illegal url.");
-            return false;
-        }
+    private static URI requireSafeUri(String url) throws IOException {
         try {
-            String uriHost = new URI(url).getHost();
-            String urlHost = new URL(url).getHost();
-            return uriHost != null && uriHost.equalsIgnoreCase(urlHost);
-        } catch (Exception e) {
-            return false;
+            return SSRFChecker.requireSafeOutboundUri(url);
+        } catch (IllegalArgumentException e) {
+            logger.error("SSRF check failed. Illegal url.");
+            throw new IOException(ILLEGAL_URL);
         }
     }
 
     /**
-     * Open a connection to an already validated url without following redirects.
+     * Connection manager whose DNS resolver rejects non-public addresses at connect time, so the
+     * address that is actually connected to is validated (DNS rebinding).
+     */
+    private static PoolingHttpClientConnectionManager safeConnectionManager() {
+        Registry<ConnectionSocketFactory> registry = RegistryBuilder.<ConnectionSocketFactory>create()
+                .register("http", PlainConnectionSocketFactory.getSocketFactory())
+                .register("https", SSLConnectionSocketFactory.getSocketFactory())
+                .build();
+        return new PoolingHttpClientConnectionManager(registry, new SSRFChecker.SafeDnsResolver());
+    }
+
+    /**
+     * Open a connection to a validated url without following redirects.
      */
     private static HttpURLConnection openSafeConnection(String url) throws IOException {
-        if (!isSafeUrl(url)) {
-            throw new IOException(ILLEGAL_URL);
-        }
-        HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+        URI safeUri = requireSafeUri(url);
+        HttpURLConnection conn = (HttpURLConnection) safeUri.toURL().openConnection();
         conn.setInstanceFollowRedirects(false);
+        conn.setConnectTimeout(5000);
+        conn.setReadTimeout(10000);
         return conn;
     }
 
@@ -87,12 +102,15 @@ public class HttpUtils {
 
     public static String commonHttpClient(String url) {
 
-        if (!isSafeUrl(url)) {
+        URI safeUri;
+        try {
+            safeUri = requireSafeUri(url);
+        } catch (IOException e) {
             return ILLEGAL_URL;
         }
 
         HttpClient client = new HttpClient();
-        GetMethod method = new GetMethod(url);
+        GetMethod method = new GetMethod(safeUri.toString());
         method.setFollowRedirects(false);
 
         try {
@@ -113,14 +131,15 @@ public class HttpUtils {
 
 
     public static String request(String url) {
-        if (!isSafeUrl(url)) {
-            return ILLEGAL_URL;
-        }
         try {
-            // redirects disabled so that a redirect cannot reach an internal address
-            CloseableHttpClient noRedirectClient = HttpClients.custom().disableRedirectHandling().build();
+            URI safeUri = requireSafeUri(url);
+            // redirects disabled so that a redirect cannot reach an internal address; the DNS resolver
+            // re-validates the addresses at connect time (DNS rebinding)
+            CloseableHttpClient noRedirectClient = HttpClients.custom()
+                    .setConnectionManager(safeConnectionManager())
+                    .disableRedirectHandling().build();
             return Executor.newInstance(noRedirectClient)
-                    .execute(Request.Get(url)).returnContent().toString();
+                    .execute(Request.Get(safeUri)).returnContent().toString();
         } catch (Exception e) {
             return e.getMessage();
         }
@@ -131,14 +150,13 @@ public class HttpUtils {
 
         StringBuilder result = new StringBuilder();
 
-        if (!isSafeUrl(url)) {
-            return ILLEGAL_URL;
-        }
-
         try {
 
-            CloseableHttpClient client = HttpClients.createDefault();
-            HttpGet httpGet = new HttpGet(url);
+            URI safeUri = requireSafeUri(url);
+            CloseableHttpClient client = HttpClients.custom()
+                    .setConnectionManager(safeConnectionManager())
+                    .build();
+            HttpGet httpGet = new HttpGet(safeUri);
             // set redirect enable false
             httpGet.setConfig(RequestConfig.custom().setRedirectsEnabled(false).build());
             HttpResponse httpResponse = client.execute(httpGet); // send request
@@ -208,11 +226,9 @@ public class HttpUtils {
      * @param url http request url
      */
     public static String Jsoup(String url) {
-        if (!isSafeUrl(url)) {
-            return ILLEGAL_URL;
-        }
         try {
-            Document doc = Jsoup.connect(url)
+            URI safeUri = requireSafeUri(url);
+            Document doc = Jsoup.connect(safeUri.toString())
                     .followRedirects(false)
                     .timeout(3000)
                     .cookie("name", "joychou") // request cookies
@@ -230,13 +246,11 @@ public class HttpUtils {
      * UserAgent is <code>okhttp/2.5.0</code>.
      */
     public static String okhttp(String url) throws IOException {
-        if (!isSafeUrl(url)) {
-            throw new IOException(ILLEGAL_URL);
-        }
+        URI safeUri = requireSafeUri(url);
         OkHttpClient client = new OkHttpClient();
         client.setFollowRedirects(false);
         client.setFollowSslRedirects(false);
-        com.squareup.okhttp.Request ok_http = new com.squareup.okhttp.Request.Builder().url(url).build();
+        com.squareup.okhttp.Request ok_http = new com.squareup.okhttp.Request.Builder().url(safeUri.toURL()).build();
         if (!SSRFChecker.isSafeOutboundHost(ok_http.httpUrl().host())) {
             throw new IOException(ILLEGAL_URL);
         }
@@ -285,13 +299,16 @@ public class HttpUtils {
 
 
     public static String HttpAsyncClients(String url) {
-        if (!isSafeUrl(url)) {
+        final URI safeUri;
+        try {
+            safeUri = requireSafeUri(url);
+        } catch (IOException e) {
             return ILLEGAL_URL;
         }
         CloseableHttpAsyncClient httpclient = HttpAsyncClients.createDefault();
         try {
             httpclient.start();
-            final HttpGet request = new HttpGet(url);
+            final HttpGet request = new HttpGet(safeUri);
             request.setConfig(RequestConfig.custom().setRedirectsEnabled(false).build());
             Future<HttpResponse> future = httpclient.execute(request, null);
             HttpResponse response = future.get(6000, TimeUnit.MILLISECONDS);

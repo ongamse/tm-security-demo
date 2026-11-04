@@ -4,7 +4,8 @@ import java.net.HttpURLConnection;
 import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.URI;
-import java.net.URL;
+import java.net.URISyntaxException;
+import java.net.UnknownHostException;
 import java.util.ArrayList;
 
 import org.apache.commons.lang.StringUtils;
@@ -19,6 +20,11 @@ public class SSRFChecker {
 
     private static final Logger logger = LoggerFactory.getLogger(SSRFChecker.class);
     private static String decimalIp;
+
+    private static final String ILLEGAL_OUTBOUND_URL = "Illegal outbound url";
+    private static final int MAX_OUTBOUND_URL_LENGTH = 2048;
+    // Ports an outbound request may use. Anything else is rejected.
+    private static final int[] ALLOWED_OUTBOUND_PORTS = {80, 443, 8080, 8443};
 
     public static boolean checkURLFckSSRF(String url) {
         if (null == url) {
@@ -66,13 +72,23 @@ public class SSRFChecker {
         String finalUrl = url;
         try {
             do {
+                // Gate right before the connection is opened: http/https only, no userinfo, allowed
+                // port, and every resolved address must be public. Rejects, never sanitises.
+                URI safeUri;
+                try {
+                    safeUri = requireSafeOutboundUri(finalUrl);
+                } catch (IllegalArgumentException e) {
+                    logger.error("[-] SSRF check failed. Dangerous url.");
+                    return false;
+                }
+
                 // 判断当前请求的URL是否是内网ip
-                if (isInternalIpByUrl(finalUrl)) {
-                    logger.error("[-] SSRF check failed. Dangerous url: " + finalUrl);
+                if (isInternalIpByUrl(safeUri.toString())) {
+                    logger.error("[-] SSRF check failed. Dangerous url.");
                     return false;  // 内网ip直接return，非内网ip继续判断是否有重定向
                 }
 
-                connection = (HttpURLConnection) new URL(finalUrl).openConnection();
+                connection = (HttpURLConnection) safeUri.toURL().openConnection();
                 connection.setInstanceFollowRedirects(false);
                 connection.setUseCaches(false); // 设置为false，手动处理跳转，可以拿到每个跳转的URL
                 connection.setConnectTimeout(connectTime);
@@ -85,7 +101,7 @@ public class SSRFChecker {
                         break;
                     finalUrl = redirectedUrl;
                     i += 1;  // 重定向次数加1
-                    logger.info("redirected url: " + finalUrl);
+                    logger.info("redirected");
                     if (i == checkTimes) {
                         return false;
                     }
@@ -110,17 +126,110 @@ public class SSRFChecker {
      * @return safe url returns true. Dangerous or malformed url returns false.
      */
     public static boolean isSafeOutboundUrl(String url) {
-        if (null == url) {
+        try {
+            requireSafeOutboundUri(url);
+            return true;
+        } catch (IllegalArgumentException e) {
             return false;
         }
+    }
+
+
+    /**
+     * Single shared outbound-url gate. Call it right before a connection / stream / client request
+     * is made and use the returned {@link URI} (not the raw string) for the request.
+     * <ol>
+     *   <li>string length, {@link URI} syntax (pure string parsing, no network I/O);</li>
+     *   <li>scheme must be http or https;</li>
+     *   <li>no userinfo (<code>user@host</code>), non-empty host, {@link java.net.URL} and
+     *       {@link URI} must agree on the host (parser differential);</li>
+     *   <li>port must be default or one of 80, 443, 8080, 8443;</li>
+     *   <li>only after the checks above, every address the host resolves to must be public
+     *       (loopback, any-local, link-local incl. 169.254.169.254, site-local, multicast,
+     *       fc00::/7, 0.0.0.0/8, 100.64.0.0/10, IPv4-mapped IPv6 and configured subnets are rejected).</li>
+     * </ol>
+     * Rejects, never sanitises.
+     *
+     * @param url the url that needs to check
+     * @return the validated URI
+     * @throws IllegalArgumentException if the url is not allowed (message carries no url data)
+     */
+    public static URI requireSafeOutboundUri(String url) {
+        if (url == null || url.isEmpty() || url.length() > MAX_OUTBOUND_URL_LENGTH) {
+            throw new IllegalArgumentException(ILLEGAL_OUTBOUND_URL);
+        }
+        URI uri;
+        String host;
         try {
-            if (!SecurityUtil.isHttp(url)) {
-                return false;
+            uri = new URI(url);
+            String scheme = uri.getScheme();
+            if (scheme == null || !("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme))) {
+                throw new IllegalArgumentException(ILLEGAL_OUTBOUND_URL);
             }
-            return isSafeOutboundHost(url2host(url));
-        } catch (Exception e) {
-            logger.error("isSafeOutboundUrl exception " + e.getMessage());
-            return false;
+            if (uri.getRawUserInfo() != null) {
+                throw new IllegalArgumentException(ILLEGAL_OUTBOUND_URL);
+            }
+            host = uri.getHost();
+            if (host == null || host.isEmpty()) {
+                throw new IllegalArgumentException(ILLEGAL_OUTBOUND_URL);
+            }
+            String urlHost = uri.toURL().getHost();
+            if (!host.equalsIgnoreCase(urlHost)) {
+                throw new IllegalArgumentException(ILLEGAL_OUTBOUND_URL);
+            }
+        } catch (URISyntaxException e) {
+            throw new IllegalArgumentException(ILLEGAL_OUTBOUND_URL);
+        } catch (java.net.MalformedURLException e) {
+            throw new IllegalArgumentException(ILLEGAL_OUTBOUND_URL);
+        }
+
+        int port = uri.getPort();
+        if (port != -1) {
+            boolean portAllowed = false;
+            for (int allowed : ALLOWED_OUTBOUND_PORTS) {
+                if (allowed == port) {
+                    portAllowed = true;
+                }
+            }
+            if (!portAllowed) {
+                throw new IllegalArgumentException(ILLEGAL_OUTBOUND_URL);
+            }
+        }
+
+        // DNS resolution happens only here, after scheme / userinfo / host / port checks passed.
+        if (!isSafeOutboundHost(host)) {
+            throw new IllegalArgumentException(ILLEGAL_OUTBOUND_URL);
+        }
+        return uri;
+    }
+
+
+    /**
+     * Resolve a host and return all of its addresses, throwing if any of them is not public.
+     * Used by {@link SafeDnsResolver} so the address that is connected to is the validated one.
+     */
+    static InetAddress[] resolveSafeAddresses(String host) throws UnknownHostException {
+        if (host == null || host.isEmpty()) {
+            throw new UnknownHostException(ILLEGAL_OUTBOUND_URL);
+        }
+        InetAddress[] all = InetAddress.getAllByName(host);
+        for (InetAddress addr : all) {
+            if (isBlockedAddress(addr)) {
+                throw new UnknownHostException(ILLEGAL_OUTBOUND_URL);
+            }
+        }
+        return all;
+    }
+
+
+    /**
+     * Apache HttpClient 4.x DNS resolver which validates the addresses at connect time, so a DNS
+     * answer that changed between the check and the connection (DNS rebinding) is rejected.
+     */
+    public static final class SafeDnsResolver implements org.apache.http.conn.DnsResolver {
+        @Override
+        public InetAddress[] resolve(String host) throws UnknownHostException {
+            return resolveSafeAddresses(host);
         }
     }
 
@@ -163,12 +272,28 @@ public class SSRFChecker {
         }
         byte[] b = addr.getAddress();
         if (addr instanceof Inet4Address) {
+            // "this network" 0.0.0.0/8
+            if (b[0] == 0) {
+                return true;
+            }
             // shared address space 100.64.0.0/10 (e.g. 100.100.100.200 cloud metadata)
             if ((b[0] & 0xff) == 100 && (b[1] & 0xc0) == 64) {
                 return true;
             }
             // configured blocked subnets
             return isInternalIp(addr.getHostAddress());
+        }
+        if (b.length == 16) {
+            // IPv4-compatible / IPv4-mapped IPv6 that Java did not convert (::a.b.c.d, ::ffff:a.b.c.d)
+            boolean zeroPrefix = true;
+            for (int i = 0; i < 10; i++) {
+                if (b[i] != 0) {
+                    zeroPrefix = false;
+                }
+            }
+            if (zeroPrefix && ((b[10] == 0 && b[11] == 0) || ((b[10] & 0xff) == 0xff && (b[11] & 0xff) == 0xff))) {
+                return true;
+            }
         }
         // IPv6 unique local fc00::/7
         return b.length == 16 && (b[0] & 0xfe) == 0xfc;
@@ -364,13 +489,19 @@ public class SSRFChecker {
      * Get host from URL which the protocol must be http:// or https:// and not be //.
      */
     private static String url2host(String url) {
-        try {
-            // use URI instead of URL
-            URI u = new URI(url);
-            if (SecurityUtil.isHttp(url)) {
-                return u.getHost();
-            }
+        if (url == null) {
             return "";
+        }
+        try {
+            // use URI (pure string parsing, no network I/O) instead of URL
+            URI u = new URI(url);
+            String scheme = u.getScheme();
+            if (scheme == null || !("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme))
+                    || u.getRawUserInfo() != null) {
+                return "";
+            }
+            String host = u.getHost();
+            return host == null ? "" : host;
         } catch (Exception e) {
             return "";
         }

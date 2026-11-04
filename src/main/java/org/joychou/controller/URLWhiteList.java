@@ -9,7 +9,8 @@ import org.springframework.web.util.HtmlUtils;
 
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.net.URL;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -105,8 +106,24 @@ public class URLWhiteList {
             return;
         }
 
-        URL u = new URL(url);
-        String host = u.getHost();
+        // Gate right at the sink: java.net.URI string parsing only (no network I/O), http/https scheme,
+        // no userinfo, non-empty host. Rejected urls are never fetched or redirected to.
+        URI parsed;
+        try {
+            parsed = new URI(url);
+        } catch (URISyntaxException e) {
+            res.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            return;
+        }
+        String scheme = parsed.getScheme();
+        String uriHost = parsed.getHost();
+        if (scheme == null || !("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme))
+                || parsed.getRawUserInfo() != null || uriHost == null || uriHost.isEmpty()) {
+            res.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            return;
+        }
+        // The host comes from the strict java.net.URI parser only (java.net.URL is not used here).
+        String host = uriHost.toLowerCase();
         logger.info("host:  " + host);
 
         // endsWith .

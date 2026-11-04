@@ -40,7 +40,7 @@ public class SecurityUtil {
      * @return true or false
      */
     public static boolean isHttp(String url) {
-        return url.startsWith("http://") || url.startsWith("https://");
+        return url != null && (url.startsWith("http://") || url.startsWith("https://"));
     }
 
 
@@ -51,9 +51,19 @@ public class SecurityUtil {
      * @return host
      */
     public static String gethost(String url) {
+        if (url == null) {
+            return "";
+        }
         try {
+            // java.net.URI is pure string parsing: no DNS lookup and no network I/O on the raw value.
             URI uri = new URI(url);
-            return uri.getHost().toLowerCase();
+            String scheme = uri.getScheme();
+            String host = uri.getHost();
+            if (host == null || scheme == null
+                    || !("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme))) {
+                return "";
+            }
+            return host.toLowerCase();
         } catch (URISyntaxException e) {
             return "";
         }
