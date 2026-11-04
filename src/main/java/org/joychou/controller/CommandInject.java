@@ -49,7 +49,7 @@ public class CommandInject {
     public String codeInjectHost(HttpServletRequest request) throws IOException {
 
         String host = request.getHeader("host");
-        logger.info(host);
+        logger.info("Host header received");
         // Reject anything that is not a plain host[:port]; the value can never become a flag,
         // a path, a URL scheme or a shell fragment.
         String safeHost = SecurityUtil.safeHostArg(host);

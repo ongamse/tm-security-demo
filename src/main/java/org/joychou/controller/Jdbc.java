@@ -84,7 +84,7 @@ public class Jdbc {
     public void postgresql(String jdbcUrlBase64) throws Exception{
         byte[] b = java.util.Base64.getDecoder().decode(jdbcUrlBase64);
         String jdbcUrl = checkJdbcUrl(new String(b, StandardCharsets.UTF_8), POSTGRESQL_URL, true);
-        log.info(jdbcUrl);
+        log.info("Connecting to validated jdbc url");
         DriverManager.getConnection(jdbcUrl);
     }
 
@@ -93,7 +93,7 @@ public class Jdbc {
         Class.forName("com.ibm.db2.jcc.DB2Driver");
         byte[] b = java.util.Base64.getDecoder().decode(jdbcUrlBase64);
         String jdbcUrl = checkJdbcUrl(new String(b, StandardCharsets.UTF_8), DB2_URL, false);
-        log.info(jdbcUrl);
+        log.info("Connecting to validated jdbc url");
         DriverManager.getConnection(jdbcUrl);
     }
 }

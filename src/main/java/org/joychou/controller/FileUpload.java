@@ -78,7 +78,7 @@ public class FileUpload {
 
         } catch (IOException e) {
             redirectAttributes.addFlashAttribute("message", "upload failed");
-            logger.error(e.toString());
+            logger.error("File upload failed");
         }
 
         return "redirect:/file/status";
@@ -138,7 +138,7 @@ public class FileUpload {
         for (String blackMimeType : mimeTypeBlackList) {
             // 用contains是为了防止text/html;charset=UTF-8绕过
             if (SecurityUtil.replaceSpecialStr(mimeType).toLowerCase().contains(blackMimeType)) {
-                logger.error("[-] Mime type error: " + mimeType);
+                logger.error("[-] Mime type error");
                 deleteFile(filePath);
                 return "Upload failed. Illeagl picture.";
             }
@@ -162,13 +162,12 @@ public class FileUpload {
             Path writePath = requireInUploadRoot(safePath);
             Files.write(writePath, bytes, StandardOpenOption.CREATE_NEW, LinkOption.NOFOLLOW_LINKS);
         } catch (IOException e) {
-            logger.error(e.toString());
+            logger.error("Picture upload write failed");
             deleteFile(filePath);
             return "Upload failed";
         }
 
-        logger.info("[+] Safe file. Suffix: {}, MIME: {}", Suffix, mimeType);
-        logger.info("[+] Successfully uploaded {}", filePath);
+        logger.info("[+] Safe file uploaded successfully");
         return String.format("You successfully uploaded '%s'", HtmlUtils.htmlEscape(filePath));
     }
 
@@ -263,11 +262,11 @@ public class FileUpload {
         File delFile = delPath.toFile();
         if(delFile.isFile() && delFile.exists()) {
             if (delFile.delete()) {
-                logger.info("[+] " + filePath + " delete successfully!");
+                logger.info("[+] File deleted successfully!");
                 return;
             }
         }
-        logger.info(filePath + " delete failed!");
+        logger.info("File delete failed!");
     }
 
     /**

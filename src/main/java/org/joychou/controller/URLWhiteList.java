@@ -119,7 +119,7 @@ public class URLWhiteList {
     @GetMapping("/vuln/url_bypass")
     public void url_bypass(String url, HttpServletResponse res) throws IOException {
 
-        logger.info("url:  " + url);
+        logger.info("url_bypass request received");
 
         if (!SecurityUtil.isHttp(url)) {
             return;
@@ -143,7 +143,7 @@ public class URLWhiteList {
         }
         // The host comes from the strict java.net.URI parser only (java.net.URL is not used here).
         String host = uriHost.toLowerCase();
-        logger.info("host:  " + host);
+        logger.info("url_bypass host parsed");
 
         // endsWith .
         for (String domain : domainwhitelist) {
