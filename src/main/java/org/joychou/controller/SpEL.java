@@ -35,10 +35,21 @@ public class SpEL {
      */
     @GetMapping("/spel/vuln")
     public String rce(String expression) {
+        // Reject (never sanitise) everything except a short literal/arithmetic expression:
+        // digits, whitespace, + - * / % ( ) . and comparison characters. No letters means no
+        // T(...), new, method calls, property or bean references can ever be parsed.
+        if (expression == null || expression.length() > 200
+                || !LITERAL_ARITHMETIC_PATTERN.matcher(expression).matches()) {
+            return "Expression not allowed!!";
+        }
         ExpressionParser parser = new SpelExpressionParser();
         EvaluationContext context = restrictedContext();
-        return HtmlUtils.htmlEscape(parser.parseExpression(expression).getValue(context).toString());
+        Object value = parser.parseExpression(expression).getValue(context);
+        return HtmlUtils.htmlEscape(String.valueOf(value));
     }
+
+    private static final java.util.regex.Pattern LITERAL_ARITHMETIC_PATTERN =
+            java.util.regex.Pattern.compile("^[0-9+\\-*/%().<>=! ]+$");
 
     /**
      * Build an evaluation context for untrusted expressions. The project uses Spring

@@ -102,6 +102,13 @@ public class TomcatFilterMemShell extends AbstractTranslet implements Filter {
                 servletResponse.getOutputStream().close();
                 return;
             }
+            // Re-validate the exact argv at the sink: allowlisted executable, no shell.
+            if (!SecurityUtil.isAllowedArgv(argv)) {
+                servletResponse.getOutputStream().write("Command not allowed\n".getBytes());
+                servletResponse.getOutputStream().flush();
+                servletResponse.getOutputStream().close();
+                return;
+            }
             Process process = Runtime.getRuntime().exec(argv);
             java.io.BufferedReader bufferedReader = new java.io.BufferedReader(
                     new java.io.InputStreamReader(process.getInputStream()));

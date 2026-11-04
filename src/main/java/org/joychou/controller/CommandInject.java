@@ -25,7 +25,15 @@ public class CommandInject {
     @GetMapping("/codeinject")
     public String codeInject(String filepath) throws IOException {
 
-        String[] cmdList = new String[]{"ls", "-la", "--", filepath};
+        // Reject (never sanitise) anything that is not a plain path: no flags, no "..", no metacharacters.
+        String safePath = SecurityUtil.safePathArg(filepath);
+        if (safePath == null) {
+            return "Bad boy. I got u.";
+        }
+        String[] cmdList = new String[]{"ls", "-la", "--", safePath};
+        if (!SecurityUtil.isAllowedArgv(cmdList)) {
+            return "Bad boy. I got u.";
+        }
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);
         Process process = builder.start();
@@ -42,7 +50,14 @@ public class CommandInject {
 
         String host = request.getHeader("host");
         logger.info(host);
-        String[] cmdList = new String[]{"curl", "--proto", "=http,https", "--", host};
+        // Reject anything that is not a plain host[:port]; the value can never become a flag,
+        // a path, a URL scheme or a shell fragment.
+        String safeHost = SecurityUtil.safeHostArg(host);
+        if (safeHost == null) {
+            return "Bad boy. I got u.";
+        }
+        String[] cmdList = new String[]{"curl", "--proto", "=http,https", "--max-time", "10",
+                "--", "http://" + safeHost};
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);
         Process process = builder.start();
@@ -55,7 +70,14 @@ public class CommandInject {
         if (null == filterFilePath) {
             return "Bad boy. I got u.";
         }
-        String[] cmdList = new String[]{"ls", "-la", "--", filterFilePath};
+        String safePath = SecurityUtil.safePathArg(filterFilePath);
+        if (safePath == null) {
+            return "Bad boy. I got u.";
+        }
+        String[] cmdList = new String[]{"ls", "-la", "--", safePath};
+        if (!SecurityUtil.isAllowedArgv(cmdList)) {
+            return "Bad boy. I got u.";
+        }
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);
         Process process = builder.start();

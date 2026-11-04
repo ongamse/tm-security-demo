@@ -30,6 +30,9 @@ import java.sql.DriverManager;
 @RequestMapping("/rce")
 public class Rce {
 
+    private static final java.util.regex.Pattern GROOVY_ARITHMETIC_PATTERN =
+            java.util.regex.Pattern.compile("^[0-9+\\-*/%() ]+$");
+
     @GetMapping("/runtime/exec")
     public String CommandExec(String cmd) {
         Runtime run = Runtime.getRuntime();
@@ -37,6 +40,11 @@ public class Rce {
 
         String[] argv = SecurityUtil.safeCommandArgv(cmd);
         if (argv == null) {
+            return "Command not allowed!!";
+        }
+
+        // Re-validate the exact argv right at the sink: allowlisted executable, no shell.
+        if (!SecurityUtil.isAllowedArgv(argv)) {
             return "Command not allowed!!";
         }
 
@@ -74,6 +82,11 @@ public class Rce {
 
         String[] arrCmd = SecurityUtil.safeCommandArgv(cmd);
         if (arrCmd == null) {
+            return "Command not allowed!!";
+        }
+
+        // Re-validate the exact argv right at the sink: allowlisted executable, no shell.
+        if (!SecurityUtil.isAllowedArgv(arrCmd)) {
             return "Command not allowed!!";
         }
 
@@ -144,6 +157,13 @@ public class Rce {
      */
     @GetMapping("groovy")
     public void groovyshell(String content) {
+        // Only accept a tight arithmetic expression (digits, whitespace, + - * / % and
+        // parentheses). Anything else (identifiers, quotes, dots, method calls, closures)
+        // is rejected before the text reaches the Groovy compiler.
+        if (content == null || content.length() > 200
+                || !GROOVY_ARITHMETIC_PATTERN.matcher(content).matches()) {
+            throw new IllegalArgumentException("content is not allowed");
+        }
         GroovyShell groovyShell = new GroovyShell();
         groovyShell.evaluate(content);
     }
