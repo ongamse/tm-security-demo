@@ -34,11 +34,40 @@ public class WebUtils {
         return callback != null && JSONP_CALLBACK.matcher(callback).matches();
     }
 
+    /**
+     * Make a JSON document safe to embed in a script context: characters that can terminate a
+     * script block or a JavaScript string literal are replaced with \\uXXXX escapes. These
+     * characters can only occur inside JSON string literals, where the escapes are equivalent.
+     */
+    public static String escapeJsonForScript(String jsonStr) {
+        if (jsonStr == null) {
+            return "null";
+        }
+        StringBuilder sb = new StringBuilder(jsonStr.length() + 16);
+        for (int i = 0; i < jsonStr.length(); i++) {
+            char c = jsonStr.charAt(i);
+            switch (c) {
+                case '<':
+                case '>':
+                case '&':
+                case '\'':
+                case 0x2028:
+                case 0x2029:
+                    sb.append(String.format("\\u%04x", (int) c));
+                    break;
+                default:
+                    sb.append(c);
+            }
+        }
+        return sb.toString();
+    }
+
     public static String json2Jsonp(String callback, String jsonStr) {
         if (!isValidJsonpCallback(callback)) {
             return "error";
         }
-        return callback + "(" + jsonStr + ")";
+        // The "/**/" prefix prevents the response from being sniffed as another content type.
+        return "/**/" + callback + "(" + escapeJsonForScript(jsonStr) + ")";
     }
 
 

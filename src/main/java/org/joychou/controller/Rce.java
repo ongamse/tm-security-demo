@@ -10,6 +10,7 @@ import org.springframework.web.util.HtmlUtils;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
 
+import javax.servlet.http.HttpServletResponse;
 import javax.script.Bindings;
 import javax.script.ScriptContext;
 import javax.script.ScriptEngine;
@@ -75,8 +76,9 @@ public class Rce {
     /**
      * <a href="http://localhost:8080/rce/ProcessBuilder?cmd=whoami">POC</a>
      */
-    @GetMapping("/ProcessBuilder")
-    public String processBuilder(String cmd) {
+    @GetMapping(value = "/ProcessBuilder", produces = "text/plain;charset=UTF-8")
+    public String processBuilder(String cmd, HttpServletResponse response) {
+        response.setHeader("X-Content-Type-Options", "nosniff");
 
         StringBuilder sb = new StringBuilder();
 
@@ -101,10 +103,10 @@ public class Rce {
                 sb.append(tmpStr);
             }
         } catch (Exception e) {
-            return e.toString();
+            return HtmlUtils.htmlEscape(e.toString());
         }
 
-        return sb.toString();
+        return HtmlUtils.htmlEscape(sb.toString());
     }
 
 

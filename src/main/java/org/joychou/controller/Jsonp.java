@@ -42,8 +42,9 @@ public class Jsonp {
      * <p>
      * http://localhost:8080/jsonp/vuln/referer?callback_=test
      */
-    @RequestMapping(value = "/vuln/referer", produces = "application/javascript")
-    public String referer(HttpServletRequest request) {
+    @RequestMapping(value = "/vuln/referer", produces = "application/javascript;charset=UTF-8")
+    public String referer(HttpServletRequest request, HttpServletResponse response) {
+        response.setHeader("X-Content-Type-Options", "nosniff");
         String callback = request.getParameter(this.callback);
         return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
     }
@@ -54,8 +55,9 @@ public class Jsonp {
      * <p>
      * http://localhost:8080/jsonp/vuln/emptyReferer?callback_=test
      */
-    @RequestMapping(value = "/vuln/emptyReferer", produces = "application/javascript")
-    public String emptyReferer(HttpServletRequest request) {
+    @RequestMapping(value = "/vuln/emptyReferer", produces = "application/javascript;charset=UTF-8")
+    public String emptyReferer(HttpServletRequest request, HttpServletResponse response) {
+        response.setHeader("X-Content-Type-Options", "nosniff");
         String referer = request.getHeader("referer");
 
         if (null != referer && SecurityUtil.checkURL(referer) == null) {
@@ -99,8 +101,9 @@ public class Jsonp {
      * Safe code.
      * http://localhost:8080/jsonp/sec?callback_=test
      */
-    @RequestMapping(value = "/sec/checkReferer", produces = "application/javascript")
-    public String safecode(HttpServletRequest request) {
+    @RequestMapping(value = "/sec/checkReferer", produces = "application/javascript;charset=UTF-8")
+    public String safecode(HttpServletRequest request, HttpServletResponse response) {
+        response.setHeader("X-Content-Type-Options", "nosniff");
         String referer = request.getHeader("referer");
 
         if (SecurityUtil.checkURL(referer) == null) {
@@ -125,8 +128,9 @@ public class Jsonp {
      *
      * fastjsonp to jsonp
      */
-    @GetMapping(value = "/fastjsonp/getToken", produces = "application/javascript")
-    public String getCsrfToken2(HttpServletRequest request) {
+    @GetMapping(value = "/fastjsonp/getToken", produces = "application/javascript;charset=UTF-8")
+    public String getCsrfToken2(HttpServletRequest request, HttpServletResponse response) {
+        response.setHeader("X-Content-Type-Options", "nosniff");
         CsrfToken csrfToken = cookieCsrfTokenRepository.loadToken(request); // get csrf token
 
         String callback = request.getParameter("fastjsonpCallback");
@@ -134,11 +138,10 @@ public class Jsonp {
             if (!WebUtils.isValidJsonpCallback(callback)) {
                 return "error";
             }
-            JSONPObject jsonpObj = new JSONPObject(callback);
-            jsonpObj.addParameter(csrfToken);
-            return jsonpObj.toString();
+            // The token value is read from a request cookie, so it is escaped for a script context.
+            return WebUtils.json2Jsonp(callback, JSON.toJSONString(csrfToken));
         } else {
-            return csrfToken.toString();
+            return WebUtils.escapeJsonForScript(JSON.toJSONString(csrfToken));
         }
     }
 

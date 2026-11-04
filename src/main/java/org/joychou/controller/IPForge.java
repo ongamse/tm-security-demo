@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.util.HtmlUtils;
 
 import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 
 /**
  * Java get real ip. More details: https://joychou.org/web/how-to-get-real-ip.html
@@ -18,9 +19,11 @@ import javax.servlet.http.HttpServletRequest;
 public class IPForge {
 
     // no any proxy
-    @RequestMapping("/noproxy")
-    public static String noProxy(HttpServletRequest request) {
-        return request.getRemoteAddr();
+    @RequestMapping(value = "/noproxy", produces = "text/plain;charset=UTF-8")
+    public static String noProxy(HttpServletRequest request, HttpServletResponse response) {
+        response.setHeader("X-Content-Type-Options", "nosniff");
+        String remoteAddr = request.getRemoteAddr();
+        return remoteAddr == null ? "" : HtmlUtils.htmlEscape(remoteAddr);
     }
 
 
