@@ -14,10 +14,9 @@ import java.io.IOException;
 
 
 /**
- * Desc:  xlsx-streamer xxe vuln code
+ * Desc:  xlsx-streamer xxe code (fixed by xlsx-streamer 2.1.0 or above)
  * Usage: xl/workbook.xml
  * Ref:   https://www.itread01.com/hkpcyyp.html
- * Fix:   update xlsx-streamer to 2.1.0 or above
  *
  * @author JoyChou @2019-09-05
  */
