@@ -18,6 +18,7 @@ import java.security.Principal;
 import java.sql.*;
 import java.util.Arrays;
 import java.util.List;
+import java.util.regex.Pattern;
 
 
 /**
@@ -35,6 +36,8 @@ public class SQLI {
 
     // com.mysql.jdbc.Driver is deprecated. Change to com.mysql.cj.jdbc.Driver.
     private static final String driver = "com.mysql.cj.jdbc.Driver";
+
+    private static final Pattern USERNAME_PATTERN = Pattern.compile("^[A-Za-z0-9_]{1,32}$");
 
     private static final List<String> ORDER_BY_COLUMNS = Arrays.asList("id", "username", "password");
 
@@ -57,7 +60,16 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/jdbc/vuln?username=joychou">http://localhost:8080/sqli/jdbc/vuln?username=joychou</a>
      */
     @RequestMapping("/jdbc/vuln")
-    public String jdbc_sqli_vul(@RequestParam("username") String username) {
+    public String jdbc_sqli_vul(@RequestParam("username") String username, HttpServletRequest request) {
+
+        // IDOR check: only the authenticated principal's own record (or an ADMIN) may be requested
+        Principal callerPrincipal = request.getUserPrincipal();
+        if (callerPrincipal == null || username == null || !USERNAME_PATTERN.matcher(username).matches()) {
+            throw new AccessDeniedException("Access denied");
+        }
+        if (!request.isUserInRole("ADMIN") && !username.equals(callerPrincipal.getName())) {
+            throw new AccessDeniedException("Access denied");
+        }
 
         StringBuilder result = new StringBuilder();
 
@@ -146,7 +158,16 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/jdbc/ps/vuln?username=joychou' or 'a'='a">http://localhost:8080/sqli/jdbc/ps/vuln?username=joychou' or 'a'='a</a>
      */
     @RequestMapping("/jdbc/ps/vuln")
-    public String jdbc_ps_vuln(@RequestParam("username") String username) {
+    public String jdbc_ps_vuln(@RequestParam("username") String username, HttpServletRequest request) {
+
+        // IDOR check: only the authenticated principal's own record (or an ADMIN) may be requested
+        Principal callerPrincipal = request.getUserPrincipal();
+        if (callerPrincipal == null || username == null || !USERNAME_PATTERN.matcher(username).matches()) {
+            throw new AccessDeniedException("Access denied");
+        }
+        if (!request.isUserInRole("ADMIN") && !username.equals(callerPrincipal.getName())) {
+            throw new AccessDeniedException("Access denied");
+        }
 
         StringBuilder result = new StringBuilder();
         try {
@@ -232,8 +253,20 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/mybatis/sec02?id=1">http://localhost:8080/sqli/mybatis/sec02?id=1</a>
      */
     @GetMapping("/mybatis/sec02")
-    public User mybatisSec02(@RequestParam("id") Integer id) {
-        return userMapper.findById(id);
+    public User mybatisSec02(@RequestParam("id") Integer id, HttpServletRequest request) {
+        // IDOR check: only the authenticated principal's own record (or an ADMIN) may be returned
+        Principal callerPrincipal = request.getUserPrincipal();
+        if (callerPrincipal == null || id == null) {
+            throw new AccessDeniedException("Access denied");
+        }
+        User record = userMapper.findById(id);
+        if (record == null) {
+            return null;
+        }
+        if (!request.isUserInRole("ADMIN") && !callerPrincipal.getName().equals(record.getUsername())) {
+            throw new AccessDeniedException("Access denied");
+        }
+        return record;
     }
 
 

@@ -10,10 +10,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.util.HtmlUtils;
 
 import javax.annotation.Resource;
+import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.*;
 import java.net.*;
@@ -312,7 +314,11 @@ public class SSRF {
      * <a href="http://localhost:8080/ssrf/dnsrebind/vuln?url=http://test.joychou.org">http://localhost:8080/ssrf/dnsrebind/vuln?url=dnsrebind_url</a>
      */
     @GetMapping("/dnsrebind/vuln")
-    public String DnsRebind(String url) {
+    public String DnsRebind(String url, HttpServletRequest request) {
+        // Authorization check: only authenticated callers may trigger server-side fetches
+        if (request.getUserPrincipal() == null) {
+            throw new AccessDeniedException("Access denied");
+        }
         java.security.Security.setProperty("networkaddress.cache.negative.ttl" , "0");
         if (!SecurityUtil.checkSSRFWithoutRedirect(url)) {
             return "Dangerous url";
