@@ -20,8 +20,11 @@ import org.xml.sax.XMLReader;
 
 import java.io.*;
 
+import org.xml.sax.EntityResolver;
 import org.xml.sax.InputSource;
+import org.xml.sax.SAXException;
 
+import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.SAXParserFactory;
@@ -94,9 +97,16 @@ public class XXE {
             logger.info(body);
 
             SAXBuilder builder = new SAXBuilder();
+            builder.setExpandEntities(false);
+            builder.setEntityResolver(new RejectingEntityResolver());
+            builder.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
             builder.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
             builder.setFeature("http://xml.org/sax/features/external-general-entities", false);
             builder.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            builder.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
+            builder.setFeature("http://apache.org/xml/features/xinclude", false);
+            builder.setProperty(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+            builder.setProperty(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
             // org.jdom2.Document document
             builder.build(new InputSource(new StringReader(body)));
             return "SAXBuilder xxe vuln code";
@@ -113,9 +123,16 @@ public class XXE {
             logger.info(body);
 
             SAXBuilder builder = new SAXBuilder();
+            builder.setExpandEntities(false);
+            builder.setEntityResolver(new RejectingEntityResolver());
+            builder.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
             builder.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
             builder.setFeature("http://xml.org/sax/features/external-general-entities", false);
             builder.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            builder.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
+            builder.setFeature("http://apache.org/xml/features/xinclude", false);
+            builder.setProperty(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+            builder.setProperty(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
             // org.jdom2.Document document
             builder.build(new InputSource(new StringReader(body)));
 
@@ -212,9 +229,16 @@ public class XXE {
             logger.info(body);
 
             Digester digester = new Digester();
+            digester.setEntityResolver(new RejectingEntityResolver());
+            digester.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
             digester.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
             digester.setFeature("http://xml.org/sax/features/external-general-entities", false);
             digester.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            digester.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
+            digester.setFeature("http://apache.org/xml/features/xinclude", false);
+            XMLReader digesterReader = digester.getXMLReader();
+            digesterReader.setProperty(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+            digesterReader.setProperty(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
             digester.parse(new StringReader(body));  // parse xml
         } catch (Exception e) {
             logger.error(e.toString());
@@ -230,9 +254,16 @@ public class XXE {
             logger.info(body);
 
             Digester digester = new Digester();
+            digester.setEntityResolver(new RejectingEntityResolver());
+            digester.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
             digester.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
             digester.setFeature("http://xml.org/sax/features/external-general-entities", false);
             digester.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            digester.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
+            digester.setFeature("http://apache.org/xml/features/xinclude", false);
+            XMLReader digesterReader = digester.getXMLReader();
+            digesterReader.setProperty(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+            digesterReader.setProperty(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
             digester.parse(new StringReader(body));  // parse xml
 
             return "Digester xxe security code";
@@ -418,6 +449,17 @@ public class XXE {
         }
 
         return "DocumentHelper xxe vuln code";
+    }
+
+
+    /**
+     * Rejects every external entity / DTD resolution attempt (fail closed).
+     */
+    private static final class RejectingEntityResolver implements EntityResolver {
+        @Override
+        public InputSource resolveEntity(String publicId, String systemId) throws SAXException {
+            throw new SAXException("External entities are not allowed: " + systemId);
+        }
     }
 
 
