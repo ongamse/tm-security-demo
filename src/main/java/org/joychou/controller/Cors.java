@@ -11,6 +11,10 @@ import org.springframework.web.bind.annotation.RestController;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * @author JoyChou (joychou@joychou.org) @2018.10.24
@@ -23,6 +27,19 @@ public class Cors {
 
     private static String info = "{\"name\": \"JoyChou\", \"phone\": \"18200001111\"}";
 
+    /**
+     * Exact, immutable allowlist of origins (scheme + host + port) that may be granted CORS access.
+     * The response header is always written from the matching constant in this set, never from
+     * the request value.
+     */
+    private static final Set<String> ALLOWED_ORIGINS = Collections.unmodifiableSet(
+            new HashSet<String>(Arrays.asList(
+                    "https://joychou.org",
+                    "https://test.joychou.org",
+                    "https://joychou.com",
+                    "http://localhost:8080"
+            )));
+
     @GetMapping("/vuln/origin")
     public String vuls1(HttpServletRequest request, HttpServletResponse response) {
         String origin = request.getHeader("origin");
@@ -30,19 +47,29 @@ public class Cors {
             response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
             return "Invalid Origin header.";
         }
-        // Only echo an origin that is in the safe-domain allowlist.
-        if (origin != null && SecurityUtil.checkURL(origin) != null) {
-            response.setHeader("Access-Control-Allow-Origin", origin);
-            response.setHeader("Access-Control-Allow-Credentials", "true");  // allow cookie
-            response.addHeader("Vary", "Origin");
+        // Emit CORS headers only for an exact allowlist match; write the constant, not the request value.
+        for (String allowed : ALLOWED_ORIGINS) {
+            if (allowed.equals(origin)) {
+                response.setHeader("Access-Control-Allow-Origin", allowed);
+                response.setHeader("Access-Control-Allow-Credentials", "true");  // allow cookie
+                break;
+            }
         }
+        response.addHeader("Vary", "Origin");
         return info;
     }
 
     @GetMapping("/vuln/setHeader")
-    public String vuls2(HttpServletResponse response) {
-        // 后端设置Access-Control-Allow-Origin为*的情况下，跨域的时候前端如果设置withCredentials为true会异常
-        response.setHeader("Access-Control-Allow-Origin", "*");
+    public String vuls2(HttpServletRequest request, HttpServletResponse response) {
+        // No wildcard: only exact allowlisted origins get a header, and never with credentials.
+        String origin = request.getHeader("Origin");
+        for (String allowed : ALLOWED_ORIGINS) {
+            if (allowed.equals(origin)) {
+                response.setHeader("Access-Control-Allow-Origin", allowed);
+                break;
+            }
+        }
+        response.addHeader("Vary", "Origin");
         return info;
     }
 
@@ -123,11 +150,15 @@ public class Cors {
             response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
             return "Invalid Origin header.";
         }
-        if (origin != null) {
-            response.setHeader("Access-Control-Allow-Origin", origin);
-            response.setHeader("Access-Control-Allow-Credentials", "true");
-            response.addHeader("Vary", "Origin");
+        // Emit CORS headers only for an exact allowlist match; write the constant, not the request value.
+        for (String allowed : ALLOWED_ORIGINS) {
+            if (allowed.equals(origin)) {
+                response.setHeader("Access-Control-Allow-Origin", allowed);
+                response.setHeader("Access-Control-Allow-Credentials", "true");
+                break;
+            }
         }
+        response.addHeader("Vary", "Origin");
         return LoginUtils.getUserInfo2JsonStr(request);
     }
 
