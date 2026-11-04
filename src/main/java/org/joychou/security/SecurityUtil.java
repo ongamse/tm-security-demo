@@ -12,12 +12,18 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 
 public class SecurityUtil {
 
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
+    private static final Set<String> COMMAND_ALLOWLIST = Collections.unmodifiableSet(
+            new HashSet<String>(Arrays.asList("whoami", "id", "hostname", "pwd", "uname", "date", "ls")));
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
 
 
@@ -205,6 +211,34 @@ public class SecurityUtil {
         }
 
         return input;
+    }
+
+
+    /**
+     * Parse a command line into an argv array for use WITHOUT a shell.
+     * The executable must be in COMMAND_ALLOWLIST; only "ls" may take arguments and
+     * each argument must pass {@link #cmdFilter(String)}.
+     *
+     * @param cmd command line
+     * @return argv array, or null if the command is not allowed
+     */
+    public static String[] safeCommandArgv(String cmd) {
+        if (cmd == null || cmd.trim().isEmpty()) {
+            return null;
+        }
+        String[] parts = cmd.trim().split("\\s+");
+        if (!COMMAND_ALLOWLIST.contains(parts[0])) {
+            return null;
+        }
+        if (parts.length > 1 && !"ls".equals(parts[0])) {
+            return null;
+        }
+        for (int i = 1; i < parts.length; i++) {
+            if (cmdFilter(parts[i]) == null) {
+                return null;
+            }
+        }
+        return parts;
     }
 
 
