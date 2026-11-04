@@ -24,6 +24,12 @@ public class SecurityUtil {
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
     private static final Set<String> COMMAND_ALLOWLIST = Collections.unmodifiableSet(
             new HashSet<String>(Arrays.asList("whoami", "id", "hostname", "pwd", "uname", "date", "ls")));
+    private static final Set<String> LS_FLAG_ALLOWLIST = Collections.unmodifiableSet(
+            new HashSet<String>(Arrays.asList("-l", "-a", "-h", "-la", "-al", "-lh", "-lah")));
+    private static final Pattern PATH_ARG_PATTERN = Pattern.compile("^[a-zA-Z0-9_/.][a-zA-Z0-9_/.-]{0,254}$");
+    private static final Pattern HOST_ARG_PATTERN =
+            Pattern.compile("^[a-zA-Z0-9](?:[a-zA-Z0-9.-]{0,251}[a-zA-Z0-9])?(?::[0-9]{1,5})?$");
+    private static final int MAX_ARGV = 8;
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
 
 
@@ -215,9 +221,74 @@ public class SecurityUtil {
 
 
     /**
+     * Validate a single path argument for a process argv. Rejects (never sanitises) anything
+     * that is null, too long, starts with '-' (would become a flag), contains ".." or has
+     * characters outside <code>a-zA-Z0-9_/.-</code>.
+     *
+     * @param path path argument
+     * @return the path unchanged if allowed, otherwise null
+     */
+    public static String safePathArg(String path) {
+        if (path == null || path.contains("..")) {
+            return null;
+        }
+        if (!PATH_ARG_PATTERN.matcher(path).matches()) {
+            return null;
+        }
+        return path;
+    }
+
+
+    /**
+     * Validate a host[:port] argument for a process argv. Rejects (never sanitises) anything
+     * that is null, starts with '-', or is not a plain hostname / IPv4 literal with optional port.
+     *
+     * @param host host argument
+     * @return the host unchanged if allowed, otherwise null
+     */
+    public static String safeHostArg(String host) {
+        if (host == null) {
+            return null;
+        }
+        if (!HOST_ARG_PATTERN.matcher(host).matches()) {
+            return null;
+        }
+        return host;
+    }
+
+
+    /**
+     * Return the allowlisted executable name equal to the given text, or null. The returned
+     * value is the constant from the allowlist, never the caller supplied string.
+     */
+    private static String canonicalExecutable(String name) {
+        for (String allowed : COMMAND_ALLOWLIST) {
+            if (allowed.equals(name)) {
+                return allowed;
+            }
+        }
+        return null;
+    }
+
+
+    /**
+     * Return the allowlisted ls flag equal to the given text, or null.
+     */
+    private static String canonicalLsFlag(String flag) {
+        for (String allowed : LS_FLAG_ALLOWLIST) {
+            if (allowed.equals(flag)) {
+                return allowed;
+            }
+        }
+        return null;
+    }
+
+
+    /**
      * Parse a command line into an argv array for use WITHOUT a shell.
-     * The executable must be in COMMAND_ALLOWLIST; only "ls" may take arguments and
-     * each argument must pass {@link #cmdFilter(String)}.
+     * The executable must be in COMMAND_ALLOWLIST and is taken from the allowlist constant,
+     * not from the input. Only "ls" may take arguments: flags from LS_FLAG_ALLOWLIST, then
+     * paths that pass {@link #safePathArg(String)}. Anything else is rejected.
      *
      * @param cmd command line
      * @return argv array, or null if the command is not allowed
@@ -227,18 +298,76 @@ public class SecurityUtil {
             return null;
         }
         String[] parts = cmd.trim().split("\\s+");
-        if (!COMMAND_ALLOWLIST.contains(parts[0])) {
+        if (parts.length > MAX_ARGV) {
             return null;
         }
-        if (parts.length > 1 && !"ls".equals(parts[0])) {
+        String exe = canonicalExecutable(parts[0]);
+        if (exe == null) {
             return null;
         }
-        for (int i = 1; i < parts.length; i++) {
-            if (cmdFilter(parts[i]) == null) {
+        ArrayList<String> argv = new ArrayList<String>();
+        argv.add(exe);
+        if (parts.length > 1) {
+            if (!"ls".equals(exe)) {
                 return null;
             }
+            int i = 1;
+            while (i < parts.length && parts[i].startsWith("-")) {
+                String flag = canonicalLsFlag(parts[i]);
+                if (flag == null) {
+                    return null;
+                }
+                argv.add(flag);
+                i++;
+            }
+            argv.add("--");
+            for (; i < parts.length; i++) {
+                String path = safePathArg(parts[i]);
+                if (path == null) {
+                    return null;
+                }
+                argv.add(path);
+            }
         }
-        return parts;
+        String[] result = argv.toArray(new String[argv.size()]);
+        return isAllowedArgv(result) ? result : null;
+    }
+
+
+    /**
+     * Re-validate a finished argv array right before it is handed to a process API.
+     * Independent of how the array was produced, so call sites can enforce the policy locally.
+     *
+     * @param argv argv array
+     * @return true only if the executable and every argument satisfy the allowlist policy
+     */
+    public static boolean isAllowedArgv(String[] argv) {
+        if (argv == null || argv.length == 0 || argv.length > MAX_ARGV + 1) {
+            return false;
+        }
+        String exe = canonicalExecutable(argv[0]);
+        if (exe == null) {
+            return false;
+        }
+        if (argv.length == 1) {
+            return true;
+        }
+        if (!"ls".equals(exe)) {
+            return false;
+        }
+        int i = 1;
+        while (i < argv.length && canonicalLsFlag(argv[i]) != null) {
+            i++;
+        }
+        if (i < argv.length && "--".equals(argv[i])) {
+            i++;
+        }
+        for (; i < argv.length; i++) {
+            if (safePathArg(argv[i]) == null) {
+                return false;
+            }
+        }
+        return true;
     }
 
 
