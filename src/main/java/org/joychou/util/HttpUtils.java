@@ -47,6 +47,9 @@ public class HttpUtils {
     private static final int CONNECT_TIMEOUT_MS = 5000;
     private static final int READ_TIMEOUT_MS = 10000;
     private static final long MAX_IMAGE_BYTES = 10L * 1024 * 1024;
+    // Fixed messages returned to callers; exception text is never returned or embedded in a response.
+    private static final String ERROR_MESSAGE = "Request failed";
+    private static final String BLOCKED_MESSAGE = "Request blocked";
 
     public static String commonHttpClient(String url) {
 
@@ -55,7 +58,8 @@ public class HttpUtils {
         try {
             checked = SSRFChecker.checkAndGetUrl(url);
         } catch (SSRFException e) {
-            return e.getMessage();
+            logger.error("[-] Request blocked: {}", e.getClass().getSimpleName());
+            return BLOCKED_MESSAGE;
         }
         HttpClient client = new HttpClient();
         GetMethod method = new GetMethod(checked.toString());
@@ -66,7 +70,8 @@ public class HttpUtils {
             return new String(resBody);
 
         } catch (IOException e) {
-            return "Error: " + e.getMessage();
+            logger.error("[-] Request failed: {}", e.getClass().getSimpleName());
+            return ERROR_MESSAGE;
         } finally {
             // Release the connection.
             method.releaseConnection();
@@ -87,8 +92,12 @@ public class HttpUtils {
             } finally {
                 client.close();
             }
+        } catch (SSRFException e) {
+            logger.error("[-] Request blocked: {}", e.getClass().getSimpleName());
+            return BLOCKED_MESSAGE;
         } catch (Exception e) {
-            return e.getMessage();
+            logger.error("[-] Request failed: {}", e.getClass().getSimpleName());
+            return ERROR_MESSAGE;
         }
     }
 
@@ -203,8 +212,12 @@ public class HttpUtils {
 
             return result.toString();
 
+        } catch (SSRFException e) {
+            logger.error("[-] Request blocked: {}", e.getClass().getSimpleName());
+            return BLOCKED_MESSAGE;
         } catch (Exception e) {
-            return e.getMessage();
+            logger.error("[-] Request failed: {}", e.getClass().getSimpleName());
+            return ERROR_MESSAGE;
         }
     }
 
@@ -221,9 +234,12 @@ public class HttpUtils {
             }
             in.close();
             return html.toString();
+        } catch (SSRFException e) {
+            logger.error("[-] Request blocked: {}", e.getClass().getSimpleName());
+            return BLOCKED_MESSAGE;
         } catch (Exception e) {
             logger.error("[-] Request failed: {}", e.getClass().getSimpleName());
-            return e.getMessage();
+            return ERROR_MESSAGE;
         }
     }
 
@@ -246,9 +262,12 @@ public class HttpUtils {
             }
             in.close();
             return html.toString();
-        } catch (IOException | SSRFException e) {
+        } catch (SSRFException e) {
+            logger.error("[-] Request blocked: {}", e.getClass().getSimpleName());
+            return BLOCKED_MESSAGE;
+        } catch (IOException e) {
             logger.error("[-] Request failed: {}", e.getClass().getSimpleName());
-            return e.getMessage();
+            return ERROR_MESSAGE;
         }
     }
 
@@ -279,8 +298,12 @@ public class HttpUtils {
                 return doc.outerHtml();
             }
             return "Too many redirects";
-        } catch (IOException | SSRFException e) {
-            return e.getMessage();
+        } catch (SSRFException e) {
+            logger.error("[-] Request blocked: {}", e.getClass().getSimpleName());
+            return BLOCKED_MESSAGE;
+        } catch (IOException e) {
+            logger.error("[-] Request failed: {}", e.getClass().getSimpleName());
+            return ERROR_MESSAGE;
         }
     }
 
@@ -366,8 +389,12 @@ public class HttpUtils {
             Future<HttpResponse> future = httpclient.execute(request, null);
             HttpResponse response = future.get(6000, TimeUnit.MILLISECONDS);
             return EntityUtils.toString(response.getEntity());
+        } catch (SSRFException e) {
+            logger.error("[-] Request blocked: {}", e.getClass().getSimpleName());
+            return BLOCKED_MESSAGE;
         } catch (Exception e) {
-            return e.getMessage();
+            logger.error("[-] Request failed: {}", e.getClass().getSimpleName());
+            return ERROR_MESSAGE;
         } finally {
             try {
                 httpclient.close();
