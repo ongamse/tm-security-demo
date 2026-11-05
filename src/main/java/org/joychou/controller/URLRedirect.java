@@ -53,8 +53,13 @@ public class URLRedirect {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             return;
         }
+        // Reject (HTTP 400) instead of writing a Location value with characters outside the URL allowlist.
+        if (!WebUtils.isSafeUrlHeaderValue(url)) {
+            response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+            return;
+        }
         response.setStatus(HttpServletResponse.SC_MOVED_PERMANENTLY); // 301 redirect
-        response.setHeader("Location", WebUtils.sanitizeHeaderValue(url));
+        response.setHeader("Location", url);
     }
 
 

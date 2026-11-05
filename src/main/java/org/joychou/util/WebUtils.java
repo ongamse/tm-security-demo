@@ -77,6 +77,32 @@ public class WebUtils {
     }
 
 
+    private static final java.util.regex.Pattern SAFE_HEADER_VALUE =
+            java.util.regex.Pattern.compile("[\\w .:/@=,;*+\\-]{0,200}");
+
+    private static final java.util.regex.Pattern SAFE_URL_HEADER_VALUE =
+            java.util.regex.Pattern.compile("[A-Za-z0-9\\-._~:/?#\\[\\]@!$&'()*+,;=%]{1,2048}");
+
+    /**
+     * Strict allowlist check for a value that is written into an HTTP response header (CWE-113).
+     * null and the empty string are accepted; anything containing CR, LF, other control characters
+     * or characters outside the allowlist is rejected. Callers must reject the request (HTTP 400)
+     * instead of writing the header when this returns false.
+     */
+    public static boolean isSafeHeaderValue(String value) {
+        return value == null || SAFE_HEADER_VALUE.matcher(value).matches();
+    }
+
+    /**
+     * Same as {@link #isSafeHeaderValue(String)} but for absolute/relative URLs written into a
+     * Location header: only RFC 3986 URL characters are accepted (no whitespace, no control
+     * characters, no non-ASCII), the value must not be empty.
+     */
+    public static boolean isSafeUrlHeaderValue(String url) {
+        return url != null && SAFE_URL_HEADER_VALUE.matcher(url).matches();
+    }
+
+
     public static String getFileExtension(String fullName) {
         Preconditions.checkNotNull(fullName);
         String fileName = (new File(fullName)).getName();

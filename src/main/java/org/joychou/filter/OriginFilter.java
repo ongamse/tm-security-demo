@@ -49,7 +49,12 @@ public class OriginFilter implements Filter {
 
         response.addHeader("Vary", "Origin");
         if (safeOrigin != null) {
-            response.setHeader("Access-Control-Allow-Origin", WebUtils.sanitizeHeaderValue(safeOrigin));
+            if (!WebUtils.isSafeHeaderValue(safeOrigin)) {
+                response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+                response.getWriter().println("Invaid cors config by joychou.");
+                return;
+            }
+            response.setHeader("Access-Control-Allow-Origin", safeOrigin);
             response.setHeader("Access-Control-Allow-Credentials", "true");
             response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTION");
         }

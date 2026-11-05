@@ -28,8 +28,12 @@ public class Cors {
         String origin = SecurityUtil.safeCorsOrigin(request.getHeader("origin"));
         response.addHeader("Vary", "Origin");
         if (origin != null) {
+            if (!WebUtils.isSafeHeaderValue(origin)) {
+                response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+                return "Origin is not safe.";
+            }
             // only reflect origins that are in the trusted domain allowlist
-            response.setHeader("Access-Control-Allow-Origin", WebUtils.sanitizeHeaderValue(origin));
+            response.setHeader("Access-Control-Allow-Origin", origin);
             response.setHeader("Access-Control-Allow-Credentials", "true");  // allow cookie
         }
         return info;
@@ -41,7 +45,11 @@ public class Cors {
         String origin = SecurityUtil.safeCorsOrigin(request.getHeader("Origin"));
         response.addHeader("Vary", "Origin");
         if (origin != null) {
-            response.setHeader("Access-Control-Allow-Origin", WebUtils.sanitizeHeaderValue(origin));
+            if (!WebUtils.isSafeHeaderValue(origin)) {
+                response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+                return "Origin is not safe.";
+            }
+            response.setHeader("Access-Control-Allow-Origin", origin);
         }
         return info;
     }
@@ -122,7 +130,11 @@ public class Cors {
         }
         response.addHeader("Vary", "Origin");
         if (safeOrigin != null) {
-            response.setHeader("Access-Control-Allow-Origin", WebUtils.sanitizeHeaderValue(safeOrigin));
+            if (!WebUtils.isSafeHeaderValue(safeOrigin)) {
+                response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+                return "Origin is not safe.";
+            }
+            response.setHeader("Access-Control-Allow-Origin", safeOrigin);
             response.setHeader("Access-Control-Allow-Credentials", "true");
         }
         return LoginUtils.getUserInfo2JsonStr(request);
