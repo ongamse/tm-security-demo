@@ -26,6 +26,8 @@ import org.slf4j.LoggerFactory;
 
 import javax.imageio.ImageIO;
 import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -44,6 +46,7 @@ public class HttpUtils {
     private static final int MAX_REDIRECTS = 5;
     private static final int CONNECT_TIMEOUT_MS = 5000;
     private static final int READ_TIMEOUT_MS = 10000;
+    private static final long MAX_IMAGE_BYTES = 10L * 1024 * 1024;
 
     public static String commonHttpClient(String url) {
 
@@ -117,9 +120,22 @@ public class HttpUtils {
      * @throws SSRFException if the url or one of its redirect targets is not allowed
      */
     public static HttpURLConnection openCheckedConnection(String url) throws IOException {
-        String current = url;
+        return openCheckedConnection(SSRFChecker.checkAndGetUrl(url));
+    }
+
+
+    /**
+     * Same as {@link #openCheckedConnection(String)} but starts from a url that was already returned by
+     * {@link SSRFChecker#checkAndGetUrl(String)} (http/https only). Every redirect target is validated again.
+     *
+     * @param checked url returned by SSRFChecker.checkAndGetUrl
+     * @return connected HttpURLConnection to the final, validated url
+     * @throws SSRFException if one of the redirect targets is not allowed
+     */
+    public static HttpURLConnection openCheckedConnection(URL checked) throws IOException {
+        URL current = checked;
         for (int i = 0; i <= MAX_REDIRECTS; i++) {
-            URL u = SSRFChecker.checkAndGetUrl(current);
+            URL u = current;
             HttpURLConnection conn = (HttpURLConnection) u.openConnection();
             conn.setInstanceFollowRedirects(false);
             conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
@@ -130,13 +146,34 @@ public class HttpUtils {
                 if (location == null) {
                     return conn;
                 }
-                current = SSRFChecker.resolveRedirect(u, location);
+                current = SSRFChecker.checkAndGetUrl(SSRFChecker.resolveRedirect(u, location));
                 conn.disconnect();
                 continue;
             }
             return conn;
         }
         throw new IOException("Too many redirects");
+    }
+
+
+    /**
+     * Read at most {@link #MAX_IMAGE_BYTES} bytes from the stream.
+     *
+     * @throws IOException if the stream is larger than the limit
+     */
+    private static byte[] readBounded(InputStream is) throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        byte[] buf = new byte[8192];
+        long total = 0;
+        int n;
+        while ((n = is.read(buf)) != -1) {
+            total += n;
+            if (total > MAX_IMAGE_BYTES) {
+                throw new IOException("Response too large");
+            }
+            out.write(buf, 0, n);
+        }
+        return out.toByteArray();
     }
 
 
@@ -185,7 +222,7 @@ public class HttpUtils {
             in.close();
             return html.toString();
         } catch (Exception e) {
-            logger.error(e.getMessage());
+            logger.error("[-] Request failed: {}", e.getClass().getSimpleName());
             return e.getMessage();
         }
     }
@@ -210,7 +247,7 @@ public class HttpUtils {
             in.close();
             return html.toString();
         } catch (IOException | SSRFException e) {
-            logger.error(e.getMessage());
+            logger.error("[-] Request failed: {}", e.getClass().getSimpleName());
             return e.getMessage();
         }
     }
@@ -284,13 +321,17 @@ public class HttpUtils {
      */
     public static void imageIO(String url) {
         try {
-            // validated connection: http/https only, internal hosts rejected, redirects re-validated
-            HttpURLConnection conn = openCheckedConnection(url);
-            try (InputStream is = conn.getInputStream()) {
-                ImageIO.read(is); // send request
+            // http/https only, internal hosts rejected; only the validated URL object is connected to,
+            // redirects re-validated. The image is decoded from a size-bounded in-memory copy of the
+            // response stream, never from a file path or a file: url.
+            URL checked = SSRFChecker.checkAndGetUrl(url);
+            HttpURLConnection conn = openCheckedConnection(checked);
+            try (InputStream is = conn.getInputStream()) { // send request
+                byte[] body = readBounded(is);
+                ImageIO.read(new ByteArrayInputStream(body));
             }
         } catch (IOException e) {
-            logger.error(e.getMessage());
+            logger.error("[-] Request failed: {}", e.getClass().getSimpleName());
         }
 
     }
@@ -310,7 +351,7 @@ public class HttpUtils {
                 IOUtils.toByteArray(is);
             }
         } catch (IOException e) {
-            logger.error(e.getMessage());
+            logger.error("[-] Request failed: {}", e.getClass().getSimpleName());
         }
     }
 
@@ -331,7 +372,7 @@ public class HttpUtils {
             try {
                 httpclient.close();
             } catch (Exception e) {
-                logger.error(e.getMessage());
+                logger.error("[-] Request failed: {}", e.getClass().getSimpleName());
             }
         }
     }
