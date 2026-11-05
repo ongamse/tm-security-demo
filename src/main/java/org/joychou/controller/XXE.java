@@ -8,6 +8,7 @@ import org.springframework.data.web.ProjectedPayload;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.util.HtmlUtils;
 
 import javax.servlet.http.HttpServletRequest;
 
@@ -277,11 +278,10 @@ public class XXE {
                     buf.append(String.format("%s: %s\n", node.getNodeName(), node.getTextContent()));
                 }
             }
-            return buf.toString();
+            return HtmlUtils.htmlEscape(buf.toString());
         } catch (Exception e) {
-            e.printStackTrace();
             logger.error(e.toString());
-            return e.toString();
+            return EXCEPT;
         }
     }
 
