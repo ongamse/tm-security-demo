@@ -68,7 +68,7 @@ public class FileUpload {
 
         } catch (IOException e) {
             redirectAttributes.addFlashAttribute("message", "upload failed");
-            logger.error(e.toString());
+            logger.error("[-] Upload error: {}", e.getClass().getSimpleName());
         }
 
         return "redirect:/file/status";
@@ -108,7 +108,7 @@ public class FileUpload {
             }
         }
         if (!suffixFlag) {
-            logger.error("[-] Suffix error: " + Suffix);
+            logger.error("[-] Suffix error. Suffix is not allowed.");
             deleteFile(filePath);
             return "Upload failed. Illeagl picture.";
         }
@@ -126,7 +126,7 @@ public class FileUpload {
         for (String blackMimeType : mimeTypeBlackList) {
             // 用contains是为了防止text/html;charset=UTF-8绕过
             if (SecurityUtil.replaceSpecialStr(mimeType).toLowerCase().contains(blackMimeType)) {
-                logger.error("[-] Mime type error: " + mimeType);
+                logger.error("[-] Mime type error. Mime type is not allowed.");
                 deleteFile(filePath);
                 return "Upload failed. Illeagl picture.";
             }
@@ -149,13 +149,12 @@ public class FileUpload {
             Path path = resolveUploadPath(fileName);
             Files.write(path, bytes);
         } catch (IOException e) {
-            logger.error(e.toString());
+            logger.error("[-] Upload error: {}", e.getClass().getSimpleName());
             deleteFile(filePath);
             return "Upload failed";
         }
 
-        logger.info("[+] Safe file. Suffix: {}, MIME: {}", Suffix, mimeType);
-        logger.info("[+] Successfully uploaded {}", filePath);
+        logger.info("[+] Safe file. Successfully uploaded.");
         return String.format("You successfully uploaded '%s'", HtmlUtils.htmlEscape(filePath));
     }
 
@@ -198,13 +197,13 @@ public class FileUpload {
             Path base = Paths.get(UPLOADED_FOLDER).toAbsolutePath().normalize();
             if (delPath.startsWith(base) && !delPath.equals(base) && Files.isRegularFile(delPath)
                     && Files.deleteIfExists(delPath)) {
-                logger.info("[+] " + filePath + " delete successfully!");
+                logger.info("[+] File deleted successfully!");
                 return;
             }
         } catch (IOException | RuntimeException e) {
-            logger.error(e.toString());
+            logger.error("[-] File delete error: {}", e.getClass().getSimpleName());
         }
-        logger.info(filePath + " delete failed!");
+        logger.info("File delete failed!");
     }
 
     /**

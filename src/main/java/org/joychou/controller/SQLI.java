@@ -116,7 +116,7 @@ public class SQLI {
             PreparedStatement st = con.prepareStatement(sql);
             st.setString(1, username);
 
-            logger.info(st.toString());  // sql after prepare statement
+            logger.info(sql);
             ResultSet rs = st.executeQuery();
 
             while (rs.next()) {
@@ -159,7 +159,7 @@ public class SQLI {
             PreparedStatement st = con.prepareStatement(sql);
             st.setString(1, username);
 
-            logger.info(st.toString());
+            logger.info(sql);
             ResultSet rs = st.executeQuery();
 
             while (rs.next()) {
