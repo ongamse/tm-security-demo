@@ -1,6 +1,5 @@
 package org.joychou.controller;
 
-import com.fasterxml.uuid.Generators;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Controller;
@@ -17,7 +16,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.UUID;
+import java.security.SecureRandom;
 
 import org.joychou.security.SecurityUtil;
 
@@ -35,6 +34,7 @@ public class FileUpload {
     private static final String UPLOADED_FOLDER = "/tmp/";
     private final Logger logger = LoggerFactory.getLogger(this.getClass());
     private static String randomFilePath = "";
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     // uplaod any file
     @GetMapping("/any")
@@ -207,6 +207,19 @@ public class FileUpload {
     }
 
     /**
+     * Build an unpredictable file name from 16 bytes of cryptographically secure randomness (hex encoded).
+     */
+    private static String secureRandomName() {
+        byte[] randomBytes = new byte[16];
+        SECURE_RANDOM.nextBytes(randomBytes);
+        StringBuilder sb = new StringBuilder(randomBytes.length * 2);
+        for (byte b : randomBytes) {
+            sb.append(String.format("%02x", b));
+        }
+        return sb.toString();
+    }
+
+    /**
      * 为了使用ImageIO.read()
      *
      * 不建议使用transferTo，因为原始的MultipartFile会被覆盖
@@ -218,9 +231,8 @@ public class FileUpload {
             throw new IOException("Illegal file name");
         }
         String suffix = fileName.substring(fileName.lastIndexOf("."));
-        UUID uuid = Generators.timeBasedGenerator().generate();
-        // 随机生成一个同后缀名的文件
-        Path convPath = resolveUploadPath(uuid + suffix);
+        // 随机生成一个同后缀名的文件 (name derived only from a CSPRNG value)
+        Path convPath = resolveUploadPath(secureRandomName() + suffix);
         randomFilePath = convPath.toString();
         File convFile = convPath.toFile();
         boolean ret = convFile.createNewFile();
