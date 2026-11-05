@@ -111,6 +111,34 @@ public class SecurityUtil {
 
 
     /**
+     * Validate a request Origin header value before it is echoed in Access-Control-Allow-Origin.
+     * The value must be a bare http(s) origin (scheme://host[:port], no userinfo/path/query/fragment,
+     * no whitespace/control/backslash characters) whose host passes {@link #checkURL(String)}.
+     * The literal <code>null</code> origin and <code>*</code> are never accepted.
+     *
+     * @param origin the Origin header value
+     * @return the origin if it is trusted, otherwise null
+     */
+    public static String safeCorsOrigin(String origin) {
+        if (null == origin || origin.isEmpty() || hasRedirectUnsafeChars(origin)) {
+            return null;
+        }
+        try {
+            URI uri = new URI(origin);
+            String path = uri.getRawPath();
+            if (uri.getHost() == null || uri.getRawUserInfo() != null
+                    || (path != null && !path.isEmpty())
+                    || uri.getRawQuery() != null || uri.getRawFragment() != null) {
+                return null;
+            }
+        } catch (URISyntaxException e) {
+            return null;
+        }
+        return checkURL(origin);
+    }
+
+
+    /**
      * Backslashes, whitespace and control characters are normalized or dropped by browsers and by
      * {@link java.net.URL}, so they can be used to disguise an off-site redirect target.
      *
