@@ -32,9 +32,32 @@ public class SpEL {
      */
     @GetMapping("/spel/vuln")
     public String rce(String expression) {
+        // The request value is only a lookup key; only predefined expression literals are parsed.
+        String predefined = predefinedExpression(expression);
+        if (predefined == null) {
+            return "Expression not allowed!!";
+        }
         ExpressionParser parser = new SpelExpressionParser();
         return HtmlUtils.htmlEscape(
-                String.valueOf(parser.parseExpression(expression).getValue(restrictedContext())));
+                String.valueOf(parser.parseExpression(predefined).getValue(restrictedContext())));
+    }
+
+    private static String predefinedExpression(String key) {
+        if (key == null) {
+            return null;
+        }
+        switch (key) {
+            case "hello":
+                return "'hello'";
+            case "greeting":
+                return "'hello' + ' world'";
+            case "sum":
+                return "1 + 2";
+            case "product":
+                return "6 * 7";
+            default:
+                return null;
+        }
     }
 
     /**

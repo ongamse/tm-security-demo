@@ -25,7 +25,7 @@ public class CommandInject {
     @GetMapping("/codeinject")
     public String codeInject(String filepath) throws IOException {
 
-        String safePath = SecurityUtil.cmdFilter(filepath);
+        String safePath = SecurityUtil.resolveAllowedDir(filepath);
         if (null == safePath) {
             return "Bad boy. I got u.";
         }
@@ -45,8 +45,7 @@ public class CommandInject {
     public String codeInjectHost(HttpServletRequest request) throws IOException {
 
         String host = request.getHeader("host");
-        logger.info(host);
-        String safeHost = SecurityUtil.hostFilter(host);
+        String safeHost = SecurityUtil.resolveAllowedHost(host);
         if (null == safeHost) {
             return "Bad boy. I got u.";
         }
@@ -59,7 +58,7 @@ public class CommandInject {
 
     @GetMapping("/codeinject/sec")
     public String codeInjectSec(String filepath) throws IOException {
-        String filterFilePath = SecurityUtil.cmdFilter(filepath);
+        String filterFilePath = SecurityUtil.resolveAllowedDir(filepath);
         if (null == filterFilePath) {
             return "Bad boy. I got u.";
         }

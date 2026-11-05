@@ -151,6 +151,11 @@ public class Rce {
      */
     @GetMapping("groovy")
     public void groovyshell(String content) {
+        // The request value is only a lookup key; only predefined script literals are evaluated.
+        String script = predefinedScript(content);
+        if (script == null) {
+            throw new IllegalArgumentException("script not allowed");
+        }
         // Only plain numeric arithmetic is accepted: no method calls on other types, imports,
         // string literals, closures or class/method definitions.
         SecureASTCustomizer customizer = new SecureASTCustomizer();
@@ -170,7 +175,21 @@ public class Rce {
         CompilerConfiguration config = new CompilerConfiguration();
         config.addCompilationCustomizers(customizer);
         GroovyShell groovyShell = new GroovyShell(config);
-        groovyShell.evaluate(content);
+        groovyShell.evaluate(script);
+    }
+
+    private static String predefinedScript(String key) {
+        if (key == null) {
+            return null;
+        }
+        switch (key) {
+            case "sum":
+                return "1 + 2";
+            case "product":
+                return "6 * 7";
+            default:
+                return null;
+        }
     }
 
 

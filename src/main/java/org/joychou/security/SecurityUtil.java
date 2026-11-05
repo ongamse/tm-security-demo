@@ -22,11 +22,8 @@ import java.util.regex.Pattern;
 public class SecurityUtil {
 
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
-    private static final Pattern ARG_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.=-]+$");
     private static final Pattern HOST_PATTERN = Pattern.compile("^[a-zA-Z0-9][a-zA-Z0-9\\.-]*(:[0-9]{1,5})?$");
     private static final Pattern CONTROL_OR_SPACE_PATTERN = Pattern.compile("[\\p{Cntrl}\\s\\u0085\\u2028\\u2029]");
-    private static final Set<String> ALLOWED_COMMANDS =
-            new HashSet<>(Arrays.asList("whoami", "id", "uname", "pwd", "ls"));
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
 
     private static final int MAX_URL_LENGTH = 2048;
@@ -183,7 +180,7 @@ public class SecurityUtil {
             }
             return null;
         } catch (NullPointerException e) {
-            logger.error(e.toString());
+            logger.error("Check url failed: {}", e.getClass().getSimpleName());
             return null;
         }
     }
@@ -341,10 +338,10 @@ public class SecurityUtil {
             try {
                 temp = URLDecoder.decode(temp, "utf-8");
             } catch (UnsupportedEncodingException e) {
-                logger.info("Unsupported encoding exception: " + filepath);
+                logger.info("Unsupported encoding exception.");
                 return null;
             } catch (Exception e) {
-                logger.info(e.toString());
+                logger.info("Illegal encoding in file path: {}", e.getClass().getSimpleName());
                 return null;
             }
         }
@@ -367,28 +364,86 @@ public class SecurityUtil {
 
 
     /**
-     * Parse a user supplied command line into an argv array for shell-free execution.
-     * The executable must be in a fixed allowlist and every argument must only contain
-     * <code>a-zA-Z0-9_.=/-</code>, so no shell metacharacters or other programs can be reached.
+     * Map a user supplied command key to a fixed argv array for shell-free execution.
+     * The request value is only used as a lookup key; the returned argv consists solely of
+     * literal constants, so no request-derived string ever reaches Runtime.exec / ProcessBuilder.
      *
-     * @param cmd user supplied command line
-     * @return argv for Runtime.exec(String[]) / ProcessBuilder, or null if the command is not allowed
+     * @param cmd user supplied command key
+     * @return literal argv for Runtime.exec(String[]) / ProcessBuilder, or null if the key is not allowed
      */
     public static String[] parseAllowedCommand(String cmd) {
-        if (null == cmd || cmd.trim().isEmpty()) {
+        if (null == cmd) {
             return null;
         }
 
-        String[] argv = cmd.trim().split("\\s+");
-        if (!ALLOWED_COMMANDS.contains(argv[0])) {
+        switch (cmd.trim().replaceAll("\\s+", " ")) {
+            case "whoami":
+                return new String[]{"whoami"};
+            case "id":
+                return new String[]{"id"};
+            case "uname":
+                return new String[]{"uname"};
+            case "uname -a":
+                return new String[]{"uname", "-a"};
+            case "pwd":
+                return new String[]{"pwd"};
+            case "ls":
+                return new String[]{"ls"};
+            case "ls -la":
+                return new String[]{"ls", "-la"};
+            default:
+                return null;
+        }
+    }
+
+
+    /**
+     * Map a user supplied directory key to a fixed directory literal that may be listed.
+     *
+     * @param filepath user supplied directory key
+     * @return literal directory path, or null if the key is not allowed
+     */
+    public static String resolveAllowedDir(String filepath) {
+        if (null == filepath) {
             return null;
         }
-        for (int i = 1; i < argv.length; i++) {
-            if (!ARG_PATTERN.matcher(argv[i]).matches()) {
+
+        switch (filepath) {
+            case "/tmp":
+                return "/tmp";
+            case "/var/tmp":
+                return "/var/tmp";
+            case "/usr/share":
+                return "/usr/share";
+            default:
                 return null;
-            }
         }
-        return argv;
+    }
+
+
+    /**
+     * Map a Host header value to a fixed host literal that may be requested.
+     *
+     * @param host Host header value
+     * @return literal host, or null if the host is not allowed
+     */
+    public static String resolveAllowedHost(String host) {
+        if (null == host) {
+            return null;
+        }
+
+        switch (host) {
+            case "localhost":
+                return "localhost";
+            case "localhost:8080":
+                return "localhost:8080";
+            case "127.0.0.1":
+                return "127.0.0.1";
+            case "127.0.0.1:8080":
+                return "127.0.0.1:8080";
+            default:
+                return null;
+        }
     }
 
 
