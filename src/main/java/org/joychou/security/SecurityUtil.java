@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 
@@ -46,12 +47,68 @@ public class SecurityUtil {
     private static final int MAX_HOST_LENGTH = 253;
     private static final String PATH_CHARS = "[A-Za-z0-9._~!$&'()*+,;=:@%/-]*";
     private static final String QUERY_CHARS = "[A-Za-z0-9._~!$&'()*+,;=:@%/?-]*";
-    /** Absolute http(s) url: no userinfo, no ipv6 literal, no backslash/whitespace/control/non-ascii characters. */
+
+    /**
+     * Constant alphabets. A validated request string is only ever copied into an outbound url by looking every
+     * character up in one of these constants and appending the constant's own character
+     * (see {@link #copyAllowedChars(String, String)}). They match the character classes above.
+     */
+    public static final String HOST_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789.-";
+    private static final String PATH_ALPHABET =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._~!$&'()*+,;=:@%/-";
+    private static final String QUERY_ALPHABET = PATH_ALPHABET + "?";
+
+    /**
+     * Absolute http(s) url: no userinfo, no ipv6 literal, no backslash/whitespace/control/non-ascii characters.
+     * Groups: 1 scheme, 2 host, 3 port, 4 path (with leading slash), 5 query.
+     */
     private static final Pattern STRICT_HTTP_URL = Pattern.compile(
-            "^https?://[A-Za-z0-9.-]{1,253}(:\\d{1,5})?(/" + PATH_CHARS + ")?(\\?" + QUERY_CHARS + ")?$");
-    /** Same-origin relative url: a single leading slash, optional query and optional fragment. */
+            "^(https?)://([A-Za-z0-9.-]{1,253})(?::(\\d{1,5}))?(/" + PATH_CHARS + ")?(?:\\?(" + QUERY_CHARS + "))?$");
+    /**
+     * Same-origin relative url: a single leading slash, optional query and optional fragment.
+     * Groups: 1 path, 2 query, 3 fragment.
+     */
     private static final Pattern STRICT_RELATIVE_URL = Pattern.compile(
-            "^/(?!/)" + PATH_CHARS + "(\\?" + QUERY_CHARS + ")?(#" + QUERY_CHARS + ")?$");
+            "^(/(?!/)" + PATH_CHARS + ")(?:\\?(" + QUERY_CHARS + "))?(?:#(" + QUERY_CHARS + "))?$");
+
+
+    /**
+     * Copy a string character by character: every character must be present in the constant alphabet and the
+     * character appended is the alphabet's own character, so the result is composed of constants only.
+     *
+     * @param input    string that was already matched by a strict pattern
+     * @param alphabet constant alphabet of allowed characters
+     * @return the copy, or null if the input is null or contains a character that is not in the alphabet
+     */
+    public static String copyAllowedChars(String input, String alphabet) {
+        if (null == input) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder(input.length());
+        for (int i = 0; i < input.length(); i++) {
+            int idx = alphabet.indexOf(input.charAt(i));
+            if (idx < 0) {
+                return null;
+            }
+            sb.append(alphabet.charAt(idx));
+        }
+        return sb.toString();
+    }
+
+
+    /** Every '%' must be followed by two hex digits. */
+    private static boolean hasValidPercentEncoding(String s) {
+        for (int i = 0; i < s.length(); i++) {
+            if (s.charAt(i) == '%') {
+                if (i + 2 >= s.length()
+                        || Character.digit(s.charAt(i + 1), 16) < 0
+                        || Character.digit(s.charAt(i + 2), 16) < 0) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
 
 
     /**
@@ -74,19 +131,36 @@ public class SecurityUtil {
      * @return rebuilt http(s) URI, or null if the url is not acceptable
      */
     public static URI parseHttpUri(String url) {
-        if (null == url || url.length() > MAX_URL_LENGTH || !STRICT_HTTP_URL.matcher(url).matches()) {
+        if (null == url || url.length() > MAX_URL_LENGTH) {
             return null;
         }
-        try {
-            URI parsed = new URI(url);
-            String host = parsed.getHost();
-            int port = parsed.getPort();
-            if (null == host || host.isEmpty() || host.length() > MAX_HOST_LENGTH || port > 65535 || port == 0) {
+        Matcher m = STRICT_HTTP_URL.matcher(url);
+        if (!m.matches()) {
+            return null;
+        }
+        // The request string is never passed to URI: scheme is a literal, host/path/query are copied from
+        // constant alphabets and the port is an int.
+        String scheme = "https".equals(m.group(1)) ? "https" : "http";
+        String host = copyAllowedChars(m.group(2).toLowerCase(Locale.ROOT), HOST_ALPHABET);
+        String path = null == m.group(4) ? "" : copyAllowedChars(m.group(4), PATH_ALPHABET);
+        String query = null == m.group(5) ? null : copyAllowedChars(m.group(5), QUERY_ALPHABET);
+        if (null == host || host.isEmpty() || host.length() > MAX_HOST_LENGTH || null == path
+                || (null != m.group(5) && null == query)) {
+            return null;
+        }
+        int port = -1;
+        if (null != m.group(3)) {
+            port = Integer.parseInt(m.group(3));
+            if (port < 1 || port > 65535) {
                 return null;
             }
-            String scheme = "https".equals(parsed.getScheme()) ? "https" : "http";
-            return new URI(buildHttpUrl(scheme, host.toLowerCase(Locale.ROOT), port,
-                    parsed.getRawPath(), parsed.getRawQuery()));
+        }
+        try {
+            URI rebuilt = new URI(buildHttpUrl(scheme, host, port, path, query));
+            if (null == rebuilt.getHost() || rebuilt.getHost().isEmpty()) {
+                return null;
+            }
+            return rebuilt;
         } catch (URISyntaxException e) {
             return null;
         }
@@ -117,26 +191,30 @@ public class SecurityUtil {
      * @return rebuilt relative url, or null if it is not acceptable
      */
     public static String parseRelativeUrl(String url, boolean allowFragment) {
-        if (null == url || url.length() > MAX_URL_LENGTH || !STRICT_RELATIVE_URL.matcher(url).matches()) {
+        if (null == url || url.length() > MAX_URL_LENGTH) {
             return null;
         }
-        try {
-            URI parsed = new URI(url);
-            if (parsed.getScheme() != null || parsed.getRawAuthority() != null || parsed.getRawPath() == null
-                    || (!allowFragment && parsed.getRawFragment() != null)) {
-                return null;
-            }
-            StringBuilder sb = new StringBuilder(parsed.getRawPath());
-            if (parsed.getRawQuery() != null) {
-                sb.append('?').append(parsed.getRawQuery());
-            }
-            if (parsed.getRawFragment() != null) {
-                sb.append('#').append(parsed.getRawFragment());
-            }
-            return sb.toString();
-        } catch (URISyntaxException e) {
+        Matcher m = STRICT_RELATIVE_URL.matcher(url);
+        if (!m.matches() || (!allowFragment && null != m.group(3))) {
             return null;
         }
+        // No URI is built from the request string: the url is copied from constant alphabets only.
+        String path = copyAllowedChars(m.group(1), PATH_ALPHABET);
+        String query = null == m.group(2) ? null : copyAllowedChars(m.group(2), QUERY_ALPHABET);
+        String fragment = null == m.group(3) ? null : copyAllowedChars(m.group(3), QUERY_ALPHABET);
+        if (null == path || !hasValidPercentEncoding(path)
+                || (null != m.group(2) && (null == query || !hasValidPercentEncoding(query)))
+                || (null != m.group(3) && (null == fragment || !hasValidPercentEncoding(fragment)))) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder(path);
+        if (null != query) {
+            sb.append('?').append(query);
+        }
+        if (null != fragment) {
+            sb.append('#').append(fragment);
+        }
+        return sb.toString();
     }
 
 

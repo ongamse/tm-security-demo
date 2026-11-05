@@ -1,6 +1,7 @@
 package org.joychou.controller;
 
 import lombok.extern.slf4j.Slf4j;
+import org.joychou.security.SecurityUtil;
 import org.joychou.security.ssrf.SSRFChecker;
 import org.joychou.security.ssrf.SSRFException;
 import org.springframework.http.HttpStatus;
@@ -11,6 +12,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.nio.charset.StandardCharsets;
 import java.sql.DriverManager;
+import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -23,6 +25,7 @@ import java.util.regex.Pattern;
 public class Jdbc {
 
     private static final int MAX_JDBC_URL_LENGTH = 512;
+    private static final String DATABASE_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.-";
 
     // Fixed driver schemes. The scheme of the connection url is always one of these literals, never request data.
     private static final String POSTGRESQL_SCHEME = "jdbc:postgresql://";
@@ -51,7 +54,12 @@ public class Jdbc {
         if (!m.matches()) {
             throw new IllegalArgumentException("Illegal jdbc url");
         }
-        String host = m.group(1);
+        // host and database name are copied character by character from constant alphabets, the port is an int
+        String host = SecurityUtil.copyAllowedChars(m.group(1).toLowerCase(Locale.ROOT), SecurityUtil.HOST_ALPHABET);
+        String database = SecurityUtil.copyAllowedChars(m.group(3), DATABASE_ALPHABET);
+        if (host == null || database == null) {
+            throw new IllegalArgumentException("Illegal jdbc url");
+        }
         SSRFChecker.checkHost(host);
 
         StringBuilder rebuilt = new StringBuilder(driverScheme).append(host);
@@ -62,7 +70,7 @@ public class Jdbc {
             }
             rebuilt.append(':').append(port);
         }
-        rebuilt.append('/').append(m.group(3));
+        rebuilt.append('/').append(database);
         return rebuilt.toString();
     }
 
