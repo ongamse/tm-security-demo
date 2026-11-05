@@ -12,12 +12,19 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 
 public class SecurityUtil {
 
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
+    private static final Pattern ARG_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.=-]+$");
+    private static final Pattern HOST_PATTERN = Pattern.compile("^[a-zA-Z0-9][a-zA-Z0-9\\.-]*(:[0-9]{1,5})?$");
+    private static final Set<String> ALLOWED_COMMANDS =
+            new HashSet<>(Arrays.asList("whoami", "id", "uname", "pwd", "ls"));
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
 
 
@@ -205,6 +212,47 @@ public class SecurityUtil {
         }
 
         return input;
+    }
+
+
+    /**
+     * Parse a user supplied command line into an argv array for shell-free execution.
+     * The executable must be in a fixed allowlist and every argument must only contain
+     * <code>a-zA-Z0-9_.=/-</code>, so no shell metacharacters or other programs can be reached.
+     *
+     * @param cmd user supplied command line
+     * @return argv for Runtime.exec(String[]) / ProcessBuilder, or null if the command is not allowed
+     */
+    public static String[] parseAllowedCommand(String cmd) {
+        if (null == cmd || cmd.trim().isEmpty()) {
+            return null;
+        }
+
+        String[] argv = cmd.trim().split("\\s+");
+        if (!ALLOWED_COMMANDS.contains(argv[0])) {
+            return null;
+        }
+        for (int i = 1; i < argv.length; i++) {
+            if (!ARG_PATTERN.matcher(argv[i]).matches()) {
+                return null;
+            }
+        }
+        return argv;
+    }
+
+
+    /**
+     * Validate the Host header value before it is used as a command argument.
+     * Only a hostname with an optional port is accepted.
+     *
+     * @param host host header value
+     * @return the host if valid, otherwise null
+     */
+    public static String hostFilter(String host) {
+        if (null == host || !HOST_PATTERN.matcher(host).matches()) {
+            return null;
+        }
+        return host;
     }
 
 

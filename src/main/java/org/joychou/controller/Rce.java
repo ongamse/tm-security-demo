@@ -2,6 +2,10 @@ package org.joychou.controller;
 
 import groovy.lang.GroovyShell;
 import lombok.extern.slf4j.Slf4j;
+import org.codehaus.groovy.control.CompilerConfiguration;
+import org.codehaus.groovy.control.customizers.SecureASTCustomizer;
+import org.codehaus.groovy.syntax.Types;
+import org.joychou.security.SecurityUtil;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -15,7 +19,10 @@ import javax.script.ScriptEngineManager;
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.math.BigDecimal;
 import java.sql.DriverManager;
+import java.util.Arrays;
+import java.util.Collections;
 
 
 /**
@@ -34,7 +41,11 @@ public class Rce {
         StringBuilder sb = new StringBuilder();
 
         try {
-            Process p = run.exec(cmd);
+            String[] argv = SecurityUtil.parseAllowedCommand(cmd);
+            if (argv == null) {
+                return "Command not allowed!!";
+            }
+            Process p = run.exec(argv);
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
             String tmpStr;
@@ -66,7 +77,10 @@ public class Rce {
         StringBuilder sb = new StringBuilder();
 
         try {
-            String[] arrCmd = {"/bin/sh", "-c", cmd};
+            String[] arrCmd = SecurityUtil.parseAllowedCommand(cmd);
+            if (arrCmd == null) {
+                return "Command not allowed!!";
+            }
             ProcessBuilder processBuilder = new ProcessBuilder(arrCmd);
             Process p = processBuilder.start();
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
@@ -95,10 +109,15 @@ public class Rce {
     @GetMapping("/jscmd")
     public void jsEngine(String jsurl) throws Exception{
         // js nashorn javascript ecmascript
+        // Only load scripts from allowlisted domains; pass the URL as data, not as script source.
+        String safeUrl = SecurityUtil.checkURL(jsurl);
+        if (safeUrl == null) {
+            throw new IllegalArgumentException("jsurl is not allowed");
+        }
         ScriptEngine engine = new ScriptEngineManager().getEngineByName("js");
         Bindings bindings = engine.getBindings(ScriptContext.ENGINE_SCOPE);
-        String cmd = String.format("load(\"%s\")", jsurl);
-        engine.eval(cmd, bindings);
+        bindings.put("jsurl", safeUrl);
+        engine.eval("load(jsurl)", bindings);
     }
 
 
@@ -126,7 +145,25 @@ public class Rce {
      */
     @GetMapping("groovy")
     public void groovyshell(String content) {
-        GroovyShell groovyShell = new GroovyShell();
+        // Only plain numeric arithmetic is accepted: no method calls on other types, imports,
+        // string literals, closures or class/method definitions.
+        SecureASTCustomizer customizer = new SecureASTCustomizer();
+        customizer.setMethodDefinitionAllowed(false);
+        customizer.setClosuresAllowed(false);
+        customizer.setPackageAllowed(false);
+        customizer.setIndirectImportCheckEnabled(true);
+        customizer.setImportsWhitelist(Collections.<String>emptyList());
+        customizer.setStarImportsWhitelist(Collections.<String>emptyList());
+        customizer.setStaticImportsWhitelist(Collections.<String>emptyList());
+        customizer.setStaticStarImportsWhitelist(Collections.<String>emptyList());
+        customizer.setReceiversClassesWhiteList(Arrays.<Class>asList(Integer.class, Integer.TYPE));
+        customizer.setConstantTypesClassesWhiteList(Arrays.<Class>asList(
+                Integer.class, Integer.TYPE, Long.class, Long.TYPE, BigDecimal.class));
+        customizer.setTokensWhitelist(Arrays.asList(
+                Types.PLUS, Types.MINUS, Types.MULTIPLY, Types.DIVIDE, Types.MOD));
+        CompilerConfiguration config = new CompilerConfiguration();
+        config.addCompilationCustomizers(customizer);
+        GroovyShell groovyShell = new GroovyShell(config);
         groovyShell.evaluate(content);
     }
 
