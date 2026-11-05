@@ -195,8 +195,7 @@ public class FileUpload {
         try {
             Path delPath = Paths.get(filePath).toAbsolutePath().normalize();
             Path base = Paths.get(UPLOADED_FOLDER).toAbsolutePath().normalize();
-            if (delPath.startsWith(base) && !delPath.equals(base) && Files.isRegularFile(delPath)
-                    && Files.deleteIfExists(delPath)) {
+            if (delPath.startsWith(base) && !delPath.equals(base) && Files.deleteIfExists(delPath)) {
                 logger.info("[+] File deleted successfully!");
                 return;
             }
