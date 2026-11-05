@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.*;
 import javax.annotation.Resource;
 import java.sql.*;
 import java.util.List;
+import java.util.Locale;
 
 
 /**
@@ -61,10 +62,11 @@ public class SQLI {
                 System.out.println("Connect to database successfully.");
 
             // sqli vuln code
-            Statement statement = con.createStatement();
-            String sql = "select * from users where username = '" + username + "'";
+            String sql = "select * from users where username = ?";
+            PreparedStatement statement = con.prepareStatement(sql);
+            statement.setString(1, username);
             logger.info(sql);
-            ResultSet rs = statement.executeQuery(sql);
+            ResultSet rs = statement.executeQuery();
 
             while (rs.next()) {
                 String res_name = rs.getString("username");
@@ -146,8 +148,9 @@ public class SQLI {
             if (!con.isClosed())
                 System.out.println("Connecting to Database successfully.");
 
-            String sql = "select * from users where username = '" + username + "'";
+            String sql = "select * from users where username = ?";
             PreparedStatement st = con.prepareStatement(sql);
+            st.setString(1, username);
 
             logger.info(st.toString());
             ResultSet rs = st.executeQuery();
@@ -200,7 +203,7 @@ public class SQLI {
      */
     @GetMapping("/mybatis/orderby/vuln03")
     public List<User> mybatisVuln03(@RequestParam("sort") String sort) {
-        return userMapper.findByUserNameVuln03(sort);
+        return userMapper.findByUserNameVuln03(resolveSortColumn(sort));
     }
 
 
@@ -239,7 +242,29 @@ public class SQLI {
      */
     @GetMapping("/mybatis/orderby/sec04")
     public List<User> mybatisOrderBySec04(@RequestParam("sort") String sort) {
-        return userMapper.findByUserNameVuln03(SecurityUtil.sqlFilter(sort));
+        return userMapper.findByUserNameVuln03(resolveSortColumn(SecurityUtil.sqlFilter(sort)));
+    }
+
+    /**
+     * Map a user supplied sort key to a column name from a fixed allowlist.
+     * ORDER BY cannot use bound parameters, so only constant column names are ever returned.
+     *
+     * @return the allowlisted column name, or null (no ordering) when not allowed
+     */
+    private static String resolveSortColumn(String sort) {
+        if (sort == null) {
+            return null;
+        }
+        switch (sort.trim().toLowerCase(Locale.ROOT)) {
+            case "id":
+                return "id";
+            case "username":
+                return "username";
+            case "password":
+                return "password";
+            default:
+                return null;
+        }
     }
 
 }
