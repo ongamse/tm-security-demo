@@ -71,7 +71,7 @@ public class SSRFChecker {
                     return false;  // 内网ip直接return，非内网ip继续判断是否有重定向
                 }
 
-                connection = (HttpURLConnection) new URL(finalUrl).openConnection();
+                connection = (HttpURLConnection) checkAndGetUrl(finalUrl).openConnection();
                 connection.setInstanceFollowRedirects(false);
                 connection.setUseCaches(false); // 设置为false，手动处理跳转，可以拿到每个跳转的URL
                 connection.setConnectTimeout(connectTime);
@@ -82,7 +82,8 @@ public class SSRFChecker {
                     String redirectedUrl = connection.getHeaderField("Location");
                     if (null == redirectedUrl)
                         break;
-                    finalUrl = redirectedUrl;
+                    // resolve relative Location headers against the current url
+                    finalUrl = new URL(connection.getURL(), redirectedUrl).toString();
                     i += 1;  // 重定向次数加1
                     logger.info("redirected url: " + finalUrl);
                     if (i == checkTimes) {
@@ -93,9 +94,67 @@ public class SSRFChecker {
             } while (connection.getResponseCode() != HttpURLConnection.HTTP_OK);
             connection.disconnect();
         } catch (Exception e) {
-            return true;  // 如果异常了，认为是安全的，防止是超时导致的异常而验证不成功。
+            logger.error("[-] SSRF check failed. " + e.getMessage());
+            return false;  // fail closed: a url that cannot be verified is not safe.
         }
         return true; // 默认返回true
+    }
+
+
+    /**
+     * Validate an untrusted url and return a {@link URL} that is safe to connect to: the scheme must be
+     * http/https, the host must be present and every address it resolves to must not be internal,
+     * loopback, link-local, site-local, multicast or the wildcard address. The returned URL is built
+     * from the same parsed URI that was validated.
+     *
+     * @param url untrusted url
+     * @return validated URL
+     * @throws SSRFException if the url is not allowed
+     */
+    public static URL checkAndGetUrl(String url) {
+        if (null == url || !SecurityUtil.isHttp(url)) {
+            throw new SSRFException("[-] SSRF check failed. Only http and https are allowed.");
+        }
+        try {
+            URI uri = new URI(url);
+            checkHost(uri.getHost());
+            return uri.toURL();
+        } catch (SSRFException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new SSRFException("[-] SSRF check failed. Illegal url.");
+        }
+    }
+
+
+    /**
+     * Validate that a host does not point to an internal address. Fails closed.
+     *
+     * @param host host name or ip
+     * @throws SSRFException if the host is empty, cannot be resolved or is internal
+     */
+    public static void checkHost(String host) {
+        if (null == host || host.isEmpty()) {
+            throw new SSRFException("[-] SSRF check failed. Empty host.");
+        }
+        try {
+            String ip = host2ip(host);
+            if (ip.isEmpty() || isInternalIp(ip)) {
+                throw new SSRFException("[-] SSRF check failed. Internal host.");
+            }
+            String resolveHost = isOctalIP(host) ? decimalIp : host;
+            for (InetAddress address : InetAddress.getAllByName(resolveHost)) {
+                if (address.isAnyLocalAddress() || address.isLoopbackAddress() || address.isLinkLocalAddress()
+                        || address.isSiteLocalAddress() || address.isMulticastAddress()
+                        || isInternalIp(address.getHostAddress())) {
+                    throw new SSRFException("[-] SSRF check failed. Internal host.");
+                }
+            }
+        } catch (SSRFException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new SSRFException("[-] SSRF check failed. Host cannot be verified.");
+        }
     }
 
 
@@ -292,7 +351,8 @@ public class SSRFChecker {
             // use URI instead of URL
             URI u = new URI(url);
             if (SecurityUtil.isHttp(url)) {
-                return u.getHost();
+                String host = u.getHost();
+                return null == host ? "" : host;
             }
             return "";
         } catch (Exception e) {
