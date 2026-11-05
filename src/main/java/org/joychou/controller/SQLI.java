@@ -7,10 +7,16 @@ import org.joychou.security.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
+import javax.servlet.http.HttpServletRequest;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.Principal;
 import java.sql.*;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
@@ -94,8 +100,9 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/jdbc/sec?username=joychou">http://localhost:8080/sqli/jdbc/sec?username=joychou</a>
      */
     @RequestMapping("/jdbc/sec")
-    public String jdbc_sqli_sec(@RequestParam("username") String username) {
+    public String jdbc_sqli_sec(@RequestParam("username") String username, HttpServletRequest request) {
 
+        requireOwnerOrAdmin(request, username);
         StringBuilder result = new StringBuilder();
         try {
             Class.forName(driver);
@@ -182,7 +189,8 @@ public class SQLI {
      * <p>select * from users where username = 'joychou' or '1'='1' </p>
      */
     @GetMapping("/mybatis/vuln01")
-    public List<User> mybatisVuln01(@RequestParam("username") String username) {
+    public List<User> mybatisVuln01(@RequestParam("username") String username, HttpServletRequest request) {
+        requireOwnerOrAdmin(request, username);
         return userMapper.findByUserNameVuln01(username);
     }
 
@@ -192,8 +200,20 @@ public class SQLI {
      * <p>select * from users where username like '%joychou' or '1'='1%' </p>
      */
     @GetMapping("/mybatis/vuln02")
-    public List<User> mybatisVuln02(@RequestParam("username") String username) {
-        return userMapper.findByUserNameVuln02(username);
+    public List<User> mybatisVuln02(@RequestParam("username") String username, HttpServletRequest request) {
+        List<User> users = userMapper.findByUserNameVuln02(username);
+        if (isAdmin(request)) {
+            return users;
+        }
+        // Non-admin callers may only see their own record, even when the LIKE pattern matches others.
+        String current = currentUsername(request);
+        List<User> own = new ArrayList<>();
+        for (User u : users) {
+            if (u.getUsername() != null && u.getUsername().equals(current)) {
+                own.add(u);
+            }
+        }
+        return own;
     }
 
     /**
@@ -212,7 +232,8 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/mybatis/sec01?username=joychou">http://localhost:8080/sqli/mybatis/sec01?username=joychou</a>
      */
     @GetMapping("/mybatis/sec01")
-    public User mybatisSec01(@RequestParam("username") String username) {
+    public User mybatisSec01(@RequestParam("username") String username, HttpServletRequest request) {
+        requireOwnerOrAdmin(request, username);
         return userMapper.findByUserName(username);
     }
 
@@ -221,8 +242,13 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/mybatis/sec02?id=1">http://localhost:8080/sqli/mybatis/sec02?id=1</a>
      */
     @GetMapping("/mybatis/sec02")
-    public User mybatisSec02(@RequestParam("id") Integer id) {
-        return userMapper.findById(id);
+    public User mybatisSec02(@RequestParam("id") Integer id, HttpServletRequest request) {
+        User found = userMapper.findById(id);
+        if (found != null) {
+            // Ownership check on the looked-up record; same response for "not yours" as for admin-only data.
+            requireOwnerOrAdmin(request, found.getUsername());
+        }
+        return found;
     }
 
 
@@ -243,6 +269,45 @@ public class SQLI {
     @GetMapping("/mybatis/orderby/sec04")
     public List<User> mybatisOrderBySec04(@RequestParam("sort") String sort) {
         return userMapper.findByUserNameVuln03(resolveSortColumn(SecurityUtil.sqlFilter(sort)));
+    }
+
+    /**
+     * Thrown when the authenticated principal is not allowed to access the requested user record.
+     */
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    private static class AccessForbiddenException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        AccessForbiddenException() {
+            super("Access denied");
+        }
+    }
+
+    private static String currentUsername(HttpServletRequest request) {
+        Principal principal = request.getUserPrincipal();
+        if (principal == null) {
+            throw new AccessForbiddenException();
+        }
+        return principal.getName();
+    }
+
+    private static boolean isAdmin(HttpServletRequest request) {
+        return request.isUserInRole("ADMIN");
+    }
+
+    /**
+     * Authorize a lookup of the user record named by a request-supplied reference.
+     * Only the authenticated principal itself, or an administrator, may look up a user record.
+     */
+    private static void requireOwnerOrAdmin(HttpServletRequest request, String requestedUsername) {
+        String current = currentUsername(request);
+        if (isAdmin(request)) {
+            return;
+        }
+        if (requestedUsername == null || !MessageDigest.isEqual(
+                current.getBytes(StandardCharsets.UTF_8), requestedUsername.getBytes(StandardCharsets.UTF_8))) {
+            throw new AccessForbiddenException();
+        }
     }
 
     /**
