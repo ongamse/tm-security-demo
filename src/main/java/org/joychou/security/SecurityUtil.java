@@ -23,6 +23,7 @@ public class SecurityUtil {
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
     private static final Pattern ARG_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.=-]+$");
     private static final Pattern HOST_PATTERN = Pattern.compile("^[a-zA-Z0-9][a-zA-Z0-9\\.-]*(:[0-9]{1,5})?$");
+    private static final Pattern CONTROL_OR_SPACE_PATTERN = Pattern.compile("[\\p{Cntrl}\\s\\u0085\\u2028\\u2029]");
     private static final Set<String> ALLOWED_COMMANDS =
             new HashSet<>(Arrays.asList("whoami", "id", "uname", "pwd", "ls"));
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
@@ -48,7 +49,8 @@ public class SecurityUtil {
     public static String gethost(String url) {
         try {
             URI uri = new URI(url);
-            return uri.getHost().toLowerCase();
+            String host = uri.getHost();
+            return host == null ? "" : host.toLowerCase();
         } catch (URISyntaxException e) {
             return "";
         }
@@ -105,6 +107,59 @@ public class SecurityUtil {
             logger.error(e.toString());
             return null;
         }
+    }
+
+
+    /**
+     * Backslashes, whitespace and control characters are normalized or dropped by browsers and by
+     * {@link java.net.URL}, so they can be used to disguise an off-site redirect target.
+     *
+     * @param url url to inspect
+     * @return true if the url contains such a character
+     */
+    public static boolean hasRedirectUnsafeChars(String url) {
+        return url.indexOf('\\') != -1 || CONTROL_OR_SPACE_PATTERN.matcher(url).find();
+    }
+
+
+    /**
+     * Validate a user supplied redirect target. Only two kinds of targets are accepted:
+     * <ul>
+     *   <li>a same-origin relative path starting with a single <code>/</code> (no <code>//host</code>,
+     *   no backslash, no control characters, no scheme/authority);</li>
+     *   <li>an absolute http(s) url whose host passes {@link #checkURL(String)} (domain allowlist).</li>
+     * </ul>
+     *
+     * @param url the redirect target supplied by the user
+     * @return the url if it is a safe redirect target, otherwise null
+     */
+    public static String safeRedirectUrl(String url) {
+        if (null == url || url.isEmpty()) {
+            return null;
+        }
+
+        // Browsers normalize backslash to slash and ignore tab/CR/LF, which turns
+        // "/\evil.com" or "/\t/evil.com" into a protocol-relative url.
+        if (hasRedirectUnsafeChars(url)) {
+            return null;
+        }
+
+        if (url.startsWith("/")) {
+            if (url.startsWith("//")) {
+                return null;
+            }
+            try {
+                URI uri = new URI(url);
+                if (uri.getScheme() != null || uri.getRawAuthority() != null) {
+                    return null;
+                }
+            } catch (URISyntaxException e) {
+                return null;
+            }
+            return url;
+        }
+
+        return checkURL(url);
     }
 
 
