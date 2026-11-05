@@ -30,6 +30,7 @@ import java.net.*;
 public class SSRF {
 
     private static final Logger logger = LoggerFactory.getLogger(SSRF.class);
+    private static final String ERROR_MESSAGE = "Request failed.";
 
     @Resource
     private HttpService httpService;
@@ -60,7 +61,8 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.URLConnection(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            logger.error("[-] Request failed: {}", e.getClass().getSimpleName());
+            return ERROR_MESSAGE;
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -78,7 +80,8 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.HttpURLConnection(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            logger.error("[-] Request failed: {}", e.getClass().getSimpleName());
+            return ERROR_MESSAGE;
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -101,7 +104,8 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HtmlUtils.htmlEscape(HttpUtils.request(url));
         } catch (SSRFException | IOException e) {
-            return HtmlUtils.htmlEscape(e.getMessage());
+            logger.error("[-] Request failed: {}", e.getClass().getSimpleName());
+            return ERROR_MESSAGE;
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -136,7 +140,7 @@ public class SSRF {
             }
 
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("[-] Download failed: {}", e.getClass().getSimpleName());
         } finally {
             if (inputStream != null) {
                 inputStream.close();
@@ -158,7 +162,8 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             HttpUtils.imageIO(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            logger.error("[-] Request failed: {}", e.getClass().getSimpleName());
+            return ERROR_MESSAGE;
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -174,7 +179,8 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.okhttp(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            logger.error("[-] Request failed: {}", e.getClass().getSimpleName());
+            return ERROR_MESSAGE;
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -193,7 +199,8 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.httpClient(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            logger.error("[-] Request failed: {}", e.getClass().getSimpleName());
+            return ERROR_MESSAGE;
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -213,7 +220,8 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.commonHttpClient(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            logger.error("[-] Request failed: {}", e.getClass().getSimpleName());
+            return ERROR_MESSAGE;
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -232,7 +240,8 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.Jsoup(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            logger.error("[-] Request failed: {}", e.getClass().getSimpleName());
+            return ERROR_MESSAGE;
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -251,7 +260,8 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             HttpUtils.IOUtils(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            logger.error("[-] Request failed: {}", e.getClass().getSimpleName());
+            return ERROR_MESSAGE;
         } finally {
             SecurityUtil.stopSSRFHook();
         }

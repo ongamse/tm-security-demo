@@ -36,6 +36,8 @@ import java.util.Collections;
 @RequestMapping("/rce")
 public class Rce {
 
+    private static final String ERROR_MESSAGE = "Command exec failed!!";
+
     @GetMapping("/runtime/exec")
     public String CommandExec(String cmd) {
         Runtime run = Runtime.getRuntime();
@@ -63,8 +65,8 @@ public class Rce {
             inBr.close();
             in.close();
         } catch (Exception e) {
-            log.error(e.toString());
-            return "Command exec failed!!";
+            log.error("Command exec failed: {}", e.getClass().getSimpleName());
+            return ERROR_MESSAGE;
         }
         return HtmlUtils.htmlEscape(sb.toString());
     }
@@ -93,8 +95,8 @@ public class Rce {
                 sb.append(tmpStr);
             }
         } catch (Exception e) {
-            log.error(e.toString());
-            return "Command exec failed!!";
+            log.error("Command exec failed: {}", e.getClass().getSimpleName());
+            return ERROR_MESSAGE;
         }
 
         return HtmlUtils.htmlEscape(sb.toString());
