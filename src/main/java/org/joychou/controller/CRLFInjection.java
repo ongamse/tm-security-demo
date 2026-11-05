@@ -38,10 +38,17 @@ public class CRLFInjection {
             response.setHeader("test2", URLEncoder.encode(test2, "UTF-8"));
         }
         String author = request.getParameter("test3");
-        Cookie cookie = new Cookie("test3", author);
-        cookie.setHttpOnly(true);
-        cookie.setSecure(true);
-        cookie.setPath("/");
-        response.addCookie(cookie);
+        // Reject (HTTP 400) before any cookie is created if the value is not on the strict allowlist.
+        if (!WebUtils.isSafeHeaderValue(author)) {
+            response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+            return;
+        }
+        if (author != null) {
+            Cookie cookie = new Cookie("test3", URLEncoder.encode(author, "UTF-8"));
+            cookie.setHttpOnly(true);
+            cookie.setSecure(true);
+            cookie.setPath("/");
+            response.addCookie(cookie);
+        }
     }
 }
