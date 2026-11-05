@@ -399,15 +399,14 @@ public class SecurityUtil {
             "joychou.com",
             "localhost"));
 
-    private static final Pattern REDIRECT_PATH_PATTERN = Pattern.compile("^(/" + PATH_CHARS + ")?$");
-    private static final Pattern REDIRECT_QUERY_PATTERN = Pattern.compile("^" + QUERY_CHARS + "$");
-
 
     /**
-     * Resolve a requested redirect target to a constant. The request value is only used as a lookup key: the
-     * returned string is composed of allowlist elements (a fixed path from {@link #ALLOWED_REDIRECT_PATHS}, or
-     * an element of {@link #ALLOWED_REDIRECT_HOSTS} plus a strictly validated path/query), never of the request
-     * string itself. Everything that is not allowlisted resolves to {@link #DEFAULT_REDIRECT_TARGET}.
+     * Resolve a requested redirect target to a constant. The request value only selects among constants: the
+     * returned string is either a value of {@link #ALLOWED_REDIRECT_PATHS}, or the literal scheme
+     * <code>https://</code> plus an element of {@link #ALLOWED_REDIRECT_HOSTS} plus <code>/</code> (the root of
+     * the allowlisted host; the request path, query and port are dropped). No part of the request string is
+     * ever copied into the result. Everything that is not allowlisted resolves to
+     * {@link #DEFAULT_REDIRECT_TARGET}.
      *
      * @param requested the redirect target supplied by the user
      * @return a safe redirect target, never null
@@ -465,25 +464,8 @@ public class SecurityUtil {
             return DEFAULT_REDIRECT_TARGET;
         }
 
-        String path = uri.getRawPath() == null ? "" : uri.getRawPath();
-        String query = uri.getRawQuery();
-        int port = uri.getPort();
-        if (!REDIRECT_PATH_PATTERN.matcher(path).matches()
-                || (null != query && !REDIRECT_QUERY_PATTERN.matcher(query).matches())
-                || (port != -1 && (port < 1 || port > 65535))) {
-            return DEFAULT_REDIRECT_TARGET;
-        }
-
-        StringBuilder target = new StringBuilder("https".equals(uri.getScheme()) ? "https://" : "http://");
-        target.append(allowedHost);
-        if (port != -1) {
-            target.append(':').append(port);
-        }
-        target.append(path);
-        if (null != query) {
-            target.append('?').append(query);
-        }
-        return target.toString();
+        // Only the allowlist element is used: the request scheme, port, path and query are dropped.
+        return "https://" + allowedHost + "/";
     }
 
 
