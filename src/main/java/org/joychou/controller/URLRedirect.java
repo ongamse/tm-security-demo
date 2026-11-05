@@ -32,13 +32,9 @@ public class URLRedirect {
      */
     @GetMapping("/redirect")
     public ModelAndView redirect(@RequestParam("url") String url, HttpServletResponse response) {
-        String safeUrl = SecurityUtil.safeRedirectUrl(url);
-        if (safeUrl == null) {
-            // A null ModelAndView marks the request as handled, so only the status is sent.
-            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-            return null;
-        }
-        return new ModelAndView("redirect:" + safeUrl);
+        // The redirect target is an allowlist constant (or the default "/"), never the request string.
+        String target = SecurityUtil.resolveRedirectTarget(url);
+        return new ModelAndView("redirect:" + target);
     }
 
 
@@ -48,18 +44,15 @@ public class URLRedirect {
     @RequestMapping("/setHeader")
     @ResponseBody
     public static void setHeader(HttpServletRequest request, HttpServletResponse response) {
-        String url = SecurityUtil.safeRedirectUrl(request.getParameter("url"));
-        if (url == null) {
-            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-            return;
-        }
+        // The Location value is an allowlist constant (or the default "/"), never the request string.
+        String target = SecurityUtil.resolveRedirectTarget(request.getParameter("url"));
         // Reject (HTTP 400) instead of writing a Location value with characters outside the URL allowlist.
-        if (!WebUtils.isSafeUrlHeaderValue(url)) {
+        if (!WebUtils.isSafeUrlHeaderValue(target)) {
             response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
             return;
         }
         response.setStatus(HttpServletResponse.SC_MOVED_PERMANENTLY); // 301 redirect
-        response.setHeader("Location", url);
+        response.setHeader("Location", target);
     }
 
 
@@ -69,12 +62,9 @@ public class URLRedirect {
     @RequestMapping("/sendRedirect")
     @ResponseBody
     public static void sendRedirect(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        String url = SecurityUtil.safeRedirectUrl(request.getParameter("url"));
-        if (url == null) {
-            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-            return;
-        }
-        response.sendRedirect(url); // 302 redirect
+        // The redirect target is an allowlist constant (or the default "/"), never the request string.
+        String target = SecurityUtil.resolveRedirectTarget(request.getParameter("url"));
+        response.sendRedirect(target); // 302 redirect
     }
 
 
@@ -104,12 +94,8 @@ public class URLRedirect {
     public void sendRedirect_seccode(HttpServletRequest request, HttpServletResponse response)
             throws IOException {
         String url = request.getParameter("url");
-        String safeUrl = SecurityUtil.safeRedirectUrl(url);
-        if (safeUrl == null) {
-            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-            response.getWriter().write("url forbidden");
-            return;
-        }
-        response.sendRedirect(safeUrl);
+        // The redirect target is an allowlist constant (or the default "/"), never the request string.
+        String target = SecurityUtil.resolveRedirectTarget(url);
+        response.sendRedirect(target);
     }
 }

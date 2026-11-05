@@ -98,8 +98,6 @@ public class URLWhiteList {
     @GetMapping("/vuln/url_bypass")
     public void url_bypass(String url, HttpServletResponse res) throws IOException {
 
-        logger.info("url:  " + url);
-
         if (!SecurityUtil.isHttp(url)) {
             return;
         }
@@ -112,12 +110,11 @@ public class URLWhiteList {
 
         // Use the strict RFC 3986 parser: it yields no host for authority-confusion urls.
         String host = SecurityUtil.gethost(url);
-        logger.info("host:  " + host);
-
         // endsWith .
         for (String domain : domainwhitelist) {
             if (host.endsWith("." + domain)) {
-                res.sendRedirect(url);
+                // The redirect target is an allowlist constant (or the default "/"), never the request string.
+                res.sendRedirect(SecurityUtil.resolveRedirectTarget(url));
                 return;
             }
         }

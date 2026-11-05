@@ -14,9 +14,11 @@ import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -288,6 +290,122 @@ public class SecurityUtil {
         }
 
         return checkURL(url);
+    }
+
+
+    /** Fallback redirect target used whenever a requested target is not allowlisted. */
+    public static final String DEFAULT_REDIRECT_TARGET = "/";
+
+    /**
+     * Same-site redirect destinations. Key: normalized request path, value: the constant that is used as the
+     * redirect target. A redirect to a relative path is always built from a value of this map.
+     */
+    private static final Map<String, String> ALLOWED_REDIRECT_PATHS;
+
+    static {
+        Map<String, String> paths = new HashMap<>();
+        paths.put("/", "/");
+        paths.put("/index", "/index");
+        paths.put("/login", "/login");
+        paths.put("/urlRedirect/test", "/urlRedirect/test");
+        ALLOWED_REDIRECT_PATHS = Collections.unmodifiableMap(paths);
+    }
+
+    /**
+     * Hosts (and all of their sub domains, except those on the block list of {@link #checkURL(String)}) that may
+     * be the destination of an absolute redirect. The host of a redirect is always one element of this list.
+     */
+    private static final List<String> ALLOWED_REDIRECT_HOSTS = Collections.unmodifiableList(Arrays.asList(
+            "joychou.org",
+            "test.joychou.org",
+            "joychou.com",
+            "localhost"));
+
+    private static final Pattern REDIRECT_PATH_PATTERN = Pattern.compile("^(/" + PATH_CHARS + ")?$");
+    private static final Pattern REDIRECT_QUERY_PATTERN = Pattern.compile("^" + QUERY_CHARS + "$");
+
+
+    /**
+     * Resolve a requested redirect target to a constant. The request value is only used as a lookup key: the
+     * returned string is composed of allowlist elements (a fixed path from {@link #ALLOWED_REDIRECT_PATHS}, or
+     * an element of {@link #ALLOWED_REDIRECT_HOSTS} plus a strictly validated path/query), never of the request
+     * string itself. Everything that is not allowlisted resolves to {@link #DEFAULT_REDIRECT_TARGET}.
+     *
+     * @param requested the redirect target supplied by the user
+     * @return a safe redirect target, never null
+     */
+    public static String resolveRedirectTarget(String requested) {
+        if (null == requested || requested.isEmpty() || hasRedirectUnsafeChars(requested)) {
+            return DEFAULT_REDIRECT_TARGET;
+        }
+
+        // (2) same-site relative path: exact match against the fixed set of allowed paths
+        if (requested.startsWith("/")) {
+            String relative = parseRelativeUrl(requested, true);
+            if (null == relative) {
+                return DEFAULT_REDIRECT_TARGET;
+            }
+            int cut = relative.length();
+            int q = relative.indexOf('?');
+            int f = relative.indexOf('#');
+            if (q != -1) {
+                cut = Math.min(cut, q);
+            }
+            if (f != -1) {
+                cut = Math.min(cut, f);
+            }
+            String allowedPath = ALLOWED_REDIRECT_PATHS.get(relative.substring(0, cut));
+            return null == allowedPath ? DEFAULT_REDIRECT_TARGET : allowedPath;
+        }
+
+        // (1) absolute url: block list + domain allowlist (checkURL), then map to an allowlisted host element
+        String checked = checkURL(requested);
+        if (null == checked) {
+            return DEFAULT_REDIRECT_TARGET;
+        }
+        URI uri = parseHttpUri(checked);
+        if (null == uri || null == uri.getHost()) {
+            return DEFAULT_REDIRECT_TARGET;
+        }
+        String host = uri.getHost();
+        String allowedHost = null;
+        for (String candidate : ALLOWED_REDIRECT_HOSTS) {
+            if (candidate.equals(host)) {
+                allowedHost = candidate;
+                break;
+            }
+        }
+        if (null == allowedHost) {
+            for (String candidate : ALLOWED_REDIRECT_HOSTS) {
+                if (host.endsWith("." + candidate)) {
+                    allowedHost = candidate;
+                    break;
+                }
+            }
+        }
+        if (null == allowedHost) {
+            return DEFAULT_REDIRECT_TARGET;
+        }
+
+        String path = uri.getRawPath() == null ? "" : uri.getRawPath();
+        String query = uri.getRawQuery();
+        int port = uri.getPort();
+        if (!REDIRECT_PATH_PATTERN.matcher(path).matches()
+                || (null != query && !REDIRECT_QUERY_PATTERN.matcher(query).matches())
+                || (port != -1 && (port < 1 || port > 65535))) {
+            return DEFAULT_REDIRECT_TARGET;
+        }
+
+        StringBuilder target = new StringBuilder("https".equals(uri.getScheme()) ? "https://" : "http://");
+        target.append(allowedHost);
+        if (port != -1) {
+            target.append(':').append(port);
+        }
+        target.append(path);
+        if (null != query) {
+            target.append('?').append(query);
+        }
+        return target.toString();
     }
 
 
