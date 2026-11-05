@@ -14,6 +14,7 @@ import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -28,6 +29,17 @@ public class SecurityUtil {
             new HashSet<>(Arrays.asList("whoami", "id", "uname", "pwd", "ls"));
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
 
+    private static final int MAX_URL_LENGTH = 2048;
+    private static final int MAX_HOST_LENGTH = 253;
+    private static final String PATH_CHARS = "[A-Za-z0-9._~!$&'()*+,;=:@%/-]*";
+    private static final String QUERY_CHARS = "[A-Za-z0-9._~!$&'()*+,;=:@%/?-]*";
+    /** Absolute http(s) url: no userinfo, no ipv6 literal, no backslash/whitespace/control/non-ascii characters. */
+    private static final Pattern STRICT_HTTP_URL = Pattern.compile(
+            "^https?://[A-Za-z0-9.-]{1,253}(:\\d{1,5})?(/" + PATH_CHARS + ")?(\\?" + QUERY_CHARS + ")?$");
+    /** Same-origin relative url: a single leading slash, optional query and optional fragment. */
+    private static final Pattern STRICT_RELATIVE_URL = Pattern.compile(
+            "^/(?!/)" + PATH_CHARS + "(\\?" + QUERY_CHARS + ")?(#" + QUERY_CHARS + ")?$");
+
 
     /**
      * Determine if the URL starts with HTTP.
@@ -41,19 +53,89 @@ public class SecurityUtil {
 
 
     /**
+     * The one central place where an untrusted absolute url string is converted. The string must match a strict
+     * character/length pattern first and is only then parsed. The returned URI is a NEW object built from the
+     * validated components: scheme (fixed literal http/https), lower-case host, port and the raw path/query.
+     *
+     * @param url untrusted url
+     * @return rebuilt http(s) URI, or null if the url is not acceptable
+     */
+    public static URI parseHttpUri(String url) {
+        if (null == url || url.length() > MAX_URL_LENGTH || !STRICT_HTTP_URL.matcher(url).matches()) {
+            return null;
+        }
+        try {
+            URI parsed = new URI(url);
+            String host = parsed.getHost();
+            int port = parsed.getPort();
+            if (null == host || host.isEmpty() || host.length() > MAX_HOST_LENGTH || port > 65535 || port == 0) {
+                return null;
+            }
+            String scheme = "https".equals(parsed.getScheme()) ? "https" : "http";
+            return new URI(buildHttpUrl(scheme, host.toLowerCase(Locale.ROOT), port,
+                    parsed.getRawPath(), parsed.getRawQuery()));
+        } catch (URISyntaxException e) {
+            return null;
+        }
+    }
+
+
+    private static String buildHttpUrl(String scheme, String host, int port, String rawPath, String rawQuery) {
+        StringBuilder sb = new StringBuilder(scheme).append("://").append(host);
+        if (port != -1) {
+            sb.append(':').append(port);
+        }
+        if (null != rawPath) {
+            sb.append(rawPath);
+        }
+        if (null != rawQuery) {
+            sb.append('?').append(rawQuery);
+        }
+        return sb.toString();
+    }
+
+
+    /**
+     * Validate a same-origin relative url (single leading slash, no authority) and rebuild it from the parsed
+     * path/query/fragment.
+     *
+     * @param url           untrusted relative url
+     * @param allowFragment whether a #fragment is accepted
+     * @return rebuilt relative url, or null if it is not acceptable
+     */
+    public static String parseRelativeUrl(String url, boolean allowFragment) {
+        if (null == url || url.length() > MAX_URL_LENGTH || !STRICT_RELATIVE_URL.matcher(url).matches()) {
+            return null;
+        }
+        try {
+            URI parsed = new URI(url);
+            if (parsed.getScheme() != null || parsed.getRawAuthority() != null || parsed.getRawPath() == null
+                    || (!allowFragment && parsed.getRawFragment() != null)) {
+                return null;
+            }
+            StringBuilder sb = new StringBuilder(parsed.getRawPath());
+            if (parsed.getRawQuery() != null) {
+                sb.append('?').append(parsed.getRawQuery());
+            }
+            if (parsed.getRawFragment() != null) {
+                sb.append('#').append(parsed.getRawFragment());
+            }
+            return sb.toString();
+        } catch (URISyntaxException e) {
+            return null;
+        }
+    }
+
+
+    /**
      * Get http url host.
      *
      * @param url url
      * @return host
      */
     public static String gethost(String url) {
-        try {
-            URI uri = new URI(url);
-            String host = uri.getHost();
-            return host == null ? "" : host.toLowerCase();
-        } catch (URISyntaxException e) {
-            return "";
-        }
+        URI uri = parseHttpUri(url);
+        return uri == null ? "" : uri.getHost();
     }
 
 
@@ -62,11 +144,13 @@ public class SecurityUtil {
      * 优先判断黑名单，如果满足黑名单return null。
      *
      * @param url the url need to check
-     * @return Safe url returns original url; Illegal url returns null;
+     * @return Safe url returns the url rebuilt from its validated components; Illegal url returns null;
      */
     public static String checkURL(String url) {
 
-        if (null == url){
+        // 必须http/https，并且通过严格的字符校验；返回的是由校验后的组件重新构造的URI
+        URI uri = parseHttpUri(url);
+        if (null == uri) {
             return null;
         }
 
@@ -74,12 +158,7 @@ public class SecurityUtil {
         ArrayList<String> blockDomains = WebConfig.getBlockDomains();
 
         try {
-            String host = gethost(url);
-
-            // 必须http/https
-            if (!isHttp(url)) {
-                return null;
-            }
+            String host = uri.getHost();
 
             // 如果满足黑名单返回null
             if (blockDomains.contains(host)){
@@ -93,13 +172,13 @@ public class SecurityUtil {
 
             // 支持多级域名
             if (safeDomains.contains(host)){
-                return url;
+                return uri.toString();
             }
 
             // 支持一级域名
             for(String safedomain: safeDomains) {
                 if(host.endsWith("." + safedomain)) {
-                    return url;
+                    return uri.toString();
                 }
             }
             return null;
@@ -123,18 +202,17 @@ public class SecurityUtil {
         if (null == origin || origin.isEmpty() || hasRedirectUnsafeChars(origin)) {
             return null;
         }
-        try {
-            URI uri = new URI(origin);
-            String path = uri.getRawPath();
-            if (uri.getHost() == null || uri.getRawUserInfo() != null
-                    || (path != null && !path.isEmpty())
-                    || uri.getRawQuery() != null || uri.getRawFragment() != null) {
-                return null;
-            }
-        } catch (URISyntaxException e) {
+        URI uri = parseHttpUri(origin);
+        if (uri == null) {
             return null;
         }
-        return checkURL(origin);
+        String path = uri.getRawPath();
+        if (uri.getHost() == null || uri.getRawUserInfo() != null
+                || (path != null && !path.isEmpty())
+                || uri.getRawQuery() != null || uri.getRawFragment() != null) {
+            return null;
+        }
+        return checkURL(uri.toString());
     }
 
 
@@ -173,18 +251,8 @@ public class SecurityUtil {
         }
 
         if (url.startsWith("/")) {
-            if (url.startsWith("//")) {
-                return null;
-            }
-            try {
-                URI uri = new URI(url);
-                if (uri.getScheme() != null || uri.getRawAuthority() != null) {
-                    return null;
-                }
-            } catch (URISyntaxException e) {
-                return null;
-            }
-            return url;
+            // strict character check, then rebuilt from the parsed path/query/fragment
+            return parseRelativeUrl(url, true);
         }
 
         return checkURL(url);

@@ -67,11 +67,12 @@ public class SSRFChecker {
             do {
                 // 判断当前请求的URL是否是内网ip
                 if (isInternalIpByUrl(finalUrl)) {
-                    logger.error("[-] SSRF check failed. Dangerous url: " + finalUrl);
+                    logger.error("[-] SSRF check failed. Dangerous url.");
                     return false;  // 内网ip直接return，非内网ip继续判断是否有重定向
                 }
 
-                connection = (HttpURLConnection) checkAndGetUrl(finalUrl).openConnection();
+                URL checked = checkAndGetUrl(finalUrl);
+                connection = (HttpURLConnection) checked.openConnection();
                 connection.setInstanceFollowRedirects(false);
                 connection.setUseCaches(false); // 设置为false，手动处理跳转，可以拿到每个跳转的URL
                 connection.setConnectTimeout(connectTime);
@@ -83,9 +84,8 @@ public class SSRFChecker {
                     if (null == redirectedUrl)
                         break;
                     // resolve relative Location headers against the current url
-                    finalUrl = new URL(connection.getURL(), redirectedUrl).toString();
+                    finalUrl = resolveRedirect(checked, redirectedUrl);
                     i += 1;  // 重定向次数加1
-                    logger.info("redirected url: " + finalUrl);
                     if (i == checkTimes) {
                         return false;
                     }
@@ -112,18 +112,57 @@ public class SSRFChecker {
      * @throws SSRFException if the url is not allowed
      */
     public static URL checkAndGetUrl(String url) {
-        if (null == url || !SecurityUtil.isHttp(url)) {
-            throw new SSRFException("[-] SSRF check failed. Only http and https are allowed.");
+        // The only place where the untrusted string is parsed: strict pattern first, then a rebuilt URI.
+        URI uri = SecurityUtil.parseHttpUri(url);
+        if (null == uri) {
+            throw new SSRFException("[-] SSRF check failed. Only well-formed http and https urls are allowed.");
         }
+        String host = uri.getHost();
+        checkHost(host);
         try {
-            URI uri = new URI(url);
-            checkHost(uri.getHost());
-            return uri.toURL();
-        } catch (SSRFException e) {
-            throw e;
+            // Rebuild the URL from validated components only: fixed scheme literal, checked host, port, path, query.
+            String protocol = "https".equals(uri.getScheme()) ? "https" : "http";
+            String path = uri.getRawPath();
+            StringBuilder file = new StringBuilder(null == path || path.isEmpty() ? "/" : path);
+            if (null != uri.getRawQuery()) {
+                file.append('?').append(uri.getRawQuery());
+            }
+            return new URL(protocol, host, uri.getPort(), file.toString());
         } catch (Exception e) {
             throw new SSRFException("[-] SSRF check failed. Illegal url.");
         }
+    }
+
+
+    /**
+     * Resolve the Location header of a redirect against the already validated url it came from. Only an absolute
+     * http(s) url or an absolute path are accepted; both go through the strict pattern in {@link SecurityUtil}.
+     * The result must still be passed to {@link #checkAndGetUrl(String)} before it is requested.
+     *
+     * @param base     validated url of the response that carried the Location header
+     * @param location untrusted Location header value
+     * @return absolute url string
+     * @throws SSRFException if the Location value is not acceptable
+     */
+    public static String resolveRedirect(URL base, String location) {
+        if (null == location) {
+            throw new SSRFException("[-] SSRF check failed. Illegal redirect.");
+        }
+        int fragment = location.indexOf('#');
+        String loc = fragment == -1 ? location : location.substring(0, fragment);
+        if (loc.startsWith("/")) {
+            String relative = SecurityUtil.parseRelativeUrl(loc, false);
+            if (null == relative) {
+                throw new SSRFException("[-] SSRF check failed. Illegal redirect.");
+            }
+            String protocol = "https".equals(base.getProtocol()) ? "https" : "http";
+            return protocol + "://" + base.getAuthority() + relative;
+        }
+        URI absolute = SecurityUtil.parseHttpUri(loc);
+        if (null == absolute) {
+            throw new SSRFException("[-] SSRF check failed. Illegal redirect.");
+        }
+        return absolute.toString();
     }
 
 
@@ -347,17 +386,8 @@ public class SSRFChecker {
      * Get host from URL which the protocol must be http:// or https:// and not be //.
      */
     private static String url2host(String url) {
-        try {
-            // use URI instead of URL
-            URI u = new URI(url);
-            if (SecurityUtil.isHttp(url)) {
-                String host = u.getHost();
-                return null == host ? "" : host;
-            }
-            return "";
-        } catch (Exception e) {
-            return "";
-        }
+        // strict pattern + rebuilt URI instead of URL; empty when the url is not a well-formed http(s) url
+        return SecurityUtil.gethost(url);
     }
 
 }

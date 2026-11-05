@@ -47,8 +47,15 @@ public class HttpUtils {
 
     public static String commonHttpClient(String url) {
 
+        // scheme/host validated and url rebuilt from the validated components
+        URL checked;
+        try {
+            checked = SSRFChecker.checkAndGetUrl(url);
+        } catch (SSRFException e) {
+            return e.getMessage();
+        }
         HttpClient client = new HttpClient();
-        GetMethod method = new GetMethod(url);
+        GetMethod method = new GetMethod(checked.toString());
 
         try {
             client.executeMethod(method); // send request
@@ -92,11 +99,11 @@ public class HttpUtils {
                 throws ProtocolException {
             URI target = super.getLocationURI(request, response, context);
             try {
-                SSRFChecker.checkAndGetUrl(target.toString());
-            } catch (SSRFException e) {
-                throw new ProtocolException(e.getMessage());
+                // return the URI rebuilt from the validated components, not the Location header value
+                return SSRFChecker.checkAndGetUrl(target.toString()).toURI();
+            } catch (SSRFException | java.net.URISyntaxException e) {
+                throw new ProtocolException("[-] SSRF check failed. Illegal redirect.");
             }
-            return target;
         }
     }
 
@@ -123,7 +130,7 @@ public class HttpUtils {
                 if (location == null) {
                     return conn;
                 }
-                current = new URL(u, location).toString();
+                current = SSRFChecker.resolveRedirect(u, location);
                 conn.disconnect();
                 continue;
             }
@@ -139,16 +146,22 @@ public class HttpUtils {
 
         try {
 
-            CloseableHttpClient client = HttpClients.createDefault();
-            HttpGet httpGet = new HttpGet(url);
-            // set redirect enable false
-            // httpGet.setConfig(RequestConfig.custom().setRedirectsEnabled(false).build());
-            HttpResponse httpResponse = client.execute(httpGet); // send request
-            BufferedReader rd = new BufferedReader(new InputStreamReader(httpResponse.getEntity().getContent()));
+            // scheme/host validated, url rebuilt from validated components, every redirect hop re-validated
+            URL checked = SSRFChecker.checkAndGetUrl(url);
+            CloseableHttpClient client = HttpClients.custom()
+                    .setRedirectStrategy(new CheckedRedirectStrategy())
+                    .build();
+            try {
+                HttpGet httpGet = new HttpGet(checked.toURI());
+                HttpResponse httpResponse = client.execute(httpGet); // send request
+                BufferedReader rd = new BufferedReader(new InputStreamReader(httpResponse.getEntity().getContent()));
 
-            String line;
-            while ((line = rd.readLine()) != null) {
-                result.append(line);
+                String line;
+                while ((line = rd.readLine()) != null) {
+                    result.append(line);
+                }
+            } finally {
+                client.close();
             }
 
             return result.toString();
@@ -222,7 +235,7 @@ public class HttpUtils {
                 int code = res.statusCode();
                 String location = res.header("Location");
                 if ((code == 301 || code == 302 || code == 303 || code == 307 || code == 308) && location != null) {
-                    current = new URL(checked, location).toString();
+                    current = SSRFChecker.resolveRedirect(checked, location);
                     continue;
                 }
                 Document doc = res.parse();
@@ -242,9 +255,23 @@ public class HttpUtils {
      */
     public static String okhttp(String url) throws IOException {
         OkHttpClient client = new OkHttpClient();
-//         client.setFollowRedirects(false);
-        com.squareup.okhttp.Request ok_http = new com.squareup.okhttp.Request.Builder().url(url).build();
-        return client.newCall(ok_http).execute().body().string();
+        // Redirects are followed manually and every hop is validated against SSRF.
+        client.setFollowRedirects(false);
+        String current = url;
+        for (int i = 0; i <= MAX_REDIRECTS; i++) {
+            URL checked = SSRFChecker.checkAndGetUrl(current);
+            com.squareup.okhttp.Request ok_http = new com.squareup.okhttp.Request.Builder().url(checked).build();
+            com.squareup.okhttp.Response response = client.newCall(ok_http).execute();
+            int code = response.code();
+            String location = response.header("Location");
+            if ((code == 301 || code == 302 || code == 303 || code == 307 || code == 308) && location != null) {
+                response.body().close();
+                current = SSRFChecker.resolveRedirect(checked, location);
+                continue;
+            }
+            return response.body().string();
+        }
+        throw new IOException("Too many redirects");
     }
 
 
@@ -257,8 +284,11 @@ public class HttpUtils {
      */
     public static void imageIO(String url) {
         try {
-            URL u = new URL(url);
-            ImageIO.read(u); // send request
+            // validated connection: http/https only, internal hosts rejected, redirects re-validated
+            HttpURLConnection conn = openCheckedConnection(url);
+            try (InputStream is = conn.getInputStream()) {
+                ImageIO.read(is); // send request
+            }
         } catch (IOException e) {
             logger.error(e.getMessage());
         }
@@ -274,7 +304,11 @@ public class HttpUtils {
      */
     public static void IOUtils(String url) {
         try {
-            IOUtils.toByteArray(URI.create(url));
+            // validated connection: http/https only, internal hosts rejected, redirects re-validated
+            HttpURLConnection conn = openCheckedConnection(url);
+            try (InputStream is = conn.getInputStream()) {
+                IOUtils.toByteArray(is);
+            }
         } catch (IOException e) {
             logger.error(e.getMessage());
         }
