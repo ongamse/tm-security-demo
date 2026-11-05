@@ -1,7 +1,8 @@
 package org.joychou.controller;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.joychou.config.Constants;
-import org.joychou.security.AntObjectInputStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -9,10 +10,10 @@ import org.springframework.web.bind.annotation.RestController;
 
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.io.InvalidClassException;
+import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.Map;
 
 import static org.springframework.web.util.WebUtils.getCookie;
 
@@ -27,6 +28,14 @@ public class Deserialize {
 
     protected final Logger logger = LoggerFactory.getLogger(this.getClass());
 
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    private static final int MAX_COOKIE_DECODED_BYTES = 4096;
+
+    private static final int MAX_COOKIE_ENCODED_LENGTH = 4 * ((MAX_COOKIE_DECODED_BYTES + 2) / 3);
+
+    private static final String INVALID_COOKIE = "Invalid rememberMe cookie.";
+
     /**
      * java -jar ysoserial.jar CommonsCollections5 "open -a Calculator" | base64 <br>
      * <a href="http://localhost:8080/deserialize/rememberMe/vuln">http://localhost:8080/deserialize/rememberMe/vuln</a>
@@ -40,18 +49,8 @@ public class Deserialize {
             return "No rememberMe cookie. Right?";
         }
 
-        String rememberMe = cookie.getValue();
-        byte[] decoded = Base64.getDecoder().decode(rememberMe);
-
-        ByteArrayInputStream bytes = new ByteArrayInputStream(decoded);
-        try {
-            // Class allowlist enforced in AntObjectInputStream.resolveClass.
-            AntObjectInputStream in = new AntObjectInputStream(bytes);
-            in.readObject();
-            in.close();
-        } catch (InvalidClassException e) {
-            logger.info(e.toString());
-            return e.toString();
+        if (null == parseRememberMe(cookie)) {
+            return INVALID_COOKIE;
         }
 
         return "Are u ok?";
@@ -71,21 +70,28 @@ public class Deserialize {
         if (null == cookie) {
             return "No rememberMe cookie. Right?";
         }
-        String rememberMe = cookie.getValue();
-        byte[] decoded = Base64.getDecoder().decode(rememberMe);
-
-        ByteArrayInputStream bytes = new ByteArrayInputStream(decoded);
-
-        try {
-            AntObjectInputStream in = new AntObjectInputStream(bytes);  // throw InvalidClassException
-            in.readObject();
-            in.close();
-        } catch (InvalidClassException e) {
-            logger.info(e.toString());
-            return e.toString();
+        if (null == parseRememberMe(cookie)) {
+            return INVALID_COOKIE;
         }
 
         return "I'm very OK.";
+    }
+
+    private static Map<String, String> parseRememberMe(Cookie cookie) {
+        String value = cookie.getValue();
+        if (value == null || value.length() > MAX_COOKIE_ENCODED_LENGTH) {
+            return null;
+        }
+        try {
+            byte[] decoded = Base64.getDecoder().decode(value);
+            if (decoded.length > MAX_COOKIE_DECODED_BYTES) {
+                return null;
+            }
+            String json = new String(decoded, StandardCharsets.UTF_8);
+            return MAPPER.readValue(json, new TypeReference<Map<String, String>>() { });
+        } catch (IllegalArgumentException | IOException e) {
+            return null;
+        }
     }
 
 }
