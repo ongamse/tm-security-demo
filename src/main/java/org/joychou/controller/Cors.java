@@ -28,8 +28,8 @@ public class Cors {
         // the header value is the matching allowlist element, never the request Origin value
         String allowedOrigin = SecurityUtil.matchAllowedCorsOrigin(request.getHeader("origin"));
         if (allowedOrigin != null) {
+            // only static, non user-specific data is returned, so cookies/credentials are not allowed
             response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
-            response.setHeader("Access-Control-Allow-Credentials", "true");  // allow cookie, allowlisted origin only
         }
         return info;
     }
