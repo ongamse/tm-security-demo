@@ -130,12 +130,12 @@ public class Jsonp {
         CsrfToken csrfToken = cookieCsrfTokenRepository.loadToken(request); // get csrf token
 
         String callback = request.getParameter("fastjsonpCallback");
-        if (StringUtils.isNotBlank(callback)) {
+        if (StringUtils.isNotBlank(callback) && WebUtils.isValidJsCallback(callback)) {
             JSONPObject jsonpObj = new JSONPObject(callback);
             jsonpObj.addParameter(csrfToken);
-            return jsonpObj.toString();
+            return WebUtils.escapeJsonForScript(jsonpObj.toString());
         } else {
-            return csrfToken.toString();
+            return WebUtils.escapeJsonForScript(String.valueOf(csrfToken));
         }
     }
 

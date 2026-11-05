@@ -5,7 +5,6 @@ import javax.servlet.http.HttpServletRequest;
 import java.io.*;
 
 import com.google.common.base.Preconditions;
-import org.springframework.web.util.HtmlUtils;
 
 public class WebUtils {
 
@@ -27,8 +26,38 @@ public class WebUtils {
     }
 
 
+    private static final java.util.regex.Pattern JS_CALLBACK =
+            java.util.regex.Pattern.compile("^[A-Za-z_$][A-Za-z0-9_$.]{0,127}$");
+
+    /**
+     * Only plain JavaScript identifiers (optionally dotted) are valid JSONP callback names.
+     */
+    public static boolean isValidJsCallback(String callback) {
+        return callback != null && JS_CALLBACK.matcher(callback).matches();
+    }
+
+    /**
+     * Make serialized JSON safe to embed in a script/HTML response. The characters are replaced by
+     * JSON unicode escapes, so the result is still valid JSON/JavaScript with identical meaning.
+     */
+    public static String escapeJsonForScript(String jsonStr) {
+        if (jsonStr == null) {
+            return null;
+        }
+        return jsonStr.replace("<", "\\u003c")
+                .replace(">", "\\u003e")
+                .replace("&", "\\u0026")
+                .replace(String.valueOf((char) 0x2028), "\\u2028")
+                .replace(String.valueOf((char) 0x2029), "\\u2029");
+    }
+
     public static String json2Jsonp(String callback, String jsonStr) {
-        return HtmlUtils.htmlEscape(callback) + "(" + jsonStr + ")";
+        String safeJson = escapeJsonForScript(jsonStr);
+        if (!isValidJsCallback(callback)) {
+            // No usable callback name: return the plain JSON instead of reflecting the parameter.
+            return safeJson;
+        }
+        return callback + "(" + safeJson + ")";
     }
 
 
