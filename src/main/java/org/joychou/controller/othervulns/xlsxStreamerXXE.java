@@ -9,6 +9,8 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -30,6 +32,7 @@ import java.util.zip.ZipInputStream;
 @RequestMapping("xlsx-streamer")
 public class xlsxStreamerXXE {
 
+    private static final long MAX_UPLOAD_BYTES = 50L * 1024 * 1024;
 
     @GetMapping("/upload")
     public String index() {
@@ -40,9 +43,35 @@ public class xlsxStreamerXXE {
     @PostMapping("/readxlsx")
     public void xllx_streamer_xxe(MultipartFile file) throws IOException {
         // xlsx-streamer 2.0.0 parses the workbook XML with entity resolution enabled and
-        // exposes no parser configuration, so reject any package containing a DTD first.
-        rejectXmlWithDoctype(file.getInputStream());
-        StreamingReader.builder().open(file.getInputStream());
+        // exposes no parser configuration, so validate the package bytes (zip header, size cap,
+        // no DTD in any XML part) and only then hand those same bytes to the reader.
+        byte[] upload = readBounded(file.getInputStream());
+        if (upload.length < 4 || upload[0] != 'P' || upload[1] != 'K') {
+            throw new IllegalArgumentException("invalid xlsx upload");
+        }
+        rejectXmlWithDoctype(new ByteArrayInputStream(upload));
+        StreamingReader.builder().open(new ByteArrayInputStream(upload));
+    }
+
+
+    /**
+     * Read the upload fully, failing if it exceeds MAX_UPLOAD_BYTES.
+     */
+    private static byte[] readBounded(InputStream in) throws IOException {
+        try (InputStream src = in) {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buf = new byte[8192];
+            long total = 0;
+            int n;
+            while ((n = src.read(buf)) != -1) {
+                total += n;
+                if (total > MAX_UPLOAD_BYTES) {
+                    throw new IllegalArgumentException("xlsx upload too large");
+                }
+                out.write(buf, 0, n);
+            }
+            return out.toByteArray();
+        }
     }
 
 
@@ -51,7 +80,9 @@ public class xlsxStreamerXXE {
      * ASCII-compatible XML or declares a DOCTYPE (needed for any external entity / DTD).
      */
     private static void rejectXmlWithDoctype(InputStream upload) throws IOException {
-        final byte[] doctype = "<!DOCTYPE".getBytes(StandardCharsets.US_ASCII);
+        // Patterns are lower case; the scanned window is lower-cased before matching.
+        final byte[] doctype = "<!doctype".getBytes(StandardCharsets.US_ASCII);
+        final byte[] entity = "<!entity".getBytes(StandardCharsets.US_ASCII);
         final long maxTotalBytes = 512L * 1024 * 1024;
         long total = 0;
         byte[] buf = new byte[8192];
@@ -86,7 +117,9 @@ public class xlsxStreamerXXE {
                     byte[] data = new byte[window.length + n];
                     System.arraycopy(window, 0, data, 0, window.length);
                     System.arraycopy(buf, 0, data, window.length, n);
-                    if (indexOf(data, doctype) >= 0) {
+                    byte[] lowered = new String(data, StandardCharsets.ISO_8859_1)
+                            .toLowerCase(Locale.ROOT).getBytes(StandardCharsets.ISO_8859_1);
+                    if (indexOf(lowered, doctype) >= 0 || indexOf(lowered, entity) >= 0) {
                         throw new IllegalArgumentException("DOCTYPE is not allowed in xlsx xml");
                     }
                     int keep = Math.min(doctype.length - 1, data.length);
