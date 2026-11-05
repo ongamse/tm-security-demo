@@ -12,9 +12,11 @@ public class LoginUtils {
     // get current login username
     public static String getUserInfo2JsonStr(HttpServletRequest request) {
         Principal principal = request.getUserPrincipal();
-        String username = principal.getName();
         Map<String, String> m = new HashMap<>();
-        m.put("Username", username);
+        // no principal (e.g. cross-origin request without cookies): return an empty object instead of an NPE
+        if (principal != null) {
+            m.put("Username", principal.getName());
+        }
 
         return JSON.toJSONString(m);
     }
