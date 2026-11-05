@@ -61,6 +61,22 @@ public class WebUtils {
     }
 
 
+    private static final java.util.regex.Pattern HEADER_CONTROL_CHARS =
+            java.util.regex.Pattern.compile("[\\p{Cntrl}\\u0085\\u2028\\u2029]");
+
+    /**
+     * Remove CR, LF and all other control characters from a value that is written into an HTTP
+     * response header, so that attacker-controlled data cannot split the response (CWE-113).
+     * Returns null for null input.
+     */
+    public static String sanitizeHeaderValue(String value) {
+        if (value == null) {
+            return null;
+        }
+        return HEADER_CONTROL_CHARS.matcher(value).replaceAll("");
+    }
+
+
     public static String getFileExtension(String fullName) {
         Preconditions.checkNotNull(fullName);
         String fileName = (new File(fullName)).getName();
