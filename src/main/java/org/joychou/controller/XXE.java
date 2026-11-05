@@ -573,7 +573,7 @@ public class XXE {
             for (int j = 0; j < xxe.getLength(); j++) {
                 Node xxeNode = xxe.item(j);
                 // 测试不能blind xxe，所以强行加了一个回显
-                logger.info("xxeNode type: {}", xxeNode.getNodeType());
+                logger.debug("xxe response helper visited a child node");
             }
 
         }
