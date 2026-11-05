@@ -2,6 +2,9 @@ package org.joychou.controller;
 
 import com.thoughtworks.xstream.XStream;
 import com.thoughtworks.xstream.io.xml.DomDriver;
+import com.thoughtworks.xstream.security.NoTypePermission;
+import com.thoughtworks.xstream.security.NullPermission;
+import com.thoughtworks.xstream.security.PrimitiveTypePermission;
 import com.thoughtworks.xstream.io.xml.DomReader;
 import org.joychou.dao.User;
 import org.joychou.util.WebUtils;
@@ -43,6 +46,11 @@ public class XStreamRce {
         Document document = dbf.newDocumentBuilder().parse(new InputSource(new StringReader(xml)));
 
         XStream xstream = new XStream(new DomDriver());
+        // Allowlist: deny every type except the ones this endpoint legitimately unmarshals.
+        xstream.addPermission(NoTypePermission.NONE);
+        xstream.addPermission(NullPermission.NULL);
+        xstream.addPermission(PrimitiveTypePermission.PRIMITIVES);
+        xstream.allowTypes(new Class[]{User.class, String.class, Integer.class});
         xstream.unmarshal(new DomReader(document));
         return "xstream";
     }
