@@ -3,6 +3,8 @@ package org.joychou.util;
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
 import java.io.*;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 
 import com.google.common.base.Preconditions;
 
@@ -12,6 +14,41 @@ public class WebUtils {
     public static String getRequestBody(HttpServletRequest request) throws IOException {
         InputStream in = request.getInputStream();
         return convertStreamToString(in);
+    }
+
+    /**
+     * Read the request body once with a hard size cap. UTF-16 bodies with a byte order mark are
+     * decoded as UTF-16; otherwise the request charset is used (UTF-8 when absent or unknown).
+     *
+     * @return the decoded body, or null when the body is larger than maxBytes
+     */
+    public static String getRequestBody(HttpServletRequest request, int maxBytes) throws IOException {
+        InputStream in = request.getInputStream();
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        byte[] buf = new byte[4096];
+        int total = 0;
+        int n;
+        while ((n = in.read(buf)) != -1) {
+            total += n;
+            if (total > maxBytes) {
+                return null;
+            }
+            bos.write(buf, 0, n);
+        }
+        byte[] data = bos.toByteArray();
+
+        Charset cs = StandardCharsets.UTF_8;
+        if (data.length >= 2 && ((data[0] == (byte) 0xFE && data[1] == (byte) 0xFF)
+                || (data[0] == (byte) 0xFF && data[1] == (byte) 0xFE))) {
+            cs = StandardCharsets.UTF_16;
+        } else if (request.getCharacterEncoding() != null) {
+            try {
+                cs = Charset.forName(request.getCharacterEncoding());
+            } catch (IllegalArgumentException e) {
+                cs = StandardCharsets.UTF_8;
+            }
+        }
+        return new String(data, cs);
     }
 
     // https://stackoverflow.com/questions/309424/how-do-i-read-convert-an-inputstream-into-a-string-in-java

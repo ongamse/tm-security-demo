@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.web.ProjectedPayload;
 import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.util.HtmlUtils;
@@ -19,7 +20,8 @@ import org.xml.sax.SAXException;
 import org.xml.sax.XMLReader;
 
 import java.io.*;
-import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.xml.sax.InputSource;
 
@@ -33,6 +35,7 @@ import javax.xml.parsers.SAXParser;
 import org.xml.sax.helpers.DefaultHandler;
 import org.apache.commons.digester3.Digester;
 import org.jdom2.input.SAXBuilder;
+import org.joychou.security.SecurityUtil;
 import org.joychou.util.WebUtils;
 import org.xmlbeam.annotation.XBRead;
 
@@ -51,11 +54,10 @@ public class XXE {
 
     @PostMapping("/xmlReader/vuln")
     public String xmlReaderVuln(HttpServletRequest request) {
+        String xml = rebuildXml(request);
         try {
-            String body = requireNoDtd(WebUtils.getRequestBody(request));
-            logger.info("Received xml request body, length: {}", body.length());
             XMLReader xmlReader = secureXmlReader();
-            xmlReader.parse(new InputSource(new StringReader(body)));  // parse xml
+            xmlReader.parse(new InputSource(new StringReader(xml)));  // parse xml
             return "xmlReader xxe vuln code";
         } catch (Exception e) {
             logger.error("xxe except: {}", e.getClass().getSimpleName());
@@ -66,14 +68,12 @@ public class XXE {
 
     @RequestMapping(value = "/xmlReader/sec", method = RequestMethod.POST)
     public String xmlReaderSec(HttpServletRequest request) {
+        String xml = rebuildXml(request);
         try {
-            String body = requireNoDtd(WebUtils.getRequestBody(request));
-            logger.info("Received xml request body, length: {}", body.length());
-
             // fix code start
             XMLReader xmlReader = secureXmlReader();
             //fix code end
-            xmlReader.parse(new InputSource(new StringReader(body)));  // parse xml
+            xmlReader.parse(new InputSource(new StringReader(xml)));  // parse xml
 
         } catch (Exception e) {
             logger.error("xxe except: {}", e.getClass().getSimpleName());
@@ -86,13 +86,11 @@ public class XXE {
 
     @RequestMapping(value = "/SAXBuilder/vuln", method = RequestMethod.POST)
     public String SAXBuilderVuln(HttpServletRequest request) {
+        String xml = rebuildXml(request);
         try {
-            String body = requireNoDtd(WebUtils.getRequestBody(request));
-            logger.info("Received xml request body, length: {}", body.length());
-
             SAXBuilder builder = secureSaxBuilder();
             // org.jdom2.Document document
-            builder.build(new InputSource(new StringReader(body)));
+            builder.build(new InputSource(new StringReader(xml)));
             return "SAXBuilder xxe vuln code";
         } catch (Exception e) {
             logger.error("xxe except: {}", e.getClass().getSimpleName());
@@ -102,13 +100,11 @@ public class XXE {
 
     @RequestMapping(value = "/SAXBuilder/sec", method = RequestMethod.POST)
     public String SAXBuilderSec(HttpServletRequest request) {
+        String xml = rebuildXml(request);
         try {
-            String body = requireNoDtd(WebUtils.getRequestBody(request));
-            logger.info("Received xml request body, length: {}", body.length());
-
             SAXBuilder builder = secureSaxBuilder();
             // org.jdom2.Document document
-            builder.build(new InputSource(new StringReader(body)));
+            builder.build(new InputSource(new StringReader(xml)));
 
         } catch (Exception e) {
             logger.error("xxe except: {}", e.getClass().getSimpleName());
@@ -120,13 +116,11 @@ public class XXE {
 
     @RequestMapping(value = "/SAXReader/vuln", method = RequestMethod.POST)
     public String SAXReaderVuln(HttpServletRequest request) {
+        String xml = rebuildXml(request);
         try {
-            String body = requireNoDtd(WebUtils.getRequestBody(request));
-            logger.info("Received xml request body, length: {}", body.length());
-
             SAXReader reader = secureSaxReader();
             // org.dom4j.Document document
-            reader.read(new InputSource(new StringReader(body))); // cause xxe
+            reader.read(new InputSource(new StringReader(xml))); // cause xxe
 
         } catch (Exception e) {
             logger.error("xxe except: {}", e.getClass().getSimpleName());
@@ -138,13 +132,11 @@ public class XXE {
 
     @RequestMapping(value = "/SAXReader/sec", method = RequestMethod.POST)
     public String SAXReaderSec(HttpServletRequest request) {
+        String xml = rebuildXml(request);
         try {
-            String body = requireNoDtd(WebUtils.getRequestBody(request));
-            logger.info("Received xml request body, length: {}", body.length());
-
             SAXReader reader = secureSaxReader();
             // org.dom4j.Document document
-            reader.read(new InputSource(new StringReader(body)));
+            reader.read(new InputSource(new StringReader(xml)));
         } catch (Exception e) {
             logger.error("xxe except: {}", e.getClass().getSimpleName());
             return EXCEPT;
@@ -154,12 +146,10 @@ public class XXE {
 
     @RequestMapping(value = "/SAXParser/vuln", method = RequestMethod.POST)
     public String SAXParserVuln(HttpServletRequest request) {
+        String xml = rebuildXml(request);
         try {
-            String body = requireNoDtd(WebUtils.getRequestBody(request));
-            logger.info("Received xml request body, length: {}", body.length());
-
             SAXParser parser = secureSaxParser();
-            parser.parse(new InputSource(new StringReader(body)), new DefaultHandler());  // parse xml
+            parser.parse(new InputSource(new StringReader(xml)), new DefaultHandler());  // parse xml
 
             return "SAXParser xxe vuln code";
         } catch (Exception e) {
@@ -171,12 +161,10 @@ public class XXE {
 
     @RequestMapping(value = "/SAXParser/sec", method = RequestMethod.POST)
     public String SAXParserSec(HttpServletRequest request) {
+        String xml = rebuildXml(request);
         try {
-            String body = requireNoDtd(WebUtils.getRequestBody(request));
-            logger.info("Received xml request body, length: {}", body.length());
-
             SAXParser parser = secureSaxParser();
-            parser.parse(new InputSource(new StringReader(body)), new DefaultHandler());  // parse xml
+            parser.parse(new InputSource(new StringReader(xml)), new DefaultHandler());  // parse xml
         } catch (Exception e) {
             logger.error("xxe except: {}", e.getClass().getSimpleName());
             return EXCEPT;
@@ -187,12 +175,10 @@ public class XXE {
 
     @RequestMapping(value = "/Digester/vuln", method = RequestMethod.POST)
     public String DigesterVuln(HttpServletRequest request) {
+        String xml = rebuildXml(request);
         try {
-            String body = requireNoDtd(WebUtils.getRequestBody(request));
-            logger.info("Received xml request body, length: {}", body.length());
-
             Digester digester = secureDigester();
-            digester.parse(new StringReader(body));  // parse xml
+            digester.parse(new StringReader(xml));  // parse xml
         } catch (Exception e) {
             logger.error("xxe except: {}", e.getClass().getSimpleName());
             return EXCEPT;
@@ -202,12 +188,10 @@ public class XXE {
 
     @RequestMapping(value = "/Digester/sec", method = RequestMethod.POST)
     public String DigesterSec(HttpServletRequest request) {
+        String xml = rebuildXml(request);
         try {
-            String body = requireNoDtd(WebUtils.getRequestBody(request));
-            logger.info("Received xml request body, length: {}", body.length());
-
             Digester digester = secureDigester();
-            digester.parse(new StringReader(body));  // parse xml
+            digester.parse(new StringReader(xml));  // parse xml
 
             return "Digester xxe security code";
         } catch (Exception e) {
@@ -255,13 +239,11 @@ public class XXE {
 
     @RequestMapping(value = "/DocumentBuilder/Sec", method = RequestMethod.POST)
     public String DocumentBuilderSec(HttpServletRequest request) {
+        String xml = rebuildXml(request);
         try {
-            String body = requireNoDtd(WebUtils.getRequestBody(request));
-            logger.info("Received xml request body, length: {}", body.length());
-
             DocumentBuilderFactory dbf = secureDocumentBuilderFactory();
             DocumentBuilder db = dbf.newDocumentBuilder();
-            StringReader sr = new StringReader(body);
+            StringReader sr = new StringReader(xml);
             InputSource is = new InputSource(sr);
             db.parse(is);  // parse xml
             sr.close();
@@ -275,14 +257,12 @@ public class XXE {
 
     @RequestMapping(value = "/DocumentBuilder/xinclude/vuln", method = RequestMethod.POST)
     public String DocumentBuilderXincludeVuln(HttpServletRequest request) {
+        String xml = rebuildXml(request);
         try {
-            String body = requireNoDtd(WebUtils.getRequestBody(request));
-            logger.info("Received xml request body, length: {}", body.length());
-
             DocumentBuilderFactory dbf = secureDocumentBuilderFactory();
             dbf.setNamespaceAware(true);
             DocumentBuilder db = dbf.newDocumentBuilder();
-            StringReader sr = new StringReader(body);
+            StringReader sr = new StringReader(xml);
             InputSource is = new InputSource(sr);
             Document document = db.parse(is);  // parse xml
 
@@ -300,14 +280,13 @@ public class XXE {
 
     @RequestMapping(value = "/DocumentBuilder/xinclude/sec", method = RequestMethod.POST)
     public String DocumentBuilderXincludeSec(HttpServletRequest request) {
+        String xml = rebuildXml(request);
         try {
-            String body = requireNoDtd(WebUtils.getRequestBody(request));
-            logger.info("Received xml request body, length: {}", body.length());
             DocumentBuilderFactory dbf = secureDocumentBuilderFactory();
             dbf.setNamespaceAware(true);
 
             DocumentBuilder db = dbf.newDocumentBuilder();
-            StringReader sr = new StringReader(body);
+            StringReader sr = new StringReader(xml);
             InputSource is = new InputSource(sr);
             Document document = db.parse(is);  // parse xml
 
@@ -325,12 +304,10 @@ public class XXE {
 
     @PostMapping("/XMLReader/vuln")
     public String XMLReaderVuln(HttpServletRequest request) {
+        String xml = rebuildXml(request);
         try {
-            String body = requireNoDtd(WebUtils.getRequestBody(request));
-            logger.info("Received xml request body, length: {}", body.length());
-
             XMLReader xmlReader = secureXmlReader();
-            xmlReader.parse(new InputSource(new StringReader(body)));
+            xmlReader.parse(new InputSource(new StringReader(xml)));
 
         } catch (Exception e) {
             logger.error("xxe except: {}", e.getClass().getSimpleName());
@@ -343,12 +320,10 @@ public class XXE {
 
     @PostMapping("/XMLReader/sec")
     public String XMLReaderSec(HttpServletRequest request) {
+        String xml = rebuildXml(request);
         try {
-            String body = requireNoDtd(WebUtils.getRequestBody(request));
-            logger.info("Received xml request body, length: {}", body.length());
-
             XMLReader xmlReader = secureXmlReader();
-            xmlReader.parse(new InputSource(new StringReader(body)));
+            xmlReader.parse(new InputSource(new StringReader(xml)));
 
         } catch (Exception e) {
             logger.error("xxe except: {}", e.getClass().getSimpleName());
@@ -364,9 +339,9 @@ public class XXE {
      */
     @PostMapping("/DocumentHelper/vuln")
     public String DocumentHelper(HttpServletRequest req) {
+        String xml = rebuildXml(req);
         try {
-            String body = requireNoDtd(WebUtils.getRequestBody(req));
-            DocumentHelper.parseText(body); // parse xml
+            DocumentHelper.parseText(xml); // parse xml
         } catch (Exception e) {
             logger.error("xxe except: {}", e.getClass().getSimpleName());
             return EXCEPT;
@@ -376,21 +351,127 @@ public class XXE {
     }
 
 
+    private static final int MAX_BODY_BYTES = 1024 * 1024;
+    private static final String NAME_ALPHABET =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.:-";
+
+    private static final String NAME_RE = "[A-Za-z_][A-Za-z0-9_.:-]{0,63}";
+    private static final String CTRL = "\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F";
+    private static final String ATTR_RE = "\\s+" + NAME_RE + "\\s*=\\s*(?:\"[^\"<&" + CTRL + "]*\"|'[^'<&" + CTRL + "]*')";
+
+    /** Leading xml declaration (dropped when the document is rebuilt). */
+    private static final Pattern XML_DECL = Pattern.compile(
+            "^\\s*<\\?xml\\s+version\\s*=\\s*[\"']1\\.[0-9][\"']"
+                    + "(?:\\s+encoding\\s*=\\s*[\"'][A-Za-z][A-Za-z0-9._-]{0,40}[\"'])?"
+                    + "(?:\\s+standalone\\s*=\\s*[\"'](?:yes|no)[\"'])?\\s*\\?>");
+
     /**
-     * Single gate for every attacker-supplied XML string: NULs are stripped and any payload that
-     * declares a DOCTYPE or ENTITY is rejected before it reaches a parser. The caller's existing
-     * exception handler turns the IllegalArgumentException into the fixed error response.
+     * One token of the accepted xml subset. Groups: 1 end-tag slash, 2 element name, 3 attributes,
+     * 4 empty-element slash, 5 text, 6 predefined entity name. Everything else (DOCTYPE, ENTITY, CDATA,
+     * comments, processing instructions, other entity or character references) does not match.
      */
-    private static String requireNoDtd(String xml) {
-        if (xml == null) {
-            throw new IllegalArgumentException("xml payload is required");
+    private static final Pattern XML_TOKEN = Pattern.compile(
+            "<(/?)(" + NAME_RE + ")((?:" + ATTR_RE + ")*)\\s*(/?)>"
+                    + "|([^<&" + CTRL + "]+)"
+                    + "|&(amp|lt|gt|quot|apos);");
+    private static final Pattern XML_ATTR = Pattern.compile(
+            "\\s+(" + NAME_RE + ")\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)')");
+
+    /** Request answered with HTTP 400 and a fixed reason, never echoing the payload. */
+    @ResponseStatus(value = HttpStatus.BAD_REQUEST, reason = "invalid xml payload")
+    public static class InvalidXmlPayloadException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+    }
+
+    private static String predefinedEntity(String name) {
+        switch (name) {
+            case "amp":
+                return "&amp;";
+            case "lt":
+                return "&lt;";
+            case "gt":
+                return "&gt;";
+            case "quot":
+                return "&quot;";
+            default:
+                return "&apos;";
         }
-        String cleaned = xml.replace("\0", "");
-        String lower = cleaned.toLowerCase(Locale.ROOT);
-        if (lower.contains("<!doctype") || lower.contains("<!entity")) {
-            throw new IllegalArgumentException("DTD declarations are not allowed");
+    }
+
+    /**
+     * Read the request body once (size capped) and validate it against a strict pattern for the simple
+     * xml documents the demo endpoints accept: optional xml declaration, elements with quoted attributes,
+     * text and the five predefined entities. The raw body is never handed to an xml parser. A fresh
+     * document is rebuilt from it: element and attribute names are copied from the constant
+     * NAME_ALPHABET and text/attribute values are escaped with HtmlUtils.htmlEscape.
+     * Any other payload is rejected with HTTP 400.
+     */
+    private static String rebuildXml(HttpServletRequest request) {
+        String body;
+        try {
+            body = WebUtils.getRequestBody(request, MAX_BODY_BYTES);
+        } catch (IOException e) {
+            throw new InvalidXmlPayloadException();
         }
-        return cleaned;
+        if (body == null || body.isEmpty()) {
+            throw new InvalidXmlPayloadException();
+        }
+        int pos = 0;
+        if (body.charAt(0) == '\uFEFF') {
+            pos = 1;
+        }
+        Matcher decl = XML_DECL.matcher(body);
+        decl.region(pos, body.length());
+        if (decl.lookingAt()) {
+            pos = decl.end();
+        }
+
+        StringBuilder out = new StringBuilder(body.length() + 16);
+        Matcher m = XML_TOKEN.matcher(body);
+        int len = body.length();
+        while (pos < len) {
+            m.region(pos, len);
+            boolean matched;
+            try {
+                matched = m.lookingAt();
+            } catch (StackOverflowError e) {
+                matched = false;
+            }
+            if (!matched) {
+                throw new InvalidXmlPayloadException();
+            }
+            pos = m.end();
+            if (m.group(2) != null) {
+                String name = SecurityUtil.copyAllowedChars(m.group(2), NAME_ALPHABET);
+                if (name == null) {
+                    throw new InvalidXmlPayloadException();
+                }
+                if (!m.group(1).isEmpty()) {
+                    if (!m.group(3).isEmpty() || !m.group(4).isEmpty()) {
+                        throw new InvalidXmlPayloadException();
+                    }
+                    out.append("</").append(name).append('>');
+                    continue;
+                }
+                out.append('<').append(name);
+                Matcher attr = XML_ATTR.matcher(m.group(3));
+                while (attr.find()) {
+                    String attrName = SecurityUtil.copyAllowedChars(attr.group(1), NAME_ALPHABET);
+                    String attrValue = attr.group(2) != null ? attr.group(2) : attr.group(3);
+                    if (attrName == null) {
+                        throw new InvalidXmlPayloadException();
+                    }
+                    out.append(' ').append(attrName).append("=\"")
+                            .append(HtmlUtils.htmlEscape(attrValue, "UTF-8")).append('"');
+                }
+                out.append(m.group(4).isEmpty() ? ">" : "/>");
+            } else if (m.group(5) != null) {
+                out.append(HtmlUtils.htmlEscape(m.group(5), "UTF-8"));
+            } else {
+                out.append(predefinedEntity(m.group(6)));
+            }
+        }
+        return out.toString();
     }
 
     private static final String FEATURE_DISALLOW_DOCTYPE = "http://apache.org/xml/features/disallow-doctype-decl";
