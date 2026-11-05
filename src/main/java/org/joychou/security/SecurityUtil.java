@@ -13,7 +13,9 @@ import java.net.URISyntaxException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -25,6 +27,18 @@ public class SecurityUtil {
     private static final Pattern HOST_PATTERN = Pattern.compile("^[a-zA-Z0-9][a-zA-Z0-9\\.-]*(:[0-9]{1,5})?$");
     private static final Pattern CONTROL_OR_SPACE_PATTERN = Pattern.compile("[\\p{Cntrl}\\s\\u0085\\u2028\\u2029]");
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
+
+    /**
+     * Exact, scheme-qualified origins that may receive CORS (and credentialed CORS) responses.
+     * Shared by Cors, OriginFilter and CustomCorsConfig. The Access-Control-Allow-Origin header must be
+     * written from an element of this list, never from the request Origin header value.
+     */
+    public static final List<String> ALLOWED_CORS_ORIGINS = Collections.unmodifiableList(Arrays.asList(
+            "https://joychou.org",
+            "https://test.joychou.org",
+            "https://joychou.com",
+            "https://test.joychou.me",
+            "http://test.joychou.me"));
 
     private static final int MAX_URL_LENGTH = 2048;
     private static final int MAX_HOST_LENGTH = 253;
@@ -210,6 +224,27 @@ public class SecurityUtil {
             return null;
         }
         return checkURL(uri.toString());
+    }
+
+
+    /**
+     * Match the request Origin against {@link #ALLOWED_CORS_ORIGINS} and return the matching allowlist element
+     * (the static constant, not the request value), so the Access-Control-Allow-Origin header is never derived
+     * from request data. Exact string comparison only; the literal <code>null</code> origin never matches.
+     *
+     * @param origin the request Origin header value
+     * @return the allowlisted origin that equals the request origin, otherwise null
+     */
+    public static String matchAllowedCorsOrigin(String origin) {
+        if (null == origin) {
+            return null;
+        }
+        for (String allowed : ALLOWED_CORS_ORIGINS) {
+            if (allowed.equals(origin)) {
+                return allowed;
+            }
+        }
+        return null;
     }
 
 

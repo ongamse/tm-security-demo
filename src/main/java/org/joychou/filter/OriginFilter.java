@@ -7,7 +7,6 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import org.joychou.security.SecurityUtil;
-import org.joychou.util.WebUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -38,8 +37,8 @@ public class OriginFilter implements Filter {
         logger.info("[+] Origin header present: {}", origin != null);
 
         // 以file协议访问html，origin为字符串的null，所以依然会走安全check逻辑
-        String safeOrigin = SecurityUtil.safeCorsOrigin(origin);
-        if (origin != null && safeOrigin == null) {
+        String allowedOrigin = SecurityUtil.matchAllowedCorsOrigin(origin);
+        if (origin != null && allowedOrigin == null) {
             logger.error("[-] Origin check error. Origin is not allowed.");
             response.setStatus(response.SC_FORBIDDEN);
             response.getWriter().println("Invaid cors config by joychou.");
@@ -47,13 +46,9 @@ public class OriginFilter implements Filter {
         }
 
         response.addHeader("Vary", "Origin");
-        if (safeOrigin != null) {
-            if (!WebUtils.isSafeHeaderValue(safeOrigin)) {
-                response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
-                response.getWriter().println("Invaid cors config by joychou.");
-                return;
-            }
-            response.setHeader("Access-Control-Allow-Origin", safeOrigin);
+        if (allowedOrigin != null) {
+            // the header value is the matching allowlist element, never the request Origin value
+            response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
             response.setHeader("Access-Control-Allow-Credentials", "true");
             response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTION");
         }

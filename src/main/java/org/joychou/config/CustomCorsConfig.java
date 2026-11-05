@@ -1,6 +1,7 @@
 package org.joychou.config;
 
 import org.joychou.security.CustomCorsProcessor;
+import org.joychou.security.SecurityUtil;
 import org.springframework.boot.autoconfigure.web.WebMvcRegistrationsAdapter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -22,11 +23,13 @@ public class CustomCorsConfig extends WebMvcRegistrationsAdapter {
             public void addCorsMappings(CorsRegistry registry) {
                 // 为了支持一级域名，重写了checkOrigin
                 // 显式设置白名单，避免默认的"*"与allowCredentials(true)组合导致任意origin被允许
-                String[] allowOrigins = {"joychou.org", "http://test.joychou.me"};
+                String[] allowOrigins = SecurityUtil.ALLOWED_CORS_ORIGINS.toArray(new String[0]);
                 registry.addMapping("/cors/sec/webMvcConfigurer") // /**表示所有路由path
                         .allowedOrigins(allowOrigins)
                         .allowedMethods("GET", "POST")
-                        .allowCredentials(true);
+                        .allowedHeaders("Content-Type", "X-Requested-With", "X-CSRF-TOKEN")
+                        .allowCredentials(true)
+                        .maxAge(3600);
             }
         };
     }
