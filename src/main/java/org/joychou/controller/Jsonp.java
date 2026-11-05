@@ -54,11 +54,22 @@ public class Jsonp {
 
     private static final String REJECTED = "error";
 
+    /**
+     * Constant alphabet of the characters allowed in a callback name (same set as CALLBACK_PATTERN).
+     */
+    private static final String CALLBACK_ALPHABET =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_$.";
+
     private static String toJsonp(String callbackName, String json) {
         if (callbackName == null || !CALLBACK_PATTERN.matcher(callbackName).matches()) {
             return REJECTED;
         }
-        return callbackName + "(" + WebUtils.escapeJsonForScript(json) + ")";
+        // The name written to the response is rebuilt from the alphabet's own characters.
+        String safeCallback = SecurityUtil.copyAllowedChars(callbackName, CALLBACK_ALPHABET);
+        if (safeCallback == null) {
+            return REJECTED;
+        }
+        return safeCallback + "(" + WebUtils.escapeJsonForScript(json) + ")";
     }
 
     /**
