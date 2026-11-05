@@ -76,7 +76,7 @@ public class JwtUtils {
             verifier.verify(token);
             return true;
         } catch (JWTVerificationException exception){
-            log.error(exception.toString());
+            log.error("token verification failed: {}", exception.getClass().getSimpleName());
             return false;
         }
     }
