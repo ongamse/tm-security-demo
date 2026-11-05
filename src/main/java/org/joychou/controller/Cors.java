@@ -123,8 +123,8 @@ public class Cors {
         response.addHeader("Vary", "Origin");
         if (allowedOrigin != null) {
             // the header value is the matching allowlist element, never the request Origin value
+            // credentials are intentionally not allowed: cross-origin callers get no session-bound data
             response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
-            response.setHeader("Access-Control-Allow-Credentials", "true");
         }
         return LoginUtils.getUserInfo2JsonStr(request);
     }
