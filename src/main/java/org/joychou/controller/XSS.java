@@ -8,6 +8,8 @@ import org.springframework.web.util.HtmlUtils;
 
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletResponse;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 
 
 /**
@@ -40,7 +42,9 @@ public class XSS {
     @RequestMapping("/stored/store")
     @ResponseBody
     public String store(String xss, HttpServletResponse response) {
-        Cookie cookie = new Cookie("xss", xss);
+        // Cookie value is rebuilt from a constant alphabet (Base64url, no padding)
+        // so CR/LF and other reserved characters can never reach the Set-Cookie header
+        Cookie cookie = new Cookie("xss", toCookieToken(xss == null ? "" : xss));
         cookie.setHttpOnly(true);
         cookie.setSecure(true);
         cookie.setPath("/");
@@ -58,7 +62,33 @@ public class XSS {
     @RequestMapping("/stored/show")
     @ResponseBody
     public String show(@CookieValue("xss") String xss) {
-        return HtmlUtils.htmlEscape(xss);
+        String decoded;
+        try {
+            decoded = new String(Base64.getUrlDecoder().decode(xss), StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException e) {
+            return "Invalid cookie value";
+        }
+        return HtmlUtils.htmlEscape(decoded);
+    }
+
+    private static final String TOKEN_ALPHABET =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+
+    /**
+     * Base64url-encode (no padding) the UTF-8 bytes of the value, then copy it char by char
+     * from a constant alphabet, dropping anything outside [A-Za-z0-9_-].
+     */
+    private static String toCookieToken(String value) {
+        String encoded = Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(value.getBytes(StandardCharsets.UTF_8));
+        StringBuilder token = new StringBuilder(encoded.length());
+        for (int i = 0; i < encoded.length(); i++) {
+            int idx = TOKEN_ALPHABET.indexOf(encoded.charAt(i));
+            if (idx >= 0) {
+                token.append(TOKEN_ALPHABET.charAt(idx));
+            }
+        }
+        return token.toString();
     }
 
     /**

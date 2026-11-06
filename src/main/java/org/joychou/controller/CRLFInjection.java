@@ -11,6 +11,7 @@ import javax.servlet.http.HttpServletResponse;
 import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 
 /**
  * Java 1.7/1.8 no CRLF vulns (test in Java 1.7/1.8)
@@ -34,14 +35,35 @@ public class CRLFInjection {
             response.setHeader("test2", URLEncoder.encode(test2, StandardCharsets.UTF_8.name()));
         }
         String author = SecurityUtil.cRlfFilter(request.getParameter("test3"));
-        if (author != null) {
-            // URL-encode so CR/LF and other reserved characters can never reach the Set-Cookie header
-            author = URLEncoder.encode(author, StandardCharsets.UTF_8.name());
-        }
-        Cookie cookie = new Cookie("test3", author);
+        // Cookie value is rebuilt from a constant alphabet so CR/LF and other
+        // reserved characters can never reach the Set-Cookie header
+        Cookie cookie = new Cookie("test3", toCookieToken(author));
         cookie.setHttpOnly(true);
         cookie.setSecure(true);
         cookie.setPath("/");
         response.addCookie(cookie);
+    }
+
+    private static final String TOKEN_ALPHABET =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+
+    /**
+     * Base64url-encode (no padding) the UTF-8 bytes of the value, then copy it char by char
+     * from a constant alphabet, dropping anything outside [A-Za-z0-9_-].
+     */
+    private static String toCookieToken(String value) {
+        if (value == null) {
+            return null;
+        }
+        String encoded = Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(value.getBytes(StandardCharsets.UTF_8));
+        StringBuilder token = new StringBuilder(encoded.length());
+        for (int i = 0; i < encoded.length(); i++) {
+            int idx = TOKEN_ALPHABET.indexOf(encoded.charAt(i));
+            if (idx >= 0) {
+                token.append(TOKEN_ALPHABET.charAt(idx));
+            }
+        }
+        return token.toString();
     }
 }
