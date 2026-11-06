@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.ResponseBody;
+import org.springframework.web.util.HtmlUtils;
 
 
 @Controller
@@ -21,9 +22,9 @@ public class Fastjson {
         try {
             // 将post提交的string转换为json
             JSONObject ob = JSON.parseObject(params);
-            return ob.get("name").toString();
+            return HtmlUtils.htmlEscape(ob.get("name").toString());
         } catch (Exception e) {
-            return e.toString();
+            return HtmlUtils.htmlEscape(e.toString());
         }
     }
 

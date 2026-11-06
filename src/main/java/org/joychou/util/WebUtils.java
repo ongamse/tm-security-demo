@@ -28,7 +28,13 @@ public class WebUtils {
 
 
     public static String json2Jsonp(String callback, String jsonStr) {
-        return HtmlUtils.htmlEscape(callback) + "(" + jsonStr + ")";
+        // Keep the JSON payload valid but make it inert if a client sniffs it as HTML:
+        // < etc. are equivalent escapes inside JSON/JS strings.
+        String safeJson = jsonStr == null ? "" : jsonStr
+                .replace("<", "\\u003c")
+                .replace(">", "\\u003e")
+                .replace("&", "\\u0026");
+        return HtmlUtils.htmlEscape(callback) + "(" + safeJson + ")";
     }
 
 
