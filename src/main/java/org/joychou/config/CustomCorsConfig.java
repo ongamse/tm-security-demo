@@ -39,7 +39,8 @@ public class CustomCorsConfig extends WebMvcRegistrationsAdapter {
         return new WebMvcConfigurerAdapter() {
             @Override
             public void addCorsMappings(CorsRegistry registry) {
-                // No valid configured origin: no CORS mapping (fail closed), so no credentials either.
+                // No valid configured origin: no CORS mapping (fail closed).
+                // Credentialed cross-origin requests (cookies) are not allowed.
                 if (allowOrigins.length == 0) {
                     return;
                 }
@@ -48,7 +49,7 @@ public class CustomCorsConfig extends WebMvcRegistrationsAdapter {
                         .allowedOrigins(allowOrigins)
                         .allowedMethods("GET", "POST")
                         .allowedHeaders("Content-Type", "X-Requested-With", "Accept")
-                        .allowCredentials(true);
+                        .allowCredentials(false);
             }
         };
     }

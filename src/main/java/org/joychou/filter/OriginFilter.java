@@ -46,11 +46,10 @@ public class OriginFilter implements Filter {
         }
 
         // Reaching here means origin is null (same-origin / non-browser) or allowlisted by checkURL.
-        // Only an allowlisted origin is echoed back, and only it gets credentials.
+        // Only an allowlisted origin is echoed back; credentialed requests are not allowed.
         String allowedOrigin = SecurityUtil.allowedOrigin(origin);
         if (allowedOrigin != null) {
             response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
-            response.setHeader("Access-Control-Allow-Credentials", "true");
             response.addHeader("Vary", "Origin");
         }
         response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTION");
