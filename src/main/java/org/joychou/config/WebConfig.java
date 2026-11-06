@@ -22,7 +22,8 @@ public class WebConfig {
     private static Boolean referSecEnabled = false;
     private static String businessCallback;
     private static String[] corsAllowedOrigins = new String[0];
-    private static ArrayList<String> safeDomains = new ArrayList<>();
+    private static String[] jdbcAllowedHosts = new String[0];
+    private static ArrayList<String> safeDomains =new ArrayList<>();
     private static ArrayList<String> blockDomains = new ArrayList<>();
     private static ArrayList<String> ssrfSafeDomains = new ArrayList<>();
     private static ArrayList<String> ssrfBlockDomains = new ArrayList<>();
@@ -104,6 +105,20 @@ public class WebConfig {
 
     public static String[] getCorsAllowedOrigins() {
         return corsAllowedOrigins.clone();
+    }
+
+
+    /**
+     * Hosts the JDBC endpoints may connect to (host names or ip literals, lower case).
+     * Empty when not configured, which means every JDBC connection request is refused (fail closed).
+     */
+    @Value("${joychou.security.jdbc.allowed.hosts:}")
+    public void setJdbcAllowedHosts(String[] jdbcAllowedHosts) {
+        WebConfig.jdbcAllowedHosts = jdbcAllowedHosts == null ? new String[0] : jdbcAllowedHosts;
+    }
+
+    public static String[] getJdbcAllowedHosts() {
+        return jdbcAllowedHosts.clone();
     }
 
 

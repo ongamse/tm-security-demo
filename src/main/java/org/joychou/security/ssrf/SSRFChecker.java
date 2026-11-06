@@ -36,6 +36,14 @@ public class SSRFChecker {
             "^jdbc:(postgresql|db2)://" + HOST_RE + "(:[0-9]{1,5})?(/[A-Za-z0-9_.-]*)?$",
             Pattern.CASE_INSENSITIVE);
 
+    private static final String ALNUM = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    /** Host is lower-cased before copying; ip6 literals use brackets, colon and hex digits. */
+    private static final String HOST_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789.-:[]";
+    private static final String PORT_ALPHABET = ":0123456789";
+    private static final String PATH_ALPHABET = ALNUM + "/%:!$&'()*+,;=~_.-";
+    private static final String QUERY_ALPHABET = PATH_ALPHABET + "?@";
+    private static final String DB_ALPHABET = ALNUM + "/_.-";
+
     public static boolean checkURLFckSSRF(String url) {
         if (null == url) {
             return false;
@@ -137,7 +145,7 @@ public class SSRFChecker {
         if (!m.matches()) {
             throw new SSRFException("[-] SSRF check failed. Only well formed http and https urls are allowed");
         }
-        String scheme = m.group(1).toLowerCase(Locale.ROOT);
+        String scheme = "https".equalsIgnoreCase(m.group(1)) ? "https" : "http";
         String host = m.group(2).toLowerCase(Locale.ROOT);
         String port = m.group(3) == null ? "" : m.group(3);
         if (!port.isEmpty() && Integer.parseInt(port.substring(1)) > 65535) {
@@ -147,10 +155,16 @@ public class SSRFChecker {
         String query = m.group(5) == null ? "" : m.group(5);
         assertPublicHost(host.startsWith("[") ? host.substring(1, host.length() - 1) : host);
 
-        // Re-serialise from the validated components; the raw request string is never used again.
+        // Re-serialise from the validated components, copying every character from a constant
+        // alphabet; the raw request string is never used again and anything outside the
+        // alphabet is rejected.
+        String safeHost = copyFromAlphabet(host, HOST_ALPHABET);
+        String safePort = copyFromAlphabet(port, PORT_ALPHABET);
+        String safePath = copyFromAlphabet(path, PATH_ALPHABET);
+        String safeQuery = copyFromAlphabet(query, QUERY_ALPHABET);
         URI uri;
         try {
-            uri = new URI(scheme + "://" + host + port + path + query);
+            uri = new URI(scheme + "://" + safeHost + safePort + safePath + safeQuery);
         } catch (URISyntaxException e) {
             throw new SSRFException("[-] SSRF check failed. Illegal URL");
         }
@@ -186,8 +200,41 @@ public class SSRFChecker {
         }
         String db = m.group(4) == null ? "" : m.group(4);
         assertPublicHost(host.startsWith("[") ? host.substring(1, host.length() - 1) : host);
-        // Rebuild from the validated components.
-        return "jdbc:" + subprotocol + "://" + host + port + db;
+        // The host must be on the configured allowlist (empty allowlist refuses everything) and the
+        // allowlist entry itself, not the request value, is placed into the jdbc url.
+        String allowedHost = null;
+        for (String entry : WebConfig.getJdbcAllowedHosts()) {
+            String candidate = entry == null ? "" : entry.trim().toLowerCase(Locale.ROOT);
+            if (!candidate.isEmpty() && candidate.equals(host)) {
+                allowedHost = copyFromAlphabet(candidate, HOST_ALPHABET);
+                break;
+            }
+        }
+        if (allowedHost == null) {
+            throw new SSRFException("[-] SSRF check failed. Jdbc host is not allowed");
+        }
+        // Rebuild from the validated components, copying every character from a constant alphabet.
+        String proto = "postgresql".equals(subprotocol) ? "postgresql" : "db2";
+        return "jdbc:" + proto + "://" + allowedHost
+                + copyFromAlphabet(port, PORT_ALPHABET) + copyFromAlphabet(db, DB_ALPHABET);
+    }
+
+
+    /**
+     * Build a new string containing only characters taken from the constant alphabet.
+     *
+     * @throws SSRFException if the value contains a character that is not in the alphabet
+     */
+    private static String copyFromAlphabet(String value, String alphabet) {
+        StringBuilder sb = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            int idx = alphabet.indexOf(value.charAt(i));
+            if (idx < 0) {
+                throw new SSRFException("[-] SSRF check failed. Illegal character in url");
+            }
+            sb.append(alphabet.charAt(idx));
+        }
+        return sb.toString();
     }
 
 

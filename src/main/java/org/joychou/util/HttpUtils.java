@@ -28,6 +28,7 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.InetAddress;
 import java.net.URI;
+import java.net.URL;
 import java.util.concurrent.*;
 
 /**
@@ -51,6 +52,30 @@ public class HttpUtils {
     }
 
     /**
+     * Build a URL from the components of a URI that was validated by
+     * {@link SSRFChecker#requireSafeUri(String)}. The scheme is a literal.
+     */
+    private static URL toSafeUrl(URI uri) throws IOException {
+        String scheme = uri.getScheme();
+        String host = uri.getHost();
+        if (host == null || scheme == null) {
+            throw new SSRFException("[-] SSRF check failed. Illegal URL");
+        }
+        String safeScheme;
+        if ("https".equalsIgnoreCase(scheme)) {
+            safeScheme = "https";
+        } else if ("http".equalsIgnoreCase(scheme)) {
+            safeScheme = "http";
+        } else {
+            throw new SSRFException("[-] SSRF check failed. Only http and https are allowed");
+        }
+        String path = uri.getRawPath() == null ? "" : uri.getRawPath();
+        String file = uri.getRawQuery() == null ? path : path + "?" + uri.getRawQuery();
+        return new URL(safeScheme, host, uri.getPort(), file);
+    }
+
+
+    /**
      * Open a validated http/https URI without following redirects.
      */
     private static HttpURLConnection openNoRedirect(URI uri) throws IOException {
@@ -58,7 +83,7 @@ public class HttpUtils {
         if (scheme == null || !(scheme.equals("http") || scheme.equals("https")) || uri.getHost() == null) {
             throw new SSRFException("[-] SSRF check failed. Only http and https are allowed");
         }
-        HttpURLConnection conn = (HttpURLConnection) uri.toURL().openConnection();
+        HttpURLConnection conn = (HttpURLConnection) toSafeUrl(uri).openConnection();
         conn.setInstanceFollowRedirects(false);
         return conn;
     }
@@ -82,7 +107,7 @@ public class HttpUtils {
         GetMethod method = null;
 
         try {
-            method = new GetMethod(SSRFChecker.requireSafeUri(url).toString());
+            method = new GetMethod(toSafeUrl(SSRFChecker.requireSafeUri(url)).toExternalForm());
             method.setFollowRedirects(false);
             client.executeMethod(method); // send request
             byte[] resBody = method.getResponseBody();
@@ -111,7 +136,9 @@ public class HttpUtils {
      */
     public static String getPinned(URI uri) {
         try {
-            String host = uri.getHost();
+            // re-validate and re-serialise so only checked components reach the client
+            final URI safeUri = SSRFChecker.requireSafeUri(uri.toString());
+            String host = safeUri.getHost();
             if (host == null) {
                 throw new SSRFException("[-] SSRF check failed. Host is empty");
             }
@@ -125,7 +152,7 @@ public class HttpUtils {
                     .setDnsResolver(name -> pinned)
                     .disableRedirectHandling()
                     .build()) {
-                HttpGet httpGet = new HttpGet(uri.toString());
+                HttpGet httpGet = new HttpGet(safeUri);
                 httpGet.setConfig(RequestConfig.custom().setRedirectsEnabled(false).build());
                 HttpResponse httpResponse = client.execute(httpGet); // send request
                 return EntityUtils.toString(httpResponse.getEntity());
@@ -224,7 +251,7 @@ public class HttpUtils {
     public static String Jsoup(String url) {
         try {
             URI safeUri = SSRFChecker.requireSafeUri(url);
-            Document doc = Jsoup.connect(safeUri.toURL().toExternalForm())
+            Document doc = Jsoup.connect(toSafeUrl(safeUri).toExternalForm())
                     .followRedirects(false)
                     .timeout(3000)
                     .cookie("name", "joychou") // request cookies
@@ -246,7 +273,7 @@ public class HttpUtils {
         OkHttpClient client = new OkHttpClient();
         client.setFollowRedirects(false);
         client.setFollowSslRedirects(false);
-        com.squareup.okhttp.Request ok_http = new com.squareup.okhttp.Request.Builder().url(uri.toURL()).build();
+        com.squareup.okhttp.Request ok_http = new com.squareup.okhttp.Request.Builder().url(toSafeUrl(uri)).build();
         return client.newCall(ok_http).execute().body().string();
     }
 
