@@ -11,7 +11,6 @@ import org.springframework.web.multipart.MultipartFile;
 import javax.servlet.http.HttpServletResponse;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -51,7 +50,21 @@ public class xlsxStreamerXXE {
             response.sendError(HttpServletResponse.SC_BAD_REQUEST, "unsafe xlsx upload rejected");
             return;
         }
-        StreamingReader.builder().open(new ByteArrayInputStream(content));
+        openValidated(content);
+    }
+
+
+    /**
+     * Opens the workbook from the already validated bytes only; the raw upload stream is never handed to
+     * the streaming reader. Nothing is opened when the package check fails.
+     */
+    private static void openValidated(byte[] checked) throws IOException {
+        if (!isSafeOoxmlPackage(checked)) {
+            throw new IOException("unsafe xlsx package");
+        }
+        try (InputStream in = new ByteArrayInputStream(checked)) {
+            StreamingReader.builder().open(in);
+        }
     }
 
 
@@ -115,7 +128,7 @@ public class xlsxStreamerXXE {
     public static void main(String[] args) throws Exception {
         byte[] content = java.nio.file.Files.readAllBytes(java.nio.file.Paths.get("poc.xlsx"));
         if (isSafeOoxmlPackage(content)) {
-            StreamingReader.builder().open(new FileInputStream("poc.xlsx"));
+            openValidated(content);
         }
     }
 }
