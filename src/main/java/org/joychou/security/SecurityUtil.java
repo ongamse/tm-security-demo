@@ -11,6 +11,9 @@ import java.io.UnsupportedEncodingException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLDecoder;
+import java.nio.file.InvalidPathException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.regex.Pattern;
 
@@ -167,6 +170,32 @@ public class SecurityUtil {
         SocketHook.stopHook();
     }
 
+
+
+    /**
+     * Resolve an untrusted path against a base directory and confine the result to that directory.
+     * The result is absolute and normalized; it must be strictly inside baseDir.
+     *
+     * @param baseDir  trusted base directory
+     * @param userPath untrusted file name or path (relative to baseDir, or absolute inside baseDir)
+     * @return the confined path, or null if the path is empty, malformed or escapes baseDir
+     */
+    public static Path resolveInDir(String baseDir, String userPath) {
+        if (baseDir == null || userPath == null || userPath.isEmpty() || userPath.indexOf('\0') != -1) {
+            return null;
+        }
+        try {
+            Path base = Paths.get(baseDir).toAbsolutePath().normalize();
+            Path resolved = base.resolve(userPath).normalize();
+            if (!resolved.startsWith(base) || resolved.equals(base)) {
+                return null;
+            }
+            return resolved;
+        } catch (InvalidPathException e) {
+            logger.info("Invalid path: " + e.getReason());
+            return null;
+        }
+    }
 
 
     /**

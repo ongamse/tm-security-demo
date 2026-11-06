@@ -15,7 +15,6 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.UUID;
 
 import org.joychou.security.SecurityUtil;
@@ -59,7 +58,11 @@ public class FileUpload {
         try {
             // Get the file and save it somewhere
             byte[] bytes = file.getBytes();
-            Path path = Paths.get(UPLOADED_FOLDER + file.getOriginalFilename());
+            Path path = SecurityUtil.resolveInDir(UPLOADED_FOLDER, file.getOriginalFilename());
+            if (path == null) {
+                redirectAttributes.addFlashAttribute("message", "Illegal file name");
+                return "redirect:/file/status";
+            }
             Files.write(path, bytes);
 
             redirectAttributes.addFlashAttribute("message",
@@ -89,7 +92,12 @@ public class FileUpload {
         String fileName = multifile.getOriginalFilename();
         String Suffix = fileName.substring(fileName.lastIndexOf(".")); // 获取文件后缀名
         String mimeType = multifile.getContentType(); // 获取MIME类型
-        String filePath = UPLOADED_FOLDER + fileName;
+        Path targetPath = SecurityUtil.resolveInDir(UPLOADED_FOLDER, fileName);
+        if (targetPath == null) {
+            logger.error("[-] Illegal file name");
+            return "Upload failed. Illeagl picture.";
+        }
+        String filePath = targetPath.toString();
         File excelFile = convert(multifile);
 
 
@@ -141,8 +149,7 @@ public class FileUpload {
         try {
             // Get the file and save it somewhere
             byte[] bytes = multifile.getBytes();
-            Path path = Paths.get(UPLOADED_FOLDER + multifile.getOriginalFilename());
-            Files.write(path, bytes);
+            Files.write(targetPath, bytes);
         } catch (IOException e) {
             logger.error(e.toString());
             deleteFile(filePath);
@@ -155,7 +162,12 @@ public class FileUpload {
     }
 
     private void deleteFile(String filePath) {
-        File delFile = new File(filePath);
+        Path confined = SecurityUtil.resolveInDir(UPLOADED_FOLDER, filePath);
+        if (confined == null) {
+            logger.info("Illegal path, delete refused");
+            return;
+        }
+        File delFile = confined.toFile();
         if(delFile.isFile() && delFile.exists()) {
             if (delFile.delete()) {
                 logger.info("[+] " + filePath + " delete successfully!");
@@ -175,9 +187,13 @@ public class FileUpload {
         String fileName = multiFile.getOriginalFilename();
         String suffix = fileName.substring(fileName.lastIndexOf("."));
         UUID uuid = Generators.timeBasedGenerator().generate();
-        randomFilePath = UPLOADED_FOLDER + uuid + suffix;
+        Path convPath = SecurityUtil.resolveInDir(UPLOADED_FOLDER, uuid + suffix);
+        if (convPath == null) {
+            throw new IOException("Illegal file suffix");
+        }
+        randomFilePath = convPath.toString();
         // 随机生成一个同后缀名的文件
-        File convFile = new File(randomFilePath);
+        File convFile = convPath.toFile();
         boolean ret = convFile.createNewFile();
         if (!ret) {
             return null;
