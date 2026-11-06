@@ -21,6 +21,7 @@ public class WebConfig {
     private static String[] referUris;
     private static Boolean referSecEnabled = false;
     private static String businessCallback;
+    private static String[] corsAllowedOrigins = new String[0];
     private static ArrayList<String> safeDomains = new ArrayList<>();
     private static ArrayList<String> blockDomains = new ArrayList<>();
     private static ArrayList<String> ssrfSafeDomains = new ArrayList<>();
@@ -89,6 +90,20 @@ public class WebConfig {
 
     public static String getBusinessCallback() {
         return businessCallback;
+    }
+
+
+    /**
+     * Explicit CORS origin allowlist (scheme://host[:port] literals) from application.properties.
+     * Empty when not configured, which means no cross-origin access is granted (fail closed).
+     */
+    @Value("${joychou.security.cors.allowed.origins:}")
+    public void setCorsAllowedOrigins(String[] corsAllowedOrigins) {
+        WebConfig.corsAllowedOrigins = corsAllowedOrigins == null ? new String[0] : corsAllowedOrigins;
+    }
+
+    public static String[] getCorsAllowedOrigins() {
+        return corsAllowedOrigins.clone();
     }
 
 

@@ -40,11 +40,13 @@ public class CustomCorsProcessor extends DefaultCorsProcessor {
      */
     private String customCheckOrigin(String requestOrigin) {
 
-        if ( SecurityUtil.checkURL(requestOrigin) != null) {
-            logger.info("[+] Origin: "  + requestOrigin );
-            return requestOrigin;
+        // Echo only the configured allowlist entry, never the raw request origin.
+        String allowed = SecurityUtil.allowedOrigin(requestOrigin);
+        if (allowed != null) {
+            logger.info("[+] Origin: " + allowed);
+            return allowed;
         }
-        logger.error("[-] Origin: " + requestOrigin );
+        logger.error("[-] Origin: " + SecurityUtil.logSafe(requestOrigin));
         return null;
     }
 
