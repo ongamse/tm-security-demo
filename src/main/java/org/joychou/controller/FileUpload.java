@@ -167,12 +167,15 @@ public class FileUpload {
             logger.info("Illegal path, delete refused");
             return;
         }
-        File delFile = confined.toFile();
-        if(delFile.isFile() && delFile.exists()) {
-            if (delFile.delete()) {
+        // Single atomic delete; no separate isFile()/exists() check (TOCTOU).
+        // Files.delete also fails on non-empty directories, so only files/empty dirs are removed.
+        try {
+            if (Files.deleteIfExists(confined)) {
                 logger.info("[+] " + filePath + " delete successfully!");
                 return;
             }
+        } catch (IOException e) {
+            logger.info("Delete error: " + e.getClass().getSimpleName());
         }
         logger.info(filePath + " delete failed!");
     }

@@ -7,7 +7,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -47,11 +46,13 @@ public class PathTraversal {
             return "Bad boy. Illegal file path.";
         }
 
-        File f = safePath.toFile();
-        if (f.exists() && !f.isDirectory()) {
+        // Single atomic read: a missing path or a directory makes the read itself fail,
+        // so no separate exists()/isDirectory() check (TOCTOU) is needed.
+        try {
             byte[] data = Files.readAllBytes(safePath);
             return new String(Base64.encodeBase64(data));
-        } else {
+        } catch (IOException e) {
+            logger.info("Read failed: " + e.getClass().getSimpleName());
             return "File doesn't exist or is not a file.";
         }
     }
