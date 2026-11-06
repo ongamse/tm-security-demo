@@ -4,8 +4,12 @@ import java.net.HttpURLConnection;
 import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
+import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.net.util.SubnetUtils;
@@ -19,6 +23,18 @@ public class SSRFChecker {
 
     private static final Logger logger = LoggerFactory.getLogger(SSRFChecker.class);
     private static String decimalIp;
+
+    private static final String HOST_RE = "((?:[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?)|(?:\\[[0-9A-Fa-f:.]+\\]))";
+
+    /** http(s)://host[:port][/path][?query][#fragment]; no userinfo, whitespace, backslash or control chars. */
+    private static final Pattern HTTP_URL_PATTERN = Pattern.compile(
+            "^(https?)://" + HOST_RE + "(:[0-9]{1,5})?(/[^?#\\s\\\\@]*)?(\\?[^#\\s\\\\]*)?(?:#\\S*)?$",
+            Pattern.CASE_INSENSITIVE);
+
+    /** jdbc:(postgresql|db2)://host[:port][/database]; nothing else. */
+    private static final Pattern JDBC_URL_PATTERN = Pattern.compile(
+            "^jdbc:(postgresql|db2)://" + HOST_RE + "(:[0-9]{1,5})?(/[A-Za-z0-9_.-]*)?$",
+            Pattern.CASE_INSENSITIVE);
 
     public static boolean checkURLFckSSRF(String url) {
         if (null == url) {
@@ -117,17 +133,27 @@ public class SSRFChecker {
         if (StringUtils.isBlank(url)) {
             throw new SSRFException("[-] SSRF check failed. URL is empty");
         }
+        Matcher m = HTTP_URL_PATTERN.matcher(url.trim());
+        if (!m.matches()) {
+            throw new SSRFException("[-] SSRF check failed. Only well formed http and https urls are allowed");
+        }
+        String scheme = m.group(1).toLowerCase(Locale.ROOT);
+        String host = m.group(2).toLowerCase(Locale.ROOT);
+        String port = m.group(3) == null ? "" : m.group(3);
+        if (!port.isEmpty() && Integer.parseInt(port.substring(1)) > 65535) {
+            throw new SSRFException("[-] SSRF check failed. Illegal port");
+        }
+        String path = m.group(4) == null ? "" : m.group(4);
+        String query = m.group(5) == null ? "" : m.group(5);
+        assertPublicHost(host.startsWith("[") ? host.substring(1, host.length() - 1) : host);
+
+        // Re-serialise from the validated components; the raw request string is never used again.
         URI uri;
         try {
-            uri = new URI(url.trim());
-        } catch (Exception e) {
+            uri = new URI(scheme + "://" + host + port + path + query);
+        } catch (URISyntaxException e) {
             throw new SSRFException("[-] SSRF check failed. Illegal URL");
         }
-        String scheme = uri.getScheme();
-        if (scheme == null || !(scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"))) {
-            throw new SSRFException("[-] SSRF check failed. Only http and https are allowed");
-        }
-        assertPublicHost(uri.getHost());
         return uri;
     }
 
@@ -144,25 +170,24 @@ public class SSRFChecker {
      * @throws SSRFException if the url is not acceptable
      */
     public static String requireSafeJdbcUrl(String jdbcUrl, String subprotocol) {
-        String prefix = "jdbc:" + subprotocol + "://";
-        if (jdbcUrl == null || !jdbcUrl.regionMatches(true, 0, prefix, 0, prefix.length())) {
+        if (jdbcUrl == null || !("postgresql".equals(subprotocol) || "db2".equals(subprotocol))) {
             throw new SSRFException("[-] SSRF check failed. Unsupported jdbc url");
         }
-        if (jdbcUrl.indexOf(';') != -1 || jdbcUrl.indexOf('?') != -1 || jdbcUrl.indexOf('\\') != -1) {
-            throw new SSRFException("[-] SSRF check failed. Jdbc properties are not allowed");
+        // Only jdbc:<subprotocol>://host[:port][/db] is accepted. Query string, semicolon and colon
+        // driver properties are rejected because they can load attacker chosen classes.
+        Matcher m = JDBC_URL_PATTERN.matcher(jdbcUrl);
+        if (!m.matches() || !subprotocol.equalsIgnoreCase(m.group(1))) {
+            throw new SSRFException("[-] SSRF check failed. Unsupported jdbc url");
         }
-        URI uri;
-        try {
-            uri = new URI(jdbcUrl.substring("jdbc:".length()));
-        } catch (Exception e) {
-            throw new SSRFException("[-] SSRF check failed. Illegal jdbc url");
+        String host = m.group(2).toLowerCase(Locale.ROOT);
+        String port = m.group(3) == null ? "" : m.group(3);
+        if (!port.isEmpty() && Integer.parseInt(port.substring(1)) > 65535) {
+            throw new SSRFException("[-] SSRF check failed. Illegal port");
         }
-        if (uri.getQuery() != null || uri.getFragment() != null
-                || (uri.getPath() != null && uri.getPath().indexOf(':') != -1)) {
-            throw new SSRFException("[-] SSRF check failed. Jdbc properties are not allowed");
-        }
-        assertPublicHost(uri.getHost());
-        return jdbcUrl;
+        String db = m.group(4) == null ? "" : m.group(4);
+        assertPublicHost(host.startsWith("[") ? host.substring(1, host.length() - 1) : host);
+        // Rebuild from the validated components.
+        return "jdbc:" + subprotocol + "://" + host + port + db;
     }
 
 
@@ -400,18 +425,15 @@ public class SSRFChecker {
      * Get host from URL which the protocol must be http:// or https:// and not be //.
      */
     private static String url2host(String url) {
-        try {
-            // use URI instead of URL
-            URI u = new URI(url);
-            String scheme = u.getScheme();
-            if (scheme != null && (scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"))
-                    && u.getHost() != null) {
-                return u.getHost();
-            }
-            return "";
-        } catch (Exception e) {
+        if (url == null) {
             return "";
         }
+        Matcher m = HTTP_URL_PATTERN.matcher(url.trim());
+        if (!m.matches()) {
+            return "";
+        }
+        String host = m.group(2).toLowerCase(Locale.ROOT);
+        return host.startsWith("[") ? host.substring(1, host.length() - 1) : host;
     }
 
 }

@@ -24,7 +24,8 @@ public class Jdbc {
         byte[] b = java.util.Base64.getDecoder().decode(jdbcUrlBase64);
         String jdbcUrl = new String(b);
         log.info(SecurityUtil.logSafe(jdbcUrl));
-        DriverManager.getConnection(SSRFChecker.requireSafeJdbcUrl(jdbcUrl, "postgresql"));
+        String safeJdbcUrl = SSRFChecker.requireSafeJdbcUrl(jdbcUrl, "postgresql");
+        DriverManager.getConnection(safeJdbcUrl);
     }
 
     @RequestMapping("/db2")
@@ -33,6 +34,7 @@ public class Jdbc {
         byte[] b = java.util.Base64.getDecoder().decode(jdbcUrlBase64);
         String jdbcUrl = new String(b);
         log.info(SecurityUtil.logSafe(jdbcUrl));
-        DriverManager.getConnection(SSRFChecker.requireSafeJdbcUrl(jdbcUrl, "db2"));
+        String safeJdbcUrl = SSRFChecker.requireSafeJdbcUrl(jdbcUrl, "db2");
+        DriverManager.getConnection(safeJdbcUrl);
     }
 }

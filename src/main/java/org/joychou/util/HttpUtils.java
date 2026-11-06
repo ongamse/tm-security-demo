@@ -53,6 +53,10 @@ public class HttpUtils {
      * Open a validated http/https URI without following redirects.
      */
     private static HttpURLConnection openNoRedirect(URI uri) throws IOException {
+        String scheme = uri.getScheme();
+        if (scheme == null || !(scheme.equals("http") || scheme.equals("https")) || uri.getHost() == null) {
+            throw new SSRFException("[-] SSRF check failed. Only http and https are allowed");
+        }
         HttpURLConnection conn = (HttpURLConnection) uri.toURL().openConnection();
         conn.setInstanceFollowRedirects(false);
         return conn;
@@ -181,7 +185,8 @@ public class HttpUtils {
      */
     public static String Jsoup(String url) {
         try {
-            Document doc = Jsoup.connect(SSRFChecker.requireSafeUri(url).toString())
+            URI safeUri = SSRFChecker.requireSafeUri(url);
+            Document doc = Jsoup.connect(safeUri.toURL().toExternalForm())
                     .followRedirects(false)
                     .timeout(3000)
                     .cookie("name", "joychou") // request cookies

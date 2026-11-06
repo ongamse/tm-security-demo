@@ -8,8 +8,6 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.net.URLDecoder;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
@@ -18,7 +16,9 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.Locale;
 import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 
@@ -26,6 +26,10 @@ public class SecurityUtil {
 
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
     private static final Pattern HOST_PATTERN = Pattern.compile("^[a-zA-Z0-9][a-zA-Z0-9.-]*(:[0-9]{1,5})?$");
+    private static final Pattern HTTP_HOST_URL_PATTERN = Pattern.compile(
+            "^https?://((?:[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?)|(?:\\[[0-9A-Fa-f:.]+\\]))"
+                    + "(?::[0-9]{1,5})?(?:[/?#][^\\s\\\\@]*)?$",
+            Pattern.CASE_INSENSITIVE);
     private static Logger logger =LoggerFactory.getLogger(SecurityUtil.class);
 
 
@@ -47,13 +51,13 @@ public class SecurityUtil {
      * @return host
      */
     public static String gethost(String url) {
-        try {
-            URI uri = new URI(url);
-            String host = uri.getHost();
-            return host == null ? "" : host.toLowerCase();
-        } catch (URISyntaxException e) {
+        if (url == null) {
             return "";
         }
+        // Strict http(s)://host[:port][/path][?query][#fragment] only: no userinfo, backslash,
+        // whitespace or control characters, so the host cannot be parsed differently by a client.
+        Matcher m = HTTP_HOST_URL_PATTERN.matcher(url);
+        return m.matches() ? m.group(1).toLowerCase(Locale.ROOT) : "";
     }
 
 
