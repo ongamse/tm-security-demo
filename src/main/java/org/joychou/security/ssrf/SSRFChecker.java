@@ -1,9 +1,10 @@
 package org.joychou.security.ssrf;
 
 import java.net.HttpURLConnection;
+import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.URI;
-import java.net.URL;
+import java.net.UnknownHostException;
 import java.util.ArrayList;
 
 import org.apache.commons.lang.StringUtils;
@@ -71,7 +72,7 @@ public class SSRFChecker {
                     return false;  // 内网ip直接return，非内网ip继续判断是否有重定向
                 }
 
-                connection = (HttpURLConnection) new URL(finalUrl).openConnection();
+                connection = (HttpURLConnection) requireSafeUri(finalUrl).toURL().openConnection();
                 connection.setInstanceFollowRedirects(false);
                 connection.setUseCaches(false); // 设置为false，手动处理跳转，可以拿到每个跳转的URL
                 connection.setConnectTimeout(connectTime);
@@ -92,10 +93,102 @@ public class SSRFChecker {
                     break;
             } while (connection.getResponseCode() != HttpURLConnection.HTTP_OK);
             connection.disconnect();
+        } catch (SSRFException e) {
+            logger.error(e.getMessage());
+            return false;  // validation failure is never safe
         } catch (Exception e) {
             return true;  // 如果异常了，认为是安全的，防止是超时导致的异常而验证不成功。
         }
         return true; // 默认返回true
+    }
+
+
+    /**
+     * Validate an untrusted http/https URL before a server side request is made.
+     * The scheme must be http or https and every IP the host resolves to must be public.
+     * Callers must request the returned URI (not the raw input) and must not follow redirects
+     * automatically, otherwise a redirect can point back to an internal address.
+     *
+     * @param url untrusted url
+     * @return the parsed, validated URI
+     * @throws SSRFException if the url is malformed, not http/https or targets an internal address
+     */
+    public static URI requireSafeUri(String url) {
+        if (StringUtils.isBlank(url)) {
+            throw new SSRFException("[-] SSRF check failed. URL is empty");
+        }
+        URI uri;
+        try {
+            uri = new URI(url.trim());
+        } catch (Exception e) {
+            throw new SSRFException("[-] SSRF check failed. Illegal URL");
+        }
+        String scheme = uri.getScheme();
+        if (scheme == null || !(scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"))) {
+            throw new SSRFException("[-] SSRF check failed. Only http and https are allowed");
+        }
+        assertPublicHost(uri.getHost());
+        return uri;
+    }
+
+
+    /**
+     * Validate an untrusted JDBC url of the form <code>jdbc:&lt;subprotocol&gt;://host[:port]/db</code>.
+     * Only the given subprotocol is allowed, the host must be public, and driver properties
+     * (query string / semicolon / colon properties) are rejected because they can load
+     * attacker chosen classes or connect elsewhere.
+     *
+     * @param jdbcUrl     untrusted jdbc url
+     * @param subprotocol expected subprotocol, such as postgresql or db2
+     * @return the validated jdbc url
+     * @throws SSRFException if the url is not acceptable
+     */
+    public static String requireSafeJdbcUrl(String jdbcUrl, String subprotocol) {
+        String prefix = "jdbc:" + subprotocol + "://";
+        if (jdbcUrl == null || !jdbcUrl.regionMatches(true, 0, prefix, 0, prefix.length())) {
+            throw new SSRFException("[-] SSRF check failed. Unsupported jdbc url");
+        }
+        if (jdbcUrl.indexOf(';') != -1 || jdbcUrl.indexOf('?') != -1 || jdbcUrl.indexOf('\\') != -1) {
+            throw new SSRFException("[-] SSRF check failed. Jdbc properties are not allowed");
+        }
+        URI uri;
+        try {
+            uri = new URI(jdbcUrl.substring("jdbc:".length()));
+        } catch (Exception e) {
+            throw new SSRFException("[-] SSRF check failed. Illegal jdbc url");
+        }
+        if (uri.getQuery() != null || uri.getFragment() != null
+                || (uri.getPath() != null && uri.getPath().indexOf(':') != -1)) {
+            throw new SSRFException("[-] SSRF check failed. Jdbc properties are not allowed");
+        }
+        assertPublicHost(uri.getHost());
+        return jdbcUrl;
+    }
+
+
+    /**
+     * Resolve the host and make sure none of the resolved addresses is internal.
+     *
+     * @param host host name or ip literal
+     * @throws SSRFException if the host is empty, cannot be resolved or resolves to an internal address
+     */
+    public static void assertPublicHost(String host) {
+        if (StringUtils.isEmpty(host)) {
+            throw new SSRFException("[-] SSRF check failed. Host is empty");
+        }
+        try {
+            // Octal ip such as 012.0.0.1 is converted first because of parser differences.
+            if (isOctalIP(host) && isInternalIp(host2ip(host))) {
+                throw new SSRFException("[-] SSRF check failed. Internal host: " + host);
+            }
+            for (InetAddress address : InetAddress.getAllByName(host)) {
+                if (isInternalIp(address.getHostAddress())) {
+                    throw new SSRFException("[-] SSRF check failed. Internal host: " + host);
+                }
+            }
+        } catch (UnknownHostException e) {
+            throw new SSRFException("[-] SSRF check failed. Unknown host: " + host);
+        }
     }
 
 
@@ -130,6 +223,25 @@ public class SSRFChecker {
         if (StringUtils.isEmpty(strIP)) {
             logger.error("[-] SSRF check failed. IP is empty. " + strIP);
             return true;
+        }
+
+        // Loopback, any-local, link-local (incl. 169.254.169.254 metadata), site-local and multicast
+        // addresses are never valid fetch targets. Also covers IPv6, which SubnetUtils cannot parse.
+        InetAddress addr;
+        try {
+            addr = InetAddress.getByName(strIP);
+        } catch (Exception e) {
+            logger.error("[-] SSRF check failed. Illegal IP: " + strIP);
+            return true;
+        }
+        if (addr.isAnyLocalAddress() || addr.isLoopbackAddress() || addr.isLinkLocalAddress()
+                || addr.isSiteLocalAddress() || addr.isMulticastAddress()) {
+            logger.error("[-] SSRF check failed. Internal IP: " + strIP);
+            return true;
+        }
+        if (!(addr instanceof Inet4Address)) {
+            // IPv6 unique local addresses fc00::/7
+            return (addr.getAddress()[0] & 0xfe) == 0xfc;
         }
 
         ArrayList<String> blackSubnets = WebConfig.getSsrfBlockIps();
@@ -291,7 +403,9 @@ public class SSRFChecker {
         try {
             // use URI instead of URL
             URI u = new URI(url);
-            if (SecurityUtil.isHttp(url)) {
+            String scheme = u.getScheme();
+            if (scheme != null && (scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"))
+                    && u.getHost() != null) {
                 return u.getHost();
             }
             return "";

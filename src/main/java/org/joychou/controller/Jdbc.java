@@ -1,6 +1,7 @@
 package org.joychou.controller;
 
 import lombok.extern.slf4j.Slf4j;
+import org.joychou.security.ssrf.SSRFChecker;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -22,7 +23,7 @@ public class Jdbc {
         byte[] b = java.util.Base64.getDecoder().decode(jdbcUrlBase64);
         String jdbcUrl = new String(b);
         log.info(jdbcUrl);
-        DriverManager.getConnection(jdbcUrl);
+        DriverManager.getConnection(SSRFChecker.requireSafeJdbcUrl(jdbcUrl, "postgresql"));
     }
 
     @RequestMapping("/db2")
@@ -31,6 +32,6 @@ public class Jdbc {
         byte[] b = java.util.Base64.getDecoder().decode(jdbcUrlBase64);
         String jdbcUrl = new String(b);
         log.info(jdbcUrl);
-        DriverManager.getConnection(jdbcUrl);
+        DriverManager.getConnection(SSRFChecker.requireSafeJdbcUrl(jdbcUrl, "db2"));
     }
 }

@@ -5,13 +5,15 @@ import org.apache.commons.httpclient.HttpClient;
 import org.apache.commons.httpclient.methods.GetMethod;
 import org.apache.commons.io.IOUtils;
 import org.apache.http.HttpResponse;
-import org.apache.http.client.fluent.Request;
+import org.apache.http.client.config.RequestConfig;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
 import org.apache.http.impl.nio.client.CloseableHttpAsyncClient;
 import org.apache.http.impl.nio.client.HttpAsyncClients;
 import org.apache.http.util.EntityUtils;
+import org.joychou.security.ssrf.SSRFChecker;
+import org.joychou.security.ssrf.SSRFException;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.slf4j.Logger;
@@ -24,39 +26,71 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URI;
-import java.net.URL;
-import java.net.URLConnection;
 import java.util.concurrent.*;
 
 /**
+ * Every method validates the destination with {@link SSRFChecker#requireSafeUri(String)}
+ * (http/https only, no loopback/link-local/private/metadata address after DNS resolution)
+ * and does not follow redirects automatically, because a redirect could point to an internal host.
+ *
  * @author JoyChou 2020-04-06
  */
 public class HttpUtils {
 
     private final static Logger logger = LoggerFactory.getLogger(HttpUtils.class);
 
+    /**
+     * Open a validated http/https URI without following redirects.
+     */
+    private static HttpURLConnection openNoRedirect(URI uri) throws IOException {
+        HttpURLConnection conn = (HttpURLConnection) uri.toURL().openConnection();
+        conn.setInstanceFollowRedirects(false);
+        return conn;
+    }
+
+
+    /**
+     * Open an input stream of a validated http/https url without following redirects.
+     *
+     * @param url untrusted http request url
+     * @throws SSRFException if the url targets a non http/https scheme or an internal address
+     */
+    public static InputStream openStream(String url) throws IOException {
+        URI uri = SSRFChecker.requireSafeUri(url);
+        return openNoRedirect(uri).getInputStream(); // send request
+    }
+
+
     public static String commonHttpClient(String url) {
 
         HttpClient client = new HttpClient();
-        GetMethod method = new GetMethod(url);
+        GetMethod method = null;
 
         try {
+            method = new GetMethod(SSRFChecker.requireSafeUri(url).toString());
+            method.setFollowRedirects(false);
             client.executeMethod(method); // send request
             byte[] resBody = method.getResponseBody();
             return new String(resBody);
 
+        } catch (SSRFException e) {
+            return e.getMessage();
         } catch (IOException e) {
             return "Error: " + e.getMessage();
         } finally {
             // Release the connection.
-            method.releaseConnection();
+            if (method != null) {
+                method.releaseConnection();
+            }
         }
     }
 
 
     public static String request(String url) {
-        try {
-            return Request.Get(url).execute().returnContent().toString();
+        try (CloseableHttpClient client = HttpClients.custom().disableRedirectHandling().build()) {
+            HttpGet httpGet = new HttpGet(SSRFChecker.requireSafeUri(url));
+            HttpResponse httpResponse = client.execute(httpGet); // send request
+            return EntityUtils.toString(httpResponse.getEntity());
         } catch (Exception e) {
             return e.getMessage();
         }
@@ -70,9 +104,9 @@ public class HttpUtils {
         try {
 
             CloseableHttpClient client = HttpClients.createDefault();
-            HttpGet httpGet = new HttpGet(url);
-            // set redirect enable false
-            // httpGet.setConfig(RequestConfig.custom().setRedirectsEnabled(false).build());
+            HttpGet httpGet = new HttpGet(SSRFChecker.requireSafeUri(url));
+            // redirects are disabled so that a redirect cannot reach an internal address
+            httpGet.setConfig(RequestConfig.custom().setRedirectsEnabled(false).build());
             HttpResponse httpResponse = client.execute(httpGet); // send request
             BufferedReader rd = new BufferedReader(new InputStreamReader(httpResponse.getEntity().getContent()));
 
@@ -91,8 +125,8 @@ public class HttpUtils {
 
     public static String URLConnection(String url) {
         try {
-            URL u = new URL(url);
-            URLConnection urlConnection = u.openConnection();
+            URI u = SSRFChecker.requireSafeUri(url);
+            HttpURLConnection urlConnection = openNoRedirect(u);
             BufferedReader in = new BufferedReader(new InputStreamReader(urlConnection.getInputStream())); //send request
             String inputLine;
             StringBuilder html = new StringBuilder();
@@ -110,15 +144,12 @@ public class HttpUtils {
 
 
     /**
-     * The default setting of followRedirects is true.
-     * UserAgent is Java/1.8.0_102.
+     * Redirects are not followed. UserAgent is Java/1.8.0_102.
      */
     public static String HttpURLConnection(String url) {
         try {
-            URL u = new URL(url);
-            URLConnection urlConnection = u.openConnection();
-            HttpURLConnection conn = (HttpURLConnection) urlConnection;
-//             conn.setInstanceFollowRedirects(false);
+            URI u = SSRFChecker.requireSafeUri(url);
+            HttpURLConnection conn = openNoRedirect(u);
 //             Many HttpURLConnection methods can send http request, such as getResponseCode, getHeaderField
             InputStream is = conn.getInputStream();  // send request
             BufferedReader in = new BufferedReader(new InputStreamReader(is));
@@ -130,6 +161,8 @@ public class HttpUtils {
             }
             in.close();
             return html.toString();
+        } catch (SSRFException e) {
+            return e.getMessage();
         } catch (IOException e) {
             logger.error(e.getMessage());
             return e.getMessage();
@@ -144,12 +177,14 @@ public class HttpUtils {
      */
     public static String Jsoup(String url) {
         try {
-            Document doc = Jsoup.connect(url)
-//                    .followRedirects(false)
+            Document doc = Jsoup.connect(SSRFChecker.requireSafeUri(url).toString())
+                    .followRedirects(false)
                     .timeout(3000)
                     .cookie("name", "joychou") // request cookies
                     .execute().parse();
             return doc.outerHtml();
+        } catch (SSRFException e) {
+            return e.getMessage();
         } catch (IOException e) {
             return e.getMessage();
         }
@@ -157,29 +192,30 @@ public class HttpUtils {
 
 
     /**
-     * The default setting of followRedirects is true. The option of followRedirects is true.
+     * Redirects are not followed.
      *
      * UserAgent is <code>okhttp/2.5.0</code>.
      */
     public static String okhttp(String url) throws IOException {
+        URI uri = SSRFChecker.requireSafeUri(url);
         OkHttpClient client = new OkHttpClient();
-//         client.setFollowRedirects(false);
-        com.squareup.okhttp.Request ok_http = new com.squareup.okhttp.Request.Builder().url(url).build();
+        client.setFollowRedirects(false);
+        client.setFollowSslRedirects(false);
+        com.squareup.okhttp.Request ok_http = new com.squareup.okhttp.Request.Builder().url(uri.toURL()).build();
         return client.newCall(ok_http).execute().body().string();
     }
 
 
     /**
-     * The default setting of followRedirects is true.
+     * Redirects are not followed.
      *
      * UserAgent is Java/1.8.0_102.
      *
      * @param url http request url
      */
     public static void imageIO(String url) {
-        try {
-            URL u = new URL(url);
-            ImageIO.read(u); // send request
+        try (InputStream is = openStream(url)) {
+            ImageIO.read(is); // send request
         } catch (IOException e) {
             logger.error(e.getMessage());
         }
@@ -189,13 +225,13 @@ public class HttpUtils {
 
     /**
      * IOUtils which is wrapped by URLConnection can get remote pictures.
-     * The default setting of redirection is true.
+     * Redirects are not followed.
      *
      * @param url http request url
      */
     public static void IOUtils(String url) {
-        try {
-            IOUtils.toByteArray(URI.create(url));
+        try (InputStream is = openStream(url)) {
+            IOUtils.toByteArray(is);
         } catch (IOException e) {
             logger.error(e.getMessage());
         }
@@ -203,10 +239,12 @@ public class HttpUtils {
 
 
     public static String HttpAsyncClients(String url) {
-        CloseableHttpAsyncClient httpclient = HttpAsyncClients.createDefault();
+        CloseableHttpAsyncClient httpclient = HttpAsyncClients.custom()
+                .setDefaultRequestConfig(RequestConfig.custom().setRedirectsEnabled(false).build())
+                .build();
         try {
+            final HttpGet request = new HttpGet(SSRFChecker.requireSafeUri(url));
             httpclient.start();
-            final HttpGet request = new HttpGet(url);
             Future<HttpResponse> future = httpclient.execute(request, null);
             HttpResponse response = future.get(6000, TimeUnit.MILLISECONDS);
             return EntityUtils.toString(response.getEntity());
