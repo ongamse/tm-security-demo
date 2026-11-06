@@ -9,7 +9,6 @@ import org.springframework.web.util.HtmlUtils;
 
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.net.URL;
 import java.util.ArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -88,10 +87,10 @@ public class URLWhiteList {
 
 
     /**
-     * The bypass of using {@link java.net.URL} to getHost.
-     * <p>
-     * <a href="http://localhost:8080/url/vuln/url_bypass?url=http://evil.com%5c@www.joychou.org/a.html">bypass 1</a>
-     * <a href="http://localhost:8080/url/vuln/url_bypass?url=http://evil.com%5cwww.joychou.org/a.html">bypass 2</a>
+     * Redirect only to a sub domain of the whitelist. The host is parsed with the strict
+     * {@link java.net.URI} parser (via {@link SecurityUtil#gethost(String)}), which rejects the
+     * backslash payloads that make {@link java.net.URL#getHost()} disagree with browsers, e.g.
+     * <code>http://evil.com%5c@www.joychou.org/a.html</code>.
      *
      * <p>
      * <a href="https://github.com/JoyChou93/java-sec-code/wiki/URL-whtielist-Bypass">More details</a>
@@ -99,20 +98,17 @@ public class URLWhiteList {
     @GetMapping("/vuln/url_bypass")
     public void url_bypass(String url, HttpServletResponse res) throws IOException {
 
-        logger.info("url:  " + url);
-
-        if (!SecurityUtil.isHttp(url)) {
+        if (url == null || !SecurityUtil.isHttp(url)) {
             return;
         }
 
-        URL u = new URL(url);
-        String host = u.getHost();
-        logger.info("host:  " + host);
+        String host = SecurityUtil.gethost(url);
 
         // endsWith .
         for (String domain : domainwhitelist) {
             if (host.endsWith("." + domain)) {
-                res.sendRedirect(url);
+                res.sendRedirect(SecurityUtil.cRlfFilter(url));
+                return;
             }
         }
 

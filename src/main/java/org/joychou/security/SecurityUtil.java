@@ -49,7 +49,8 @@ public class SecurityUtil {
     public static String gethost(String url) {
         try {
             URI uri = new URI(url);
-            return uri.getHost().toLowerCase();
+            String host = uri.getHost();
+            return host == null ? "" : host.toLowerCase();
         } catch (URISyntaxException e) {
             return "";
         }
@@ -106,6 +107,30 @@ public class SecurityUtil {
             logger.error(e.toString());
             return null;
         }
+    }
+
+
+    /**
+     * Validate an untrusted redirect destination. Only two shapes are accepted: an http(s) url whose
+     * parsed host passes {@link #checkURL(String)} (safe/block domain config), or a same-site
+     * relative path such as <code>/a/b</code>. Protocol-relative (<code>//host</code>), backslash and
+     * control character payloads are rejected.
+     *
+     * @param url untrusted redirect target
+     * @return the target without control characters if allowed, otherwise null
+     */
+    public static String safeRedirectUrl(String url) {
+        if (url == null || url.isEmpty()) {
+            return null;
+        }
+        String clean = cRlfFilter(url);
+        if (!clean.equals(url) || clean.indexOf('\\') != -1) {
+            return null;
+        }
+        if (clean.startsWith("/")) {
+            return clean.startsWith("//") ? null : clean;
+        }
+        return checkURL(clean);
     }
 
 
