@@ -351,7 +351,7 @@ public class SecurityUtil {
             }
             return resolved;
         } catch (InvalidPathException e) {
-            logger.info("Invalid path: " + e.getReason());
+            logger.info("Invalid path.");
             return null;
         }
     }
@@ -371,10 +371,10 @@ public class SecurityUtil {
             try {
                 temp = URLDecoder.decode(temp, "utf-8");
             } catch (UnsupportedEncodingException e) {
-                logger.info("Unsupported encoding exception: " + logSafe(filepath));
+                logger.info("Unsupported encoding exception.");
                 return null;
             } catch (Exception e) {
-                logger.info(e.toString());
+                logger.info("pathFilter exception: {}", e.getClass().getSimpleName());
                 return null;
             }
         }
@@ -405,26 +405,6 @@ public class SecurityUtil {
             if (ch >= 0x20 && ch != 0x7f) {
                 sb.append(ch);
             }
-        }
-        return sb.toString();
-    }
-
-
-    /**
-     * Neutralize an untrusted value before it is written to a log, to prevent log forging.
-     * CR, LF and all other control characters (including DEL) are replaced with '_'.
-     *
-     * @param value untrusted value, may be null
-     * @return the sanitized value, or the string "null" if value is null
-     */
-    public static String logSafe(String value) {
-        if (value == null) {
-            return "null";
-        }
-        StringBuilder sb = new StringBuilder(value.length());
-        for (int i = 0; i < value.length(); i++) {
-            char ch = value.charAt(i);
-            sb.append((ch < 0x20 || ch == 0x7f || ch == 0x85 || ch == 0x2028 || ch == 0x2029) ? '_' : ch);
         }
         return sb.toString();
     }

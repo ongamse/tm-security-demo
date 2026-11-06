@@ -23,7 +23,6 @@ import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 
-import org.joychou.security.SecurityUtil;
 import org.joychou.util.WebUtils;
 import org.xmlbeam.annotation.XBRead;
 
@@ -48,14 +47,14 @@ public class XXE {
     public String xmlReaderVuln(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info(SecurityUtil.logSafe(body));
+            logger.info("Received xml request body.");
             if (hasDtdOrEntity(body)) {
                 return REFUSED;
             }
             parseXml(body);  // parse xml
             return "xmlReader xxe vuln code";
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("xxe except: {}", e.getClass().getSimpleName());
             return EXCEPT;
         }
     }
@@ -65,14 +64,14 @@ public class XXE {
     public String xmlReaderSec(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info(SecurityUtil.logSafe(body));
+            logger.info("Received xml request body.");
             if (hasDtdOrEntity(body)) {
                 return REFUSED;
             }
             parseXml(body);  // parse xml
 
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("xxe except: {}", e.getClass().getSimpleName());
             return EXCEPT;
         }
 
@@ -84,14 +83,14 @@ public class XXE {
     public String SAXBuilderVuln(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info(SecurityUtil.logSafe(body));
+            logger.info("Received xml request body.");
             if (hasDtdOrEntity(body)) {
                 return REFUSED;
             }
             parseXml(body);
             return "SAXBuilder xxe vuln code";
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("xxe except: {}", e.getClass().getSimpleName());
             return EXCEPT;
         }
     }
@@ -100,14 +99,14 @@ public class XXE {
     public String SAXBuilderSec(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info(SecurityUtil.logSafe(body));
+            logger.info("Received xml request body.");
             if (hasDtdOrEntity(body)) {
                 return REFUSED;
             }
             parseXml(body);
 
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("xxe except: {}", e.getClass().getSimpleName());
             return EXCEPT;
         }
 
@@ -118,14 +117,14 @@ public class XXE {
     public String SAXReaderVuln(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info(SecurityUtil.logSafe(body));
+            logger.info("Received xml request body.");
             if (hasDtdOrEntity(body)) {
                 return REFUSED;
             }
             parseXml(body);
 
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("xxe except: {}", e.getClass().getSimpleName());
             return EXCEPT;
         }
 
@@ -136,13 +135,13 @@ public class XXE {
     public String SAXReaderSec(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info(SecurityUtil.logSafe(body));
+            logger.info("Received xml request body.");
             if (hasDtdOrEntity(body)) {
                 return REFUSED;
             }
             parseXml(body);
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("xxe except: {}", e.getClass().getSimpleName());
             return EXCEPT;
         }
         return "SAXReader xxe security code";
@@ -152,7 +151,7 @@ public class XXE {
     public String SAXParserVuln(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info(SecurityUtil.logSafe(body));
+            logger.info("Received xml request body.");
             if (hasDtdOrEntity(body)) {
                 return REFUSED;
             }
@@ -160,7 +159,7 @@ public class XXE {
 
             return "SAXParser xxe vuln code";
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("xxe except: {}", e.getClass().getSimpleName());
             return EXCEPT;
         }
     }
@@ -170,13 +169,13 @@ public class XXE {
     public String SAXParserSec(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info(SecurityUtil.logSafe(body));
+            logger.info("Received xml request body.");
             if (hasDtdOrEntity(body)) {
                 return REFUSED;
             }
             parseXml(body);  // parse xml
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("xxe except: {}", e.getClass().getSimpleName());
             return EXCEPT;
         }
         return "SAXParser xxe security code";
@@ -187,13 +186,13 @@ public class XXE {
     public String DigesterVuln(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info(SecurityUtil.logSafe(body));
+            logger.info("Received xml request body.");
             if (hasDtdOrEntity(body)) {
                 return REFUSED;
             }
             parseXml(body);  // parse xml
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("xxe except: {}", e.getClass().getSimpleName());
             return EXCEPT;
         }
         return "Digester xxe vuln code";
@@ -203,7 +202,7 @@ public class XXE {
     public String DigesterSec(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info(SecurityUtil.logSafe(body));
+            logger.info("Received xml request body.");
             if (hasDtdOrEntity(body)) {
                 return REFUSED;
             }
@@ -211,7 +210,7 @@ public class XXE {
 
             return "Digester xxe security code";
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("xxe except: {}", e.getClass().getSimpleName());
             return EXCEPT;
         }
     }
@@ -245,7 +244,7 @@ public class XXE {
             return HtmlUtils.htmlEscape(buf.toString());
         } catch (Exception e) {
             e.printStackTrace();
-            logger.error(SecurityUtil.logSafe(e.toString()));
+            logger.error("xxe except: {}", e.getClass().getSimpleName());
             return EXCEPT;
         }
     }
@@ -254,13 +253,13 @@ public class XXE {
     public String DocumentBuilderSec(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info(SecurityUtil.logSafe(body));
+            logger.info("Received xml request body.");
             if (hasDtdOrEntity(body)) {
                 return REFUSED;
             }
             parseXml(body);  // parse xml
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("xxe except: {}", e.getClass().getSimpleName());
             return EXCEPT;
         }
         return "DocumentBuilder xxe security code";
@@ -271,7 +270,7 @@ public class XXE {
     public String DocumentBuilderXincludeVuln(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info(SecurityUtil.logSafe(body));
+            logger.info("Received xml request body.");
             if (hasDtdOrEntity(body)) {
                 return REFUSED;
             }
@@ -282,7 +281,7 @@ public class XXE {
 
             return "DocumentBuilder xinclude xxe vuln code";
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("xxe except: {}", e.getClass().getSimpleName());
             return EXCEPT;
         }
     }
@@ -292,7 +291,7 @@ public class XXE {
     public String DocumentBuilderXincludeSec(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info(SecurityUtil.logSafe(body));
+            logger.info("Received xml request body.");
             if (hasDtdOrEntity(body)) {
                 return REFUSED;
             }
@@ -301,7 +300,7 @@ public class XXE {
             NodeList rootNodeList = document.getChildNodes();
             response(rootNodeList);
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("xxe except: {}", e.getClass().getSimpleName());
             return EXCEPT;
         }
         return "DocumentBuilder xinclude xxe vuln code";
@@ -312,14 +311,14 @@ public class XXE {
     public String XMLReaderVuln(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info(SecurityUtil.logSafe(body));
+            logger.info("Received xml request body.");
             if (hasDtdOrEntity(body)) {
                 return REFUSED;
             }
             parseXml(body);
 
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("xxe except: {}", e.getClass().getSimpleName());
             return EXCEPT;
         }
 
@@ -331,14 +330,14 @@ public class XXE {
     public String XMLReaderSec(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info(SecurityUtil.logSafe(body));
+            logger.info("Received xml request body.");
             if (hasDtdOrEntity(body)) {
                 return REFUSED;
             }
             parseXml(body);
 
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("xxe except: {}", e.getClass().getSimpleName());
             return EXCEPT;
         }
         return "XMLReader xxe security code";
@@ -358,7 +357,7 @@ public class XXE {
             }
             parseXml(body); // parse xml
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("xxe except: {}", e.getClass().getSimpleName());
             return EXCEPT;
         }
 
@@ -407,7 +406,7 @@ public class XXE {
             for (int j = 0; j < xxe.getLength(); j++) {
                 Node xxeNode = xxe.item(j);
                 // 测试不能blind xxe，所以强行加了一个回显
-                logger.info("xxeNode: " + SecurityUtil.logSafe(xxeNode.getNodeValue()));
+                logger.info("xxeNode processed. Node type: {}", xxeNode.getNodeType());
             }
 
         }
@@ -420,7 +419,7 @@ public class XXE {
         @PostMapping(value = "/xmlbeam/vuln")
         HttpEntity<String> post(@RequestBody UserPayload user) {
             try {
-                logger.info(SecurityUtil.logSafe(user.toString()));
+                logger.info("Received xmlbeam user payload.");
                 return ResponseEntity.ok(String.format("hello, %s!", user.getUserName()));
             }catch (Exception e){
                 e.printStackTrace();
