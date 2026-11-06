@@ -13,11 +13,7 @@ import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashSet;
 import java.util.Locale;
-import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -315,15 +311,9 @@ public class SecurityUtil {
 
 
     /**
-     * Fixed set of argument-less commands that may be requested by name. Anything else is rejected.
-     */
-    private static final Set<String> ALLOWED_COMMANDS = Collections.unmodifiableSet(
-            new HashSet<>(Arrays.asList("whoami", "id", "date", "uname", "hostname", "pwd")));
-
-
-    /**
-     * Allowlist a user supplied command name. The returned value is a constant from the
-     * allowlist, so it can be run as a single argv element without a shell.
+     * Allowlist a user supplied command name against a fixed set of argument-less commands
+     * (whoami, id, date, uname, hostname, pwd). The returned value is a literal constant, so it
+     * can be run as a single argv element without a shell.
      *
      * @param cmd untrusted command name
      * @return the allowlisted command, or null if it is not allowed
@@ -332,8 +322,121 @@ public class SecurityUtil {
         if (cmd == null) {
             return null;
         }
-        String trimmed = cmd.trim();
-        return ALLOWED_COMMANDS.contains(trimmed) ? trimmed : null;
+        // Each case returns a string literal, never the request value itself.
+        switch (cmd.trim()) {
+            case "whoami":
+                return "whoami";
+            case "id":
+                return "id";
+            case "date":
+                return "date";
+            case "uname":
+                return "uname";
+            case "hostname":
+                return "hostname";
+            case "pwd":
+                return "pwd";
+            default:
+                return null;
+        }
+    }
+
+
+    /**
+     * Select a directory to list from a fixed set of constants. The returned value is always a
+     * literal, never the request value.
+     *
+     * @param dir untrusted directory selector
+     * @return an allowlisted directory constant, or null if not allowed
+     */
+    public static String allowedDir(String dir) {
+        if (dir == null) {
+            return null;
+        }
+        switch (dir.trim()) {
+            case "/tmp":
+                return "/tmp";
+            case "/var/tmp":
+                return "/var/tmp";
+            case "/opt":
+                return "/opt";
+            default:
+                return null;
+        }
+    }
+
+
+    /**
+     * Select a host to contact from a fixed set of loopback constants. The returned value is always
+     * a literal, never the request value.
+     *
+     * @param host untrusted Host header value
+     * @return an allowlisted host constant, or null if not allowed
+     */
+    public static String allowedHost(String host) {
+        if (host == null) {
+            return null;
+        }
+        switch (host.trim()) {
+            case "localhost":
+                return "localhost";
+            case "localhost:8080":
+                return "localhost:8080";
+            case "127.0.0.1":
+                return "127.0.0.1";
+            case "127.0.0.1:8080":
+                return "127.0.0.1:8080";
+            default:
+                return null;
+        }
+    }
+
+
+    /**
+     * Select a Groovy script from a fixed set of constant expressions. User text is never
+     * evaluated.
+     *
+     * @param script untrusted script selector
+     * @return an allowlisted script constant, or null if not allowed
+     */
+    public static String allowedGroovyScript(String script) {
+        if (script == null) {
+            return null;
+        }
+        switch (script.trim()) {
+            case "1+1":
+                return "1+1";
+            case "2*3":
+                return "2*3";
+            case "10-4":
+                return "10-4";
+            default:
+                return null;
+        }
+    }
+
+
+    /**
+     * Select a SpEL expression from a fixed set of constant expressions. User text is never
+     * parsed.
+     *
+     * @param expression untrusted expression selector
+     * @return an allowlisted expression constant, or null if not allowed
+     */
+    public static String allowedSpel(String expression) {
+        if (expression == null) {
+            return null;
+        }
+        switch (expression.trim()) {
+            case "1+1":
+                return "1+1";
+            case "2*3":
+                return "2*3";
+            case "'hello'":
+                return "'hello'";
+            default:
+                return null;
+        }
     }
 
 

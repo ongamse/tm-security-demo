@@ -1,5 +1,6 @@
 package org.joychou.controller;
 
+import org.joychou.security.SecurityUtil;
 import org.springframework.expression.ConstructorResolver;
 import org.springframework.expression.ExpressionParser;
 import org.springframework.expression.MethodResolver;
@@ -41,7 +42,12 @@ public class SpEL {
         context.setConstructorResolvers(Collections.<ConstructorResolver>emptyList());
         context.setMethodResolvers(Collections.<MethodResolver>emptyList());
         context.setPropertyAccessors(Collections.<PropertyAccessor>emptyList());
-        Object value = parser.parseExpression(expression).getValue(context);
+        // User text is never parsed: only a fixed allowlisted constant expression is evaluated.
+        String safeExpression = SecurityUtil.allowedSpel(expression);
+        if (safeExpression == null) {
+            return "Expression not allowed!!";
+        }
+        Object value = parser.parseExpression(safeExpression).getValue(context);
         return HtmlUtils.htmlEscape(String.valueOf(value));
     }
 

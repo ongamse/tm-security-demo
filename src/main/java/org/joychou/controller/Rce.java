@@ -176,8 +176,13 @@ public class Rce {
                 UnaryMinusExpression.class, UnaryPlusExpression.class));
         CompilerConfiguration config = new CompilerConfiguration();
         config.addCompilationCustomizers(secure);
+        // User text is never evaluated: only a fixed allowlisted constant script is run.
+        String safeScript = SecurityUtil.allowedGroovyScript(content);
+        if (safeScript == null) {
+            return;
+        }
         GroovyShell groovyShell = new GroovyShell(config);
-        groovyShell.evaluate(content);
+        groovyShell.evaluate(safeScript);
     }
 
 
