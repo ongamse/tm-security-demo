@@ -109,7 +109,7 @@ public class Rce {
             return "Command exec failed!!";
         }
 
-        return sb.toString();
+        return HtmlUtils.htmlEscape(sb.toString());
     }
 
 
