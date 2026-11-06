@@ -249,7 +249,8 @@ public class SecurityUtil {
         } else {
             return null;
         }
-        String scheme = "https".equalsIgnoreCase(m.group(1)) ? "https://" : "http://";
+        // Always rebuild with the literal TLS scheme; an http:// request value is upgraded, never echoed.
+        String scheme = "https://";
         String port = m.group(3) == null ? "" : ":" + rebuildFromAlphabet(m.group(3));
         String rawPath = m.group(4) == null ? "" : m.group(4);
         if (rawPath.contains("//") || rawPath.contains("..")) {
