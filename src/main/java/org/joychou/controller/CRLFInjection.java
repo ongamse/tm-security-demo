@@ -25,8 +25,14 @@ public class CRLFInjection {
     @ResponseBody
     public void crlf(HttpServletRequest request, HttpServletResponse response)
             throws UnsupportedEncodingException {
-        response.addHeader("test1", SecurityUtil.cRlfFilter(request.getParameter("test1")));
-        response.setHeader("test2", SecurityUtil.cRlfFilter(request.getParameter("test2")));
+        String test1 = SecurityUtil.cRlfFilter(request.getParameter("test1"));
+        if (test1 != null) {
+            response.addHeader("test1", URLEncoder.encode(test1, StandardCharsets.UTF_8.name()));
+        }
+        String test2 = SecurityUtil.cRlfFilter(request.getParameter("test2"));
+        if (test2 != null) {
+            response.setHeader("test2", URLEncoder.encode(test2, StandardCharsets.UTF_8.name()));
+        }
         String author = SecurityUtil.cRlfFilter(request.getParameter("test3"));
         if (author != null) {
             // URL-encode so CR/LF and other reserved characters can never reach the Set-Cookie header

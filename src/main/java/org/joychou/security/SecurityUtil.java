@@ -26,6 +26,9 @@ public class SecurityUtil {
             "^https?://((?:[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?)|(?:\\[[0-9A-Fa-f:.]+\\]))"
                     + "(?::[0-9]{1,5})?(?:[/?#][^\\s\\\\@]*)?$",
             Pattern.CASE_INSENSITIVE);
+    private static final Pattern ORIGIN_PATTERN = Pattern.compile(
+            "^(https?)://([A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?)(:[0-9]{1,5})?$",
+            Pattern.CASE_INSENSITIVE);
     private static Logger logger =LoggerFactory.getLogger(SecurityUtil.class);
 
 
@@ -107,6 +110,37 @@ public class SecurityUtil {
             logger.error(e.toString());
             return null;
         }
+    }
+
+
+    /**
+     * Resolve an untrusted CORS <code>Origin</code> request header to a value that is safe to write into
+     * <code>Access-Control-Allow-Origin</code>. The origin must be strictly <code>scheme://host[:port]</code>
+     * (no path, userinfo or control characters) and its host must pass {@link #checkURL(String)}. The
+     * returned value is assembled from a literal scheme plus an allowlist entry (exact host match) or the
+     * validated host (subdomain of an allowlist entry); the raw request string is never returned.
+     *
+     * @param origin untrusted Origin header value, may be null
+     * @return a safe origin to echo, or null if the origin is not allowlisted
+     */
+    public static String allowedOrigin(String origin) {
+        if (origin == null || checkURL(origin) == null) {
+            return null;
+        }
+        Matcher m = ORIGIN_PATTERN.matcher(origin);
+        if (!m.matches()) {
+            return null;
+        }
+        String scheme = "https".equalsIgnoreCase(m.group(1)) ? "https://" : "http://";
+        String host = m.group(2).toLowerCase(Locale.ROOT);
+        String port = m.group(3) == null ? "" : ":" + m.group(3).substring(1);
+        for (String safeDomain : WebConfig.getSafeDomains()) {
+            if (host.equals(safeDomain)) {
+                return scheme + safeDomain + port;
+            }
+        }
+        // Subdomain of an allowlisted domain: host consists only of [a-z0-9.-] per ORIGIN_PATTERN.
+        return scheme + host + port;
     }
 
 

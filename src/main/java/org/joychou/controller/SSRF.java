@@ -132,7 +132,10 @@ public class SSRF {
         try {
             String downLoadImgFileName = WebUtils.getNameWithoutExtension(url) + "." + WebUtils.getFileExtension(url);
             // download
-            response.setHeader("content-disposition", "attachment;fileName=" + SecurityUtil.cRlfFilter(downLoadImgFileName));
+            // URL-encode the request-derived name (RFC 5987 filename*) so no CR/LF or reserved char reaches the header
+            String encodedFileName = URLEncoder.encode(
+                    SecurityUtil.cRlfFilter(downLoadImgFileName), "UTF-8").replace("+", "%20");
+            response.setHeader("content-disposition", "attachment;filename*=UTF-8''" + encodedFileName);
 
             int length;
             byte[] bytes = new byte[1024];
