@@ -1,6 +1,5 @@
 package org.joychou.controller;
 
-import com.fasterxml.uuid.Generators;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Controller;
@@ -187,7 +186,8 @@ public class FileUpload {
     private File convert(MultipartFile multiFile) throws Exception {
         String fileName = multiFile.getOriginalFilename();
         String suffix = fileName.substring(fileName.lastIndexOf("."));
-        UUID uuid = Generators.timeBasedGenerator().generate();
+        // UUID.randomUUID() is backed by SecureRandom (unpredictable), unlike a time-based UUID
+        UUID uuid = UUID.randomUUID();
         Path convPath = SecurityUtil.resolveInDir(UPLOADED_FOLDER, uuid + suffix);
         if (convPath == null) {
             throw new IOException("Illegal file suffix");
