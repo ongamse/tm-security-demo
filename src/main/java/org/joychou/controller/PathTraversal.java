@@ -29,7 +29,7 @@ public class PathTraversal {
     @GetMapping("/path_traversal/sec")
     public String getImageSec(String filepath) throws IOException {
         if (SecurityUtil.pathFilter(filepath) == null) {
-            logger.info("Illegal file path: " + filepath);
+            logger.info("Illegal file path: " + SecurityUtil.logSafe(filepath));
             return "Bad boy. Illegal file path.";
         }
         return getImgBase64(filepath);
@@ -38,7 +38,7 @@ public class PathTraversal {
     private String getImgBase64(String imgFile) throws IOException {
 
         logger.info("Working directory: " + System.getProperty("user.dir"));
-        logger.info("File path: " + imgFile);
+        logger.info("File path: " + SecurityUtil.logSafe(imgFile));
 
         // Confine reads to the working directory (reject ".." and absolute escapes).
         Path safePath = SecurityUtil.resolveInDir(System.getProperty("user.dir"), imgFile);

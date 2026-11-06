@@ -70,7 +70,7 @@ public class FileUpload {
 
         } catch (IOException e) {
             redirectAttributes.addFlashAttribute("message", "upload failed");
-            logger.error(e.toString());
+            logger.error(SecurityUtil.logSafe(e.toString()));
         }
 
         return "redirect:/file/status";
@@ -111,7 +111,7 @@ public class FileUpload {
             }
         }
         if (!suffixFlag) {
-            logger.error("[-] Suffix error: " + Suffix);
+            logger.error("[-] Suffix error: " + SecurityUtil.logSafe(Suffix));
             deleteFile(filePath);
             return "Upload failed. Illeagl picture.";
         }
@@ -129,7 +129,7 @@ public class FileUpload {
         for (String blackMimeType : mimeTypeBlackList) {
             // 用contains是为了防止text/html;charset=UTF-8绕过
             if (SecurityUtil.replaceSpecialStr(mimeType).toLowerCase().contains(blackMimeType)) {
-                logger.error("[-] Mime type error: " + mimeType);
+                logger.error("[-] Mime type error: " + SecurityUtil.logSafe(mimeType));
                 deleteFile(filePath);
                 return "Upload failed. Illeagl picture.";
             }
@@ -151,13 +151,13 @@ public class FileUpload {
             byte[] bytes = multifile.getBytes();
             Files.write(targetPath, bytes);
         } catch (IOException e) {
-            logger.error(e.toString());
+            logger.error(SecurityUtil.logSafe(e.toString()));
             deleteFile(filePath);
             return "Upload failed";
         }
 
-        logger.info("[+] Safe file. Suffix: {}, MIME: {}", Suffix, mimeType);
-        logger.info("[+] Successfully uploaded {}", filePath);
+        logger.info("[+] Safe file. Suffix: {}, MIME: {}", SecurityUtil.logSafe(Suffix), SecurityUtil.logSafe(mimeType));
+        logger.info("[+] Successfully uploaded {}", SecurityUtil.logSafe(filePath));
         return String.format("You successfully uploaded '%s'", HtmlUtils.htmlEscape(filePath));
     }
 
@@ -171,13 +171,13 @@ public class FileUpload {
         // Files.delete also fails on non-empty directories, so only files/empty dirs are removed.
         try {
             if (Files.deleteIfExists(confined)) {
-                logger.info("[+] " + filePath + " delete successfully!");
+                logger.info("[+] " + SecurityUtil.logSafe(filePath) + " delete successfully!");
                 return;
             }
         } catch (IOException e) {
             logger.info("Delete error: " + e.getClass().getSimpleName());
         }
-        logger.info(filePath + " delete failed!");
+        logger.info(SecurityUtil.logSafe(filePath) + " delete failed!");
     }
 
     /**
