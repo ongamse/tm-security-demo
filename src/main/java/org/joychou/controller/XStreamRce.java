@@ -1,6 +1,9 @@
 package org.joychou.controller;
 
 import com.thoughtworks.xstream.XStream;
+import com.thoughtworks.xstream.security.NoTypePermission;
+import com.thoughtworks.xstream.security.NullPermission;
+import com.thoughtworks.xstream.security.PrimitiveTypePermission;
 import com.thoughtworks.xstream.io.xml.DomDriver;
 import com.thoughtworks.xstream.io.xml.DomReader;
 import org.joychou.dao.User;
@@ -38,6 +41,11 @@ public class XStreamRce {
         Document document = dbf.newDocumentBuilder().parse(new InputSource(new StringReader(xml)));
 
         XStream xstream = new XStream(new DomDriver());
+        // Allowlist-only type security: deny everything, then permit just the types this endpoint accepts.
+        xstream.addPermission(NoTypePermission.NONE);
+        xstream.addPermission(NullPermission.NULL);
+        xstream.addPermission(PrimitiveTypePermission.PRIMITIVES);
+        xstream.allowTypes(new Class[]{String.class, User.class});
         xstream.unmarshal(new DomReader(document));
         return "xstream";
     }
