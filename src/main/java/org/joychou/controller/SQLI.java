@@ -64,6 +64,23 @@ public class SQLI {
         throw new AccessDeniedException("Access denied");
     }
 
+    /**
+     * Authorize an object reference and return the authenticated principal name, which is the
+     * value the caller must bind into the query. The requested name must equal the principal;
+     * the request parameter itself is never used as the bound value. Fails closed (403).
+     */
+    private static String authorizedUsername(String requested) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated() || requested == null) {
+            throw new AccessDeniedException("Access denied");
+        }
+        String principalName = auth.getName();
+        if (principalName == null || !principalName.equals(requested)) {
+            throw new AccessDeniedException("Access denied");
+        }
+        return principalName;
+    }
+
     private static boolean isAdmin(Authentication auth) {
         for (GrantedAuthority authority : auth.getAuthorities()) {
             if (ROLE_ADMIN.equals(authority.getAuthority())) {
@@ -81,6 +98,7 @@ public class SQLI {
      */
     @RequestMapping("/jdbc/vuln")
     public String jdbc_sqli_vul(@RequestParam("username") String username) {
+        String authorizedName = authorizedUsername(username);
 
         StringBuilder result = new StringBuilder();
 
@@ -94,7 +112,7 @@ public class SQLI {
             // sqli vuln code
             String sql = "select * from users where username = ?";
             PreparedStatement statement = con.prepareStatement(sql);
-            statement.setString(1, username);
+            statement.setString(1, authorizedName);
             logger.info(SecurityUtil.logSafe(statement.toString()));
             ResultSet rs = statement.executeQuery();
 
@@ -170,6 +188,7 @@ public class SQLI {
      */
     @RequestMapping("/jdbc/ps/vuln")
     public String jdbc_ps_vuln(@RequestParam("username") String username) {
+        String authorizedName = authorizedUsername(username);
 
         StringBuilder result = new StringBuilder();
         try {
@@ -181,7 +200,7 @@ public class SQLI {
 
             String sql = "select * from users where username = ?";
             PreparedStatement st = con.prepareStatement(sql);
-            st.setString(1, username);
+            st.setString(1, authorizedName);
 
             logger.info(SecurityUtil.logSafe(st.toString()));
             ResultSet rs = st.executeQuery();

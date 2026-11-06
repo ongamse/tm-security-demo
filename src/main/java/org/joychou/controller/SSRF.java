@@ -2,6 +2,7 @@ package org.joychou.controller;
 
 import cn.hutool.http.HttpUtil;
 import org.joychou.security.SecurityUtil;
+import org.joychou.security.ssrf.SSRFChecker;
 import org.joychou.security.ssrf.SSRFException;
 import org.joychou.service.HttpService;
 import org.joychou.util.HttpUtils;
@@ -321,10 +322,15 @@ public class SSRF {
     @GetMapping("/dnsrebind/vuln")
     public String DnsRebind(String url) {
         java.security.Security.setProperty("networkaddress.cache.negative.ttl" , "0");
-        if (!SecurityUtil.checkSSRFWithoutRedirect(url)) {
+        URI safeUri;
+        try {
+            // http/https only, public addresses only; the re-serialised URI replaces the raw url
+            safeUri = SSRFChecker.requireSafeUri(url);
+        } catch (SSRFException e) {
             return "Dangerous url";
         }
-        return HttpUtil.get(url);
+        // connects only to the addresses resolved and checked by getPinned (no second DNS lookup)
+        return HttpUtils.getPinned(safeUri);
     }
 
 

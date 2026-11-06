@@ -26,6 +26,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
+import java.net.InetAddress;
 import java.net.URI;
 import java.util.concurrent.*;
 
@@ -94,6 +95,43 @@ public class HttpUtils {
             if (method != null) {
                 method.releaseConnection();
             }
+        }
+    }
+
+
+    /**
+     * GET a validated http/https URI while connecting only to the addresses that were resolved and
+     * checked here. The host name is resolved exactly once, every address is verified to be public,
+     * and the HTTP client is given a resolver that returns only those addresses, so a DNS rebind
+     * (a second lookup with a different, internal answer) cannot redirect the connection.
+     * Redirects are not followed.
+     *
+     * @param uri URI returned by {@link SSRFChecker#requireSafeUri(String)}
+     * @throws SSRFException if the host cannot be resolved or resolves to an internal address
+     */
+    public static String getPinned(URI uri) {
+        try {
+            String host = uri.getHost();
+            if (host == null) {
+                throw new SSRFException("[-] SSRF check failed. Host is empty");
+            }
+            final InetAddress[] pinned = InetAddress.getAllByName(host); // single DNS lookup
+            for (InetAddress address : pinned) {
+                if (SSRFChecker.isInternalIp(address.getHostAddress())) {
+                    throw new SSRFException("[-] SSRF check failed. Internal host: " + host);
+                }
+            }
+            try (CloseableHttpClient client = HttpClients.custom()
+                    .setDnsResolver(name -> pinned)
+                    .disableRedirectHandling()
+                    .build()) {
+                HttpGet httpGet = new HttpGet(uri.toString());
+                httpGet.setConfig(RequestConfig.custom().setRedirectsEnabled(false).build());
+                HttpResponse httpResponse = client.execute(httpGet); // send request
+                return EntityUtils.toString(httpResponse.getEntity());
+            }
+        } catch (SSRFException | IOException e) {
+            return requestFailed(e);
         }
     }
 
