@@ -71,21 +71,19 @@ public class XSS {
         return HtmlUtils.htmlEscape(decoded);
     }
 
-    private static final String TOKEN_ALPHABET =
-            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-
     /**
-     * Base64url-encode (no padding) the UTF-8 bytes of the value, then copy it char by char
-     * from a constant alphabet, dropping anything outside [A-Za-z0-9_-].
+     * Base64url-encode (no padding) the UTF-8 bytes of the value, then copy it char by char,
+     * dropping anything outside [A-Za-z0-9_-].
      */
     private static String toCookieToken(String value) {
         String encoded = Base64.getUrlEncoder().withoutPadding()
                 .encodeToString(value.getBytes(StandardCharsets.UTF_8));
         StringBuilder token = new StringBuilder(encoded.length());
         for (int i = 0; i < encoded.length(); i++) {
-            int idx = TOKEN_ALPHABET.indexOf(encoded.charAt(i));
-            if (idx >= 0) {
-                token.append(TOKEN_ALPHABET.charAt(idx));
+            char c = encoded.charAt(i);
+            if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
+                    || c == '-' || c == '_') {
+                token.append(c);
             }
         }
         return token.toString();
