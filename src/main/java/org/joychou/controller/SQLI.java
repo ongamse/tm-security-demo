@@ -7,6 +7,10 @@ import org.joychou.security.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
@@ -41,6 +45,33 @@ public class SQLI {
 
     @Resource
     private UserMapper userMapper;
+
+    private static final String ROLE_ADMIN = "ROLE_ADMIN";
+
+    /**
+     * Object reference authorization: a caller may only reference their own user record,
+     * unless they hold the admin role. Fails closed when there is no authenticated principal.
+     * Denial is translated by Spring Security's access denied handler (403).
+     */
+    private static void checkUserReference(String username) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated() || username == null) {
+            throw new AccessDeniedException("Access denied");
+        }
+        if (isAdmin(auth) || username.equals(auth.getName())) {
+            return;
+        }
+        throw new AccessDeniedException("Access denied");
+    }
+
+    private static boolean isAdmin(Authentication auth) {
+        for (GrantedAuthority authority : auth.getAuthorities()) {
+            if (ROLE_ADMIN.equals(authority.getAuthority())) {
+                return true;
+            }
+        }
+        return false;
+    }
 
 
     /**
@@ -94,6 +125,7 @@ public class SQLI {
      */
     @RequestMapping("/jdbc/sec")
     public String jdbc_sqli_sec(@RequestParam("username") String username) {
+        checkUserReference(username);
 
         StringBuilder result = new StringBuilder();
         try {
@@ -182,6 +214,7 @@ public class SQLI {
      */
     @GetMapping("/mybatis/vuln01")
     public List<User> mybatisVuln01(@RequestParam("username") String username) {
+        checkUserReference(username);
         return userMapper.findByUserNameVuln01(username);
     }
 
@@ -192,6 +225,7 @@ public class SQLI {
      */
     @GetMapping("/mybatis/vuln02")
     public List<User> mybatisVuln02(@RequestParam("username") String username) {
+        checkUserReference(username);
         return userMapper.findByUserNameVuln02(username);
     }
 
@@ -212,6 +246,7 @@ public class SQLI {
      */
     @GetMapping("/mybatis/sec01")
     public User mybatisSec01(@RequestParam("username") String username) {
+        checkUserReference(username);
         return userMapper.findByUserName(username);
     }
 
@@ -221,7 +256,11 @@ public class SQLI {
      */
     @GetMapping("/mybatis/sec02")
     public User mybatisSec02(@RequestParam("id") Integer id) {
-        return userMapper.findById(id);
+        User found = userMapper.findById(id);
+        if (found != null) {
+            checkUserReference(found.getUsername());
+        }
+        return found;
     }
 
 
