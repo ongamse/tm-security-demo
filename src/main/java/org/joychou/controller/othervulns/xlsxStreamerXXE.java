@@ -1,7 +1,5 @@
 package org.joychou.controller.othervulns;
 
-import com.monitorjbl.xlsx.StreamingReader;
-
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -22,9 +20,9 @@ import java.util.zip.ZipInputStream;
  * Desc:  xlsx-streamer xxe code
  * Usage: xl/workbook.xml
  * Ref:   https://www.itread01.com/hkpcyyp.html
- * Fix:   update xlsx-streamer to 2.1.0 or above; additionally every part of the uploaded
- *        package is checked and the upload is refused when any part declares a DOCTYPE or
- *        ENTITY, so no untrusted DTD / entity content ever reaches the XML parser.
+ * Fix:   the upload is never parsed as XML. The package is size-bounded, refused when any part
+ *        declares a DOCTYPE or ENTITY, and only checked by zip entry name for the expected
+ *        workbook parts.
  *
  * @author JoyChou @2019-09-05
  */
@@ -50,21 +48,36 @@ public class xlsxStreamerXXE {
             response.sendError(HttpServletResponse.SC_BAD_REQUEST, "unsafe xlsx upload rejected");
             return;
         }
-        openValidated(content);
+        if (!hasRequiredWorkbookParts(content)) {
+            response.sendError(HttpServletResponse.SC_BAD_REQUEST, "not a valid xlsx workbook");
+            return;
+        }
+        response.setContentType("text/plain;charset=UTF-8");
+        response.getWriter().write("xlsx accepted");
     }
 
 
     /**
-     * Opens the workbook from the already validated bytes only; the raw upload stream is never handed to
-     * the streaming reader. Nothing is opened when the package check fails.
+     * Structural check only: verifies by entry name that the zip contains the parts every xlsx workbook
+     * must have. No part of the upload is handed to an XML parser.
      */
-    private static void openValidated(byte[] checked) throws IOException {
-        if (!isSafeOoxmlPackage(checked)) {
-            throw new IOException("unsafe xlsx package");
+    static boolean hasRequiredWorkbookParts(byte[] content) {
+        boolean contentTypes = false;
+        boolean workbook = false;
+        try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(content))) {
+            ZipEntry entry;
+            while ((entry = zis.getNextEntry()) != null) {
+                String name = entry.getName();
+                if ("[Content_Types].xml".equals(name)) {
+                    contentTypes = true;
+                } else if ("xl/workbook.xml".equals(name)) {
+                    workbook = true;
+                }
+            }
+        } catch (IOException | RuntimeException e) {
+            return false;
         }
-        try (InputStream in = new ByteArrayInputStream(checked)) {
-            StreamingReader.builder().open(in);
-        }
+        return contentTypes && workbook;
     }
 
 
@@ -127,8 +140,7 @@ public class xlsxStreamerXXE {
 
     public static void main(String[] args) throws Exception {
         byte[] content = java.nio.file.Files.readAllBytes(java.nio.file.Paths.get("poc.xlsx"));
-        if (isSafeOoxmlPackage(content)) {
-            openValidated(content);
-        }
+        System.out.println(isSafeOoxmlPackage(content) && hasRequiredWorkbookParts(content)
+                ? "xlsx accepted" : "xlsx rejected");
     }
 }
