@@ -14,14 +14,15 @@ import java.io.StringWriter;
 @RequestMapping("/ssti")
 public class SSTI {
 
+    private static final String FIXED_TEMPLATE =
+            "Author: $author, Address: $address, Phone: $phone, Input: $userInput";
+
     /**
      * SSTI of Java velocity. The latest Velocity version still has this problem.
-     * Fix method: Avoid to use Velocity.evaluate method.
-     * <p>
-     * http://localhost:8080/ssti/velocity?template=%23set($e=%22e%22);$e.getClass().forName(%22java.lang.Runtime%22).getMethod(%22getRuntime%22,null).invoke(null,null).exec(%22open%20-a%20Calculator%22)
-     * Open a calculator in MacOS.
+     * Fixed: the template source is a constant; the request parameter is passed
+     * only as a bound context variable and is never evaluated as a template.
      *
-     * @param template exp
+     * @param template user input (bound as $userInput)
      */
     @GetMapping("/velocity")
     public void velocity(String template) {
@@ -32,8 +33,10 @@ public class SSTI {
         context.put("author", "Elliot A.");
         context.put("address", "217 E Broadway");
         context.put("phone", "555-1337");
+        // User input is only a bound context value; it is never parsed as template source.
+        context.put("userInput", template);
 
         StringWriter swOut = new StringWriter();
-        Velocity.evaluate(context, swOut, "test", template);
+        Velocity.evaluate(context, swOut, "test", FIXED_TEMPLATE);
     }
 }
