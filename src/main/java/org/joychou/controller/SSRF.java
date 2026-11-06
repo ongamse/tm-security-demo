@@ -35,6 +35,15 @@ public class SSRF {
     private HttpService httpService;
 
     /**
+     * Log the exception server side and return a constant message so that
+     * exception details are never exposed in the HTTP response.
+     */
+    private static String requestFailed(Exception e) {
+        logger.error(SecurityUtil.logSafe(e.toString()));
+        return "Request failed";
+    }
+
+    /**
      * <p>
      *    The default setting of followRedirects is true. <br>
      *    Protocol: file ftp mailto http https jar netdoc. <br>
@@ -60,7 +69,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.URLConnection(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return requestFailed(e);
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -78,7 +87,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.HttpURLConnection(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return requestFailed(e);
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -101,7 +110,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HtmlUtils.htmlEscape(HttpUtils.request(url));
         } catch (SSRFException | IOException e) {
-            return HtmlUtils.htmlEscape(String.valueOf(e.getMessage()));
+            return requestFailed(e);
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -157,7 +166,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             HttpUtils.imageIO(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return requestFailed(e);
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -173,7 +182,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.okhttp(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return requestFailed(e);
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -192,7 +201,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.httpClient(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return requestFailed(e);
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -212,7 +221,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.commonHttpClient(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return requestFailed(e);
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -231,7 +240,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.Jsoup(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return requestFailed(e);
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -250,7 +259,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             HttpUtils.IOUtils(url);
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return requestFailed(e);
         } finally {
             SecurityUtil.stopSSRFHook();
         }

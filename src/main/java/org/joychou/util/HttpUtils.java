@@ -13,6 +13,7 @@ import org.apache.http.impl.nio.client.CloseableHttpAsyncClient;
 import org.apache.http.impl.nio.client.HttpAsyncClients;
 import org.apache.http.util.EntityUtils;
 import org.joychou.security.ssrf.SSRFChecker;
+import org.joychou.security.SecurityUtil;
 import org.joychou.security.ssrf.SSRFException;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
@@ -38,6 +39,15 @@ import java.util.concurrent.*;
 public class HttpUtils {
 
     private final static Logger logger = LoggerFactory.getLogger(HttpUtils.class);
+
+    /**
+     * Log the exception server side and return a constant message so that
+     * exception details are never returned to the caller / HTTP response.
+     */
+    private static String requestFailed(Exception e) {
+        logger.error(SecurityUtil.logSafe(e.toString()));
+        return "Request failed";
+    }
 
     /**
      * Open a validated http/https URI without following redirects.
@@ -73,10 +83,8 @@ public class HttpUtils {
             byte[] resBody = method.getResponseBody();
             return new String(resBody);
 
-        } catch (SSRFException e) {
-            return e.getMessage();
-        } catch (IOException e) {
-            return "Error: " + e.getMessage();
+        } catch (SSRFException | IOException e) {
+            return requestFailed(e);
         } finally {
             // Release the connection.
             if (method != null) {
@@ -92,7 +100,7 @@ public class HttpUtils {
             HttpResponse httpResponse = client.execute(httpGet); // send request
             return EntityUtils.toString(httpResponse.getEntity());
         } catch (Exception e) {
-            return e.getMessage();
+            return requestFailed(e);
         }
     }
 
@@ -118,7 +126,7 @@ public class HttpUtils {
             return result.toString();
 
         } catch (Exception e) {
-            return e.getMessage();
+            return requestFailed(e);
         }
     }
 
@@ -137,8 +145,7 @@ public class HttpUtils {
             in.close();
             return html.toString();
         } catch (Exception e) {
-            logger.error(e.getMessage());
-            return e.getMessage();
+            return requestFailed(e);
         }
     }
 
@@ -161,11 +168,8 @@ public class HttpUtils {
             }
             in.close();
             return html.toString();
-        } catch (SSRFException e) {
-            return e.getMessage();
-        } catch (IOException e) {
-            logger.error(e.getMessage());
-            return e.getMessage();
+        } catch (SSRFException | IOException e) {
+            return requestFailed(e);
         }
     }
 
@@ -183,10 +187,8 @@ public class HttpUtils {
                     .cookie("name", "joychou") // request cookies
                     .execute().parse();
             return doc.outerHtml();
-        } catch (SSRFException e) {
-            return e.getMessage();
-        } catch (IOException e) {
-            return e.getMessage();
+        } catch (SSRFException | IOException e) {
+            return requestFailed(e);
         }
     }
 
@@ -249,7 +251,7 @@ public class HttpUtils {
             HttpResponse response = future.get(6000, TimeUnit.MILLISECONDS);
             return EntityUtils.toString(response.getEntity());
         } catch (Exception e) {
-            return e.getMessage();
+            return requestFailed(e);
         } finally {
             try {
                 httpclient.close();
