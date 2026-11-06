@@ -10,8 +10,14 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurerAdapter;
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.regex.Pattern;
+
 @Configuration
 public class CustomCorsConfig extends WebMvcRegistrationsAdapter {
+
+    private static final Pattern ORIGIN_PATTERN = Pattern.compile("^https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?$");
 
     /**
      * 设置cors origin白名单。区分http和https，并且默认不会拦截同域请求。
@@ -19,14 +25,25 @@ public class CustomCorsConfig extends WebMvcRegistrationsAdapter {
     @Bean
     public WebMvcConfigurer corsConfigurer(
             @Value("${joychou.security.cors.allowed.origins:}") String[] corsAllowedOrigins) {
-        // Explicit origin list from configuration (concrete scheme://host[:port] literals, never "*").
-        final String[] allowOrigins = corsAllowedOrigins.clone();
+        // Keep only concrete scheme://host[:port] literals; invalid entries and "*" are dropped.
+        final List<String> validOrigins = new ArrayList<>();
+        if (corsAllowedOrigins != null) {
+            for (String origin : corsAllowedOrigins) {
+                String candidate = origin == null ? "" : origin.trim();
+                if (ORIGIN_PATTERN.matcher(candidate).matches()) {
+                    validOrigins.add(candidate);
+                }
+            }
+        }
+        final String[] allowOrigins = validOrigins.toArray(new String[0]);
         return new WebMvcConfigurerAdapter() {
             @Override
             public void addCorsMappings(CorsRegistry registry) {
+                // No valid configured origin: no CORS mapping (fail closed), so no credentials either.
+                if (allowOrigins.length == 0) {
+                    return;
+                }
                 // 为了支持一级域名，重写了checkOrigin
-                // Explicit origins, methods and headers: without them Spring defaults to "*", which is
-                // reflected as the request origin when allowCredentials(true) is set.
                 registry.addMapping("/cors/sec/webMvcConfigurer") // /**表示所有路由path
                         .allowedOrigins(allowOrigins)
                         .allowedMethods("GET", "POST")

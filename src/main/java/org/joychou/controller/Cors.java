@@ -29,7 +29,6 @@ public class Cors {
         String allowedOrigin = SecurityUtil.allowedOrigin(origin);
         if (allowedOrigin != null) {
             response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
-            response.setHeader("Access-Control-Allow-Credentials", "true");  // allow cookie, allowlisted origin only
             response.addHeader("Vary", "Origin");
         }
         return info;
