@@ -107,7 +107,11 @@ public class URLWhiteList {
         // endsWith .
         for (String domain : domainwhitelist) {
             if (host.endsWith("." + domain)) {
-                res.sendRedirect(SecurityUtil.cRlfFilter(url));
+                // Rebuilt from the whitelist domain + validated host/path, never the raw request url.
+                String target = SecurityUtil.redirectToDomain(url, domain);
+                if (target != null) {
+                    res.sendRedirect(target);
+                }
                 return;
             }
         }

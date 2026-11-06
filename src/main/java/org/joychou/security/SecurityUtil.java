@@ -29,6 +29,12 @@ public class SecurityUtil {
     private static final Pattern ORIGIN_PATTERN = Pattern.compile(
             "^(https?)://([A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?)(:[0-9]{1,5})?$",
             Pattern.CASE_INSENSITIVE);
+    private static final String REDIRECT_ALPHABET =
+            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-./";
+    private static final Pattern REDIRECT_PATH_PATTERN = Pattern.compile("^[A-Za-z0-9_\\-./]*$");
+    private static final Pattern REDIRECT_URL_PATTERN = Pattern.compile(
+            "^(https?)://([A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?)(?::([0-9]{1,5}))?(/[A-Za-z0-9_\\-./]*)?$",
+            Pattern.CASE_INSENSITIVE);
     private static Logger logger =LoggerFactory.getLogger(SecurityUtil.class);
 
 
@@ -162,9 +168,107 @@ public class SecurityUtil {
             return null;
         }
         if (clean.startsWith("/")) {
-            return clean.startsWith("//") ? null : clean;
+            return safeRelativePath(clean);
         }
-        return checkURL(clean);
+        if (checkURL(clean) == null) {
+            return null;
+        }
+        // Map the request value onto an entry of the configured safe-domain allowlist; the returned
+        // url is assembled from literals and the allowlist entry, never the raw request string.
+        for (String safeDomain : WebConfig.getSafeDomains()) {
+            String target = redirectToDomain(clean, safeDomain);
+            if (target != null) {
+                return target;
+            }
+        }
+        return null;
+    }
+
+
+    /**
+     * Build a same-site relative redirect path: a literal <code>/</code> prefix plus a path token made
+     * only of <code>[A-Za-z0-9_\-./]</code> that contains neither <code>//</code> nor <code>..</code>.
+     *
+     * @param path untrusted path that starts with <code>/</code>
+     * @return the rebuilt relative path, or null if it is not a strictly valid same-site path
+     */
+    public static String safeRelativePath(String path) {
+        if (path == null || !path.startsWith("/")) {
+            return null;
+        }
+        String token = path.substring(1);
+        if (!REDIRECT_PATH_PATTERN.matcher(token).matches()
+                || token.startsWith("/") || token.contains("//") || token.contains("..")) {
+            return null;
+        }
+        String rebuilt = rebuildFromAlphabet(token);
+        return rebuilt == null ? null : "/" + rebuilt;
+    }
+
+
+    /**
+     * Rebuild a token one character at a time from the constant {@link #REDIRECT_ALPHABET}, so the
+     * result is made of literal characters only. Any character outside the alphabet rejects the token.
+     *
+     * @param token untrusted token
+     * @return the rebuilt token, or null if it has a character outside the alphabet
+     */
+    private static String rebuildFromAlphabet(String token) {
+        StringBuilder sb = new StringBuilder(token.length());
+        for (int i = 0; i < token.length(); i++) {
+            int idx = REDIRECT_ALPHABET.indexOf(token.charAt(i));
+            if (idx < 0) {
+                return null;
+            }
+            sb.append(REDIRECT_ALPHABET.charAt(idx));
+        }
+        return sb.toString();
+    }
+
+
+    /**
+     * Build an absolute redirect target for an untrusted http(s) url whose host is the allowlisted
+     * <code>domain</code> or one of its subdomains. The result is a literal scheme plus the allowlist
+     * entry (exact host) or the strictly validated sub domain host, an optional numeric port and an
+     * optional validated path (<code>[A-Za-z0-9_\-./]</code>, no <code>//</code> or <code>..</code>).
+     * Userinfo, backslash, query, fragment and control character payloads are rejected.
+     *
+     * @param url    untrusted url
+     * @param domain trusted allowlist domain
+     * @return the rebuilt url, or null if url does not belong to domain
+     */
+    public static String redirectToDomain(String url, String domain) {
+        if (url == null || domain == null || domain.isEmpty()) {
+            return null;
+        }
+        Matcher m = REDIRECT_URL_PATTERN.matcher(url);
+        if (!m.matches()) {
+            return null;
+        }
+        String host = m.group(2).toLowerCase(Locale.ROOT);
+        String allowed = domain.toLowerCase(Locale.ROOT);
+        String targetHost;
+        if (host.equals(allowed)) {
+            targetHost = domain;
+        } else if (host.endsWith("." + allowed)) {
+            targetHost = rebuildFromAlphabet(host);
+            if (targetHost == null) {
+                return null;
+            }
+        } else {
+            return null;
+        }
+        String scheme = "https".equalsIgnoreCase(m.group(1)) ? "https://" : "http://";
+        String port = m.group(3) == null ? "" : ":" + rebuildFromAlphabet(m.group(3));
+        String rawPath = m.group(4) == null ? "" : m.group(4);
+        if (rawPath.contains("//") || rawPath.contains("..")) {
+            return null;
+        }
+        String path = rebuildFromAlphabet(rawPath);
+        if (path == null) {
+            return null;
+        }
+        return scheme + targetHost + port + path;
     }
 
 
