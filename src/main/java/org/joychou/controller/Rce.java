@@ -72,7 +72,7 @@ public class Rce {
             inBr.close();
             in.close();
         } catch (Exception e) {
-            log.error(SecurityUtil.logSafe(e.toString()));
+            log.error("Command exec failed: {}", e.getClass().getSimpleName());
             return "Command exec failed!!";
         }
         return HtmlUtils.htmlEscape(sb.toString());
@@ -105,7 +105,7 @@ public class Rce {
                 sb.append(tmpStr);
             }
         } catch (Exception e) {
-            log.error(SecurityUtil.logSafe(e.toString()));
+            log.error("Command exec failed: {}", e.getClass().getSimpleName());
             return "Command exec failed!!";
         }
 

@@ -3,7 +3,6 @@ package org.joychou.controller;
 import org.apache.tomcat.websocket.server.WsServerContainer;
 import org.joychou.config.WebSocketsProxyEndpoint;
 import org.joychou.config.WebSocketsCmdEndpoint;
-import org.joychou.security.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -52,7 +51,7 @@ public class WebSockets {
                 return "[-] Websocket: " + HtmlUtils.htmlEscape(path) + " has been injected!";
             }
         } catch (Exception e) {
-            logger.error(SecurityUtil.logSafe(e.toString()));
+            logger.error("Websocket request failed: {}", e.getClass().getSimpleName());
             return "Request failed";
         }
     }
@@ -76,7 +75,7 @@ public class WebSockets {
                 return "[-] Websocket: " + HtmlUtils.htmlEscape(path) + " has been injected!";
             }
         } catch (Exception e) {
-            logger.error(SecurityUtil.logSafe(e.toString()));
+            logger.error("Websocket request failed: {}", e.getClass().getSimpleName());
             return "Request failed";
         }
     }

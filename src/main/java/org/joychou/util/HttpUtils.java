@@ -13,7 +13,6 @@ import org.apache.http.impl.nio.client.CloseableHttpAsyncClient;
 import org.apache.http.impl.nio.client.HttpAsyncClients;
 import org.apache.http.util.EntityUtils;
 import org.joychou.security.ssrf.SSRFChecker;
-import org.joychou.security.SecurityUtil;
 import org.joychou.security.ssrf.SSRFException;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
@@ -47,7 +46,7 @@ public class HttpUtils {
      * exception details are never returned to the caller / HTTP response.
      */
     private static String requestFailed(Exception e) {
-        logger.error(SecurityUtil.logSafe(e.toString()));
+        logger.error("Request failed: {}", e.getClass().getSimpleName());
         return "Request failed";
     }
 

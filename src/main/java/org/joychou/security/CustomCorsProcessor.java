@@ -46,7 +46,7 @@ public class CustomCorsProcessor extends DefaultCorsProcessor {
             logger.info("[+] Origin: " + allowed);
             return allowed;
         }
-        logger.error("[-] Origin: " + SecurityUtil.logSafe(requestOrigin));
+        logger.error("[-] Origin is not allowed.");
         return null;
     }
 

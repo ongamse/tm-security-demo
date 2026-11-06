@@ -40,7 +40,7 @@ public class SSRF {
      * exception details are never exposed in the HTTP response.
      */
     private static String requestFailed(Exception e) {
-        logger.error(SecurityUtil.logSafe(e.toString()));
+        logger.error("Request failed: {}", e.getClass().getSimpleName());
         return "Request failed";
     }
 
