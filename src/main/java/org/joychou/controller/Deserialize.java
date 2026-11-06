@@ -1,7 +1,9 @@
 package org.joychou.controller;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.joychou.config.Constants;
-import org.joychou.security.AntObjectInputStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -9,7 +11,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InvalidClassException;
 import java.util.Base64;
@@ -27,6 +28,10 @@ public class Deserialize {
 
     protected final Logger logger = LoggerFactory.getLogger(this.getClass());
 
+    private static final int MAX_REMEMBER_ME_BYTES = 4096;
+
+    private static final ObjectMapper REMEMBER_ME_MAPPER = new ObjectMapper();
+
     /**
      * java -jar ysoserial.jar CommonsCollections5 "open -a Calculator" | base64 <br>
      * <a href="http://localhost:8080/deserialize/rememberMe/vuln">http://localhost:8080/deserialize/rememberMe/vuln</a>
@@ -43,11 +48,8 @@ public class Deserialize {
         String rememberMe = cookie.getValue();
         byte[] decoded = Base64.getDecoder().decode(rememberMe);
 
-        ByteArrayInputStream bytes = new ByteArrayInputStream(decoded);
-        // Allowlist-based deserialization: only permitted classes can be resolved.
-        AntObjectInputStream in = new AntObjectInputStream(bytes);
-        in.readObject();
-        in.close();
+        // Data-only parsing: the cookie is never turned into arbitrary Java objects.
+        parseRememberMe(decoded);
 
         return "Are u ok?";
     }
@@ -69,18 +71,30 @@ public class Deserialize {
         String rememberMe = cookie.getValue();
         byte[] decoded = Base64.getDecoder().decode(rememberMe);
 
-        ByteArrayInputStream bytes = new ByteArrayInputStream(decoded);
-
         try {
-            AntObjectInputStream in = new AntObjectInputStream(bytes);  // throw InvalidClassException
-            in.readObject();
-            in.close();
+            parseRememberMe(decoded);
         } catch (InvalidClassException e) {
             logger.info(e.toString());
             return e.toString();
         }
 
         return "I'm very OK.";
+    }
+
+    /**
+     * Parse the decoded rememberMe cookie as plain JSON data. Jackson default typing is not
+     * enabled, so no class names from the payload are ever instantiated; the result is a
+     * generic JsonNode tree only.
+     */
+    private static JsonNode parseRememberMe(byte[] decoded) throws IOException {
+        if (decoded.length > MAX_REMEMBER_ME_BYTES) {
+            throw new InvalidClassException("rememberMe cookie too large");
+        }
+        try {
+            return REMEMBER_ME_MAPPER.readTree(decoded);
+        } catch (JsonProcessingException e) {
+            throw new InvalidClassException("Invalid rememberMe cookie format");
+        }
     }
 
 }
