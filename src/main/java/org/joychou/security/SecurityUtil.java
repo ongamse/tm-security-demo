@@ -15,13 +15,18 @@ import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 
 public class SecurityUtil {
 
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
-    private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
+    private static final Pattern HOST_PATTERN = Pattern.compile("^[a-zA-Z0-9][a-zA-Z0-9.-]*(:[0-9]{1,5})?$");
+    private static Logger logger =LoggerFactory.getLogger(SecurityUtil.class);
 
 
     /**
@@ -229,11 +234,49 @@ public class SecurityUtil {
 
 
     public static String cmdFilter(String input) {
-        if (!FILTER_PATTERN.matcher(input).matches()) {
+        if (input == null || !FILTER_PATTERN.matcher(input).matches()) {
             return null;
         }
 
         return input;
+    }
+
+
+    /**
+     * Fixed set of argument-less commands that may be requested by name. Anything else is rejected.
+     */
+    private static final Set<String> ALLOWED_COMMANDS = Collections.unmodifiableSet(
+            new HashSet<>(Arrays.asList("whoami", "id", "date", "uname", "hostname", "pwd")));
+
+
+    /**
+     * Allowlist a user supplied command name. The returned value is a constant from the
+     * allowlist, so it can be run as a single argv element without a shell.
+     *
+     * @param cmd untrusted command name
+     * @return the allowlisted command, or null if it is not allowed
+     */
+    public static String allowedCommand(String cmd) {
+        if (cmd == null) {
+            return null;
+        }
+        String trimmed = cmd.trim();
+        return ALLOWED_COMMANDS.contains(trimmed) ? trimmed : null;
+    }
+
+
+    /**
+     * Validate a Host header value (host name or IPv4 with optional port) so it is safe to use as
+     * a single argv element.
+     *
+     * @param host untrusted host value
+     * @return the host if it is well formed, otherwise null
+     */
+    public static String hostFilter(String host) {
+        if (host == null || !HOST_PATTERN.matcher(host).matches()) {
+            return null;
+        }
+        return host;
     }
 
 
