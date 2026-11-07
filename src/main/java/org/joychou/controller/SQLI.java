@@ -7,11 +7,15 @@ import org.joychou.security.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
+import javax.servlet.http.HttpServletRequest;
+import java.security.Principal;
 import java.sql.*;
 import java.util.List;
+import java.util.stream.Collectors;
 
 
 /**
@@ -41,6 +45,31 @@ public class SQLI {
 
     @Resource
     private UserMapper userMapper;
+
+    /**
+     * Thrown when the authenticated caller references a record that is not their own.
+     */
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    private static class ForbiddenReferenceException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+    }
+
+    /**
+     * A caller may only reference their own record (matched by username); admins may reference any record.
+     */
+    private static boolean isSelfOrAdmin(HttpServletRequest request, String username) {
+        Principal principal = request.getUserPrincipal();
+        if (principal == null || username == null) {
+            return false;
+        }
+        return principal.getName().equals(username) || request.isUserInRole("ADMIN");
+    }
+
+    private static void requireSelfOrAdmin(HttpServletRequest request, String username) {
+        if (!isSelfOrAdmin(request, username)) {
+            throw new ForbiddenReferenceException();
+        }
+    }
 
 
     /**
@@ -93,8 +122,9 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/jdbc/sec?username=joychou">http://localhost:8080/sqli/jdbc/sec?username=joychou</a>
      */
     @RequestMapping("/jdbc/sec")
-    public String jdbc_sqli_sec(@RequestParam("username") String username) {
+    public String jdbc_sqli_sec(HttpServletRequest request, @RequestParam("username") String username) {
 
+        requireSelfOrAdmin(request, username);
         StringBuilder result = new StringBuilder();
         try {
             Class.forName(driver);
@@ -181,7 +211,8 @@ public class SQLI {
      * <p>select * from users where username = 'joychou' or '1'='1' </p>
      */
     @GetMapping("/mybatis/vuln01")
-    public List<User> mybatisVuln01(@RequestParam("username") String username) {
+    public List<User> mybatisVuln01(HttpServletRequest request, @RequestParam("username") String username) {
+        requireSelfOrAdmin(request, username);
         return userMapper.findByUserNameVuln01(username);
     }
 
@@ -191,8 +222,12 @@ public class SQLI {
      * <p>select * from users where username like '%joychou' or '1'='1%' </p>
      */
     @GetMapping("/mybatis/vuln02")
-    public List<User> mybatisVuln02(@RequestParam("username") String username) {
-        return userMapper.findByUserNameVuln02(username);
+    public List<User> mybatisVuln02(HttpServletRequest request, @RequestParam("username") String username) {
+        requireSelfOrAdmin(request, username);
+        // LIKE matching can also hit other users' rows; only return records the caller may access.
+        return userMapper.findByUserNameVuln02(username).stream()
+                .filter(u -> isSelfOrAdmin(request, u.getUsername()))
+                .collect(Collectors.toList());
     }
 
     /**
@@ -211,7 +246,8 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/mybatis/sec01?username=joychou">http://localhost:8080/sqli/mybatis/sec01?username=joychou</a>
      */
     @GetMapping("/mybatis/sec01")
-    public User mybatisSec01(@RequestParam("username") String username) {
+    public User mybatisSec01(HttpServletRequest request, @RequestParam("username") String username) {
+        requireSelfOrAdmin(request, username);
         return userMapper.findByUserName(username);
     }
 
@@ -220,8 +256,13 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/mybatis/sec02?id=1">http://localhost:8080/sqli/mybatis/sec02?id=1</a>
      */
     @GetMapping("/mybatis/sec02")
-    public User mybatisSec02(@RequestParam("id") Integer id) {
-        return userMapper.findById(id);
+    public User mybatisSec02(HttpServletRequest request, @RequestParam("id") Integer id) {
+        User found = userMapper.findById(id);
+        // Ownership check: the referenced record must belong to the caller (or caller is admin).
+        if (found != null) {
+            requireSelfOrAdmin(request, found.getUsername());
+        }
+        return found;
     }
 
 
