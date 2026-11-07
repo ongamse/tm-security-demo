@@ -212,6 +212,22 @@ public class SecurityUtil {
 
 
     /**
+     * Validate a request Origin before it is echoed in Access-Control-Allow-Origin. The origin must
+     * be free of control characters (see {@link #safeHeaderValue(String)}) and pass the domain
+     * allowlist / blocklist in {@link #checkURL(String)} (url_safe_domain.xml).
+     *
+     * @param origin value of the request Origin header
+     * @return the origin when it is allowlisted; null otherwise (including a null origin)
+     */
+    public static String safeCorsOrigin(String origin) {
+        if (safeHeaderValue(origin) == null) {
+            return null;
+        }
+        return checkURL(origin);
+    }
+
+
+    /**
      * Validate a user supplied redirect target (CWE-601). Fails closed.
      * Accepted targets are either a same-origin relative path (single leading slash, no
      * "//" or backslash tricks) or an absolute http/https url whose host is allowed by
