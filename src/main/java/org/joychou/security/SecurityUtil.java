@@ -211,6 +211,55 @@ public class SecurityUtil {
     }
 
 
+    /**
+     * Validate a user supplied redirect target (CWE-601). Fails closed.
+     * Accepted targets are either a same-origin relative path (single leading slash, no
+     * "//" or backslash tricks) or an absolute http/https url whose host is allowed by
+     * {@link #checkURL(String)}, has no userinfo, and is parsed identically by java.net.URI and
+     * java.net.URL. Any control character (CR, LF, ...) is rejected.
+     *
+     * @param url candidate redirect target
+     * @return the original url when safe; null otherwise
+     */
+    public static String safeRedirectUrl(String url) {
+        if (url == null || safeHeaderValue(url) == null || url.indexOf('\\') >= 0) {
+            return null;
+        }
+        if (url.startsWith("/")) {
+            // same-origin path only; "//host" is a scheme-relative url
+            if (url.startsWith("//")) {
+                return null;
+            }
+            try {
+                URI uri = new URI(url);
+                if (uri.getScheme() != null || uri.getRawAuthority() != null) {
+                    return null;
+                }
+            } catch (URISyntaxException e) {
+                return null;
+            }
+            return url;
+        }
+        if (checkURL(url) == null) {
+            return null;
+        }
+        try {
+            URI uri = new URI(url);
+            String host = uri.getHost();
+            if (host == null || uri.getRawUserInfo() != null) {
+                return null;
+            }
+            String urlHost = new URL(url).getHost();
+            if (urlHost == null || !urlHost.equalsIgnoreCase(host)) {
+                return null;
+            }
+        } catch (Exception e) {
+            return null;
+        }
+        return url;
+    }
+
+
     private static final Pattern JDBC_HOST_PATTERN = Pattern.compile(
             "^([A-Za-z0-9.-]+|\\[[0-9A-Fa-f:.]+\\])(:[0-9]{1,5})?$");
     private static final Pattern JDBC_DB_PATTERN = Pattern.compile("^[A-Za-z0-9_.-]*$");

@@ -101,7 +101,7 @@ public class URLWhiteList {
 
         logger.info("url:  " + url);
 
-        if (!SecurityUtil.isHttp(url)) {
+        if (url == null || !SecurityUtil.isHttp(url)) {
             return;
         }
 
@@ -112,7 +112,15 @@ public class URLWhiteList {
         // endsWith .
         for (String domain : domainwhitelist) {
             if (host.endsWith("." + domain)) {
-                res.sendRedirect(url);
+                // The URL/URI parser differential is the vulnerability demonstrated above; the
+                // redirect itself must only ever use a target validated by the shared helper.
+                String safeUrl = SecurityUtil.safeRedirectUrl(url);
+                if (safeUrl == null) {
+                    res.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+                    return;
+                }
+                res.sendRedirect(safeUrl);
+                return;
             }
         }
 
