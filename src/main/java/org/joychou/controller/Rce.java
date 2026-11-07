@@ -8,14 +8,17 @@ import org.springframework.web.bind.annotation.RestController;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
 
+import jdk.nashorn.api.scripting.NashornScriptEngineFactory;
+import org.joychou.security.SecurityUtil;
+
 import javax.script.Bindings;
 import javax.script.ScriptContext;
 import javax.script.ScriptEngine;
-import javax.script.ScriptEngineManager;
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.sql.DriverManager;
+import java.util.regex.Pattern;
 
 
 /**
@@ -28,13 +31,19 @@ import java.sql.DriverManager;
 @RequestMapping("/rce")
 public class Rce {
 
+    private static final Pattern SAFE_JS_URL = Pattern.compile("^https?://[a-zA-Z0-9_.:/?=&%#~+@-]+$");
+
     @GetMapping("/runtime/exec")
     public String CommandExec(String cmd) {
         Runtime run = Runtime.getRuntime();
         StringBuilder sb = new StringBuilder();
 
         try {
-            Process p = run.exec(cmd);
+            String[] argv = SecurityUtil.safeCommand(cmd);
+            if (argv == null) {
+                return "Bad boy. I got u.";
+            }
+            Process p = run.exec(argv);
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
             String tmpStr;
@@ -66,7 +75,10 @@ public class Rce {
         StringBuilder sb = new StringBuilder();
 
         try {
-            String[] arrCmd = {"/bin/sh", "-c", cmd};
+            String[] arrCmd = SecurityUtil.safeCommand(cmd);
+            if (arrCmd == null) {
+                return "Bad boy. I got u.";
+            }
             ProcessBuilder processBuilder = new ProcessBuilder(arrCmd);
             Process p = processBuilder.start();
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
@@ -95,9 +107,16 @@ public class Rce {
     @GetMapping("/jscmd")
     public void jsEngine(String jsurl) throws Exception{
         // js nashorn javascript ecmascript
-        ScriptEngine engine = new ScriptEngineManager().getEngineByName("js");
+        // Only load scripts from allowlisted domains, and never allow quote/escape characters
+        // that could break out of the load("...") string literal.
+        String safeUrl = SecurityUtil.checkURL(jsurl);
+        if (safeUrl == null || !SAFE_JS_URL.matcher(safeUrl).matches()) {
+            throw new IllegalArgumentException("Illegal jsurl");
+        }
+        // --no-java disables access to Java classes (java.lang.Runtime etc.) from the script.
+        ScriptEngine engine = new NashornScriptEngineFactory().getScriptEngine("--no-java");
         Bindings bindings = engine.getBindings(ScriptContext.ENGINE_SCOPE);
-        String cmd = String.format("load(\"%s\")", jsurl);
+        String cmd = String.format("load(\"%s\")", safeUrl);
         engine.eval(cmd, bindings);
     }
 

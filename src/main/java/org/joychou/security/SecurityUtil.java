@@ -12,6 +12,9 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 
@@ -205,6 +208,41 @@ public class SecurityUtil {
         }
 
         return input;
+    }
+
+
+    /**
+     * Commands that may be run through the command execution endpoints.
+     */
+    private static final Set<String> ALLOWED_COMMANDS = new HashSet<>(
+            Arrays.asList("whoami", "date", "hostname", "uname", "id", "pwd", "ls"));
+
+    /**
+     * Split a user supplied command line into an argv array without involving a shell.
+     * The executable must be in the allowlist and every argument must match the
+     * safe character pattern (see {@link #cmdFilter(String)}).
+     *
+     * @param cmdLine command line supplied by the user
+     * @return argv array, or null if the command is not allowed
+     */
+    public static String[] safeCommand(String cmdLine) {
+        if (cmdLine == null) {
+            return null;
+        }
+        String trimmed = cmdLine.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        String[] argv = trimmed.split("\\s+");
+        if (!ALLOWED_COMMANDS.contains(argv[0])) {
+            return null;
+        }
+        for (int i = 1; i < argv.length; i++) {
+            if (cmdFilter(argv[i]) == null) {
+                return null;
+            }
+        }
+        return argv;
     }
 
 

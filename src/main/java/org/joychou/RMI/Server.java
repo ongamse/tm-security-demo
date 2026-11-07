@@ -15,6 +15,10 @@ public class Server implements Hello {
     public static void main(String args[]) {
 
         try {
+            // Restrict what the registry will deserialize (JEP 290) so a crafted bind/rebind
+            // argument cannot trigger a gadget chain. Must be set before the registry is created.
+            System.setProperty("sun.rmi.registry.registryFilter",
+                    "java.lang.reflect.Proxy;java.rmi.**;sun.rmi.**;java.lang.String;org.joychou.RMI.Hello;!*");
             Server obj = new Server();
             Hello stub = (Hello) UnicastRemoteObject.exportObject(obj, 0);
             LocateRegistry.createRegistry(1099);
