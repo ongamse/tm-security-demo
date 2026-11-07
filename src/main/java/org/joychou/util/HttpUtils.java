@@ -167,7 +167,7 @@ public class HttpUtils {
             in.close();
             return html.toString();
         } catch (Exception e) {
-            logger.error(e.getMessage());
+            logger.error("Outbound request failed: {}", e.getClass().getSimpleName());
             return e.getMessage();
         }
     }
@@ -196,7 +196,7 @@ public class HttpUtils {
             in.close();
             return html.toString();
         } catch (IOException e) {
-            logger.error(e.getMessage());
+            logger.error("Outbound request failed: {}", e.getClass().getSimpleName());
             return e.getMessage();
         }
     }
@@ -264,7 +264,7 @@ public class HttpUtils {
                 ImageIO.read(in);
             }
         } catch (IOException e) {
-            logger.error(e.getMessage());
+            logger.error("Outbound request failed: {}", e.getClass().getSimpleName());
         }
 
     }
@@ -284,7 +284,7 @@ public class HttpUtils {
         try {
             IOUtils.toByteArray(openSafeConnection(allowed));
         } catch (IOException e) {
-            logger.error(e.getMessage());
+            logger.error("Outbound request failed: {}", e.getClass().getSimpleName());
         }
     }
 
@@ -309,7 +309,7 @@ public class HttpUtils {
             try {
                 httpclient.close();
             } catch (Exception e) {
-                logger.error(e.getMessage());
+                logger.error("Outbound request failed: {}", e.getClass().getSimpleName());
             }
         }
     }

@@ -129,7 +129,8 @@ public class SSRF {
                 return;
             }
             // download
-            response.setHeader("content-disposition", "attachment;fileName=" + downLoadImgFileName);
+            String headerFileName = downLoadImgFileName.replaceAll("[\\r\\n\\x00-\\x1F\\x7F]", "");
+            response.setHeader("content-disposition", "attachment;fileName=" + headerFileName);
 
             // single choke-point: url rebuilt from an allowlisted host, http/https only, no redirects
             URL u = SecurityUtil.resolveAllowedUrl(url);
@@ -150,7 +151,7 @@ public class SSRF {
             }
 
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("Download failed: {}", e.getClass().getSimpleName());
         } finally {
             if (inputStream != null) {
                 inputStream.close();
