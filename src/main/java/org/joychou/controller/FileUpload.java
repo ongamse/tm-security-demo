@@ -191,7 +191,8 @@ public class FileUpload {
 
         logger.info("[+] Safe file. Suffix: {}, MIME: {}", Suffix, mimeType);
         logger.info("[+] Successfully uploaded {}", filePath);
-        return String.format("You successfully uploaded '%s'", filePath);
+        return String.format("You successfully uploaded '%s'",
+                org.springframework.web.util.HtmlUtils.htmlEscape(filePath));
     }
 
     private void deleteFile(String filePath) {

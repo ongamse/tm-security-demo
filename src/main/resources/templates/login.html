@@ -53,10 +53,13 @@
             success: function (r) {
                 if (r.code == "0") {
                     // alert(r.message);
-                    if (r.redirectUrl == '') {
-                        location.href = ctx + "index";
+                    // Only follow same-origin relative redirects (blocks javascript:/data: and external URLs).
+                    var target = r.redirectUrl;
+                    if (typeof target === "string" && target.charAt(0) === "/" &&
+                        target.charAt(1) !== "/" && target.charAt(1) !== "\\") {
+                        location.href = target;
                     } else {
-                        location.href = r.redirectUrl;
+                        location.href = ctx + "index";
                     }
                 } else {
                     alert(r.message);

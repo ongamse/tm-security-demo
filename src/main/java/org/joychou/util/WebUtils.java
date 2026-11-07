@@ -27,8 +27,24 @@ public class WebUtils {
     }
 
 
+    // A JSONP callback must be a plain JavaScript identifier path such as "cb" or "window.cb_1".
+    private static final java.util.regex.Pattern JSONP_CALLBACK_PATTERN =
+            java.util.regex.Pattern.compile("^[a-zA-Z_$][a-zA-Z0-9_$]*(\\.[a-zA-Z_$][a-zA-Z0-9_$]*)*$");
+
+    public static boolean isValidJsonpCallback(String callback) {
+        return callback != null && callback.length() <= 128 && JSONP_CALLBACK_PATTERN.matcher(callback).matches();
+    }
+
     public static String json2Jsonp(String callback, String jsonStr) {
-        return HtmlUtils.htmlEscape(callback) + "(" + jsonStr + ")";
+        if (!isValidJsonpCallback(callback)) {
+            return "error";
+        }
+        return callback + "(" + jsonStr + ")";
+    }
+
+    // Contextual HTML encoding for values reflected in a text/html response body.
+    public static String htmlEscape(String value) {
+        return value == null ? null : HtmlUtils.htmlEscape(value);
     }
 
 

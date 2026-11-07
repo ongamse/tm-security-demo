@@ -32,7 +32,8 @@ public class SpEL {
     @GetMapping("/spel/vuln")
     public String rce(String expression) {
         ExpressionParser parser = new SpelExpressionParser();
-        return String.valueOf(parser.parseExpression(expression).getValue(restrictedContext()));
+        return org.joychou.util.WebUtils.htmlEscape(
+                String.valueOf(parser.parseExpression(expression).getValue(restrictedContext())));
     }
 
     /**

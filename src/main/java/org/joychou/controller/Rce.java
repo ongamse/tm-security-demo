@@ -10,6 +10,7 @@ import org.yaml.snakeyaml.constructor.SafeConstructor;
 
 import jdk.nashorn.api.scripting.NashornScriptEngineFactory;
 import org.joychou.security.SecurityUtil;
+import org.joychou.util.WebUtils;
 
 import javax.script.Bindings;
 import javax.script.ScriptContext;
@@ -60,9 +61,9 @@ public class Rce {
             inBr.close();
             in.close();
         } catch (Exception e) {
-            return e.toString();
+            return WebUtils.htmlEscape(e.toString());
         }
-        return sb.toString();
+        return WebUtils.htmlEscape(sb.toString());
     }
 
 
@@ -89,10 +90,10 @@ public class Rce {
                 sb.append(tmpStr);
             }
         } catch (Exception e) {
-            return e.toString();
+            return WebUtils.htmlEscape(e.toString());
         }
 
-        return sb.toString();
+        return WebUtils.htmlEscape(sb.toString());
     }
 
 

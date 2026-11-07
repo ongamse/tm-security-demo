@@ -70,6 +70,6 @@ public class ooxmlXXE {
             }
         }
 
-        return sbResult.toString();
+        return org.joychou.util.WebUtils.htmlEscape(sbResult.toString());
     }
 }
