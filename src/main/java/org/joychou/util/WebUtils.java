@@ -10,9 +10,24 @@ import org.springframework.web.util.HtmlUtils;
 public class WebUtils {
 
     // Get request body.
+    // Upper bound for a request body that is later handed to a parser (guards against entity/size blow-ups).
+    private static final int MAX_REQUEST_BODY_BYTES = 1024 * 1024;
+
     public static String getRequestBody(HttpServletRequest request) throws IOException {
-        InputStream in = request.getInputStream();
-        return convertStreamToString(in);
+        try (InputStream in = request.getInputStream()) {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buf = new byte[4096];
+            int total = 0;
+            int n;
+            while ((n = in.read(buf)) != -1) {
+                total += n;
+                if (total > MAX_REQUEST_BODY_BYTES) {
+                    throw new IOException("Request body exceeds " + MAX_REQUEST_BODY_BYTES + " bytes");
+                }
+                out.write(buf, 0, n);
+            }
+            return new String(out.toByteArray(), java.nio.charset.Charset.defaultCharset());
+        }
     }
 
     // https://stackoverflow.com/questions/309424/how-do-i-read-convert-an-inputstream-into-a-string-in-java
