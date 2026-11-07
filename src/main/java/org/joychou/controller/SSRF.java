@@ -121,6 +121,12 @@ public class SSRF {
         OutputStream outputStream = null;
         try {
             String downLoadImgFileName = WebUtils.getNameWithoutExtension(url) + "." + WebUtils.getFileExtension(url);
+            // reject CR/LF and other control chars before the name goes into a response header
+            if (SecurityUtil.safeHeaderValue(downLoadImgFileName) == null) {
+                logger.error("Illegal file name rejected");
+                response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+                return;
+            }
             // download
             response.setHeader("content-disposition", "attachment;fileName=" + downLoadImgFileName);
 

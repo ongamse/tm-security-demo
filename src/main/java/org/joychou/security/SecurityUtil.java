@@ -189,6 +189,28 @@ public class SecurityUtil {
     }
 
 
+    /**
+     * Validate a request derived value before it is written into an HTTP response header.
+     * Any ASCII control character (CR, LF, NUL, ...) except horizontal tab, and DEL, is rejected
+     * so that the value cannot split the response (CWE-113).
+     *
+     * @param value candidate header value
+     * @return the original value when it is safe; null when it is null or contains control characters
+     */
+    public static String safeHeaderValue(String value) {
+        if (value == null) {
+            return null;
+        }
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if ((c < 0x20 && c != '\t') || c == 0x7f) {
+                return null;
+            }
+        }
+        return value;
+    }
+
+
     private static final Pattern JDBC_HOST_PATTERN = Pattern.compile(
             "^([A-Za-z0-9.-]+|\\[[0-9A-Fa-f:.]+\\])(:[0-9]{1,5})?$");
     private static final Pattern JDBC_DB_PATTERN = Pattern.compile("^[A-Za-z0-9_.-]*$");
