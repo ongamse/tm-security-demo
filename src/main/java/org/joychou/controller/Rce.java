@@ -8,18 +8,13 @@ import org.springframework.web.bind.annotation.RestController;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
 
-import jdk.nashorn.api.scripting.NashornScriptEngineFactory;
 import org.joychou.security.SecurityUtil;
 import org.joychou.util.WebUtils;
 
-import javax.script.Bindings;
-import javax.script.ScriptContext;
-import javax.script.ScriptEngine;
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.sql.DriverManager;
-import java.util.regex.Pattern;
 
 
 /**
@@ -31,8 +26,6 @@ import java.util.regex.Pattern;
 @RestController
 @RequestMapping("/rce")
 public class Rce {
-
-    private static final Pattern SAFE_JS_URL = Pattern.compile("^https?://[a-zA-Z0-9_.:/?=&%#~+@-]+$");
 
     @GetMapping("/runtime/exec")
     public String CommandExec(String cmd) {
@@ -106,19 +99,12 @@ public class Rce {
      * @param jsurl js url
      */
     @GetMapping("/jscmd")
-    public void jsEngine(String jsurl) throws Exception{
-        // js nashorn javascript ecmascript
-        // Only load scripts from allowlisted domains, and never allow quote/escape characters
-        // that could break out of the load("...") string literal.
-        String safeUrl = SecurityUtil.checkURL(jsurl);
-        if (safeUrl == null || !SAFE_JS_URL.matcher(safeUrl).matches()) {
-            throw new IllegalArgumentException("Illegal jsurl");
-        }
-        // --no-java disables access to Java classes (java.lang.Runtime etc.) from the script.
-        ScriptEngine engine = new NashornScriptEngineFactory().getScriptEngine("--no-java");
-        Bindings bindings = engine.getBindings(ScriptContext.ENGINE_SCOPE);
-        String cmd = String.format("load(\"%s\")", safeUrl);
-        engine.eval(cmd, bindings);
+    public String jsEngine(String jsurl) {
+        // Remote script evaluation is denied (fail closed). The JavaScript engine cannot be
+        // restricted using only javax.script (Nashorn's --no-java option needs JDK-specific
+        // APIs that are absent from modern JDKs), so a remotely loaded script could reach
+        // java.lang.Runtime. Never evaluate attacker-supplied URLs.
+        return "Bad boy. I got u.";
     }
 
 
