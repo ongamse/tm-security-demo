@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
+import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
@@ -15,7 +16,9 @@ import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.Locale;
 import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 
@@ -23,6 +26,27 @@ public class SecurityUtil {
 
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
+
+    // Host part of an http(s) url: plain host name / IPv4 only (no userinfo, no backslash, no IPv6 literal).
+    private static final Pattern HTTP_HOST_PATTERN = Pattern.compile(
+            "^https?://([A-Za-z0-9.-]+)(?::[0-9]{1,5})?(?:[/?#].*)?$");
+
+    private static final int MAX_URL_LENGTH = 2048;
+
+    // Outbound url: scheme, host, optional port, path (unreserved characters and '/'), optional query.
+    private static final Pattern ALLOWED_URL_PATTERN = Pattern.compile(
+            "^(https?)://([A-Za-z0-9.-]{1,253})(?::([0-9]{1,5}))?(/[A-Za-z0-9._~/-]*)?(?:\\?([A-Za-z0-9._~=&-]*))?$");
+
+    // A same-origin redirect path (single leading slash) or an absolute http(s) redirect url.
+    // No control characters, whitespace, backslash, userinfo or non-ASCII characters can match.
+    private static final String REDIRECT_CHARS = "[A-Za-z0-9._~!$&'()*+,;=:@/?#%\\[\\]-]*";
+    private static final Pattern REDIRECT_PATH_PATTERN = Pattern.compile("^(/(?!/)" + REDIRECT_CHARS + ")$");
+    private static final Pattern REDIRECT_ABSOLUTE_PATTERN = Pattern.compile(
+            "^(https?)://([A-Za-z0-9.-]+)(?::([0-9]{1,5}))?([/?#]" + REDIRECT_CHARS + ")?$");
+
+    // Strict origin: scheme://host[:port] only.
+    private static final Pattern CORS_ORIGIN_PATTERN = Pattern.compile(
+            "^(https?)://([A-Za-z0-9.-]+)(?::([0-9]{1,5}))?$");
 
 
     /**
@@ -32,7 +56,7 @@ public class SecurityUtil {
      * @return true or false
      */
     public static boolean isHttp(String url) {
-        return url.startsWith("http://") || url.startsWith("https://");
+        return url != null && (url.startsWith("http://") || url.startsWith("https://"));
     }
 
 
@@ -43,12 +67,13 @@ public class SecurityUtil {
      * @return host
      */
     public static String gethost(String url) {
-        try {
-            URI uri = new URI(url);
-            return uri.getHost().toLowerCase();
-        } catch (URISyntaxException e) {
+        if (url == null) {
             return "";
         }
+        // Strict host extraction; urls with userinfo, backslashes, control characters or an IPv6
+        // literal do not match and yield "" (fail closed).
+        Matcher m = HTTP_HOST_PATTERN.matcher(url);
+        return m.matches() ? m.group(1).toLowerCase(Locale.ROOT) : "";
     }
 
 
@@ -147,44 +172,66 @@ public class SecurityUtil {
      * @return Safe url returns true. Dangerous url returns false.
      */
     public static boolean checkSSRFWithoutRedirect(String url) {
-        if(url == null) {
-            return false;
-        }
-        return !SSRFChecker.isInternalIpByUrl(url);
+        return resolveAllowedUrl(url) != null;
     }
 
     /**
-     * Validate a user supplied url before the server makes an outbound request to it.
-     * The scheme must be http/https, the host must be consistent between the URI and URL parsers,
-     * and every address the host resolves to must be public (no loopback, link-local/metadata,
-     * private or configured blocked ranges). Callers must also disable redirects.
+     * Single choke-point for every server side outbound request made on behalf of a user supplied url.
+     * <p>
+     * The raw string is only parsed, never used: the returned {@link URL} is rebuilt from
+     * <ul>
+     *   <li>a constant scheme (<code>http</code> or <code>https</code>),</li>
+     *   <li>the host taken from the server side allowlist (<code>ssrf_safe_domain.xml</code>, exact,
+     *       case-insensitive match; subdomains are not implied),</li>
+     *   <li>an optional port that must be 80 or 443,</li>
+     *   <li>a path made of unreserved characters only without <code>.</code>/<code>..</code> segments
+     *       and an optional plain <code>key=value&amp;...</code> query (no userinfo, fragment, backslash,
+     *       whitespace or control characters can match).</li>
+     * </ul>
+     * and every address the allowlisted host resolves to must still be public. Fails closed: an empty
+     * allowlist rejects everything. Callers must disable redirects and set timeouts on their client.
      *
-     * @param url The url that needs to check.
-     * @return Safe url returns true. Dangerous url returns false.
+     * @param rawUrl url supplied by the user
+     * @return the rebuilt url; null when the url is not allowed
      */
-    public static boolean checkOutboundUrl(String url) {
-        if (url == null) {
-            return false;
+    public static URL resolveAllowedUrl(String rawUrl) {
+        if (rawUrl == null || rawUrl.length() > MAX_URL_LENGTH) {
+            return null;
         }
+        Matcher m = ALLOWED_URL_PATTERN.matcher(rawUrl);
+        if (!m.matches()) {
+            return null;
+        }
+        String scheme = "https".equalsIgnoreCase(m.group(1)) ? "https" : "http";
+
+        // exact match against the server side allowlist; the host that is used comes from the allowlist
+        String allowedHost = allowlistedPublicHost(m.group(2));
+        if (allowedHost == null) {
+            return null;
+        }
+
+        int port = -1;
+        if (m.group(3) != null) {
+            int requestedPort = Integer.parseInt(m.group(3));
+            if (requestedPort != 80 && requestedPort != 443) {
+                return null;
+            }
+            port = requestedPort;
+        }
+
+        String path = m.group(4) == null ? "" : m.group(4);
+        for (String segment : path.split("/", -1)) {
+            if (".".equals(segment) || "..".equals(segment)) {
+                return null;
+            }
+        }
+        String query = m.group(5);
+
         try {
-            URI uri = new URI(url);
-            String scheme = uri.getScheme();
-            if (scheme == null || !("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme))) {
-                return false;
-            }
-            String host = uri.getHost();
-            if (host == null || host.isEmpty()) {
-                return false;
-            }
-            // reject parser differentials between java.net.URI and java.net.URL
-            String urlHost = new URL(url).getHost();
-            if (urlHost == null || !urlHost.equalsIgnoreCase(host)) {
-                return false;
-            }
-            return !SSRFChecker.isInternalIpByUrl(url);
-        } catch (Exception e) {
-            logger.error(e.toString());
-            return false;
+            return new URI(scheme, null, allowedHost, port, path, query, null).toURL();
+        } catch (URISyntaxException | MalformedURLException | IllegalArgumentException e) {
+            logger.error("Illegal outbound url rejected: " + e.getClass().getSimpleName());
+            return null;
         }
     }
 
@@ -220,10 +267,17 @@ public class SecurityUtil {
      * @return the origin when it is allowlisted; null otherwise (including a null origin)
      */
     public static String safeCorsOrigin(String origin) {
-        if (safeHeaderValue(origin) == null) {
+        if (origin == null || safeHeaderValue(origin) == null) {
             return null;
         }
-        return checkURL(origin);
+        Matcher m = CORS_ORIGIN_PATTERN.matcher(origin);
+        if (!m.matches() || checkURL(origin) == null) {
+            return null;
+        }
+        // rebuild scheme://host[:port] from the validated parts instead of echoing the raw header
+        String scheme = "https".equals(m.group(1)) ? "https" : "http";
+        String host = m.group(2).toLowerCase(Locale.ROOT);
+        return scheme + "://" + host + (m.group(3) != null ? ":" + m.group(3) : "");
     }
 
 
@@ -233,52 +287,39 @@ public class SecurityUtil {
      * "//" or backslash tricks) or an absolute http/https url whose host is allowed by
      * {@link #checkURL(String)}, has no userinfo, and is parsed identically by java.net.URI and
      * java.net.URL. Any control character (CR, LF, ...) is rejected.
+     * The returned value is rebuilt from the validated parts (constant scheme, lower-cased allowlisted
+     * host, port digits and the tail that matched a strict character class), never the raw string.
      *
      * @param url candidate redirect target
-     * @return the original url when safe; null otherwise
+     * @return the rebuilt, equivalent url when safe; null otherwise
      */
     public static String safeRedirectUrl(String url) {
-        if (url == null || safeHeaderValue(url) == null || url.indexOf('\\') >= 0) {
+        if (url == null || url.length() > MAX_URL_LENGTH || safeHeaderValue(url) == null
+                || url.indexOf('\\') >= 0) {
             return null;
         }
         if (url.startsWith("/")) {
-            // same-origin path only; "//host" is a scheme-relative url
-            if (url.startsWith("//")) {
-                return null;
-            }
-            try {
-                URI uri = new URI(url);
-                if (uri.getScheme() != null || uri.getRawAuthority() != null) {
-                    return null;
-                }
-            } catch (URISyntaxException e) {
-                return null;
-            }
-            return url;
+            // same-origin path only: the pattern rejects "//host", a scheme, userinfo and backslashes
+            Matcher pm = REDIRECT_PATH_PATTERN.matcher(url);
+            return pm.matches() ? pm.group(1) : null;
         }
-        if (checkURL(url) == null) {
+        // The host group excludes userinfo, backslashes and every other delimiter, and is followed
+        // directly by an optional port and the tail, so URI/URL parser differentials cannot occur.
+        Matcher m = REDIRECT_ABSOLUTE_PATTERN.matcher(url);
+        if (!m.matches() || checkURL(url) == null) {
             return null;
         }
-        try {
-            URI uri = new URI(url);
-            String host = uri.getHost();
-            if (host == null || uri.getRawUserInfo() != null) {
-                return null;
-            }
-            String urlHost = new URL(url).getHost();
-            if (urlHost == null || !urlHost.equalsIgnoreCase(host)) {
-                return null;
-            }
-        } catch (Exception e) {
-            return null;
-        }
-        return url;
+        String scheme = "https".equals(m.group(1)) ? "https" : "http";
+        return scheme + "://" + m.group(2).toLowerCase(Locale.ROOT)
+                + (m.group(3) != null ? ":" + m.group(3) : "")
+                + (m.group(4) != null ? m.group(4) : "");
     }
 
 
-    private static final Pattern JDBC_HOST_PATTERN = Pattern.compile(
-            "^([A-Za-z0-9.-]+|\\[[0-9A-Fa-f:.]+\\])(:[0-9]{1,5})?$");
+    private static final Pattern JDBC_AUTHORITY_PATTERN = Pattern.compile(
+            "^([A-Za-z0-9.-]{1,253})(?::([0-9]{1,5}))?$");
     private static final Pattern JDBC_DB_PATTERN = Pattern.compile("^[A-Za-z0-9_.-]*$");
+    private static final Pattern JDBC_VALUE_PATTERN = Pattern.compile("^[A-Za-z0-9._@-]*$");
     private static final Set<String> POSTGRESQL_JDBC_PARAMS = new HashSet<>(Arrays.asList(
             "user", "password", "ssl", "sslmode", "connectTimeout", "loginTimeout",
             "socketTimeout", "ApplicationName", "currentSchema"));
@@ -286,25 +327,91 @@ public class SecurityUtil {
             "user", "password", "sslConnection", "loginTimeout", "connectionTimeout", "currentSchema"));
 
     /**
-     * Check the host:port authority of a jdbc url against the SSRF rules.
+     * Resolve a requested host against the server side allowlist (exact, case-insensitive match).
+     *
+     * @return the host as written in the allowlist when it is allowed and every address it resolves
+     * to is public; null otherwise (an empty allowlist rejects everything)
      */
-    private static boolean checkJdbcAuthority(String authority) {
-        return JDBC_HOST_PATTERN.matcher(authority).matches()
-                && checkOutboundUrl("http://" + authority + "/");
+    private static String allowlistedPublicHost(String requestedHost) {
+        if (requestedHost == null) {
+            return null;
+        }
+        String wanted = requestedHost.toLowerCase(Locale.ROOT);
+        for (String candidate : WebConfig.getSsrfSafeDomains()) {
+            if (candidate == null) {
+                continue;
+            }
+            String allowed = candidate.trim().toLowerCase(Locale.ROOT);
+            if (allowed.equals(wanted)) {
+                return SSRFChecker.isInternalIpByUrl("http://" + allowed + "/") ? null : allowed;
+            }
+        }
+        return null;
     }
 
     /**
-     * Allowlist check for <code>jdbc:postgresql://host[:port]/db[?key=value&amp;...]</code>.
-     * The host must be public and only plain connection parameters are allowed, so that parameters
-     * which load classes (socketFactory, sslfactory, authenticationPluginClassName, ...) are rejected.
+     * Parse the host:port authority of a jdbc url and rebuild it from the allowlisted host and the
+     * numeric port.
+     *
+     * @return rebuilt authority; null when not allowed
      */
-    public static boolean checkPostgresqlJdbcUrl(String jdbcUrl) {
+    private static String rebuildJdbcAuthority(String authority) {
+        // only plain host names / ipv4 are accepted (no ipv6 literal, no userinfo)
+        Matcher m = JDBC_AUTHORITY_PATTERN.matcher(authority);
+        if (!m.matches()) {
+            return null;
+        }
+        String host = allowlistedPublicHost(m.group(1));
+        if (host == null) {
+            return null;
+        }
+        if (m.group(2) == null) {
+            return host;
+        }
+        int port = Integer.parseInt(m.group(2));
+        return port >= 1 && port <= 65535 ? host + ":" + port : null;
+    }
+
+    /**
+     * Validate <code>key=value</code> pairs: the key must be allowlisted and the value a plain token.
+     *
+     * @return the rebuilt pairs joined by the separator; null when a pair is not allowed
+     */
+    private static String rebuildJdbcPairs(String pairs, String separator, Set<String> allowedKeys) {
+        StringBuilder out = new StringBuilder();
+        for (String pair : pairs.split(Pattern.quote(separator), -1)) {
+            if (pair.isEmpty() && ";".equals(separator)) {
+                continue; // trailing ';'
+            }
+            int eq = pair.indexOf('=');
+            String key = eq < 0 ? pair : pair.substring(0, eq);
+            String value = eq < 0 ? "" : pair.substring(eq + 1);
+            if (!allowedKeys.contains(key) || !JDBC_VALUE_PATTERN.matcher(value).matches()) {
+                return null;
+            }
+            if (out.length() > 0) {
+                out.append(separator);
+            }
+            out.append(key).append('=').append(value);
+        }
+        return out.toString();
+    }
+
+    /**
+     * Rebuild <code>jdbc:postgresql://host[:port]/db[?key=value&amp;...]</code> from allowlisted parts.
+     * The host must be allowlisted and public, and only plain connection parameters are allowed, so that
+     * parameters which load classes (socketFactory, sslfactory, authenticationPluginClassName, ...) are
+     * rejected. The returned value, not the raw string, must be passed to the driver.
+     *
+     * @return the rebuilt jdbc url; null when not allowed
+     */
+    public static String resolveAllowedPostgresqlJdbcUrl(String jdbcUrl) {
         String prefix = "jdbc:postgresql://";
-        if (jdbcUrl == null || !jdbcUrl.startsWith(prefix)) {
-            return false;
+        if (jdbcUrl == null || jdbcUrl.length() > MAX_URL_LENGTH || !jdbcUrl.startsWith(prefix)) {
+            return null;
         }
         String rest = jdbcUrl.substring(prefix.length());
-        String query = "";
+        String query = null;
         int q = rest.indexOf('?');
         if (q >= 0) {
             query = rest.substring(q + 1);
@@ -312,39 +419,41 @@ public class SecurityUtil {
         }
         int slash = rest.indexOf('/');
         if (slash < 0) {
-            return false;
+            return null;
         }
-        if (!checkJdbcAuthority(rest.substring(0, slash))
-                || !JDBC_DB_PATTERN.matcher(rest.substring(slash + 1)).matches()) {
-            return false;
+        String authority = rebuildJdbcAuthority(rest.substring(0, slash));
+        String db = rest.substring(slash + 1);
+        if (authority == null || !JDBC_DB_PATTERN.matcher(db).matches()) {
+            return null;
         }
-        if (!query.isEmpty()) {
-            for (String pair : query.split("&", -1)) {
-                int eq = pair.indexOf('=');
-                String key = eq < 0 ? pair : pair.substring(0, eq);
-                if (!POSTGRESQL_JDBC_PARAMS.contains(key)) {
-                    return false;
-                }
+        StringBuilder out = new StringBuilder(prefix).append(authority).append('/').append(db);
+        if (query != null && !query.isEmpty()) {
+            String pairs = rebuildJdbcPairs(query, "&", POSTGRESQL_JDBC_PARAMS);
+            if (pairs == null) {
+                return null;
             }
+            out.append('?').append(pairs);
         }
-        return true;
+        return out.toString();
     }
 
     /**
-     * Allowlist check for <code>jdbc:db2://host[:port]/db[:key=value;...;]</code>.
-     * The host must be public and only plain connection properties are allowed.
+     * Rebuild <code>jdbc:db2://host[:port]/db[:key=value;...;]</code> from allowlisted parts.
+     * The host must be allowlisted and public, and only plain connection properties are allowed.
+     *
+     * @return the rebuilt jdbc url; null when not allowed
      */
-    public static boolean checkDb2JdbcUrl(String jdbcUrl) {
+    public static String resolveAllowedDb2JdbcUrl(String jdbcUrl) {
         String prefix = "jdbc:db2://";
-        if (jdbcUrl == null || !jdbcUrl.startsWith(prefix)) {
-            return false;
+        if (jdbcUrl == null || jdbcUrl.length() > MAX_URL_LENGTH || !jdbcUrl.startsWith(prefix)) {
+            return null;
         }
         String rest = jdbcUrl.substring(prefix.length());
         int slash = rest.indexOf('/');
         if (slash < 0) {
-            return false;
+            return null;
         }
-        String authority = rest.substring(0, slash);
+        String authority = rebuildJdbcAuthority(rest.substring(0, slash));
         String dbAndProps = rest.substring(slash + 1);
         String props = "";
         int colon = dbAndProps.indexOf(':');
@@ -352,22 +461,20 @@ public class SecurityUtil {
             props = dbAndProps.substring(colon + 1);
             dbAndProps = dbAndProps.substring(0, colon);
         }
-        if (!checkJdbcAuthority(authority) || !JDBC_DB_PATTERN.matcher(dbAndProps).matches()) {
-            return false;
+        if (authority == null || !JDBC_DB_PATTERN.matcher(dbAndProps).matches()) {
+            return null;
         }
+        StringBuilder out = new StringBuilder(prefix).append(authority).append('/').append(dbAndProps);
         if (!props.isEmpty()) {
-            for (String pair : props.split(";", -1)) {
-                if (pair.isEmpty()) {
-                    continue; // trailing ';'
-                }
-                int eq = pair.indexOf('=');
-                String key = eq < 0 ? pair : pair.substring(0, eq);
-                if (!DB2_JDBC_PARAMS.contains(key)) {
-                    return false;
-                }
+            String pairs = rebuildJdbcPairs(props, ";", DB2_JDBC_PARAMS);
+            if (pairs == null) {
+                return null;
+            }
+            if (!pairs.isEmpty()) {
+                out.append(':').append(pairs).append(';');
             }
         }
-        return true;
+        return out.toString();
     }
 
     /**
@@ -426,41 +533,6 @@ public class SecurityUtil {
         }
 
         return input;
-    }
-
-
-    /**
-     * Commands that may be run through the command execution endpoints.
-     */
-    private static final Set<String> ALLOWED_COMMANDS = new HashSet<>(
-            Arrays.asList("whoami", "date", "hostname", "uname", "id", "pwd", "ls"));
-
-    /**
-     * Split a user supplied command line into an argv array without involving a shell.
-     * The executable must be in the allowlist and every argument must match the
-     * safe character pattern (see {@link #cmdFilter(String)}).
-     *
-     * @param cmdLine command line supplied by the user
-     * @return argv array, or null if the command is not allowed
-     */
-    public static String[] safeCommand(String cmdLine) {
-        if (cmdLine == null) {
-            return null;
-        }
-        String trimmed = cmdLine.trim();
-        if (trimmed.isEmpty()) {
-            return null;
-        }
-        String[] argv = trimmed.split("\\s+");
-        if (!ALLOWED_COMMANDS.contains(argv[0])) {
-            return null;
-        }
-        for (int i = 1; i < argv.length; i++) {
-            if (cmdFilter(argv[i]) == null) {
-                return null;
-            }
-        }
-        return argv;
     }
 
 

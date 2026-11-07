@@ -39,37 +39,54 @@ public class HttpUtils {
 
     private static final String ILLEGAL_URL = "[-] SSRF check failed. Illegal url.";
 
+    private static final int CONNECT_TIMEOUT_MS = 3000;
+    private static final int READ_TIMEOUT_MS = 6000;
+
     /**
-     * Destination check done before every outbound request: http/https only and the host must
-     * resolve only to public addresses. Redirects are disabled on every client below, so that a
-     * public url can not bounce the request to an internal one.
+     * Every method below resolves the user supplied url exactly once through
+     * {@link SecurityUtil#resolveAllowedUrl(String)}. That url is rebuilt from a constant scheme, an
+     * exactly matched server side allowlisted host and a validated path, and only the rebuilt value
+     * reaches a client. Redirects are disabled and timeouts are set on every client, so that an
+     * allowlisted url can not bounce the request to an internal one.
      */
-    private static boolean isSafeUrl(String url) {
-        if (!SecurityUtil.checkOutboundUrl(url)) {
+    private static URL resolve(String rawUrl) {
+        URL allowed = SecurityUtil.resolveAllowedUrl(rawUrl);
+        if (allowed == null) {
             logger.error("Illegal outbound url rejected");
-            return false;
         }
-        return true;
+        return allowed;
     }
 
     /**
-     * Open a connection to a validated http/https url without following redirects.
+     * Open a connection to an already resolved url without following redirects.
      */
-    private static HttpURLConnection openSafeConnection(String url) throws IOException {
-        URL u = new URL(url);
-        HttpURLConnection conn = (HttpURLConnection) u.openConnection();
+    private static HttpURLConnection openSafeConnection(URL allowed) throws IOException {
+        HttpURLConnection conn = (HttpURLConnection) allowed.openConnection();
         conn.setInstanceFollowRedirects(false);
+        conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+        conn.setReadTimeout(READ_TIMEOUT_MS);
         return conn;
+    }
+
+    private static RequestConfig safeRequestConfig() {
+        return RequestConfig.custom()
+                .setRedirectsEnabled(false)
+                .setConnectTimeout(CONNECT_TIMEOUT_MS)
+                .setSocketTimeout(READ_TIMEOUT_MS)
+                .build();
     }
 
     public static String commonHttpClient(String url) {
 
-        if (!isSafeUrl(url)) {
+        URL allowed = resolve(url);
+        if (allowed == null) {
             return ILLEGAL_URL;
         }
 
         HttpClient client = new HttpClient();
-        GetMethod method = new GetMethod(url);
+        client.getHttpConnectionManager().getParams().setConnectionTimeout(CONNECT_TIMEOUT_MS);
+        client.getHttpConnectionManager().getParams().setSoTimeout(READ_TIMEOUT_MS);
+        GetMethod method = new GetMethod(allowed.toExternalForm());
         method.setFollowRedirects(false);
 
         try {
@@ -87,12 +104,15 @@ public class HttpUtils {
 
 
     public static String request(String url) {
-        if (!isSafeUrl(url)) {
+        URL allowed = resolve(url);
+        if (allowed == null) {
             return ILLEGAL_URL;
         }
         try {
             Executor executor = Executor.newInstance(HttpClients.custom().disableRedirectHandling().build());
-            return executor.execute(Request.Get(url)).returnContent().toString();
+            return executor.execute(Request.Get(allowed.toURI())
+                    .connectTimeout(CONNECT_TIMEOUT_MS)
+                    .socketTimeout(READ_TIMEOUT_MS)).returnContent().toString();
         } catch (Exception e) {
             return e.getMessage();
         }
@@ -101,7 +121,8 @@ public class HttpUtils {
 
     public static String httpClient(String url) {
 
-        if (!isSafeUrl(url)) {
+        URL allowed = resolve(url);
+        if (allowed == null) {
             return ILLEGAL_URL;
         }
 
@@ -109,10 +130,10 @@ public class HttpUtils {
 
         try {
 
-            CloseableHttpClient client = HttpClients.createDefault();
-            HttpGet httpGet = new HttpGet(url);
-            // set redirect enable false
-            httpGet.setConfig(RequestConfig.custom().setRedirectsEnabled(false).build());
+            CloseableHttpClient client = HttpClients.custom().disableRedirectHandling().build();
+            HttpGet httpGet = new HttpGet(allowed.toURI());
+            // redirects disabled, connect and read timeouts set
+            httpGet.setConfig(safeRequestConfig());
             HttpResponse httpResponse = client.execute(httpGet); // send request
             BufferedReader rd = new BufferedReader(new InputStreamReader(httpResponse.getEntity().getContent()));
 
@@ -130,11 +151,12 @@ public class HttpUtils {
 
 
     public static String URLConnection(String url) {
-        if (!isSafeUrl(url)) {
+        URL allowed = resolve(url);
+        if (allowed == null) {
             return ILLEGAL_URL;
         }
         try {
-            URLConnection urlConnection = openSafeConnection(url);
+            URLConnection urlConnection = openSafeConnection(allowed);
             BufferedReader in = new BufferedReader(new InputStreamReader(urlConnection.getInputStream())); //send request
             String inputLine;
             StringBuilder html = new StringBuilder();
@@ -156,11 +178,12 @@ public class HttpUtils {
      * UserAgent is Java/1.8.0_102.
      */
     public static String HttpURLConnection(String url) {
-        if (!isSafeUrl(url)) {
+        URL allowed = resolve(url);
+        if (allowed == null) {
             return ILLEGAL_URL;
         }
         try {
-            HttpURLConnection conn = openSafeConnection(url);
+            HttpURLConnection conn = openSafeConnection(allowed);
 //             Many HttpURLConnection methods can send http request, such as getResponseCode, getHeaderField
             InputStream is = conn.getInputStream();  // send request
             BufferedReader in = new BufferedReader(new InputStreamReader(is));
@@ -185,13 +208,14 @@ public class HttpUtils {
      * @param url http request url
      */
     public static String Jsoup(String url) {
-        if (!isSafeUrl(url)) {
+        URL allowed = resolve(url);
+        if (allowed == null) {
             return ILLEGAL_URL;
         }
         try {
-            Document doc = Jsoup.connect(url)
+            Document doc = Jsoup.connect(allowed.toExternalForm())
                     .followRedirects(false)
-                    .timeout(3000)
+                    .timeout(READ_TIMEOUT_MS)
                     .cookie("name", "joychou") // request cookies
                     .execute().parse();
             return doc.outerHtml();
@@ -207,13 +231,16 @@ public class HttpUtils {
      * UserAgent is <code>okhttp/2.5.0</code>.
      */
     public static String okhttp(String url) throws IOException {
-        if (!isSafeUrl(url)) {
+        URL allowed = resolve(url);
+        if (allowed == null) {
             return ILLEGAL_URL;
         }
         OkHttpClient client = new OkHttpClient();
         client.setFollowRedirects(false);
         client.setFollowSslRedirects(false);
-        com.squareup.okhttp.Request ok_http = new com.squareup.okhttp.Request.Builder().url(url).build();
+        client.setConnectTimeout(CONNECT_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+        client.setReadTimeout(READ_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+        com.squareup.okhttp.Request ok_http = new com.squareup.okhttp.Request.Builder().url(allowed).build();
         return client.newCall(ok_http).execute().body().string();
     }
 
@@ -227,11 +254,12 @@ public class HttpUtils {
      */
     public static void imageIO(String url) {
         try {
-            // http/https only (rejects file:, jar:, etc.), public hosts only
-            if (!isSafeUrl(url)) {
+            // http/https only (rejects file:, jar:, etc.), allowlisted hosts only
+            URL allowed = resolve(url);
+            if (allowed == null) {
                 return;
             }
-            HttpURLConnection conn = openSafeConnection(url);
+            HttpURLConnection conn = openSafeConnection(allowed);
             try (InputStream in = conn.getInputStream()) { // send request
                 ImageIO.read(in);
             }
@@ -249,11 +277,12 @@ public class HttpUtils {
      * @param url http request url
      */
     public static void IOUtils(String url) {
-        if (!isSafeUrl(url)) {
+        URL allowed = resolve(url);
+        if (allowed == null) {
             return;
         }
         try {
-            IOUtils.toByteArray(openSafeConnection(url));
+            IOUtils.toByteArray(openSafeConnection(allowed));
         } catch (IOException e) {
             logger.error(e.getMessage());
         }
@@ -261,17 +290,18 @@ public class HttpUtils {
 
 
     public static String HttpAsyncClients(String url) {
-        if (!isSafeUrl(url)) {
+        URL allowed = resolve(url);
+        if (allowed == null) {
             return ILLEGAL_URL;
         }
         CloseableHttpAsyncClient httpclient = HttpAsyncClients.custom()
-                .setDefaultRequestConfig(RequestConfig.custom().setRedirectsEnabled(false).build())
+                .setDefaultRequestConfig(safeRequestConfig())
                 .build();
         try {
             httpclient.start();
-            final HttpGet request = new HttpGet(url);
+            final HttpGet request = new HttpGet(allowed.toURI());
             Future<HttpResponse> future = httpclient.execute(request, null);
-            HttpResponse response = future.get(6000, TimeUnit.MILLISECONDS);
+            HttpResponse response = future.get(READ_TIMEOUT_MS, TimeUnit.MILLISECONDS);
             return EntityUtils.toString(response.getEntity());
         } catch (Exception e) {
             return e.getMessage();

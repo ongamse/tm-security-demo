@@ -1,5 +1,6 @@
 package org.joychou.controller;
 
+import cn.hutool.http.HttpRequest;
 import cn.hutool.http.HttpUtil;
 import org.joychou.security.SecurityUtil;
 import org.joychou.security.ssrf.SSRFException;
@@ -130,16 +131,18 @@ public class SSRF {
             // download
             response.setHeader("content-disposition", "attachment;fileName=" + downLoadImgFileName);
 
-            // http/https only, public hosts only, no redirects
-            if (!SecurityUtil.checkOutboundUrl(url)) {
+            // single choke-point: url rebuilt from an allowlisted host, http/https only, no redirects
+            URL u = SecurityUtil.resolveAllowedUrl(url);
+            if (u == null) {
                 logger.error("Illegal outbound url rejected");
                 return;
             }
-            URL u = new URL(url);
             int length;
             byte[] bytes = new byte[1024];
             HttpURLConnection conn = (HttpURLConnection) u.openConnection();
             conn.setInstanceFollowRedirects(false);
+            conn.setConnectTimeout(3000);
+            conn.setReadTimeout(6000);
             inputStream = conn.getInputStream(); // send request
             outputStream = response.getOutputStream();
             while ((length = inputStream.read(bytes)) > 0) {
@@ -321,10 +324,16 @@ public class SSRF {
     @GetMapping("/dnsrebind/vuln")
     public String DnsRebind(String url) {
         java.security.Security.setProperty("networkaddress.cache.negative.ttl" , "0");
-        if (!SecurityUtil.checkSSRFWithoutRedirect(url)) {
+        // single choke-point: only the url rebuilt from an allowlisted host reaches the client
+        URL allowed = SecurityUtil.resolveAllowedUrl(url);
+        if (allowed == null) {
             return "Dangerous url";
         }
-        return HttpUtil.get(url);
+        return HttpRequest.get(allowed.toExternalForm())
+                .setFollowRedirects(false)
+                .timeout(6000)
+                .execute()
+                .body();
     }
 
 
