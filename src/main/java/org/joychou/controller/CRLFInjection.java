@@ -28,9 +28,15 @@ public class CRLFInjection {
             response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
             return;
         }
-        response.addHeader("test1", test1);
-        response.setHeader("test2", test2);
+        // strip CR, LF and other control characters from the exact values passed to the header calls
+        String headerTest1 = test1 == null ? null : test1.replaceAll("[\\r\\n\\x00-\\x1F\\x7F]", "");
+        String headerTest2 = test2 == null ? null : test2.replaceAll("[\\r\\n\\x00-\\x1F\\x7F]", "");
+        response.addHeader("test1", headerTest1);
+        response.setHeader("test2", headerTest2);
         String author = request.getParameter("test3");
+        if (author != null) {
+            author = author.replaceAll("[\\r\\n\\x00-\\x1F\\x7F]", "");
+        }
         Cookie cookie = new Cookie("test3", author);
         response.addCookie(cookie);
     }
