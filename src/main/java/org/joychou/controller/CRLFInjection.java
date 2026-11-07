@@ -38,6 +38,9 @@ public class CRLFInjection {
             author = author.replaceAll("[\\r\\n\\x00-\\x1F\\x7F]", "");
         }
         Cookie cookie = new Cookie("test3", author);
+        cookie.setHttpOnly(true);
+        cookie.setSecure(true);
+        cookie.setPath("/");
         response.addCookie(cookie);
     }
 }
