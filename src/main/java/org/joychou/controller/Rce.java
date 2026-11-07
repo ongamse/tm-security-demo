@@ -95,7 +95,8 @@ public class Rce {
             inBr.close();
             in.close();
         } catch (Exception e) {
-            return WebUtils.htmlEscape(e.toString());
+            log.error("Command execution failed: {}", e.getClass().getSimpleName());
+            return "Request failed.";
         }
         return WebUtils.htmlEscape(sb.toString());
     }
@@ -124,7 +125,8 @@ public class Rce {
                 sb.append(tmpStr);
             }
         } catch (Exception e) {
-            return WebUtils.htmlEscape(e.toString());
+            log.error("Command execution failed: {}", e.getClass().getSimpleName());
+            return "Request failed.";
         }
 
         return WebUtils.htmlEscape(sb.toString());

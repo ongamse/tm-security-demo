@@ -13,6 +13,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 
 
 /**
@@ -31,9 +33,24 @@ public class SpEL {
      */
     @GetMapping("/spel/vuln")
     public String rce(String expression) {
+        // The request only selects a key of a fixed server-side expression; request data is
+        // never parsed as SpEL.
+        String fixedExpression = expression == null ? null : EXPRESSIONS.get(expression);
+        if (fixedExpression == null) {
+            return "Bad boy. I got u.";
+        }
         ExpressionParser parser = new SpelExpressionParser();
         return org.joychou.util.WebUtils.htmlEscape(
-                String.valueOf(parser.parseExpression(expression).getValue(restrictedContext())));
+                String.valueOf(parser.parseExpression(fixedExpression).getValue(restrictedContext())));
+    }
+
+    private static final Map<String, String> EXPRESSIONS;
+
+    static {
+        Map<String, String> m = new HashMap<>();
+        m.put("hello", "'Hello' + ' World'");
+        m.put("sum", "1 + 2 + 3");
+        EXPRESSIONS = Collections.unmodifiableMap(m);
     }
 
     /**
