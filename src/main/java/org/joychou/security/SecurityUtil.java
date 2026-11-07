@@ -39,10 +39,13 @@ public class SecurityUtil {
 
     // A same-origin redirect path (single leading slash) or an absolute http(s) redirect url.
     // No control characters, whitespace, backslash, userinfo or non-ASCII characters can match.
-    private static final String REDIRECT_CHARS = "[A-Za-z0-9._~!$&'()*+,;=:@/?#%\\[\\]-]*";
-    private static final Pattern REDIRECT_PATH_PATTERN = Pattern.compile("^(/(?!/)" + REDIRECT_CHARS + ")$");
+    private static final Pattern REDIRECT_PATH_PATTERN = Pattern.compile("^/(?!/)[A-Za-z0-9._~/-]*$");
+    private static final Pattern REDIRECT_CONTEXT_PATTERN = Pattern.compile("^(/[A-Za-z0-9._~-]+)*$");
+    // absolute url: scheme, host, optional port, optional path of unreserved characters, optional plain query
     private static final Pattern REDIRECT_ABSOLUTE_PATTERN = Pattern.compile(
-            "^(https?)://([A-Za-z0-9.-]+)(?::([0-9]{1,5}))?([/?#]" + REDIRECT_CHARS + ")?$");
+            "^(https?)://([A-Za-z0-9.-]+)(?::([0-9]{1,5}))?((?:/[A-Za-z0-9._~/-]*)?(?:\\?[A-Za-z0-9._~=&%-]*)?)$");
+    private static final java.util.List<String> REDIRECT_SCHEMES = Arrays.asList("http", "https");
+    private static final java.util.List<String> REDIRECT_PORTS = Arrays.asList("80", "443", "8080");
 
 
     /**
@@ -290,25 +293,91 @@ public class SecurityUtil {
      * @return the rebuilt, equivalent url when safe; null otherwise
      */
     public static String safeRedirectUrl(String url) {
+        return safeRedirectUrl(url, "");
+    }
+
+
+    /**
+     * Same as {@link #safeRedirectUrl(String)} but a same-origin relative target is prefixed with the
+     * application context path so that it stays inside this application.
+     * <p>
+     * Redirect destinations are looked up in fixed server side collections: the scheme, the host
+     * (exact element of the safe domain list, never a sub domain of it) and the optional port are
+     * constant elements of those collections, not the request string. Only the path (and an optional
+     * plain query) comes from the request, and it must match a strict character class without
+     * "." / ".." segments. A relative target must match <code>^/[A-Za-z0-9._~/-]*$</code> and must not
+     * start with "//". Everything else yields null (callers answer 400 or redirect to a default).
+     *
+     * @param url         candidate redirect target
+     * @param contextPath servlet context path ("" or "/app"); anything unusual is ignored
+     * @return the destination built from allowlisted constants; null when not allowed
+     */
+    public static String safeRedirectUrl(String url, String contextPath) {
         if (url == null || url.length() > MAX_URL_LENGTH || safeHeaderValue(url) == null
                 || url.indexOf('\\') >= 0) {
             return null;
         }
         if (url.startsWith("/")) {
             // same-origin path only: the pattern rejects "//host", a scheme, userinfo and backslashes
-            Matcher pm = REDIRECT_PATH_PATTERN.matcher(url);
-            return pm.matches() ? pm.group(1) : null;
+            if (!REDIRECT_PATH_PATTERN.matcher(url).matches() || hasDotSegment(url)) {
+                return null;
+            }
+            String prefix = contextPath != null && REDIRECT_CONTEXT_PATTERN.matcher(contextPath).matches()
+                    ? contextPath : "";
+            return prefix + url;
         }
-        // The host group excludes userinfo, backslashes and every other delimiter, and is followed
-        // directly by an optional port and the tail, so URI/URL parser differentials cannot occur.
         Matcher m = REDIRECT_ABSOLUTE_PATTERN.matcher(url);
-        if (!m.matches() || checkURL(url) == null) {
+        if (!m.matches() || hasDotSegment(m.group(4) == null ? "" : m.group(4))) {
             return null;
         }
-        String scheme = "https".equals(m.group(1)) ? "https" : "http";
-        return scheme + "://" + m.group(2).toLowerCase(Locale.ROOT)
-                + (m.group(3) != null ? ":" + m.group(3) : "")
-                + (m.group(4) != null ? m.group(4) : "");
+        // look up the host (exact match) in the server side allowlist and use the list element
+        String wanted = m.group(2).toLowerCase(Locale.ROOT);
+        String allowedHost = null;
+        for (String candidate : WebConfig.getSafeDomains()) {
+            if (candidate != null && candidate.trim().toLowerCase(Locale.ROOT).equals(wanted)) {
+                allowedHost = candidate.trim().toLowerCase(Locale.ROOT);
+                break;
+            }
+        }
+        if (allowedHost == null) {
+            return null;
+        }
+        for (String blocked : WebConfig.getBlockDomains()) {
+            if (blocked != null) {
+                String b = blocked.trim().toLowerCase(Locale.ROOT);
+                if (allowedHost.equals(b) || allowedHost.endsWith("." + b)) {
+                    return null;
+                }
+            }
+        }
+        // scheme and port are constants taken from fixed server side lists
+        String scheme = "https".equalsIgnoreCase(m.group(1)) ? REDIRECT_SCHEMES.get(1) : REDIRECT_SCHEMES.get(0);
+        String portSuffix = "";
+        if (m.group(3) != null) {
+            portSuffix = null;
+            for (String port : REDIRECT_PORTS) {
+                if (port.equals(m.group(3))) {
+                    portSuffix = ":" + port;
+                    break;
+                }
+            }
+            if (portSuffix == null) {
+                return null;
+            }
+        }
+        return scheme + "://" + allowedHost + portSuffix + (m.group(4) == null ? "" : m.group(4));
+    }
+
+
+    private static boolean hasDotSegment(String pathAndQuery) {
+        int q = pathAndQuery.indexOf('?');
+        String path = q >= 0 ? pathAndQuery.substring(0, q) : pathAndQuery;
+        for (String segment : path.split("/", -1)) {
+            if (".".equals(segment) || "..".equals(segment)) {
+                return true;
+            }
+        }
+        return false;
     }
 
 

@@ -7,9 +7,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.*;
 
+import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.net.URL;
 import java.util.ArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -97,7 +97,7 @@ public class URLWhiteList {
      * <a href="https://github.com/JoyChou93/java-sec-code/wiki/URL-whtielist-Bypass">More details</a>
      */
     @GetMapping("/vuln/url_bypass")
-    public void url_bypass(String url, HttpServletResponse res) throws IOException {
+    public void url_bypass(String url, HttpServletRequest req, HttpServletResponse res) throws IOException {
 
         logger.info("url:  " + url);
 
@@ -105,8 +105,8 @@ public class URLWhiteList {
             return;
         }
 
-        URL u = new URL(url);
-        String host = u.getHost();
+        // strict host extraction without building a java.net.URL from request data
+        String host = SecurityUtil.gethost(url);
         logger.info("host:  " + host);
 
         // endsWith .
@@ -114,7 +114,7 @@ public class URLWhiteList {
             if (host.endsWith("." + domain)) {
                 // The URL/URI parser differential is the vulnerability demonstrated above; the
                 // redirect itself must only ever use a target validated by the shared helper.
-                String safeUrl = SecurityUtil.safeRedirectUrl(url);
+                String safeUrl = SecurityUtil.safeRedirectUrl(url, req.getContextPath());
                 if (safeUrl == null) {
                     res.setStatus(HttpServletResponse.SC_BAD_REQUEST);
                     return;

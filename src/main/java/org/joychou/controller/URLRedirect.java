@@ -48,13 +48,14 @@ public class URLRedirect {
     @ResponseBody
     public static void setHeader(HttpServletRequest request, HttpServletResponse response) {
         String url = request.getParameter("url");
-        String safeUrl = SecurityUtil.safeRedirectUrl(url);
+        String safeUrl = SecurityUtil.safeRedirectUrl(url, request.getContextPath());
         if (safeUrl == null) {
             response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
             return;
         }
         response.setStatus(HttpServletResponse.SC_MOVED_PERMANENTLY); // 301 redirect
-        response.setHeader("Location", safeUrl);
+        String location = safeUrl.replaceAll("[\\r\\n\\x00-\\x1F\\x7F]", "");
+        response.setHeader("Location", location);
     }
 
 
@@ -64,7 +65,7 @@ public class URLRedirect {
     @RequestMapping("/sendRedirect")
     @ResponseBody
     public static void sendRedirect(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        String safeUrl = SecurityUtil.safeRedirectUrl(request.getParameter("url"));
+        String safeUrl = SecurityUtil.safeRedirectUrl(request.getParameter("url"), request.getContextPath());
         if (safeUrl == null) {
             response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
             return;
@@ -99,7 +100,7 @@ public class URLRedirect {
     public void sendRedirect_seccode(HttpServletRequest request, HttpServletResponse response)
             throws IOException {
         String url = request.getParameter("url");
-        String safeUrl = SecurityUtil.safeRedirectUrl(url);
+        String safeUrl = SecurityUtil.safeRedirectUrl(url, request.getContextPath());
         if (safeUrl == null) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             response.getWriter().write("url forbidden");
