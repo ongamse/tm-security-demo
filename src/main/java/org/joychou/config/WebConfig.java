@@ -4,6 +4,10 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashSet;
+import java.util.Set;
+import java.util.regex.Pattern;
 
 
 /**
@@ -26,6 +30,46 @@ public class WebConfig {
     private static ArrayList<String> ssrfSafeDomains = new ArrayList<>();
     private static ArrayList<String> ssrfBlockDomains = new ArrayList<>();
     private static ArrayList<String> ssrfBlockIps = new ArrayList<>();
+
+    // Exact scheme://host[:port] origins; no wildcard, no "null".
+    private static final Pattern CORS_ORIGIN_PATTERN = Pattern.compile(
+            "^https?://[A-Za-z0-9.-]{1,253}(?::[0-9]{1,5})?$");
+    private static volatile Set<String> corsAllowedOrigins = Collections.emptySet();
+
+    /**
+     * Server side CORS origin allowlist (joychou.security.cors.allowed-origins). Empty by default,
+     * which means no cross origin caller is allowed (fail closed).
+     */
+    @Value("${joychou.security.cors.allowed-origins:}")
+    public void setCorsAllowedOrigins(String[] origins) {
+        WebConfig.corsAllowedOrigins = parseCorsOrigins(origins);
+    }
+
+    public static Set<String> getCorsAllowedOrigins() {
+        return corsAllowedOrigins;
+    }
+
+    /**
+     * Keep only well formed exact origins ("*", "null" and anything else is dropped).
+     *
+     * @param origins raw configured values
+     * @return unmodifiable set of exact origins
+     */
+    public static Set<String> parseCorsOrigins(String[] origins) {
+        Set<String> result = new LinkedHashSet<>();
+        if (origins != null) {
+            for (String origin : origins) {
+                if (origin == null) {
+                    continue;
+                }
+                String trimmed = origin.trim();
+                if (CORS_ORIGIN_PATTERN.matcher(trimmed).matches()) {
+                    result.add(trimmed);
+                }
+            }
+        }
+        return Collections.unmodifiableSet(result);
+    }
 
     /**
      * application.properties里object自动转jsonp的referer校验开关

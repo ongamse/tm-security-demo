@@ -44,10 +44,6 @@ public class SecurityUtil {
     private static final Pattern REDIRECT_ABSOLUTE_PATTERN = Pattern.compile(
             "^(https?)://([A-Za-z0-9.-]+)(?::([0-9]{1,5}))?([/?#]" + REDIRECT_CHARS + ")?$");
 
-    // Strict origin: scheme://host[:port] only.
-    private static final Pattern CORS_ORIGIN_PATTERN = Pattern.compile(
-            "^(https?)://([A-Za-z0-9.-]+)(?::([0-9]{1,5}))?$");
-
 
     /**
      * Determine if the URL starts with HTTP.
@@ -259,25 +255,25 @@ public class SecurityUtil {
 
 
     /**
-     * Validate a request Origin before it is echoed in Access-Control-Allow-Origin. The origin must
-     * be free of control characters (see {@link #safeHeaderValue(String)}) and pass the domain
-     * allowlist / blocklist in {@link #checkURL(String)} (url_safe_domain.xml).
+     * Look up a request Origin in the fixed server side CORS allowlist
+     * (<code>joychou.security.cors.allowed-origins</code>, exact match) and return the matching
+     * constant element of that allowlist. The request string itself is never returned, so the value
+     * written to Access-Control-Allow-Origin always comes from server configuration. An empty
+     * allowlist rejects everything (fail closed).
      *
      * @param origin value of the request Origin header
-     * @return the origin when it is allowlisted; null otherwise (including a null origin)
+     * @return the allowlisted origin; null when not allowlisted (including a null origin or "null")
      */
     public static String safeCorsOrigin(String origin) {
         if (origin == null || safeHeaderValue(origin) == null) {
             return null;
         }
-        Matcher m = CORS_ORIGIN_PATTERN.matcher(origin);
-        if (!m.matches() || checkURL(origin) == null) {
-            return null;
+        for (String allowed : WebConfig.getCorsAllowedOrigins()) {
+            if (allowed.equals(origin)) {
+                return allowed;
+            }
         }
-        // rebuild scheme://host[:port] from the validated parts instead of echoing the raw header
-        String scheme = "https".equals(m.group(1)) ? "https" : "http";
-        String host = m.group(2).toLowerCase(Locale.ROOT);
-        return scheme + "://" + host + (m.group(3) != null ? ":" + m.group(3) : "");
+        return null;
     }
 
 
