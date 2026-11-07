@@ -179,10 +179,10 @@ public class SecurityUtil {
      * <p>
      * The raw string is only parsed, never used: the returned {@link URL} is rebuilt from
      * <ul>
-     *   <li>a constant scheme (<code>http</code> or <code>https</code>),</li>
+     *   <li>a constant scheme (<code>https</code>; a plain <code>http</code> url is upgraded),</li>
      *   <li>the host taken from the server side allowlist (<code>ssrf_safe_domain.xml</code>, exact,
      *       case-insensitive match; subdomains are not implied),</li>
-     *   <li>an optional port that must be 80 or 443,</li>
+     *   <li>an optional port that must be 443,</li>
      *   <li>a path made of unreserved characters only without <code>.</code>/<code>..</code> segments
      *       and an optional plain <code>key=value&amp;...</code> query (no userinfo, fragment, backslash,
      *       whitespace or control characters can match).</li>
@@ -201,7 +201,8 @@ public class SecurityUtil {
         if (!m.matches()) {
             return null;
         }
-        String scheme = "https".equalsIgnoreCase(m.group(1)) ? "https" : "http";
+        // Outbound requests are only ever made over TLS: a plain http url is rebuilt as https.
+        String scheme = "https";
 
         // exact match against the server side allowlist; the host that is used comes from the allowlist
         String allowedHost = allowlistedPublicHost(m.group(2));
@@ -212,7 +213,8 @@ public class SecurityUtil {
         int port = -1;
         if (m.group(3) != null) {
             int requestedPort = Integer.parseInt(m.group(3));
-            if (requestedPort != 80 && requestedPort != 443) {
+            // https only: the cleartext port 80 is rejected
+            if (requestedPort != 443) {
                 return null;
             }
             port = requestedPort;
@@ -229,7 +231,7 @@ public class SecurityUtil {
         try {
             return new URI(scheme, null, allowedHost, port, path, query, null).toURL();
         } catch (URISyntaxException | MalformedURLException | IllegalArgumentException e) {
-            logger.error("Illegal outbound url rejected: " + e.getClass().getSimpleName());
+            logger.error("Illegal outbound url rejected: {}", e.getClass().getSimpleName());
             return null;
         }
     }
@@ -408,7 +410,7 @@ public class SecurityUtil {
             }
             String allowed = candidate.trim().toLowerCase(Locale.ROOT);
             if (allowed.equals(wanted)) {
-                return SSRFChecker.isInternalIpByUrl("http://" + allowed + "/") ? null : allowed;
+                return SSRFChecker.isInternalIpByUrl("https://" + allowed + "/") ? null : allowed;
             }
         }
         return null;
@@ -576,7 +578,7 @@ public class SecurityUtil {
             try {
                 temp = URLDecoder.decode(temp, "utf-8");
             } catch (UnsupportedEncodingException e) {
-                logger.info("Unsupported encoding exception: " + filepath);
+                logger.info("Unsupported encoding exception in file path");
                 return null;
             } catch (Exception e) {
                 logger.info(e.toString());
