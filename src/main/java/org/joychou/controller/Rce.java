@@ -8,13 +8,14 @@ import org.springframework.web.bind.annotation.RestController;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
 
-import org.joychou.security.SecurityUtil;
 import org.joychou.util.WebUtils;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
-import java.sql.DriverManager;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 
 
 /**
@@ -27,13 +28,53 @@ import java.sql.DriverManager;
 @RequestMapping("/rce")
 public class Rce {
 
+    /**
+     * Fixed server-side command allowlist: key -> hard-coded argv. Request data only selects
+     * a key; it is never placed into the argv or passed to the process API.
+     */
+    private static final Map<String, String[]> COMMANDS;
+
+    static {
+        Map<String, String[]> m = new HashMap<>();
+        m.put("whoami", new String[]{"whoami"});
+        m.put("date", new String[]{"date"});
+        m.put("hostname", new String[]{"hostname"});
+        m.put("uname", new String[]{"uname"});
+        m.put("id", new String[]{"id"});
+        m.put("pwd", new String[]{"pwd"});
+        COMMANDS = Collections.unmodifiableMap(m);
+    }
+
+    /**
+     * Fixed allowlist of Groovy scripts: key -> hard-coded script source.
+     */
+    private static final Map<String, String> GROOVY_SCRIPTS;
+
+    static {
+        Map<String, String> m = new HashMap<>();
+        m.put("hello", "'hello'.toUpperCase()");
+        m.put("sum", "(1..10).sum()");
+        GROOVY_SCRIPTS = Collections.unmodifiableMap(m);
+    }
+
+    /**
+     * Look up a command key in the allowlist; returns a fresh copy of the fixed argv or null.
+     */
+    private static String[] lookupCommand(String key) {
+        if (key == null) {
+            return null;
+        }
+        String[] fixed = COMMANDS.get(key.trim());
+        return fixed == null ? null : fixed.clone();
+    }
+
     @GetMapping("/runtime/exec")
     public String CommandExec(String cmd) {
         Runtime run = Runtime.getRuntime();
         StringBuilder sb = new StringBuilder();
 
         try {
-            String[] argv = SecurityUtil.safeCommand(cmd);
+            String[] argv = lookupCommand(cmd);
             if (argv == null) {
                 return "Bad boy. I got u.";
             }
@@ -69,7 +110,7 @@ public class Rce {
         StringBuilder sb = new StringBuilder();
 
         try {
-            String[] arrCmd = SecurityUtil.safeCommand(cmd);
+            String[] arrCmd = lookupCommand(cmd);
             if (arrCmd == null) {
                 return "Bad boy. I got u.";
             }
@@ -132,9 +173,14 @@ public class Rce {
      * @param content groovy shell
      */
     @GetMapping("groovy")
-    public void groovyshell(String content) {
+    public String groovyshell(String content) {
+        // Request data only selects a precompiled-script key; it is never evaluated as Groovy.
+        String script = content == null ? null : GROOVY_SCRIPTS.get(content.trim());
+        if (script == null) {
+            return "Bad boy. I got u.";
+        }
         GroovyShell groovyShell = new GroovyShell();
-        groovyShell.evaluate(content);
+        return WebUtils.htmlEscape(String.valueOf(groovyShell.evaluate(script)));
     }
 
 
