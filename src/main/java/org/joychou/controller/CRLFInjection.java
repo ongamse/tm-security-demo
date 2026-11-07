@@ -8,6 +8,8 @@ import org.springframework.web.bind.annotation.ResponseBody;
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 
 /**
  * Java 1.7/1.8 no CRLF vulns (test in Java 1.7/1.8)
@@ -34,10 +36,17 @@ public class CRLFInjection {
         response.addHeader("test1", headerTest1);
         response.setHeader("test2", headerTest2);
         String author = request.getParameter("test3");
-        if (author != null) {
-            author = author.replaceAll("[\\r\\n\\x00-\\x1F\\x7F]", "");
+        if (author == null) {
+            author = "";
         }
-        Cookie cookie = new Cookie("test3", author);
+        // reject CR, LF and other control characters, and over-long values
+        if (author.length() > 256 || author.matches("(?s).*[\\x00-\\x1F\\x7F].*")) {
+            response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+            return;
+        }
+        // URL-safe Base64 restricts the cookie value to a fixed safe charset (Java 8 compatible)
+        Cookie cookie = new Cookie("test3",
+                Base64.getUrlEncoder().withoutPadding().encodeToString(author.getBytes(StandardCharsets.UTF_8)));
         cookie.setHttpOnly(true);
         cookie.setSecure(true);
         cookie.setPath("/");
