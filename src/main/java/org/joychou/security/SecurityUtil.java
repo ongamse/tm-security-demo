@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.net.URL;
 import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -150,6 +151,136 @@ public class SecurityUtil {
             return false;
         }
         return !SSRFChecker.isInternalIpByUrl(url);
+    }
+
+    /**
+     * Validate a user supplied url before the server makes an outbound request to it.
+     * The scheme must be http/https, the host must be consistent between the URI and URL parsers,
+     * and every address the host resolves to must be public (no loopback, link-local/metadata,
+     * private or configured blocked ranges). Callers must also disable redirects.
+     *
+     * @param url The url that needs to check.
+     * @return Safe url returns true. Dangerous url returns false.
+     */
+    public static boolean checkOutboundUrl(String url) {
+        if (url == null) {
+            return false;
+        }
+        try {
+            URI uri = new URI(url);
+            String scheme = uri.getScheme();
+            if (scheme == null || !("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme))) {
+                return false;
+            }
+            String host = uri.getHost();
+            if (host == null || host.isEmpty()) {
+                return false;
+            }
+            // reject parser differentials between java.net.URI and java.net.URL
+            String urlHost = new URL(url).getHost();
+            if (urlHost == null || !urlHost.equalsIgnoreCase(host)) {
+                return false;
+            }
+            return !SSRFChecker.isInternalIpByUrl(url);
+        } catch (Exception e) {
+            logger.error(e.toString());
+            return false;
+        }
+    }
+
+
+    private static final Pattern JDBC_HOST_PATTERN = Pattern.compile(
+            "^([A-Za-z0-9.-]+|\\[[0-9A-Fa-f:.]+\\])(:[0-9]{1,5})?$");
+    private static final Pattern JDBC_DB_PATTERN = Pattern.compile("^[A-Za-z0-9_.-]*$");
+    private static final Set<String> POSTGRESQL_JDBC_PARAMS = new HashSet<>(Arrays.asList(
+            "user", "password", "ssl", "sslmode", "connectTimeout", "loginTimeout",
+            "socketTimeout", "ApplicationName", "currentSchema"));
+    private static final Set<String> DB2_JDBC_PARAMS = new HashSet<>(Arrays.asList(
+            "user", "password", "sslConnection", "loginTimeout", "connectionTimeout", "currentSchema"));
+
+    /**
+     * Check the host:port authority of a jdbc url against the SSRF rules.
+     */
+    private static boolean checkJdbcAuthority(String authority) {
+        return JDBC_HOST_PATTERN.matcher(authority).matches()
+                && checkOutboundUrl("http://" + authority + "/");
+    }
+
+    /**
+     * Allowlist check for <code>jdbc:postgresql://host[:port]/db[?key=value&amp;...]</code>.
+     * The host must be public and only plain connection parameters are allowed, so that parameters
+     * which load classes (socketFactory, sslfactory, authenticationPluginClassName, ...) are rejected.
+     */
+    public static boolean checkPostgresqlJdbcUrl(String jdbcUrl) {
+        String prefix = "jdbc:postgresql://";
+        if (jdbcUrl == null || !jdbcUrl.startsWith(prefix)) {
+            return false;
+        }
+        String rest = jdbcUrl.substring(prefix.length());
+        String query = "";
+        int q = rest.indexOf('?');
+        if (q >= 0) {
+            query = rest.substring(q + 1);
+            rest = rest.substring(0, q);
+        }
+        int slash = rest.indexOf('/');
+        if (slash < 0) {
+            return false;
+        }
+        if (!checkJdbcAuthority(rest.substring(0, slash))
+                || !JDBC_DB_PATTERN.matcher(rest.substring(slash + 1)).matches()) {
+            return false;
+        }
+        if (!query.isEmpty()) {
+            for (String pair : query.split("&", -1)) {
+                int eq = pair.indexOf('=');
+                String key = eq < 0 ? pair : pair.substring(0, eq);
+                if (!POSTGRESQL_JDBC_PARAMS.contains(key)) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Allowlist check for <code>jdbc:db2://host[:port]/db[:key=value;...;]</code>.
+     * The host must be public and only plain connection properties are allowed.
+     */
+    public static boolean checkDb2JdbcUrl(String jdbcUrl) {
+        String prefix = "jdbc:db2://";
+        if (jdbcUrl == null || !jdbcUrl.startsWith(prefix)) {
+            return false;
+        }
+        String rest = jdbcUrl.substring(prefix.length());
+        int slash = rest.indexOf('/');
+        if (slash < 0) {
+            return false;
+        }
+        String authority = rest.substring(0, slash);
+        String dbAndProps = rest.substring(slash + 1);
+        String props = "";
+        int colon = dbAndProps.indexOf(':');
+        if (colon >= 0) {
+            props = dbAndProps.substring(colon + 1);
+            dbAndProps = dbAndProps.substring(0, colon);
+        }
+        if (!checkJdbcAuthority(authority) || !JDBC_DB_PATTERN.matcher(dbAndProps).matches()) {
+            return false;
+        }
+        if (!props.isEmpty()) {
+            for (String pair : props.split(";", -1)) {
+                if (pair.isEmpty()) {
+                    continue; // trailing ';'
+                }
+                int eq = pair.indexOf('=');
+                String key = eq < 0 ? pair : pair.substring(0, eq);
+                if (!DB2_JDBC_PARAMS.contains(key)) {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     /**

@@ -107,7 +107,7 @@ public class SSRFChecker {
     public static boolean isInternalIpByUrl(String url) {
 
         String host = url2host(url);
-        if (host.equals("")) {
+        if (host == null || host.equals("")) {
             return true; // 异常URL当成内网IP等非法URL处理
         }
 
@@ -116,7 +116,59 @@ public class SSRFChecker {
             return true; // 如果域名转换为IP异常，则认为是非法URL
         }
 
-        return isInternalIp(ip);
+        if (isInternalIp(ip)) {
+            return true;
+        }
+
+        // A hostname can resolve to several addresses; every one of them must be public.
+        return resolvesToInternalAddress(host);
+    }
+
+
+    /**
+     * Resolve all addresses of the host and check that none of them is a loopback, wildcard,
+     * link-local (including cloud metadata 169.254.169.254), private (site-local / unique-local),
+     * multicast or configured blocked address.
+     *
+     * @return true if any address is internal or the host cannot be resolved (fail closed).
+     */
+    private static boolean resolvesToInternalAddress(String host) {
+        try {
+            for (InetAddress address : InetAddress.getAllByName(host)) {
+                if (isInternalAddress(address)) {
+                    return true;
+                }
+            }
+            return false;
+        } catch (Exception e) {
+            logger.error("resolvesToInternalAddress exception " + e.getMessage());
+            return true;
+        }
+    }
+
+
+    /**
+     * Check a resolved address: loopback, wildcard, link-local (cloud metadata), private,
+     * multicast, IPv6 unique-local or inside a configured blocked subnet.
+     *
+     * @return true if the address must not be reached from the server.
+     */
+    public static boolean isInternalAddress(InetAddress address) {
+        if (address == null) {
+            return true;
+        }
+        if (address.isAnyLocalAddress() || address.isLoopbackAddress()
+                || address.isLinkLocalAddress() || address.isSiteLocalAddress()
+                || address.isMulticastAddress()) {
+            logger.error("[-] SSRF check failed. Internal address: " + address.getHostAddress());
+            return true;
+        }
+        byte[] raw = address.getAddress();
+        if (raw.length == 16 && (raw[0] & 0xfe) == 0xfc) {
+            // IPv6 unique local address fc00::/7
+            return true;
+        }
+        return raw.length == 4 && isInternalIp(address.getHostAddress());
     }
 
 

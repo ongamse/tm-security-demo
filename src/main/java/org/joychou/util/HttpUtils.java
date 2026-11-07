@@ -5,6 +5,8 @@ import org.apache.commons.httpclient.HttpClient;
 import org.apache.commons.httpclient.methods.GetMethod;
 import org.apache.commons.io.IOUtils;
 import org.apache.http.HttpResponse;
+import org.apache.http.client.config.RequestConfig;
+import org.apache.http.client.fluent.Executor;
 import org.apache.http.client.fluent.Request;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.impl.client.CloseableHttpClient;
@@ -14,6 +16,7 @@ import org.apache.http.impl.nio.client.HttpAsyncClients;
 import org.apache.http.util.EntityUtils;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
+import org.joychou.security.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -23,7 +26,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
-import java.net.URI;
 import java.net.URL;
 import java.net.URLConnection;
 import java.util.concurrent.*;
@@ -35,10 +37,40 @@ public class HttpUtils {
 
     private final static Logger logger = LoggerFactory.getLogger(HttpUtils.class);
 
+    private static final String ILLEGAL_URL = "[-] SSRF check failed. Illegal url.";
+
+    /**
+     * Destination check done before every outbound request: http/https only and the host must
+     * resolve only to public addresses. Redirects are disabled on every client below, so that a
+     * public url can not bounce the request to an internal one.
+     */
+    private static boolean isSafeUrl(String url) {
+        if (!SecurityUtil.checkOutboundUrl(url)) {
+            logger.error("Illegal outbound url rejected");
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Open a connection to a validated http/https url without following redirects.
+     */
+    private static HttpURLConnection openSafeConnection(String url) throws IOException {
+        URL u = new URL(url);
+        HttpURLConnection conn = (HttpURLConnection) u.openConnection();
+        conn.setInstanceFollowRedirects(false);
+        return conn;
+    }
+
     public static String commonHttpClient(String url) {
+
+        if (!isSafeUrl(url)) {
+            return ILLEGAL_URL;
+        }
 
         HttpClient client = new HttpClient();
         GetMethod method = new GetMethod(url);
+        method.setFollowRedirects(false);
 
         try {
             client.executeMethod(method); // send request
@@ -55,8 +87,12 @@ public class HttpUtils {
 
 
     public static String request(String url) {
+        if (!isSafeUrl(url)) {
+            return ILLEGAL_URL;
+        }
         try {
-            return Request.Get(url).execute().returnContent().toString();
+            Executor executor = Executor.newInstance(HttpClients.custom().disableRedirectHandling().build());
+            return executor.execute(Request.Get(url)).returnContent().toString();
         } catch (Exception e) {
             return e.getMessage();
         }
@@ -65,6 +101,10 @@ public class HttpUtils {
 
     public static String httpClient(String url) {
 
+        if (!isSafeUrl(url)) {
+            return ILLEGAL_URL;
+        }
+
         StringBuilder result = new StringBuilder();
 
         try {
@@ -72,7 +112,7 @@ public class HttpUtils {
             CloseableHttpClient client = HttpClients.createDefault();
             HttpGet httpGet = new HttpGet(url);
             // set redirect enable false
-            // httpGet.setConfig(RequestConfig.custom().setRedirectsEnabled(false).build());
+            httpGet.setConfig(RequestConfig.custom().setRedirectsEnabled(false).build());
             HttpResponse httpResponse = client.execute(httpGet); // send request
             BufferedReader rd = new BufferedReader(new InputStreamReader(httpResponse.getEntity().getContent()));
 
@@ -90,9 +130,11 @@ public class HttpUtils {
 
 
     public static String URLConnection(String url) {
+        if (!isSafeUrl(url)) {
+            return ILLEGAL_URL;
+        }
         try {
-            URL u = new URL(url);
-            URLConnection urlConnection = u.openConnection();
+            URLConnection urlConnection = openSafeConnection(url);
             BufferedReader in = new BufferedReader(new InputStreamReader(urlConnection.getInputStream())); //send request
             String inputLine;
             StringBuilder html = new StringBuilder();
@@ -114,11 +156,11 @@ public class HttpUtils {
      * UserAgent is Java/1.8.0_102.
      */
     public static String HttpURLConnection(String url) {
+        if (!isSafeUrl(url)) {
+            return ILLEGAL_URL;
+        }
         try {
-            URL u = new URL(url);
-            URLConnection urlConnection = u.openConnection();
-            HttpURLConnection conn = (HttpURLConnection) urlConnection;
-//             conn.setInstanceFollowRedirects(false);
+            HttpURLConnection conn = openSafeConnection(url);
 //             Many HttpURLConnection methods can send http request, such as getResponseCode, getHeaderField
             InputStream is = conn.getInputStream();  // send request
             BufferedReader in = new BufferedReader(new InputStreamReader(is));
@@ -143,9 +185,12 @@ public class HttpUtils {
      * @param url http request url
      */
     public static String Jsoup(String url) {
+        if (!isSafeUrl(url)) {
+            return ILLEGAL_URL;
+        }
         try {
             Document doc = Jsoup.connect(url)
-//                    .followRedirects(false)
+                    .followRedirects(false)
                     .timeout(3000)
                     .cookie("name", "joychou") // request cookies
                     .execute().parse();
@@ -162,8 +207,12 @@ public class HttpUtils {
      * UserAgent is <code>okhttp/2.5.0</code>.
      */
     public static String okhttp(String url) throws IOException {
+        if (!isSafeUrl(url)) {
+            return ILLEGAL_URL;
+        }
         OkHttpClient client = new OkHttpClient();
-//         client.setFollowRedirects(false);
+        client.setFollowRedirects(false);
+        client.setFollowSslRedirects(false);
         com.squareup.okhttp.Request ok_http = new com.squareup.okhttp.Request.Builder().url(url).build();
         return client.newCall(ok_http).execute().body().string();
     }
@@ -178,14 +227,14 @@ public class HttpUtils {
      */
     public static void imageIO(String url) {
         try {
-            URL u = new URL(url);
-            String protocol = u.getProtocol();
-            if (!"http".equalsIgnoreCase(protocol) && !"https".equalsIgnoreCase(protocol)) {
-                // reject file:, jar:, etc. so that local files can't be read
-                logger.error("Illegal url protocol: {}", protocol);
+            // http/https only (rejects file:, jar:, etc.), public hosts only
+            if (!isSafeUrl(url)) {
                 return;
             }
-            ImageIO.read(u); // send request
+            HttpURLConnection conn = openSafeConnection(url);
+            try (InputStream in = conn.getInputStream()) { // send request
+                ImageIO.read(in);
+            }
         } catch (IOException e) {
             logger.error(e.getMessage());
         }
@@ -200,8 +249,11 @@ public class HttpUtils {
      * @param url http request url
      */
     public static void IOUtils(String url) {
+        if (!isSafeUrl(url)) {
+            return;
+        }
         try {
-            IOUtils.toByteArray(URI.create(url));
+            IOUtils.toByteArray(openSafeConnection(url));
         } catch (IOException e) {
             logger.error(e.getMessage());
         }
@@ -209,7 +261,12 @@ public class HttpUtils {
 
 
     public static String HttpAsyncClients(String url) {
-        CloseableHttpAsyncClient httpclient = HttpAsyncClients.createDefault();
+        if (!isSafeUrl(url)) {
+            return ILLEGAL_URL;
+        }
+        CloseableHttpAsyncClient httpclient = HttpAsyncClients.custom()
+                .setDefaultRequestConfig(RequestConfig.custom().setRedirectsEnabled(false).build())
+                .build();
         try {
             httpclient.start();
             final HttpGet request = new HttpGet(url);
