@@ -3,11 +3,9 @@ package org.joychou.controller;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 
-import com.alibaba.fastjson.JSONPObject;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang.StringUtils;
 import org.joychou.security.SecurityUtil;
-import org.joychou.util.LoginUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
@@ -16,11 +14,13 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.view.json.MappingJackson2JsonView;
 import org.joychou.config.WebConfig;
-import org.joychou.util.WebUtils;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.security.Principal;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.regex.Pattern;
 
 
 /**
@@ -43,9 +43,22 @@ public class Jsonp {
      * http://localhost:8080/jsonp/vuln/referer?callback_=test
      */
     @RequestMapping(value = "/vuln/referer", produces = "application/javascript")
-    public String referer(HttpServletRequest request) {
+    public String referer(HttpServletRequest request, HttpServletResponse response) {
         String callback = request.getParameter(this.callback);
-        return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
+        if (callback == null || !Pattern.matches(CALLBACK_REGEX, callback)) {
+            return "error";
+        }
+        response.setHeader("X-Content-Type-Options", "nosniff");
+        return callback + "(" + JSON.toJSONString(userInfo(request)) + ")";
+    }
+
+    // Strict JSONP callback: identifier path of at most 64 chars; the only request-derived text ever echoed.
+    private static final String CALLBACK_REGEX = "^[A-Za-z_][A-Za-z0-9_.]{0,63}$";
+
+    private static Map<String, String> userInfo(HttpServletRequest request) {
+        Map<String, String> m = new HashMap<>();
+        m.put("Username", request.getUserPrincipal().getName());
+        return m;
     }
 
     /**
@@ -55,14 +68,18 @@ public class Jsonp {
      * http://localhost:8080/jsonp/vuln/emptyReferer?callback_=test
      */
     @RequestMapping(value = "/vuln/emptyReferer", produces = "application/javascript")
-    public String emptyReferer(HttpServletRequest request) {
+    public String emptyReferer(HttpServletRequest request, HttpServletResponse response) {
         String referer = request.getHeader("referer");
 
         if (null != referer && SecurityUtil.checkURL(referer) == null) {
             return "error";
         }
         String callback = request.getParameter(this.callback);
-        return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
+        if (callback == null || !Pattern.matches(CALLBACK_REGEX, callback)) {
+            return "error";
+        }
+        response.setHeader("X-Content-Type-Options", "nosniff");
+        return callback + "(" + JSON.toJSONString(userInfo(request)) + ")";
     }
 
     /**
@@ -100,14 +117,18 @@ public class Jsonp {
      * http://localhost:8080/jsonp/sec?callback_=test
      */
     @RequestMapping(value = "/sec/checkReferer", produces = "application/javascript")
-    public String safecode(HttpServletRequest request) {
+    public String safecode(HttpServletRequest request, HttpServletResponse response) {
         String referer = request.getHeader("referer");
 
         if (SecurityUtil.checkURL(referer) == null) {
             return "error";
         }
         String callback = request.getParameter(this.callback);
-        return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
+        if (callback == null || !Pattern.matches(CALLBACK_REGEX, callback)) {
+            return "error";
+        }
+        response.setHeader("X-Content-Type-Options", "nosniff");
+        return callback + "(" + JSON.toJSONString(userInfo(request)) + ")";
     }
 
     /**
@@ -126,17 +147,16 @@ public class Jsonp {
      * fastjsonp to jsonp
      */
     @GetMapping(value = "/fastjsonp/getToken", produces = "application/javascript")
-    public String getCsrfToken2(HttpServletRequest request) {
+    public String getCsrfToken2(HttpServletRequest request, HttpServletResponse response) {
         CsrfToken csrfToken = cookieCsrfTokenRepository.loadToken(request); // get csrf token
 
         String callback = request.getParameter("fastjsonpCallback");
         if (StringUtils.isNotBlank(callback)) {
-            if (!WebUtils.isValidJsonpCallback(callback)) {
+            if (!Pattern.matches(CALLBACK_REGEX, callback)) {
                 return "error";
             }
-            JSONPObject jsonpObj = new JSONPObject(callback);
-            jsonpObj.addParameter(csrfToken);
-            return jsonpObj.toString();
+            response.setHeader("X-Content-Type-Options", "nosniff");
+            return callback + "(" + JSON.toJSONString(csrfToken) + ")";
         } else {
             return csrfToken.toString();
         }
