@@ -39,6 +39,9 @@ public class HttpUtils {
 
     private static final String ILLEGAL_URL = "[-] SSRF check failed. Illegal url.";
 
+    // Constant body for every failed outbound request; exception details never reach the response.
+    public static final String REQUEST_FAILED = "Request failed.";
+
     private static final int CONNECT_TIMEOUT_MS = 3000;
     private static final int READ_TIMEOUT_MS = 6000;
 
@@ -95,7 +98,8 @@ public class HttpUtils {
             return new String(resBody);
 
         } catch (IOException e) {
-            return "Error: " + e.getMessage();
+            logger.error("Outbound request failed: {}", e.getClass().getSimpleName());
+            return REQUEST_FAILED;
         } finally {
             // Release the connection.
             method.releaseConnection();
@@ -114,7 +118,8 @@ public class HttpUtils {
                     .connectTimeout(CONNECT_TIMEOUT_MS)
                     .socketTimeout(READ_TIMEOUT_MS)).returnContent().toString();
         } catch (Exception e) {
-            return e.getMessage();
+            logger.error("Outbound request failed: {}", e.getClass().getSimpleName());
+            return REQUEST_FAILED;
         }
     }
 
@@ -145,7 +150,8 @@ public class HttpUtils {
             return result.toString();
 
         } catch (Exception e) {
-            return e.getMessage();
+            logger.error("Outbound request failed: {}", e.getClass().getSimpleName());
+            return REQUEST_FAILED;
         }
     }
 
@@ -168,7 +174,7 @@ public class HttpUtils {
             return html.toString();
         } catch (Exception e) {
             logger.error("Outbound request failed: {}", e.getClass().getSimpleName());
-            return e.getMessage();
+            return REQUEST_FAILED;
         }
     }
 
@@ -197,7 +203,7 @@ public class HttpUtils {
             return html.toString();
         } catch (IOException e) {
             logger.error("Outbound request failed: {}", e.getClass().getSimpleName());
-            return e.getMessage();
+            return REQUEST_FAILED;
         }
     }
 
@@ -220,7 +226,8 @@ public class HttpUtils {
                     .execute().parse();
             return doc.outerHtml();
         } catch (IOException e) {
-            return e.getMessage();
+            logger.error("Outbound request failed: {}", e.getClass().getSimpleName());
+            return REQUEST_FAILED;
         }
     }
 
@@ -304,7 +311,8 @@ public class HttpUtils {
             HttpResponse response = future.get(READ_TIMEOUT_MS, TimeUnit.MILLISECONDS);
             return EntityUtils.toString(response.getEntity());
         } catch (Exception e) {
-            return e.getMessage();
+            logger.error("Outbound request failed: {}", e.getClass().getSimpleName());
+            return REQUEST_FAILED;
         } finally {
             try {
                 httpclient.close();
