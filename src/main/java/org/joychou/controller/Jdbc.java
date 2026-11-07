@@ -22,12 +22,13 @@ public class Jdbc {
     public void postgresql(String jdbcUrlBase64) throws Exception{
         byte[] b = java.util.Base64.getDecoder().decode(jdbcUrlBase64);
         String jdbcUrl = new String(b, java.nio.charset.StandardCharsets.UTF_8);
-        // public host + allowlisted connection parameters only
-        if (!SecurityUtil.checkPostgresqlJdbcUrl(jdbcUrl)) {
+        // rebuilt from an allowlisted public host + allowlisted connection parameters only
+        String allowedUrl = SecurityUtil.resolveAllowedPostgresqlJdbcUrl(jdbcUrl);
+        if (allowedUrl == null) {
             log.warn("Illegal postgresql jdbc url rejected");
             return;
         }
-        DriverManager.getConnection(jdbcUrl);
+        DriverManager.getConnection(allowedUrl);
     }
 
     @RequestMapping("/db2")
@@ -35,11 +36,12 @@ public class Jdbc {
         Class.forName("com.ibm.db2.jcc.DB2Driver");
         byte[] b = java.util.Base64.getDecoder().decode(jdbcUrlBase64);
         String jdbcUrl = new String(b, java.nio.charset.StandardCharsets.UTF_8);
-        // public host + allowlisted connection properties only
-        if (!SecurityUtil.checkDb2JdbcUrl(jdbcUrl)) {
+        // rebuilt from an allowlisted public host + allowlisted connection properties only
+        String allowedUrl = SecurityUtil.resolveAllowedDb2JdbcUrl(jdbcUrl);
+        if (allowedUrl == null) {
             log.warn("Illegal db2 jdbc url rejected");
             return;
         }
-        DriverManager.getConnection(jdbcUrl);
+        DriverManager.getConnection(allowedUrl);
     }
 }

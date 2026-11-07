@@ -99,7 +99,7 @@ public class URLWhiteList {
     @GetMapping("/vuln/url_bypass")
     public void url_bypass(String url, HttpServletRequest req, HttpServletResponse res) throws IOException {
 
-        logger.info("url:  " + url);
+        logger.info("url_bypass request received");
 
         if (url == null || !SecurityUtil.isHttp(url)) {
             return;
@@ -107,7 +107,6 @@ public class URLWhiteList {
 
         // strict host extraction without building a java.net.URL from request data
         String host = SecurityUtil.gethost(url);
-        logger.info("host:  " + host);
 
         // endsWith .
         for (String domain : domainwhitelist) {
