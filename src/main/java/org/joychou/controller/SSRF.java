@@ -339,11 +339,40 @@ public class SSRF {
         if (allowed == null) {
             return "Dangerous url";
         }
-        return HttpRequest.get(allowed.toExternalForm())
+        // the request value is only a key: the base url comes from the fixed server side key->url map
+        String target = externalApiUrl(allowed);
+        if (target == null) {
+            return "Dangerous url";
+        }
+        return HttpRequest.get(target)
                 .setFollowRedirects(false)
                 .timeout(6000)
                 .execute()
                 .body();
+    }
+
+    /**
+     * Maps the validated host (key) to a constant base url taken from the server side allowlist
+     * (<code>WebConfig.getSafeDomains()</code>); the base url is never the request string.
+     * Only the already validated path/query of the resolved url is appended.
+     *
+     * @return the external api url; null when the host key is not in the map
+     */
+    private static String externalApiUrl(URL resolved) {
+        java.util.Map<String, String> baseByKey = new java.util.HashMap<>();
+        for (String domain : org.joychou.config.WebConfig.getSafeDomains()) {
+            if (domain != null && !domain.trim().isEmpty()) {
+                String key = domain.trim().toLowerCase(java.util.Locale.ROOT);
+                baseByKey.put(key, "https://" + key);
+            }
+        }
+        String base = baseByKey.get(resolved.getHost().toLowerCase(java.util.Locale.ROOT));
+        if (base == null) {
+            return null;
+        }
+        String path = resolved.getPath() == null ? "" : resolved.getPath();
+        String query = resolved.getQuery() == null ? "" : "?" + resolved.getQuery();
+        return base + path + query;
     }
 
 

@@ -71,6 +71,22 @@ public class SQLI {
         }
     }
 
+    /**
+     * The lookup reference is the authenticated principal, never the request value. A request supplied
+     * username is only accepted when it equals the authenticated username; anything else is 403.
+     */
+    private static String authenticatedUsername(HttpServletRequest request, String requestedUsername) {
+        Principal principal = request.getUserPrincipal();
+        if (principal == null || principal.getName() == null) {
+            throw new ForbiddenReferenceException();
+        }
+        String authenticated = principal.getName();
+        if (requestedUsername != null && !authenticated.equals(requestedUsername)) {
+            throw new ForbiddenReferenceException();
+        }
+        return authenticated;
+    }
+
 
     /**
      * <p>Sql injection jbdc vuln code.</p><br>
@@ -78,8 +94,10 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/jdbc/vuln?username=joychou">http://localhost:8080/sqli/jdbc/vuln?username=joychou</a>
      */
     @RequestMapping("/jdbc/vuln")
-    public String jdbc_sqli_vul(@RequestParam("username") String username) {
+    public String jdbc_sqli_vul(HttpServletRequest request,
+                                @RequestParam(value = "username", required = false) String requestedUsername) {
 
+        String username = authenticatedUsername(request, requestedUsername);
         StringBuilder result = new StringBuilder();
 
         try {
@@ -93,7 +111,7 @@ public class SQLI {
             String sql = "select * from users where username = ?";
             PreparedStatement statement = con.prepareStatement(sql);
             statement.setString(1, username);
-            logger.info(statement.toString());
+            logger.info("Executing parameterized user query");
             ResultSet rs = statement.executeQuery();
 
             while (rs.next()) {
@@ -101,7 +119,6 @@ public class SQLI {
                 String res_pwd = rs.getString("password");
                 String info = String.format("%s: %s\n", res_name, res_pwd);
                 result.append(info);
-                logger.info(info);
             }
             rs.close();
             con.close();
@@ -138,7 +155,7 @@ public class SQLI {
             PreparedStatement st = con.prepareStatement(sql);
             st.setString(1, username);
 
-            logger.info(st.toString());  // sql after prepare statement
+            logger.info("Executing parameterized user query");
             ResultSet rs = st.executeQuery();
 
             while (rs.next()) {
@@ -146,7 +163,6 @@ public class SQLI {
                 String res_pwd = rs.getString("password");
                 String info = String.format("%s: %s\n", res_name, res_pwd);
                 result.append(info);
-                logger.info(info);
             }
 
             rs.close();
@@ -167,8 +183,10 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/jdbc/ps/vuln?username=joychou' or 'a'='a">http://localhost:8080/sqli/jdbc/ps/vuln?username=joychou' or 'a'='a</a>
      */
     @RequestMapping("/jdbc/ps/vuln")
-    public String jdbc_ps_vuln(@RequestParam("username") String username) {
+    public String jdbc_ps_vuln(HttpServletRequest request,
+                               @RequestParam(value = "username", required = false) String requestedUsername) {
 
+        String username = authenticatedUsername(request, requestedUsername);
         StringBuilder result = new StringBuilder();
         try {
             Class.forName(driver);
@@ -181,7 +199,7 @@ public class SQLI {
             PreparedStatement st = con.prepareStatement(sql);
             st.setString(1, username);
 
-            logger.info(st.toString());
+            logger.info("Executing parameterized user query");
             ResultSet rs = st.executeQuery();
 
             while (rs.next()) {
@@ -189,7 +207,6 @@ public class SQLI {
                 String res_pwd = rs.getString("password");
                 String info = String.format("%s: %s\n", res_name, res_pwd);
                 result.append(info);
-                logger.info(info);
             }
 
             rs.close();
