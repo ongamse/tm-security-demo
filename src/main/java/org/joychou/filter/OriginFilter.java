@@ -34,13 +34,13 @@ public class OriginFilter implements Filter {
         HttpServletResponse response = (HttpServletResponse) res;
 
         String origin = request.getHeader("Origin");
-        logger.info("[+] Origin: " + origin + "\tCurrent url:" + request.getRequestURL());
+        logger.info("[+] Origin check on cors originFilter endpoint");
 
         // 以file协议访问html，origin为字符串的null，所以依然会走安全check逻辑
         // safeCorsOrigin rebuilds scheme://host[:port] from the allowlisted parts; the raw header is never echoed.
         String allowedOrigin = SecurityUtil.safeCorsOrigin(origin);
         if (origin != null && allowedOrigin == null) {
-            logger.error("[-] Origin check error. Current url:" + request.getRequestURL());
+            logger.error("[-] Origin check error. Origin rejected");
             response.setStatus(response.SC_FORBIDDEN);
             response.getWriter().println("Invaid cors config by joychou.");
             return;

@@ -1,6 +1,7 @@
 package org.joychou.config;
 
 import org.joychou.security.CustomCorsProcessor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.web.WebMvcRegistrationsAdapter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -12,6 +13,9 @@ import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandl
 @Configuration
 public class CustomCorsConfig extends WebMvcRegistrationsAdapter {
 
+    @Value("${joychou.security.cors.allowed-origins:}")
+    private String[] corsAllowedOrigins;
+
     /**
      * 设置cors origin白名单。区分http和https，并且默认不会拦截同域请求。
      */
@@ -21,9 +25,9 @@ public class CustomCorsConfig extends WebMvcRegistrationsAdapter {
             @Override
             public void addCorsMappings(CorsRegistry registry) {
                 // 为了支持一级域名，重写了checkOrigin
-                // Explicit origins instead of the default allow-all; other origins are
-                // additionally validated by CustomCorsProcessor via SecurityUtil.checkURL.
-                String[] allowOrigins = {"joychou.org", "http://test.joychou.me"};
+                // Explicit origins from the server side allowlist (no wildcard / pattern); other
+                // origins are validated by CustomCorsProcessor against the same allowlist.
+                String[] allowOrigins = WebConfig.parseCorsOrigins(corsAllowedOrigins).toArray(new String[0]);
                 registry.addMapping("/cors/sec/webMvcConfigurer") // /**表示所有路由path
                         .allowedOrigins(allowOrigins)
                         .allowedMethods("GET", "POST")
