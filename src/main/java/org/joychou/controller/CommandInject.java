@@ -90,7 +90,7 @@ public class CommandInject {
         if (!SSRFChecker.isSafeHttpUrl(url)) {
             return "Bad boy. I got u.";
         }
-        return HtmlUtils.htmlEscape(String.valueOf(HttpUtils.URLConnection(url)));
+        return HtmlUtils.htmlEscape(HttpUtils.URLConnection(url));
     }
 
     @GetMapping("/codeinject/sec")

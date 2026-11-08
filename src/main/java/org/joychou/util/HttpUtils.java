@@ -167,7 +167,8 @@ public class HttpUtils {
             }
             return "Error: Too many redirects";
         } catch (IOException e) {
-            return "Error: " + e.getMessage();
+            logger.error("HTTP request failed", e);
+            return "Request failed";
         }
     }
 
@@ -191,7 +192,8 @@ public class HttpUtils {
             }
             return "Too many redirects";
         } catch (Exception e) {
-            return e.getMessage();
+            logger.error("HTTP request failed", e);
+            return "Request failed";
         }
     }
 
@@ -201,7 +203,8 @@ public class HttpUtils {
             // The original reader joined the lines without separators; keep that response shape.
             return safeApacheGet(url).replaceAll("\\r?\\n", "");
         } catch (Exception e) {
-            return e.getMessage();
+            logger.error("HTTP request failed", e);
+            return "Request failed";
         }
     }
 
@@ -249,7 +252,7 @@ public class HttpUtils {
             return html.toString();
         } catch (Exception e) {
             logger.error("HTTP request failed", e);
-            return e.getMessage();
+            return "Request failed";
         }
     }
 
@@ -274,7 +277,7 @@ public class HttpUtils {
             return html.toString();
         } catch (IOException e) {
             logger.error("HTTP request failed", e);
-            return e.getMessage();
+            return "Request failed";
         }
     }
 
@@ -296,7 +299,8 @@ public class HttpUtils {
                 return doc.outerHtml();
             }
         } catch (IOException e) {
-            return e.getMessage();
+            logger.error("HTTP request failed", e);
+            return "Request failed";
         } finally {
             if (conn != null) {
                 conn.disconnect();
@@ -396,7 +400,8 @@ public class HttpUtils {
         try {
             safe = safeUri(url);
         } catch (IOException e) {
-            return "SSRF check failed: illegal url";
+            logger.error("HTTP request failed", e);
+            return "Request failed";
         }
         CloseableHttpAsyncClient httpclient = HttpAsyncClients.createDefault();
         try {
@@ -408,7 +413,8 @@ public class HttpUtils {
             HttpResponse response = future.get(6000, TimeUnit.MILLISECONDS);
             return EntityUtils.toString(response.getEntity());
         } catch (Exception e) {
-            return e.getMessage();
+            logger.error("HTTP request failed", e);
+            return "Request failed";
         } finally {
             try {
                 httpclient.close();

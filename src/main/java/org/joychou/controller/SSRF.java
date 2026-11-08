@@ -45,7 +45,7 @@ public class SSRF {
      */
     @RequestMapping(value = "/urlConnection/vuln", method = {RequestMethod.POST, RequestMethod.GET})
     public String URLConnectionVuln(String url) {
-        return HttpUtils.URLConnection(url);
+        return HtmlUtils.htmlEscape(HttpUtils.URLConnection(url));
     }
 
 
@@ -59,7 +59,7 @@ public class SSRF {
 
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.URLConnection(url);
+            return HtmlUtils.htmlEscape(HttpUtils.URLConnection(url));
         } catch (SSRFException | IOException e) {
             logger.error("SSRF request failed", e);
             return "Request failed";
@@ -78,7 +78,7 @@ public class SSRF {
     public String httpURLConnection(@RequestParam String url) {
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.HttpURLConnection(url);
+            return HtmlUtils.htmlEscape(HttpUtils.HttpURLConnection(url));
         } catch (SSRFException | IOException e) {
             logger.error("SSRF request failed", e);
             return "Request failed";
@@ -90,7 +90,7 @@ public class SSRF {
 
     @GetMapping("/HttpURLConnection/vuln")
     public String httpURLConnectionVuln(@RequestParam String url) {
-        return HttpUtils.HttpURLConnection(url);
+        return HtmlUtils.htmlEscape(HttpUtils.HttpURLConnection(url));
     }
 
     /**
@@ -178,7 +178,7 @@ public class SSRF {
 
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.okhttp(url);
+            return HtmlUtils.htmlEscape(HttpUtils.okhttp(url));
         } catch (SSRFException | IOException e) {
             logger.error("SSRF request failed", e);
             return "Request failed";
@@ -198,7 +198,7 @@ public class SSRF {
 
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.httpClient(url);
+            return HtmlUtils.htmlEscape(HttpUtils.httpClient(url));
         } catch (SSRFException | IOException e) {
             logger.error("SSRF request failed", e);
             return "Request failed";
@@ -219,7 +219,7 @@ public class SSRF {
 
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.commonHttpClient(url);
+            return HtmlUtils.htmlEscape(HttpUtils.commonHttpClient(url));
         } catch (SSRFException | IOException e) {
             logger.error("SSRF request failed", e);
             return "Request failed";
@@ -239,7 +239,7 @@ public class SSRF {
 
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.Jsoup(url);
+            return HtmlUtils.htmlEscape(HttpUtils.Jsoup(url));
         } catch (SSRFException | IOException e) {
             logger.error("SSRF request failed", e);
             return "Request failed";
@@ -277,7 +277,7 @@ public class SSRF {
      */
     @GetMapping("/HttpSyncClients/vuln")
     public String HttpSyncClients(@RequestParam("url") String url) {
-        return HttpUtils.HttpAsyncClients(url);
+        return HtmlUtils.htmlEscape(HttpUtils.HttpAsyncClients(url));
     }
 
 
