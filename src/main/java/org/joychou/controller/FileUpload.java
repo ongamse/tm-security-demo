@@ -202,14 +202,14 @@ public class FileUpload {
             logger.info("[-] Refusing to delete path outside upload folder");
             return;
         }
-        File delFile = target.toFile();
-        if(delFile.isFile() && delFile.exists()) {
-            if (delFile.delete()) {
+        try {
+            // Single atomic operation instead of isFile()/exists() followed by delete().
+            if (Files.deleteIfExists(target)) {
                 logger.info("[+] Uploaded file deleted successfully");
-                return;
             }
+        } catch (IOException e) {
+            logger.info("Uploaded file delete failed", e);
         }
-        logger.info("Uploaded file delete failed");
     }
 
     /**

@@ -7,7 +7,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -52,22 +51,20 @@ public class PathTraversal {
             logger.info("Illegal file path");
             return "Bad boy. Illegal file path.";
         }
-        // Resolve symlinks so a link inside the base cannot point outside it.
-        if (Files.exists(target)) {
+        // No separate exists()/isDirectory() pre-check (check-then-use race): resolve symlinks
+        // so a link inside the base cannot point outside it, then read the resolved path.
+        // A missing file or a directory makes toRealPath/readAllBytes throw IOException.
+        try {
             Path realBase = base.toRealPath();
             Path realTarget = target.toRealPath();
             if (!realTarget.startsWith(realBase)) {
                 logger.info("Illegal file path");
                 return "Bad boy. Illegal file path.";
             }
-            target = realTarget;
-        }
-
-        File f = target.toFile();
-        if (f.exists() && !f.isDirectory()) {
-            byte[] data = Files.readAllBytes(target);
+            byte[] data = Files.readAllBytes(realTarget);
             return new String(Base64.encodeBase64(data));
-        } else {
+        } catch (IOException e) {
+            logger.info("Image file could not be read", e);
             return "File doesn't exist or is not a file.";
         }
     }
