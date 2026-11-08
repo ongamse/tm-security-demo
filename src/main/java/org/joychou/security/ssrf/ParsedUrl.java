@@ -234,10 +234,10 @@ public final class ParsedUrl {
      * @throws URISyntaxException if a percent escape cannot be represented safely (fail closed)
      */
     public URI toURI() throws URISyntaxException {
-        String outScheme = "https".equals(scheme) ? "https" : "http";
+        // scheme is one of the two constants assigned by parse(), never a copy of the input.
         String plainPath = decode(path, PATH_CHARS, false);
         String plainQuery = query == null ? null : decode(query, QUERY_CHARS, true);
-        return new URI(outScheme, null, host, port, plainPath, plainQuery, null);
+        return new URI(scheme, null, host, port, plainPath, plainQuery, null);
     }
 
     /**

@@ -219,8 +219,19 @@ public class HttpUtils {
      * @throws IOException if the url (or any redirect target) is not allowed
      */
     public static HttpURLConnection openSafeConnection(String url) throws IOException {
+        return openSafeConnection(url, false);
+    }
+
+    /**
+     * Same as {@link #openSafeConnection(String)}; when httpsOnly is set the url and every
+     * redirect hop must use https, so the request is never sent in cleartext.
+     */
+    private static HttpURLConnection openSafeConnection(String url, boolean httpsOnly) throws IOException {
         URI current = safeUri(url);
         for (int i = 0; i <= MAX_REDIRECTS; i++) {
+            if (httpsOnly && !"https".equals(current.getScheme())) {
+                throw new IOException("TLS required: refusing non-https url");
+            }
             HttpURLConnection conn = (HttpURLConnection) current.toURL().openConnection();
             conn.setInstanceFollowRedirects(false);
             conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
@@ -239,8 +250,19 @@ public class HttpUtils {
 
 
     public static String URLConnection(String url) {
+        return readAll(url, false);
+    }
+
+    /**
+     * Like {@link #URLConnection(String)} but only ever talks https (including redirects).
+     */
+    public static String URLConnectionHttpsOnly(String url) {
+        return readAll(url, true);
+    }
+
+    private static String readAll(String url, boolean httpsOnly) {
         try {
-            URLConnection urlConnection = openSafeConnection(url);
+            URLConnection urlConnection = openSafeConnection(url, httpsOnly);
             BufferedReader in = new BufferedReader(new InputStreamReader(urlConnection.getInputStream())); //send request
             String inputLine;
             StringBuilder html = new StringBuilder();
