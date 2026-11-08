@@ -1,7 +1,6 @@
 package org.joychou.controller;
 
 import org.springframework.web.util.HtmlUtils;
-import com.fasterxml.uuid.Generators;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Controller;
@@ -12,12 +11,13 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.UUID;
+import java.nio.file.attribute.PosixFilePermissions;
+import java.security.SecureRandom;
 
 import org.joychou.security.SecurityUtil;
 
@@ -35,6 +35,8 @@ public class FileUpload {
     private static final String UPLOADED_FOLDER = "/tmp/";
     private final Logger logger = LoggerFactory.getLogger(this.getClass());
     private static String randomFilePath = "";
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+    private static final char[] HEX_CHARS = "0123456789abcdef".toCharArray();
 
     // uplaod any file
     @GetMapping("/any")
@@ -224,19 +226,50 @@ public class FileUpload {
             throw new IOException("Illegal file name");
         }
         String suffix = fileName.substring(fileName.lastIndexOf("."));
-        UUID uuid = Generators.timeBasedGenerator().generate();
-        Path randomPath = resolveUploadPath(uuid + suffix);
-        randomFilePath = randomPath.toString();
-        // 随机生成一个同后缀名的文件
-        File convFile = randomPath.toFile();
-        boolean ret = convFile.createNewFile();
-        if (!ret) {
+        // 随机生成一个同后缀名的文件 (unpredictable name, atomic owner-only create)
+        Path randomPath = null;
+        for (int attempt = 0; attempt < 2 && randomPath == null; attempt++) {
+            Path candidate = resolveUploadPath(secureRandomName() + suffix);
+            try {
+                randomPath = createOwnerOnlyFile(candidate);
+            } catch (FileAlreadyExistsException e) {
+                logger.info("[-] Random file name collision, retrying");
+            }
+        }
+        if (randomPath == null) {
             return null;
         }
-        FileOutputStream fos = new FileOutputStream(convFile);
-        fos.write(multiFile.getBytes());
-        fos.close();
-        return convFile;
+        randomFilePath = randomPath.toString();
+        Files.write(randomPath, multiFile.getBytes());
+        return randomPath.toFile();
+    }
+
+    /**
+     * 128 bits from SecureRandom rendered as lowercase hex.
+     */
+    private static String secureRandomName() {
+        byte[] raw = new byte[16];
+        SECURE_RANDOM.nextBytes(raw);
+        char[] out = new char[raw.length * 2];
+        for (int i = 0; i < raw.length; i++) {
+            int v = raw[i] & 0xFF;
+            out[i * 2] = HEX_CHARS[v >>> 4];
+            out[i * 2 + 1] = HEX_CHARS[v & 0x0F];
+        }
+        return new String(out);
+    }
+
+    /**
+     * Atomically create a new file (fails if it exists), owner read/write only
+     * where the filesystem supports POSIX permissions.
+     */
+    private static Path createOwnerOnlyFile(Path path) throws IOException {
+        try {
+            return Files.createFile(path,
+                    PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------")));
+        } catch (UnsupportedOperationException e) {
+            return Files.createFile(path);
+        }
     }
 
     /**
