@@ -1,6 +1,9 @@
 package org.joychou.controller;
 
 import com.thoughtworks.xstream.XStream;
+import com.thoughtworks.xstream.security.NoTypePermission;
+import com.thoughtworks.xstream.security.NullPermission;
+import com.thoughtworks.xstream.security.PrimitiveTypePermission;
 import com.thoughtworks.xstream.io.xml.DomDriver;
 import com.thoughtworks.xstream.io.xml.DomReader;
 import org.joychou.dao.User;
@@ -35,6 +38,11 @@ public class XStreamRce {
         dbf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
         Document document = dbf.newDocumentBuilder().parse(new InputSource(new StringReader(xml)));
         XStream xstream = new XStream(new DomDriver());
+        // Deny by default; allow only the types this endpoint legitimately binds.
+        xstream.addPermission(NoTypePermission.NONE);
+        xstream.addPermission(NullPermission.NULL);
+        xstream.addPermission(PrimitiveTypePermission.PRIMITIVES);
+        xstream.allowTypes(new Class[]{String.class, User.class});
         xstream.unmarshal(new DomReader(document));
         return "xstream";
     }
