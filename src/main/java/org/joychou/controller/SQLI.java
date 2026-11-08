@@ -6,11 +6,17 @@ import org.joychou.dao.User;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
 import java.sql.*;
 import java.util.List;
+import java.util.stream.Collectors;
 
 
 /**
@@ -40,6 +46,61 @@ public class SQLI {
 
     @Resource
     private UserMapper userMapper;
+
+    /**
+     * Name of the authenticated caller, or null when there is none.
+     */
+    private static String currentUsername() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated() || auth instanceof AnonymousAuthenticationToken) {
+            return null;
+        }
+        return auth.getName();
+    }
+
+    private static boolean isCurrentUser(String username) {
+        String current = currentUsername();
+        return current != null && current.equals(username);
+    }
+
+    private static boolean isAdmin() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated() || auth instanceof AnonymousAuthenticationToken) {
+            return false;
+        }
+        for (GrantedAuthority a : auth.getAuthorities()) {
+            if ("ROLE_ADMIN".equals(a.getAuthority())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Authorization check: a caller may only look up their own record unless they are an admin.
+     */
+    private static void requireSelfOrAdmin(String username) {
+        if (!isAdmin() && !isCurrentUser(username)) {
+            throw new AccessDeniedException("Access denied");
+        }
+    }
+
+    /**
+     * Returns a copy of the user without the password (hash).
+     */
+    private static User redact(User u) {
+        if (u == null) {
+            return null;
+        }
+        User copy = new User();
+        copy.setId(u.getId());
+        copy.setUsername(u.getUsername());
+        return copy;
+    }
+
+    private static List<User> redact(List<User> users) {
+        return users.stream().map(SQLI::redact).collect(Collectors.toList());
+    }
 
 
     /**
@@ -94,6 +155,7 @@ public class SQLI {
     @RequestMapping("/jdbc/sec")
     public String jdbc_sqli_sec(@RequestParam("username") String username) {
 
+        requireSelfOrAdmin(username);
         StringBuilder result = new StringBuilder();
         try {
             Class.forName(driver);
@@ -111,9 +173,9 @@ public class SQLI {
             ResultSet rs = st.executeQuery();
 
             while (rs.next()) {
+                // Never return the stored password (hash) to the caller.
                 String res_name = rs.getString("username");
-                String res_pwd = rs.getString("password");
-                String info = String.format("%s: %s\n", res_name, res_pwd);
+                String info = String.format("%s\n", res_name);
                 result.append(info);
                 logger.info(info);
             }
@@ -181,7 +243,8 @@ public class SQLI {
      */
     @GetMapping("/mybatis/vuln01")
     public List<User> mybatisVuln01(@RequestParam("username") String username) {
-        return userMapper.findByUserNameVuln01(username);
+        requireSelfOrAdmin(username);
+        return redact(userMapper.findByUserNameVuln01(username));
     }
 
     /**
@@ -191,7 +254,15 @@ public class SQLI {
      */
     @GetMapping("/mybatis/vuln02")
     public List<User> mybatisVuln02(@RequestParam("username") String username) {
-        return userMapper.findByUserNameVuln02(username);
+        // Fuzzy search: only return rows the caller is allowed to see.
+        List<User> users = userMapper.findByUserNameVuln02(username);
+        if (!isAdmin()) {
+            String current = currentUsername();
+            users = users.stream()
+                    .filter(u -> current != null && current.equals(u.getUsername()))
+                    .collect(Collectors.toList());
+        }
+        return redact(users);
     }
 
     /**
@@ -233,7 +304,8 @@ public class SQLI {
      */
     @GetMapping("/mybatis/sec01")
     public User mybatisSec01(@RequestParam("username") String username) {
-        return userMapper.findByUserName(username);
+        requireSelfOrAdmin(username);
+        return redact(userMapper.findByUserName(username));
     }
 
     /**
@@ -242,7 +314,11 @@ public class SQLI {
      */
     @GetMapping("/mybatis/sec02")
     public User mybatisSec02(@RequestParam("id") Integer id) {
-        return userMapper.findById(id);
+        User found = userMapper.findById(id);
+        if (!isAdmin() && (found == null || !isCurrentUser(found.getUsername()))) {
+            throw new AccessDeniedException("Access denied");
+        }
+        return redact(found);
     }
 
 
