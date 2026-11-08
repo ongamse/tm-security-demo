@@ -330,7 +330,9 @@ public class SSRFChecker {
             return null;
         }
         try {
-            return parsed.toURI();
+            URI built = parsed.toURI();
+            // A registry based authority (no parsable host) must never be requested.
+            return built.getHost() == null ? null : built;
         } catch (URISyntaxException e) {
             logger.error("[-] SSRF check failed. Rejected host.");
             return null;

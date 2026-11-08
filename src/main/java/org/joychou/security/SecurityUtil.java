@@ -16,7 +16,6 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
@@ -28,9 +27,6 @@ public class SecurityUtil {
     private static final Pattern CMD_ARG_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.=-]+$");
     private static final Set<String> CMD_ALLOWLIST = new HashSet<>(
             Arrays.asList("whoami", "id", "date", "hostname", "uname", "pwd", "uptime", "ls"));
-    private static final Set<String> JDBC_SUBPROTOCOLS = new HashSet<>(Arrays.asList("postgresql", "db2"));
-    private static final Set<String> JDBC_PORTS = new HashSet<>(Arrays.asList("5432", "5433", "50000", "50001"));
-    private static final Pattern JDBC_DB_NAME_PATTERN = Pattern.compile("^[A-Za-z0-9_-]{1,63}$");
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
 
     private static final String HEADER_VALUE_CHARS =
@@ -69,79 +65,6 @@ public class SecurityUtil {
         }
         // Strict authority parsing (no userinfo / odd characters); the raw string never reaches URI/URL.
         return ParsedUrl.hostOf(url);
-    }
-
-
-    /**
-     * Validate a JDBC url supplied by a user: it must use the expected driver scheme, carry no
-     * driver properties (those can load arbitrary classes / open arbitrary sockets) and its host
-     * must not be an internal address.
-     *
-     * @param jdbcUrl user supplied jdbc url, e.g. jdbc:postgresql://db.example.com:5432/test
-     * @param subprotocol expected sub protocol, e.g. postgresql or db2
-     * @return true if the url may be used, false otherwise
-     */
-    public static boolean checkJdbcUrl(String jdbcUrl, String subprotocol) {
-        return buildJdbcUrl(jdbcUrl, subprotocol) != null;
-    }
-
-
-    /**
-     * Validate a user supplied JDBC url and rebuild it from the validated parts. Only the fixed
-     * driver prefixes in {@link #JDBC_SUBPROTOCOLS}, an allowlisted port (or none), a strict host
-     * name that resolves to public addresses only and a plain database name are accepted.
-     * Driver properties (query, ';', '=') are always rejected. Callers must connect with the
-     * returned string only, never with the raw input.
-     *
-     * @param jdbcUrl user supplied jdbc url, e.g. jdbc:postgresql://db.example.com:5432/test
-     * @param subprotocol expected sub protocol, e.g. postgresql or db2
-     * @return server-constructed jdbc url, or null if the url must not be used
-     */
-    public static String buildJdbcUrl(String jdbcUrl, String subprotocol) {
-        if (jdbcUrl == null || subprotocol == null || !JDBC_SUBPROTOCOLS.contains(subprotocol)) {
-            return null;
-        }
-        String prefix = "jdbc:" + subprotocol + "://";
-        if (!jdbcUrl.startsWith(prefix)) {
-            return null;
-        }
-        String rest = jdbcUrl.substring(prefix.length());
-        String authority = rest;
-        String database = "";
-        int slash = rest.indexOf('/');
-        if (slash >= 0) {
-            authority = rest.substring(0, slash);
-            database = rest.substring(slash + 1);
-        }
-        if (!database.isEmpty() && !JDBC_DB_NAME_PATTERN.matcher(database).matches()) {
-            return null;
-        }
-        String host = authority;
-        int port = -1;
-        int colon = authority.lastIndexOf(':');
-        if (colon >= 0) {
-            host = authority.substring(0, colon);
-            String portPart = authority.substring(colon + 1);
-            if (!JDBC_PORTS.contains(portPart)) {
-                return null;
-            }
-            port = Integer.parseInt(portPart);
-        }
-        if (!ParsedUrl.isValidHost(host)) {
-            return null;
-        }
-        host = host.toLowerCase(Locale.ROOT);
-        if (!SSRFChecker.isPublicHost(host)) {
-            return null;
-        }
-        StringBuilder sb = new StringBuilder(prefix).append(host);
-        if (port != -1) {
-            sb.append(':').append(port);
-        }
-        if (!database.isEmpty()) {
-            sb.append('/').append(database);
-        }
-        return sb.toString();
     }
 
 
