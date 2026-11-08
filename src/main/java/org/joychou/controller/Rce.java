@@ -1,5 +1,6 @@
 package org.joychou.controller;
 
+import org.springframework.web.util.HtmlUtils;
 import groovy.lang.GroovyShell;
 import lombok.extern.slf4j.Slf4j;
 import org.codehaus.groovy.ast.expr.BinaryExpression;
@@ -69,9 +70,9 @@ public class Rce {
             inBr.close();
             in.close();
         } catch (Exception e) {
-            return e.toString();
+            return HtmlUtils.htmlEscape(e.toString());
         }
-        return sb.toString();
+        return HtmlUtils.htmlEscape(sb.toString());
     }
 
 

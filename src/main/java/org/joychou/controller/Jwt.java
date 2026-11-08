@@ -1,5 +1,6 @@
 package org.joychou.controller;
 
+import org.springframework.web.util.HtmlUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.joychou.util.CookieUtils;
 import org.joychou.util.JwtUtils;
@@ -61,7 +62,7 @@ public class Jwt {
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             return "Invalid jwt token";
         }
-        return "Current jwt user is " + nickname;
+        return "Current jwt user is " + HtmlUtils.htmlEscape(nickname);
     }
 
 }
