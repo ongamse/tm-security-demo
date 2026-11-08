@@ -3,6 +3,7 @@ package org.joychou.controller;
 import org.springframework.web.util.HtmlUtils;
 import cn.hutool.http.HttpUtil;
 import org.joychou.security.SecurityUtil;
+import org.joychou.security.ssrf.SSRFChecker;
 import org.joychou.security.ssrf.SSRFException;
 import org.joychou.service.HttpService;
 import org.joychou.util.HttpUtils;
@@ -311,10 +312,12 @@ public class SSRF {
     @GetMapping("/dnsrebind/vuln")
     public String DnsRebind(String url) {
         java.security.Security.setProperty("networkaddress.cache.negative.ttl" , "0");
-        if (!SecurityUtil.checkSSRFWithoutRedirect(url)) {
+        // Request only the URI rebuilt from validated components, never the raw string.
+        java.net.URI safe = SSRFChecker.canonicalize(url);
+        if (safe == null) {
             return "Dangerous url";
         }
-        return HttpUtil.get(url);
+        return HttpUtil.get(safe.toString());
     }
 
 

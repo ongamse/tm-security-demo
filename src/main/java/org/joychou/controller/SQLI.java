@@ -6,6 +6,7 @@ import org.joychou.dao.User;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -76,13 +77,39 @@ public class SQLI {
         return false;
     }
 
-    /**
-     * Authorization check: a caller may only look up their own record unless they are an admin.
-     */
-    private static void requireSelfOrAdmin(String username) {
-        if (!isAdmin() && !isCurrentUser(username)) {
-            throw new AccessDeniedException("Access denied");
+    @ResponseStatus(HttpStatus.UNAUTHORIZED)
+    private static class UnauthenticatedException extends RuntimeException {
+        UnauthenticatedException() {
+            super("Authentication required");
         }
+    }
+
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    private static class ForbiddenLookupException extends RuntimeException {
+        ForbiddenLookupException() {
+            super("Access denied");
+        }
+    }
+
+    /**
+     * Lookup key for user queries. It is always the server-owned name of the authenticated
+     * principal, never the request string. A request username is accepted only for backwards
+     * compatibility and only when it names the caller.
+     *
+     * @param requested username supplied by the client (may be null)
+     * @return the authenticated principal's name
+     * @throws UnauthenticatedException (401) when there is no authenticated principal
+     * @throws ForbiddenLookupException (403) when the requested username is not the caller
+     */
+    private static String lookupKey(String requested) {
+        String current = currentUsername();
+        if (current == null) {
+            throw new UnauthenticatedException();
+        }
+        if (requested != null && !requested.equals(current)) {
+            throw new ForbiddenLookupException();
+        }
+        return current;
     }
 
     /**
@@ -111,6 +138,8 @@ public class SQLI {
     @RequestMapping("/jdbc/vuln")
     public String jdbc_sqli_vul(@RequestParam("username") String username) {
 
+        // The lookup key is the authenticated principal, not the request string.
+        final String owner = lookupKey(username);
         StringBuilder result = new StringBuilder();
 
         try {
@@ -123,14 +152,14 @@ public class SQLI {
             // sqli vuln code
             String sql = "select * from users where username = ?";
             PreparedStatement statement = con.prepareStatement(sql);
-            statement.setString(1, username);
+            statement.setString(1, owner);
             logger.info(sql);
             ResultSet rs = statement.executeQuery();
 
             while (rs.next()) {
+                // Never return the stored password (hash) to the caller.
                 String res_name = rs.getString("username");
-                String res_pwd = rs.getString("password");
-                String info = String.format("%s: %s\n", res_name, res_pwd);
+                String info = String.format("%s\n", res_name);
                 result.append(info);
                 logger.info(info);
             }
@@ -155,7 +184,7 @@ public class SQLI {
     @RequestMapping("/jdbc/sec")
     public String jdbc_sqli_sec(@RequestParam("username") String username) {
 
-        requireSelfOrAdmin(username);
+        final String owner = lookupKey(username);
         StringBuilder result = new StringBuilder();
         try {
             Class.forName(driver);
@@ -167,7 +196,7 @@ public class SQLI {
             // fix code
             String sql = "select * from users where username = ?";
             PreparedStatement st = con.prepareStatement(sql);
-            st.setString(1, username);
+            st.setString(1, owner);
 
             logger.info(st.toString());  // sql after prepare statement
             ResultSet rs = st.executeQuery();
@@ -200,6 +229,8 @@ public class SQLI {
     @RequestMapping("/jdbc/ps/vuln")
     public String jdbc_ps_vuln(@RequestParam("username") String username) {
 
+        // The lookup key is the authenticated principal, not the request string.
+        final String owner = lookupKey(username);
         StringBuilder result = new StringBuilder();
         try {
             Class.forName(driver);
@@ -210,15 +241,15 @@ public class SQLI {
 
             String sql = "select * from users where username = ?";
             PreparedStatement st = con.prepareStatement(sql);
-            st.setString(1, username);
+            st.setString(1, owner);
 
             logger.info(st.toString());
             ResultSet rs = st.executeQuery();
 
             while (rs.next()) {
+                // Never return the stored password (hash) to the caller.
                 String res_name = rs.getString("username");
-                String res_pwd = rs.getString("password");
-                String info = String.format("%s: %s\n", res_name, res_pwd);
+                String info = String.format("%s\n", res_name);
                 result.append(info);
                 logger.info(info);
             }
@@ -243,8 +274,7 @@ public class SQLI {
      */
     @GetMapping("/mybatis/vuln01")
     public List<User> mybatisVuln01(@RequestParam("username") String username) {
-        requireSelfOrAdmin(username);
-        return redact(userMapper.findByUserNameVuln01(username));
+        return redact(userMapper.findByUserNameVuln01(lookupKey(username)));
     }
 
     /**
@@ -254,15 +284,8 @@ public class SQLI {
      */
     @GetMapping("/mybatis/vuln02")
     public List<User> mybatisVuln02(@RequestParam("username") String username) {
-        // Fuzzy search: only return rows the caller is allowed to see.
-        List<User> users = userMapper.findByUserNameVuln02(username);
-        if (!isAdmin()) {
-            String current = currentUsername();
-            users = users.stream()
-                    .filter(u -> current != null && current.equals(u.getUsername()))
-                    .collect(Collectors.toList());
-        }
-        return redact(users);
+        // The lookup key is the authenticated principal, not the request string.
+        return redact(userMapper.findByUserNameVuln02(lookupKey(username)));
     }
 
     /**
@@ -304,8 +327,7 @@ public class SQLI {
      */
     @GetMapping("/mybatis/sec01")
     public User mybatisSec01(@RequestParam("username") String username) {
-        requireSelfOrAdmin(username);
-        return redact(userMapper.findByUserName(username));
+        return redact(userMapper.findByUserName(lookupKey(username)));
     }
 
     /**
