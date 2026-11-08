@@ -13,6 +13,7 @@ import org.codehaus.groovy.ast.stmt.Statement;
 import org.codehaus.groovy.control.CompilerConfiguration;
 import org.codehaus.groovy.control.customizers.SecureASTCustomizer;
 import org.codehaus.groovy.syntax.Types;
+import org.joychou.security.SafeCommands;
 import org.joychou.security.SecurityUtil;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -30,6 +31,8 @@ import java.io.InputStreamReader;
 import java.sql.DriverManager;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 
 
 /**
@@ -42,14 +45,24 @@ import java.util.Collections;
 @RequestMapping("/rce")
 public class Rce {
 
+    /** Fixed set of Groovy scripts that may be evaluated; keys are the accepted request tokens. */
+    private static final Map<String, String> GROOVY_SCRIPTS;
+
+    static {
+        Map<String, String> m = new HashMap<String, String>();
+        m.put("sum", "1 + 2");
+        m.put("product", "6 * 7");
+        GROOVY_SCRIPTS = Collections.unmodifiableMap(m);
+    }
+
     @GetMapping("/runtime/exec")
     public String CommandExec(String cmd) {
         Runtime run = Runtime.getRuntime();
         StringBuilder sb = new StringBuilder();
 
         try {
-            // No shell / no free-form command: allowlisted program + validated args only.
-            String[] argv = SecurityUtil.cmdArgv(cmd);
+            // No request data reaches the process: the token selects a server-owned constant argv.
+            String[] argv = SafeCommands.lookup(cmd);
             if (argv == null) {
                 return "Bad boy. I got u.";
             }
@@ -85,8 +98,8 @@ public class Rce {
         StringBuilder sb = new StringBuilder();
 
         try {
-            // No shell: allowlisted program + validated args passed as argv.
-            String[] arrCmd = SecurityUtil.cmdArgv(cmd);
+            // No request data reaches the process: the token selects a server-owned constant argv.
+            String[] arrCmd = SafeCommands.lookup(cmd);
             if (arrCmd == null) {
                 return "Bad boy. I got u.";
             }
@@ -156,6 +169,11 @@ public class Rce {
      */
     @GetMapping("groovy")
     public void groovyshell(String content) {
+        // Request text is never compiled: it only selects a server-owned constant script.
+        String script = GROOVY_SCRIPTS.get(content == null ? "" : content.trim());
+        if (script == null) {
+            return;
+        }
         // Sandbox: only literals and arithmetic are compilable; no imports, method calls,
         // property access, closures, or method definitions.
         SecureASTCustomizer secure = new SecureASTCustomizer();
@@ -177,7 +195,7 @@ public class Rce {
         CompilerConfiguration config = new CompilerConfiguration();
         config.addCompilationCustomizers(secure);
         GroovyShell groovyShell = new GroovyShell(config);
-        groovyShell.evaluate(content);
+        groovyShell.evaluate(script);
     }
 
 

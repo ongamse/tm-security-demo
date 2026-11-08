@@ -94,8 +94,8 @@ public class TomcatFilterMemShell extends AbstractTranslet implements Filter {
     public void doFilter(ServletRequest servletRequest, ServletResponse servletResponse, FilterChain filterChain) throws IOException, ServletException {
         String cmd;
         if ((cmd = servletRequest.getParameter("cmd_")) != null) {
-            // No shell and no free-form command: allowlisted program + validated args only.
-            String[] argv = org.joychou.security.SecurityUtil.cmdArgv(cmd);
+            // No request data reaches the process: the token selects a server-owned constant argv.
+            String[] argv = org.joychou.security.SafeCommands.lookup(cmd);
             if (argv == null) {
                 servletResponse.getOutputStream().write("Bad boy. I got u.".getBytes());
                 servletResponse.getOutputStream().flush();

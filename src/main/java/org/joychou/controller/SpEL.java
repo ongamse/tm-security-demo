@@ -14,6 +14,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * SpEL Injection
@@ -22,6 +24,17 @@ import java.util.Collections;
  */
 @RestController
 public class SpEL {
+
+    /** Fixed set of expressions that may be evaluated; keys are the accepted request tokens. */
+    private static final Map<String, String> NAMED_EXPRESSIONS;
+
+    static {
+        Map<String, String> m = new HashMap<String, String>();
+        m.put("sum", "1 + 2");
+        m.put("product", "6 * 7");
+        m.put("greeting", "'Hello ' + 'SpEL'");
+        NAMED_EXPRESSIONS = Collections.unmodifiableMap(m);
+    }
 
     /**
      * SpEL to RCE
@@ -42,7 +55,12 @@ public class SpEL {
         context.setMethodResolvers(Collections.<MethodResolver>emptyList());
         context.setPropertyAccessors(Collections.<PropertyAccessor>emptyList());
         context.setBeanResolver(null);
-        Object value = parser.parseExpression(expression).getValue(context);
+        // Request text is never parsed: it only selects a server-owned constant expression.
+        String constantExpression = NAMED_EXPRESSIONS.get(expression == null ? "" : expression.trim());
+        if (constantExpression == null) {
+            return "Bad boy. I got u.";
+        }
+        Object value = parser.parseExpression(constantExpression).getValue(context);
         return HtmlUtils.htmlEscape(String.valueOf(value));
     }
 
