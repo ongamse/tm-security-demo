@@ -33,25 +33,32 @@ public class CommandInject {
     /**
      * List a directory without spawning a process. The requested path must stay under BASE_DIR.
      */
-    private static String listDirectory(String filepath) throws IOException {
+    private String listDirectory(String filepath) {
         String safePath = SecurityUtil.cmdFilter(filepath);
         if (null == safePath) {
             return "Bad boy. I got u.";
         }
-        Path base = Paths.get(BASE_DIR).toRealPath();
-        Path target = base.resolve(safePath).normalize();
-        if (!target.startsWith(base) || !Files.isDirectory(target)) {
-            return "Bad boy. I got u.";
-        }
-        Path realTarget = target.toRealPath();
-        if (!realTarget.startsWith(base)) {
-            return "Bad boy. I got u.";
-        }
         List<String> names = new ArrayList<String>();
-        try (DirectoryStream<Path> stream = Files.newDirectoryStream(realTarget)) {
-            for (Path entry : stream) {
-                names.add(entry.getFileName().toString());
+        try {
+            Path base = Paths.get(BASE_DIR).toRealPath();
+            Path target = base.resolve(safePath).normalize();
+            if (!target.startsWith(base)) {
+                return "Bad boy. I got u.";
             }
+            // Single open operation: no exists/isDirectory pre-check. A missing path or a
+            // non-directory makes the open itself fail (NoSuchFileException / NotDirectoryException).
+            try (DirectoryStream<Path> stream = Files.newDirectoryStream(target)) {
+                // Symlink containment is verified on the opened directory before anything is listed.
+                if (!target.toRealPath().startsWith(base)) {
+                    return "Bad boy. I got u.";
+                }
+                for (Path entry : stream) {
+                    names.add(entry.getFileName().toString());
+                }
+            }
+        } catch (IOException e) {
+            logger.error("Directory listing failed", e);
+            return "Bad boy. I got u.";
         }
         Collections.sort(names);
         StringBuilder sb = new StringBuilder();
@@ -85,12 +92,12 @@ public class CommandInject {
         if (host == null || !HOST_PATTERN.matcher(host).matches()) {
             return "Bad boy. I got u.";
         }
-        // No process is spawned: fetch in-process, after the SSRF check on the target.
-        String url = "http://" + host + "/";
+        // No process is spawned: fetch in-process over TLS only, after the SSRF check on the target.
+        String url = "https://" + host + "/";
         if (!SSRFChecker.isSafeHttpUrl(url)) {
             return "Bad boy. I got u.";
         }
-        return HtmlUtils.htmlEscape(HttpUtils.URLConnection(url));
+        return HtmlUtils.htmlEscape(HttpUtils.URLConnectionHttpsOnly(url));
     }
 
     @GetMapping("/codeinject/sec")
