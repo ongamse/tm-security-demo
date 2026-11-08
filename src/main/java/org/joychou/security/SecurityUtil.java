@@ -131,7 +131,7 @@ public class SecurityUtil {
             return null;
         }
         host = host.toLowerCase(Locale.ROOT);
-        if (!SSRFChecker.isSafeHttpUrl("http://" + host + "/")) {
+        if (!SSRFChecker.isPublicHost(host)) {
             return null;
         }
         StringBuilder sb = new StringBuilder(prefix).append(host);

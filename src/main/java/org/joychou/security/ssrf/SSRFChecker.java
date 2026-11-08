@@ -326,15 +326,36 @@ public class SSRFChecker {
         if (parsed.port != -1 && !isAllowedPort(parsed.port)) {
             return null;
         }
-        if (!isStrictHostName(parsed.host)) {
+        if (!isPublicHost(parsed.host)) {
             return null;
         }
         try {
-            resolvePublic(parsed.host);
             return parsed.toURI();
-        } catch (UnknownHostException | URISyntaxException e) {
+        } catch (URISyntaxException e) {
             logger.error("[-] SSRF check failed. Rejected host.");
             return null;
+        }
+    }
+
+    /**
+     * Host-level check that needs no URL: the host must be a plain host name or a strict
+     * dotted-decimal ipv4 literal and EVERY address it resolves to must be public (not loopback,
+     * any-local, link-local/metadata, site-local, multicast, 0.0.0.0/8, 100.64.0.0/10, fc00::/7
+     * or in the configured block list). Fails closed.
+     *
+     * @param host host name or ipv4 literal (no scheme, port or userinfo)
+     * @return true if the host resolves to public addresses only, false otherwise
+     */
+    public static boolean isPublicHost(String host) {
+        if (host == null || host.isEmpty() || !isStrictHostName(host)) {
+            return false;
+        }
+        try {
+            resolvePublic(host);
+            return true;
+        } catch (UnknownHostException e) {
+            logger.error("[-] SSRF check failed. Rejected host.");
+            return false;
         }
     }
 
