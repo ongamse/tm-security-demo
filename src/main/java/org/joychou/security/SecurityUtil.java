@@ -239,6 +239,29 @@ public class SecurityUtil {
     }
 
 
+    /**
+     * Make an attacker-controlled value safe to use as an HTTP header value (or Location value)
+     * by removing CR, LF and all other ISO control characters (horizontal tab is kept),
+     * which prevents HTTP response splitting / header injection.
+     *
+     * @param value untrusted header value, may be null
+     * @return the value without control characters, or null if value is null
+     */
+    public static String sanitizeHeaderValue(String value) {
+        if (value == null) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            if (ch == '\t' || !Character.isISOControl(ch)) {
+                sb.append(ch);
+            }
+        }
+        return sb.toString();
+    }
+
+
     public static String cmdFilter(String input) {
         if (input == null || !FILTER_PATTERN.matcher(input).matches()) {
             return null;
