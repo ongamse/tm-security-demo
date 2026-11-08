@@ -21,10 +21,14 @@ import org.slf4j.LoggerFactory;
 
 import javax.imageio.ImageIO;
 import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLConnection;
 import java.util.concurrent.*;
@@ -36,6 +40,9 @@ public class HttpUtils {
 
     private final static Logger logger = LoggerFactory.getLogger(HttpUtils.class);
     private static final int MAX_REDIRECTS = 5;
+    private static final int CONNECT_TIMEOUT_MS = 5000;
+    private static final int READ_TIMEOUT_MS = 10000;
+    private static final int MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
     public static String commonHttpClient(String url) {
 
@@ -107,6 +114,8 @@ public class HttpUtils {
             }
             HttpURLConnection conn = (HttpURLConnection) new URL(current).openConnection();
             conn.setInstanceFollowRedirects(false);
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(READ_TIMEOUT_MS);
             int code = conn.getResponseCode();
             if (code == 301 || code == 302 || code == 303 || code == 307 || code == 308) {
                 String location = conn.getHeaderField("Location");
@@ -208,15 +217,42 @@ public class HttpUtils {
      */
     public static void imageIO(String url) {
         try {
-            URL u = new URL(url);
-            // Only remote http(s) resources; file:/jar: URLs would read local files.
-            String protocol = u.getProtocol();
-            if (!"http".equalsIgnoreCase(protocol) && !"https".equalsIgnoreCase(protocol)) {
-                logger.error("Illegal URL protocol: {}", protocol);
+            // Only remote http(s) resources; anything else (file:, jar:, ftp:, bare paths) is rejected.
+            URI uri = new URI(url);
+            String scheme = uri.getScheme();
+            if (!"http".equalsIgnoreCase(scheme) && !"https".equalsIgnoreCase(scheme)) {
+                logger.error("Illegal URL scheme");
                 return;
             }
-            ImageIO.read(u); // send request
-        } catch (IOException e) {
+            if (uri.getHost() == null) {
+                logger.error("Illegal URL host");
+                return;
+            }
+
+            // Fetch the body over a validated connection (redirects re-validated per hop),
+            // then decode from memory so no user-derived path/URL ever reaches ImageIO.
+            ImageIO.setUseCache(false);
+            HttpURLConnection conn = openSafeConnection(uri.toASCIIString()); // send request
+            byte[] bytes;
+            try (InputStream is = conn.getInputStream()) {
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
+                byte[] buf = new byte[8192];
+                int total = 0;
+                int n;
+                while ((n = is.read(buf)) != -1) {
+                    total += n;
+                    if (total > MAX_IMAGE_BYTES) {
+                        logger.error("Image too large");
+                        return;
+                    }
+                    out.write(buf, 0, n);
+                }
+                bytes = out.toByteArray();
+            } finally {
+                conn.disconnect();
+            }
+            ImageIO.read(new ByteArrayInputStream(bytes));
+        } catch (IOException | URISyntaxException e) {
             logger.error(e.getMessage());
         }
 
