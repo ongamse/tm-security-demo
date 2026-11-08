@@ -9,8 +9,19 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.multipart.MultipartFile;
 
+import org.xml.sax.InputSource;
+import org.xml.sax.SAXException;
+import org.xml.sax.helpers.DefaultHandler;
+
+import javax.xml.parsers.ParserConfigurationException;
+import javax.xml.parsers.SAXParserFactory;
+import java.io.ByteArrayInputStream;
 import java.io.FileInputStream;
+import java.io.FilterInputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 
 /**
@@ -34,7 +45,40 @@ public class xlsxStreamerXXE {
 
     @PostMapping("/readxlsx")
     public void xllx_streamer_xxe(MultipartFile file) throws IOException {
-        StreamingReader.builder().open(file.getInputStream());
+        byte[] content = file.getBytes();
+        rejectXmlEntities(content);
+        StreamingReader.builder().open(new ByteArrayInputStream(content));
+    }
+
+    /**
+     * Reject any XML part of the xlsx package that declares a DOCTYPE (and so any external entity)
+     * before it reaches the streaming reader.
+     */
+    private static void rejectXmlEntities(byte[] content) throws IOException {
+        try {
+            SAXParserFactory spf = SAXParserFactory.newInstance();
+            spf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            spf.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            spf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(content))) {
+                ZipEntry entry;
+                while ((entry = zis.getNextEntry()) != null) {
+                    String name = entry.getName().toLowerCase();
+                    if (entry.isDirectory() || !(name.endsWith(".xml") || name.endsWith(".rels"))) {
+                        continue;
+                    }
+                    InputStream partStream = new FilterInputStream(zis) {
+                        @Override
+                        public void close() {
+                            // keep the zip stream open for the next entry
+                        }
+                    };
+                    spf.newSAXParser().parse(new InputSource(partStream), new DefaultHandler());
+                }
+            }
+        } catch (ParserConfigurationException | SAXException e) {
+            throw new IOException("Rejected xlsx: unsafe or malformed XML content", e);
+        }
     }
 
 
