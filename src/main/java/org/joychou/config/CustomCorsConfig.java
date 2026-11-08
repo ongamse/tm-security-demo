@@ -21,13 +21,12 @@ public class CustomCorsConfig extends WebMvcRegistrationsAdapter {
         return new WebMvcConfigurerAdapter() {
             @Override
             public void addCorsMappings(CorsRegistry registry) {
-                // Exact origins only (shared CorsPolicy allowlist): no wildcard / pattern, so
-                // allowCredentials(true) is only granted to those exact origins.
+                // Exact origins only (shared CorsPolicy allowlist): no wildcard / pattern, no credentials.
                 registry.addMapping("/cors/sec/webMvcConfigurer") // /**表示所有路由path
                         .allowedOrigins(CorsPolicy.allowedOriginsArray())
                         .allowedMethods("GET", "POST", "OPTIONS")
                         .allowedHeaders("Content-Type", "X-Requested-With", "X-CSRF-TOKEN")
-                        .allowCredentials(true)
+                        .allowCredentials(false)
                         .maxAge(3600);
             }
         };

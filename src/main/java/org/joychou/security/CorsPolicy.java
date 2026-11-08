@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
  *
  * Origins are matched EXACTLY (scheme://host[:port]) against a server-owned constant set. The
  * Access-Control-Allow-Origin value is always the matching constant, never the request string, and
- * Access-Control-Allow-Credentials is only emitted for an exact match. No wildcard, no suffix match and
+ * Access-Control-Allow-Credentials is never emitted. No wildcard, no suffix match and
  * no "null" origin. Additional origins can be supplied with the environment variable
  * JSC_CORS_ALLOWED_ORIGINS (comma separated, each entry must be an exact http(s) origin).
  */
@@ -74,32 +74,20 @@ public final class CorsPolicy {
     /**
      * Apply the CORS response headers for the request Origin.
      * Always adds Vary: Origin. If the Origin exactly matches the allowlist, sets
-     * Access-Control-Allow-Origin to the matching constant and (optionally) Allow-Credentials: true;
-     * otherwise neither header is emitted.
+     * Access-Control-Allow-Origin to the matching constant; otherwise no CORS header is emitted.
+     * Credentialed cross-origin access is never granted by this policy.
      *
-     * @param request          current request
-     * @param response         current response
-     * @param allowCredentials whether to emit Access-Control-Allow-Credentials for a matched origin
+     * @param request  current request
+     * @param response current response
      * @return true if the origin was allowed, false otherwise (no CORS headers were set)
      */
-    public static boolean apply(HttpServletRequest request, HttpServletResponse response,
-                                boolean allowCredentials) {
+    public static boolean apply(HttpServletRequest request, HttpServletResponse response) {
         response.addHeader("Vary", "Origin");
         String allowed = match(request.getHeader("Origin"));
         if (allowed == null) {
             return false;
         }
         response.setHeader("Access-Control-Allow-Origin", allowed);
-        if (allowCredentials) {
-            response.setHeader("Access-Control-Allow-Credentials", "true");
-        }
         return true;
-    }
-
-    /**
-     * Same as {@link #apply(HttpServletRequest, HttpServletResponse, boolean)} with credentials allowed.
-     */
-    public static boolean apply(HttpServletRequest request, HttpServletResponse response) {
-        return apply(request, response, true);
     }
 }
