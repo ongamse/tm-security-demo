@@ -10,18 +10,18 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.multipart.MultipartFile;
 
-import org.xml.sax.InputSource;
-import org.xml.sax.SAXException;
-import org.xml.sax.helpers.DefaultHandler;
-
-import javax.xml.parsers.ParserConfigurationException;
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.FileInputStream;
-import java.io.FilterInputStream;
 import java.io.IOException;
-import java.io.InputStream;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.Charset;
+import java.nio.charset.CodingErrorAction;
+import java.nio.charset.StandardCharsets;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
+import java.util.zip.ZipOutputStream;
 
 
 /**
@@ -39,6 +39,7 @@ public class xlsxStreamerXXE {
     private static final long MAX_UPLOAD_BYTES = 10L * 1024 * 1024;
     private static final long MAX_UNCOMPRESSED_BYTES = 100L * 1024 * 1024;
     private static final int MAX_ZIP_ENTRIES = 1000;
+    private static final int MAX_PART_CHARS = 64 * 1024 * 1024;
 
     @GetMapping("/upload")
     public String index() {
@@ -59,65 +60,76 @@ public class xlsxStreamerXXE {
         if (content.length < 4 || content[0] != 'P' || content[1] != 'K' || content[2] != 3 || content[3] != 4) {
             throw new IOException("Rejected xlsx: not a ZIP package");
         }
-        rejectXmlEntities(content);
-        StreamingReader.builder().open(new ByteArrayInputStream(content));
+        // The streaming reader only ever sees a package that this class rebuilt from validated parts.
+        byte[] rebuilt = rebuildPackage(content);
+        StreamingReader.builder().open(new ByteArrayInputStream(rebuilt));
     }
 
     /**
-     * Pre-scan every XML part of the xlsx package with a per-instance hardened parser
-     * (SecureXml: DOCTYPE disallowed, no external entities/DTDs, empty entity resolver) and reject
-     * the file if any part declares a DOCTYPE / ENTITY, before it reaches the streaming reader.
-     * No JVM-wide System properties are used.
+     * Rebuild the xlsx package: every XML part (.xml / .rels) is decoded, validated by the strict
+     * whitelist scanner in {@link SecureXml#canonicalize(String, int)} (no DOCTYPE / ENTITY / PI /
+     * unknown references) and written into a new zip as a canonical re-serialisation. Entry names are
+     * rebuilt from a printable ASCII table. Non-XML parts (images, binary blobs) are not copied since
+     * the streaming reader never parses them. The upload bytes themselves never reach the reader.
      */
-    private static void rejectXmlEntities(byte[] content) throws IOException {
-        try {
-            long totalBytes = 0;
-            try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(content))) {
-                ZipEntry entry;
-                int entries = 0;
-                while ((entry = zis.getNextEntry()) != null) {
-                    if (++entries > MAX_ZIP_ENTRIES) {
-                        throw new IOException("Rejected xlsx: too many entries");
-                    }
-                    String name = entry.getName().toLowerCase();
-                    if (entry.isDirectory() || !(name.endsWith(".xml") || name.endsWith(".rels"))) {
-                        continue;
-                    }
-                    final long remaining = MAX_UNCOMPRESSED_BYTES - totalBytes;
-                    final long[] read = {0};
-                    InputStream partStream = new FilterInputStream(zis) {
-                        @Override
-                        public int read() throws IOException {
-                            int b = super.read();
-                            if (b != -1 && ++read[0] > remaining) {
-                                throw new IOException("Rejected xlsx: uncompressed content too large");
-                            }
-                            return b;
-                        }
-
-                        @Override
-                        public int read(byte[] buf, int off, int len) throws IOException {
-                            int n = super.read(buf, off, len);
-                            if (n > 0) {
-                                read[0] += n;
-                                if (read[0] > remaining) {
-                                    throw new IOException("Rejected xlsx: uncompressed content too large");
-                                }
-                            }
-                            return n;
-                        }
-
-                        @Override
-                        public void close() {
-                            // keep the zip stream open for the next entry
-                        }
-                    };
-                    SecureXml.newSaxParser().parse(new InputSource(partStream), new DefaultHandler());
-                    totalBytes += read[0];
+    private static byte[] rebuildPackage(byte[] content) throws IOException {
+        ByteArrayOutputStream packageOut = new ByteArrayOutputStream(content.length);
+        long totalBytes = 0;
+        try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(content));
+             ZipOutputStream zos = new ZipOutputStream(packageOut)) {
+            ZipEntry entry;
+            int entries = 0;
+            byte[] buf = new byte[8192];
+            while ((entry = zis.getNextEntry()) != null) {
+                if (++entries > MAX_ZIP_ENTRIES) {
+                    throw new IOException("Rejected xlsx: too many entries");
                 }
+                String name = entry.getName();
+                String lower = name.toLowerCase();
+                if (entry.isDirectory() || !(lower.endsWith(".xml") || lower.endsWith(".rels"))) {
+                    continue;
+                }
+                if (name.contains("..") || name.startsWith("/") || name.contains("\\")) {
+                    throw new IOException("Rejected xlsx: unsafe entry name");
+                }
+
+                ByteArrayOutputStream part = new ByteArrayOutputStream();
+                int n;
+                while ((n = zis.read(buf)) != -1) {
+                    totalBytes += n;
+                    if (totalBytes > MAX_UNCOMPRESSED_BYTES) {
+                        throw new IOException("Rejected xlsx: uncompressed content too large");
+                    }
+                    part.write(buf, 0, n);
+                }
+
+                String canonical = SecureXml.canonicalize(decode(part.toByteArray()), MAX_PART_CHARS);
+
+                zos.putNextEntry(new ZipEntry(SecureXml.asciiCopy(name)));
+                zos.write(canonical.getBytes(StandardCharsets.UTF_8));
+                zos.closeEntry();
             }
-        } catch (ParserConfigurationException | SAXException e) {
-            throw new IOException("Rejected xlsx: unsafe or malformed XML content", e);
+        } catch (IllegalArgumentException | SecureXml.XmlRejectedException e) {
+            throw new IOException("Rejected xlsx: unsafe or malformed XML content");
+        }
+        return packageOut.toByteArray();
+    }
+
+    /** Strict decode: UTF-16 when a BOM says so, otherwise UTF-8; malformed input is refused. */
+    private static String decode(byte[] data) throws IOException {
+        Charset charset = StandardCharsets.UTF_8;
+        if (data.length >= 2 && ((data[0] == (byte) 0xFE && data[1] == (byte) 0xFF)
+                || (data[0] == (byte) 0xFF && data[1] == (byte) 0xFE))) {
+            charset = StandardCharsets.UTF_16;
+        }
+        try {
+            return charset.newDecoder()
+                    .onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT)
+                    .decode(ByteBuffer.wrap(data))
+                    .toString();
+        } catch (CharacterCodingException e) {
+            throw new IOException("Rejected xlsx: unsafe or malformed XML content");
         }
     }
 
