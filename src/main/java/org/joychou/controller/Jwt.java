@@ -54,8 +54,13 @@ public class Jwt {
      * @return nickname
      */
     @GetMapping("/getName")
-    public String getNickname(@CookieValue(COOKIE_NAME) String user_cookie) {
+    public String getNickname(@CookieValue(COOKIE_NAME) String user_cookie, HttpServletResponse response) {
         String nickname = JwtUtils.getNicknameByJavaJwt(user_cookie);
+        if (nickname == null) {
+            // Fail closed: invalid, expired or unsigned token.
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            return "Invalid jwt token";
+        }
         return "Current jwt user is " + nickname;
     }
 
