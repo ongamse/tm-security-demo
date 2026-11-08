@@ -71,6 +71,10 @@ public class SSRFChecker {
                     return false;  // 内网ip直接return，非内网ip继续判断是否有重定向
                 }
 
+                // Only http(s) urls whose host is not internal may be opened.
+                if (!isSafeHttpUrl(finalUrl)) {
+                    return false;
+                }
                 connection = (HttpURLConnection) new URL(finalUrl).openConnection();
                 connection.setInstanceFollowRedirects(false);
                 connection.setUseCaches(false); // 设置为false，手动处理跳转，可以拿到每个跳转的URL
@@ -289,15 +293,31 @@ public class SSRFChecker {
      */
     private static String url2host(String url) {
         try {
+            // Reject non-http(s) schemes before the url is parsed.
+            if (url == null || !SecurityUtil.isHttp(url)) {
+                return "";
+            }
             // use URI instead of URL
             URI u = new URI(url);
-            if (SecurityUtil.isHttp(url)) {
-                return u.getHost();
-            }
-            return "";
+            String host = u.getHost();
+            return host == null ? "" : host;
         } catch (Exception e) {
             return "";
         }
+    }
+
+    /**
+     * Check that a url is http(s) and its host does not resolve to an internal address.
+     * Callers that follow redirects must call this for every hop.
+     *
+     * @param url url to check
+     * @return true if the url may be requested, false otherwise (fail closed)
+     */
+    public static boolean isSafeHttpUrl(String url) {
+        if (url == null || !SecurityUtil.isHttp(url)) {
+            return false;
+        }
+        return !isInternalIpByUrl(url);
     }
 
 }

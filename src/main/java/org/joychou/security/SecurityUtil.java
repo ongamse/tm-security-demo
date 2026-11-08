@@ -45,11 +45,45 @@ public class SecurityUtil {
      * @return host
      */
     public static String gethost(String url) {
+        if (url == null || !isHttp(url)) {
+            return "";
+        }
         try {
             URI uri = new URI(url);
-            return uri.getHost().toLowerCase();
+            String host = uri.getHost();
+            return host == null ? "" : host.toLowerCase();
         } catch (URISyntaxException e) {
             return "";
+        }
+    }
+
+
+    /**
+     * Validate a JDBC url supplied by a user: it must use the expected driver scheme, carry no
+     * driver properties (those can load arbitrary classes / open arbitrary sockets) and its host
+     * must not be an internal address.
+     *
+     * @param jdbcUrl user supplied jdbc url, e.g. jdbc:postgresql://db.example.com:5432/test
+     * @param subprotocol expected sub protocol, e.g. postgresql or db2
+     * @return true if the url may be used, false otherwise
+     */
+    public static boolean checkJdbcUrl(String jdbcUrl, String subprotocol) {
+        String prefix = "jdbc:" + subprotocol + "://";
+        if (jdbcUrl == null || !jdbcUrl.startsWith(prefix)) {
+            return false;
+        }
+        if (jdbcUrl.indexOf('?') != -1 || jdbcUrl.indexOf(';') != -1
+                || jdbcUrl.indexOf('=') != -1 || jdbcUrl.indexOf('&') != -1) {
+            return false;
+        }
+        try {
+            String host = new URI("http://" + jdbcUrl.substring(prefix.length())).getHost();
+            if (host == null || host.isEmpty()) {
+                return false;
+            }
+            return SSRFChecker.isSafeHttpUrl("http://" + host + "/");
+        } catch (URISyntaxException e) {
+            return false;
         }
     }
 
