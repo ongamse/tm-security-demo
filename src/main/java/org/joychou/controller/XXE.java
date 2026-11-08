@@ -28,8 +28,7 @@ import javax.xml.parsers.SAXParserFactory;
 import javax.xml.parsers.SAXParser;
 
 import org.xml.sax.helpers.DefaultHandler;
-import org.apache.commons.digester3.Digester;
-import org.jdom2.input.SAXBuilder;
+import org.joychou.util.SecureXml;
 import org.joychou.util.WebUtils;
 import org.xmlbeam.annotation.XBRead;
 
@@ -90,16 +89,14 @@ public class XXE {
     @RequestMapping(value = "/SAXBuilder/vuln", method = RequestMethod.POST)
     public String SAXBuilderVuln(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
+            String body = SecureXml.readBody(request);  // size cap, rejects DOCTYPE/ENTITY with 400
             logger.info(body);
 
-            SAXBuilder builder = new SAXBuilder();
-            builder.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            builder.setFeature("http://xml.org/sax/features/external-general-entities", false);
-            builder.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             // org.jdom2.Document document
-            builder.build(new InputSource(new StringReader(body)));
+            SecureXml.parseJdom(body);
             return "SAXBuilder xxe vuln code";
+        } catch (SecureXml.XmlRejectedException e) {
+            throw e;
         } catch (Exception e) {
             logger.error(e.toString());
             return EXCEPT;
@@ -109,16 +106,14 @@ public class XXE {
     @RequestMapping(value = "/SAXBuilder/sec", method = RequestMethod.POST)
     public String SAXBuilderSec(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
+            String body = SecureXml.readBody(request);  // size cap, rejects DOCTYPE/ENTITY with 400
             logger.info(body);
 
-            SAXBuilder builder = new SAXBuilder();
-            builder.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            builder.setFeature("http://xml.org/sax/features/external-general-entities", false);
-            builder.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             // org.jdom2.Document document
-            builder.build(new InputSource(new StringReader(body)));
+            SecureXml.parseJdom(body);
 
+        } catch (SecureXml.XmlRejectedException e) {
+            throw e;
         } catch (Exception e) {
             logger.error(e.toString());
             return EXCEPT;
@@ -208,14 +203,12 @@ public class XXE {
     @RequestMapping(value = "/Digester/vuln", method = RequestMethod.POST)
     public String DigesterVuln(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
+            String body = SecureXml.readBody(request);  // size cap, rejects DOCTYPE/ENTITY with 400
             logger.info(body);
 
-            Digester digester = new Digester();
-            digester.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            digester.setFeature("http://xml.org/sax/features/external-general-entities", false);
-            digester.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
-            digester.parse(new StringReader(body));  // parse xml
+            SecureXml.parseDigester(body);  // parse xml
+        } catch (SecureXml.XmlRejectedException e) {
+            throw e;
         } catch (Exception e) {
             logger.error(e.toString());
             return EXCEPT;
@@ -226,16 +219,14 @@ public class XXE {
     @RequestMapping(value = "/Digester/sec", method = RequestMethod.POST)
     public String DigesterSec(HttpServletRequest request) {
         try {
-            String body = WebUtils.getRequestBody(request);
+            String body = SecureXml.readBody(request);  // size cap, rejects DOCTYPE/ENTITY with 400
             logger.info(body);
 
-            Digester digester = new Digester();
-            digester.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            digester.setFeature("http://xml.org/sax/features/external-general-entities", false);
-            digester.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
-            digester.parse(new StringReader(body));  // parse xml
+            SecureXml.parseDigester(body);  // parse xml
 
             return "Digester xxe security code";
+        } catch (SecureXml.XmlRejectedException e) {
+            throw e;
         } catch (Exception e) {
             logger.error(e.toString());
             return EXCEPT;
