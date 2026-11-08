@@ -32,14 +32,12 @@ public class IPForge {
     @RequestMapping("/proxy")
     @ResponseBody
     public static String proxy(HttpServletRequest request) {
-        String ip = request.getHeader("X-Real-IP");
-        if (StringUtils.isNotBlank(ip)) {
-            return HtmlUtils.htmlEscape(ip);
-        } else {
-            String remoteAddr = request.getRemoteAddr();
-            if (StringUtils.isNotBlank(remoteAddr)) {
-                return HtmlUtils.htmlEscape(remoteAddr);
-            }
+        // Client-supplied headers (X-Real-IP / X-Forwarded-For) are spoofable; use the direct peer address.
+        // If behind a trusted reverse proxy, configure the container (e.g. server.forward-headers-strategy
+        // or RemoteIpValve with trusted proxies) so getRemoteAddr() reflects the real client.
+        String remoteAddr = request.getRemoteAddr();
+        if (StringUtils.isNotBlank(remoteAddr)) {
+            return HtmlUtils.htmlEscape(remoteAddr);
         }
         return "";
     }
