@@ -27,8 +27,6 @@ public class Login {
     @GetMapping("/logout")
     public String logoutPage(HttpServletRequest request, HttpServletResponse response) {
 
-        String username = request.getUserPrincipal().getName();
-
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth != null) {
             new SecurityContextLogoutHandler().logout(request, response, auth);
@@ -45,9 +43,9 @@ public class Login {
         }
 
         if (null == request.getUserPrincipal()) {
-            logger.info("USER " + username + " LOGOUT SUCCESS.");
+            logger.info("User logout succeeded");
         } else {
-            logger.info("User " + username + " logout failed. Please try again.");
+            logger.info("User logout failed. Please try again.");
         }
 
         return "redirect:/login?logout";
