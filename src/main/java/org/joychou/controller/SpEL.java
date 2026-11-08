@@ -14,8 +14,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
 
 /**
  * SpEL Injection
@@ -24,17 +22,6 @@ import java.util.Map;
  */
 @RestController
 public class SpEL {
-
-    /** Fixed set of expressions that may be evaluated; keys are the accepted request tokens. */
-    private static final Map<String, String> NAMED_EXPRESSIONS;
-
-    static {
-        Map<String, String> m = new HashMap<String, String>();
-        m.put("sum", "1 + 2");
-        m.put("product", "6 * 7");
-        m.put("greeting", "'Hello ' + 'SpEL'");
-        NAMED_EXPRESSIONS = Collections.unmodifiableMap(m);
-    }
 
     /**
      * SpEL to RCE
@@ -56,12 +43,30 @@ public class SpEL {
         context.setPropertyAccessors(Collections.<PropertyAccessor>emptyList());
         context.setBeanResolver(null);
         // Request text is never parsed: it only selects a server-owned constant expression.
-        String constantExpression = NAMED_EXPRESSIONS.get(expression == null ? "" : expression.trim());
+        String constantExpression = selectExpression(expression);
         if (constantExpression == null) {
             return "Bad boy. I got u.";
         }
         Object value = parser.parseExpression(constantExpression).getValue(context);
         return HtmlUtils.htmlEscape(String.valueOf(value));
+    }
+
+    /**
+     * Maps a request token to a literal expression owned by the server by comparing against
+     * fixed strings. Returns null for any unknown token.
+     */
+    private static String selectExpression(String token) {
+        String normalized = token == null ? "" : token.trim();
+        switch (normalized) {
+            case "sum":
+                return "1 + 2";
+            case "product":
+                return "6 * 7";
+            case "greeting":
+                return "'Hello ' + 'SpEL'";
+            default:
+                return null;
+        }
     }
 
     public static void main(String[] args) {

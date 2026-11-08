@@ -32,8 +32,6 @@ import java.io.InputStreamReader;
 import java.sql.DriverManager;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
 
 
 /**
@@ -46,14 +44,20 @@ import java.util.Map;
 @RequestMapping("/rce")
 public class Rce {
 
-    /** Fixed set of Groovy scripts that may be evaluated; keys are the accepted request tokens. */
-    private static final Map<String, String> GROOVY_SCRIPTS;
-
-    static {
-        Map<String, String> m = new HashMap<String, String>();
-        m.put("sum", "1 + 2");
-        m.put("product", "6 * 7");
-        GROOVY_SCRIPTS = Collections.unmodifiableMap(m);
+    /**
+     * Maps a request token to a literal Groovy script owned by the server by comparing against
+     * fixed strings. Returns null for any unknown token.
+     */
+    private static String selectScript(String token) {
+        String normalized = token == null ? "" : token.trim();
+        switch (normalized) {
+            case "sum":
+                return "1 + 2";
+            case "product":
+                return "6 * 7";
+            default:
+                return null;
+        }
     }
 
     @GetMapping(value = "/runtime/exec", produces = MediaType.TEXT_PLAIN_VALUE + ";charset=UTF-8")
@@ -173,7 +177,7 @@ public class Rce {
     @GetMapping("groovy")
     public void groovyshell(String content) {
         // Request text is never compiled: it only selects a server-owned constant script.
-        String script = GROOVY_SCRIPTS.get(content == null ? "" : content.trim());
+        String script = selectScript(content);
         if (script == null) {
             return;
         }
