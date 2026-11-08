@@ -15,6 +15,7 @@ import org.codehaus.groovy.control.customizers.SecureASTCustomizer;
 import org.codehaus.groovy.syntax.Types;
 import org.joychou.security.SafeCommands;
 import org.joychou.security.SecurityUtil;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -55,7 +56,7 @@ public class Rce {
         GROOVY_SCRIPTS = Collections.unmodifiableMap(m);
     }
 
-    @GetMapping("/runtime/exec")
+    @GetMapping(value = "/runtime/exec", produces = MediaType.TEXT_PLAIN_VALUE + ";charset=UTF-8")
     public String CommandExec(String cmd) {
         Runtime run = Runtime.getRuntime();
         StringBuilder sb = new StringBuilder();
@@ -92,7 +93,7 @@ public class Rce {
     /**
      * <a href="http://localhost:8080/rce/ProcessBuilder?cmd=whoami">POC</a>
      */
-    @GetMapping("/ProcessBuilder")
+    @GetMapping(value = "/ProcessBuilder", produces = MediaType.TEXT_PLAIN_VALUE + ";charset=UTF-8")
     public String processBuilder(String cmd) {
 
         StringBuilder sb = new StringBuilder();
@@ -113,10 +114,10 @@ public class Rce {
                 sb.append(tmpStr);
             }
         } catch (Exception e) {
-            return e.toString();
+            return HtmlUtils.htmlEscape(e.toString());
         }
 
-        return sb.toString();
+        return HtmlUtils.htmlEscape(sb.toString());
     }
 
 
