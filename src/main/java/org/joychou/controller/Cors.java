@@ -1,6 +1,6 @@
 package org.joychou.controller;
 
-import org.joychou.security.SecurityUtil;
+import org.joychou.security.CorsPolicy;
 import org.joychou.util.LoginUtils;
 import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.web.bind.annotation.CrossOrigin;
@@ -24,26 +24,15 @@ public class Cors {
 
     @GetMapping("/vuln/origin")
     public String vuls1(HttpServletRequest request, HttpServletResponse response) {
-        String origin = request.getHeader("origin");
-        response.addHeader("Vary", "Origin");
-        // Only echo origins that pass the safe-domain allowlist before allowing cookies.
-        // The header value is a server-built origin (never the request string).
-        String safeOrigin = SecurityUtil.safeOrigin(origin);
-        if (safeOrigin != null) {
-            response.setHeader("Access-Control-Allow-Origin", safeOrigin);
-            response.setHeader("Access-Control-Allow-Credentials", "true");  // allow cookie
-        }
+        // Exact-origin allowlist; cookies are only allowed for an exactly matched origin.
+        CorsPolicy.apply(request, response, true);
         return info;
     }
 
     @GetMapping("/vuln/setHeader")
     public String vuls2(HttpServletRequest request, HttpServletResponse response) {
-        // No wildcard: only allow origins in the safe-domain allowlist (no credentials on this endpoint).
-        response.addHeader("Vary", "Origin");
-        String safeOrigin = SecurityUtil.safeOrigin(request.getHeader("Origin"));
-        if (safeOrigin != null) {
-            response.setHeader("Access-Control-Allow-Origin", safeOrigin);
-        }
+        // No wildcard: only exact allowlisted origins (no credentials on this endpoint).
+        CorsPolicy.apply(request, response, false);
         return info;
     }
 
@@ -117,16 +106,11 @@ public class Cors {
 
         // 如果origin不为空并且origin不在白名单内，认定为不安全。
         // 如果origin为空，表示是同域过来的请求或者浏览器直接发起的请求。
-        String safeOrigin = SecurityUtil.safeOrigin(origin);
-        if (origin != null && safeOrigin == null) {
+        if (origin != null && CorsPolicy.match(origin) == null) {
+            response.addHeader("Vary", "Origin");
             return "Origin is not safe.";
         }
-        response.addHeader("Vary", "Origin");
-        if (safeOrigin != null) {
-            // server-built origin derived from the validated request origin (never the request string)
-            response.setHeader("Access-Control-Allow-Origin", safeOrigin);
-            response.setHeader("Access-Control-Allow-Credentials", "true");
-        }
+        CorsPolicy.apply(request, response, true);
         return LoginUtils.getUserInfo2JsonStr(request);
     }
 

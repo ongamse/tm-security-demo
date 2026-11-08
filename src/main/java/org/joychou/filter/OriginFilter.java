@@ -6,7 +6,7 @@ import javax.servlet.annotation.WebFilter;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import org.joychou.security.SecurityUtil;
+import org.joychou.security.CorsPolicy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -37,8 +37,7 @@ public class OriginFilter implements Filter {
         logger.info("[+] Origin: " + origin + "\tCurrent url:" + request.getRequestURL());
 
         // 以file协议访问html，origin为字符串的null，所以依然会走安全check逻辑
-        String safeOrigin = SecurityUtil.safeOrigin(origin);
-        if (origin != null && safeOrigin == null) {
+        if (origin != null && CorsPolicy.match(origin) == null) {
             logger.error("[-] Origin check error. " + "Origin: " + origin +
                     "\tCurrent url:" + request.getRequestURL());
             response.setStatus(response.SC_FORBIDDEN);
@@ -46,15 +45,10 @@ public class OriginFilter implements Filter {
             return;
         }
 
-        // The echoed origin depends on the request, so caches must key on Origin.
-        response.addHeader("Vary", "Origin");
-
-        // Only echo an origin that passed the safe-domain check; same-origin requests (no Origin) get no CORS headers.
-        // safeOrigin is a server-built origin, never the request string.
-        if (safeOrigin != null) {
-            response.setHeader("Access-Control-Allow-Origin", safeOrigin);
-            response.setHeader("Access-Control-Allow-Credentials", "true");
-            response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTION");
+        // Shared exact-origin policy: adds Vary: Origin; sets Allow-Origin/Allow-Credentials only for an
+        // exactly allowlisted origin. Same-origin requests (no Origin) get no CORS headers.
+        if (CorsPolicy.apply(request, response, true)) {
+            response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
         }
 
         filterChain.doFilter(req, res);
