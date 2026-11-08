@@ -239,7 +239,7 @@ public class HttpUtils {
             in.close();
             return html.toString();
         } catch (Exception e) {
-            logger.error(e.getMessage());
+            logger.error("HTTP request failed", e);
             return e.getMessage();
         }
     }
@@ -264,7 +264,7 @@ public class HttpUtils {
             in.close();
             return html.toString();
         } catch (IOException e) {
-            logger.error(e.getMessage());
+            logger.error("HTTP request failed", e);
             return e.getMessage();
         }
     }
@@ -359,7 +359,7 @@ public class HttpUtils {
             }
             ImageIO.read(new ByteArrayInputStream(bytes));
         } catch (IOException e) {
-            logger.error(e.getMessage());
+            logger.error("HTTP request failed", e);
         }
 
     }
@@ -377,7 +377,7 @@ public class HttpUtils {
                 IOUtils.toByteArray(is);
             }
         } catch (IOException e) {
-            logger.error(e.getMessage());
+            logger.error("HTTP request failed", e);
         }
     }
 
@@ -404,7 +404,7 @@ public class HttpUtils {
             try {
                 httpclient.close();
             } catch (Exception e) {
-                logger.error(e.getMessage());
+                logger.error("HTTP request failed", e);
             }
         }
     }

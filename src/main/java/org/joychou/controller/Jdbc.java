@@ -27,7 +27,7 @@ public class Jdbc {
         if (safeJdbcUrl == null) {
             throw new IllegalArgumentException("Illegal jdbc url");
         }
-        log.info(safeJdbcUrl);
+        log.info("Connecting with validated jdbc url");
         DriverManager.getConnection(safeJdbcUrl);
     }
 
@@ -39,7 +39,7 @@ public class Jdbc {
         if (safeJdbcUrl == null) {
             throw new IllegalArgumentException("Illegal jdbc url");
         }
-        log.info(safeJdbcUrl);
+        log.info("Connecting with validated jdbc url");
         DriverManager.getConnection(safeJdbcUrl);
     }
 }

@@ -73,7 +73,7 @@ public class FileUpload {
 
         } catch (IOException e) {
             redirectAttributes.addFlashAttribute("message", "upload failed");
-            logger.error(e.toString());
+            logger.error("File upload processing failed", e);
         }
 
         return "redirect:/file/status";
@@ -114,7 +114,7 @@ public class FileUpload {
             }
         }
         if (!suffixFlag) {
-            logger.error("[-] Suffix error: " + Suffix);
+            logger.error("[-] Suffix error");
             deleteFile(filePath);
             return "Upload failed. Illeagl picture.";
         }
@@ -132,7 +132,7 @@ public class FileUpload {
         for (String blackMimeType : mimeTypeBlackList) {
             // 用contains是为了防止text/html;charset=UTF-8绕过
             if (SecurityUtil.replaceSpecialStr(mimeType).toLowerCase().contains(blackMimeType)) {
-                logger.error("[-] Mime type error: " + mimeType);
+                logger.error("[-] Mime type error");
                 deleteFile(filePath);
                 return "Upload failed. Illeagl picture.";
             }
@@ -155,13 +155,13 @@ public class FileUpload {
             Path path = resolveUploadPath(fileName);
             Files.write(path, bytes);
         } catch (IOException e) {
-            logger.error(e.toString());
+            logger.error("File upload processing failed", e);
             deleteFile(filePath);
             return "Upload failed";
         }
 
-        logger.info("[+] Safe file. Suffix: {}, MIME: {}", Suffix, mimeType);
-        logger.info("[+] Successfully uploaded {}", filePath);
+        logger.info("[+] Safe file");
+        logger.info("[+] Successfully uploaded");
         return String.format("You successfully uploaded '%s'", HtmlUtils.htmlEscape(filePath));
     }
 
@@ -205,11 +205,11 @@ public class FileUpload {
         File delFile = target.toFile();
         if(delFile.isFile() && delFile.exists()) {
             if (delFile.delete()) {
-                logger.info("[+] " + filePath + " delete successfully!");
+                logger.info("[+] Uploaded file deleted successfully");
                 return;
             }
         }
-        logger.info(filePath + " delete failed!");
+        logger.info("Uploaded file delete failed");
     }
 
     /**

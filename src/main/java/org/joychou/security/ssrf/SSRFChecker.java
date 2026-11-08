@@ -44,7 +44,7 @@ public class SSRFChecker {
                 }
             }
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("Url check failed", e);
             return false;
         }
         return false;
@@ -87,7 +87,7 @@ public class SSRFChecker {
                     // Every hop is canonicalized again; a rejected hop yields null and fails closed.
                     current = resolveRedirect(current, redirectedUrl);
                     i += 1;  // 重定向次数加1
-                    logger.info("redirected to " + (current == null ? "<rejected url>" : current.getHost()));
+                    logger.info(current == null ? "Redirect rejected" : "Redirect followed");
                     if (i == checkTimes) {
                         return false;
                     }
@@ -131,7 +131,7 @@ public class SSRFChecker {
      */
     public static boolean isInternalIp(String strIP) {
         if (StringUtils.isEmpty(strIP)) {
-            logger.error("[-] SSRF check failed. IP is empty. " + strIP);
+            logger.error("[-] SSRF check failed. IP is empty.");
             return true;
         }
 
@@ -139,7 +139,7 @@ public class SSRFChecker {
         for (String subnet : blackSubnets) {
             SubnetUtils utils = new SubnetUtils(subnet);
             if (utils.getInfo().isInRange(strIP)) {
-                logger.error("[-] SSRF check failed. Internal IP: " + strIP);
+                logger.error("[-] SSRF check failed. Internal IP.");
                 return true;
             }
         }
@@ -191,7 +191,7 @@ public class SSRFChecker {
             InetAddress IpAddress = InetAddress.getByName(host);
             return IpAddress.getHostAddress();
         } catch (Exception e) {
-            logger.error("host2ip exception " + e.getMessage());
+            logger.error("host2ip exception", e);
             return "";
         }
     }
@@ -212,7 +212,7 @@ public class SSRFChecker {
 
                 // not support ipv6
                 if (ipParts.length > 4) {
-                    logger.error("Illegal ipv4: " + host);
+                    logger.error("Illegal ipv4");
                     return false;
                 }
 
@@ -225,20 +225,20 @@ public class SSRFChecker {
                 // 012.23.78.233
                 for(String ip : ipParts) {
                     if (!isNumber(ip)){
-                        logger.error("Illegal ipv4: " + host);
+                        logger.error("Illegal ipv4");
                         return false;
                     }
                     // start with "0", but not "0"
                     if (ip.startsWith("0") && !ip.equals("0")) {
                         if (Integer.valueOf(ip, 8) >= 256){
-                            logger.error("Illegal ipv4: " + host);
+                            logger.error("Illegal ipv4");
                             return false;
                         }
                         newDecimalIP.append(Integer.valueOf(ip, 8)).append(".");
                         is_octal = true;
                     }else{
                         if (Integer.valueOf(ip, 10) >= 256) {
-                            logger.error("Illegal ipv4: " + host);
+                            logger.error("Illegal ipv4");
                             return false;
                         }
                         newDecimalIP.append(ip).append(".");
@@ -249,7 +249,7 @@ public class SSRFChecker {
             }
             return is_octal;
         } catch (Exception e){
-            logger.error("SSRFChecker isOctalIP exception: " + e.getMessage());
+            logger.error("SSRFChecker isOctalIP exception", e);
             return false;
         }
 
@@ -333,7 +333,7 @@ public class SSRFChecker {
             resolvePublic(parsed.host);
             return parsed.toURI();
         } catch (UnknownHostException | URISyntaxException e) {
-            logger.error("[-] SSRF check failed. Rejected host: " + parsed.host);
+            logger.error("[-] SSRF check failed. Rejected host.");
             return null;
         }
     }
