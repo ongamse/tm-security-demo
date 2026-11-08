@@ -24,15 +24,15 @@ public class Cors {
 
     @GetMapping("/vuln/origin")
     public String vuls1(HttpServletRequest request, HttpServletResponse response) {
-        // Exact-origin allowlist; cookies are only allowed for an exactly matched origin.
-        CorsPolicy.apply(request, response, true);
+        // Exact-origin allowlist; no credentialed cross-origin access.
+        CorsPolicy.apply(request, response);
         return info;
     }
 
     @GetMapping("/vuln/setHeader")
     public String vuls2(HttpServletRequest request, HttpServletResponse response) {
         // No wildcard: only exact allowlisted origins (no credentials on this endpoint).
-        CorsPolicy.apply(request, response, false);
+        CorsPolicy.apply(request, response);
         return info;
     }
 
@@ -110,7 +110,7 @@ public class Cors {
             response.addHeader("Vary", "Origin");
             return "Origin is not safe.";
         }
-        CorsPolicy.apply(request, response, true);
+        CorsPolicy.apply(request, response);
         return LoginUtils.getUserInfo2JsonStr(request);
     }
 

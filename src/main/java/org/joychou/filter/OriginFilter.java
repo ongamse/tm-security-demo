@@ -45,9 +45,9 @@ public class OriginFilter implements Filter {
             return;
         }
 
-        // Shared exact-origin policy: adds Vary: Origin; sets Allow-Origin/Allow-Credentials only for an
+        // Shared exact-origin policy: adds Vary: Origin; sets Allow-Origin only for an
         // exactly allowlisted origin. Same-origin requests (no Origin) get no CORS headers.
-        if (CorsPolicy.apply(request, response, true)) {
+        if (CorsPolicy.apply(request, response)) {
             response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
         }
 
