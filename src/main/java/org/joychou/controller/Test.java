@@ -19,6 +19,8 @@ public class Test {
         Cookie cookie = new Cookie("XSRF-TOKEN", "123");
         cookie.setDomain("taobao.com");
         cookie.setMaxAge(-1); // forever time
+        cookie.setSecure(true);
+        cookie.setHttpOnly(true);
         response.addCookie(cookie);
         return "success";
     }
@@ -31,6 +33,8 @@ public class Test {
         Cookie cookie = new Cookie("XSRF-TOKEN", "123");
         cookie.setDomain("taobao.com");
         cookie.setMaxAge(-1); // forever time
+        cookie.setSecure(true);
+        cookie.setHttpOnly(true);
         response.addCookie(cookie);
     }
 }
