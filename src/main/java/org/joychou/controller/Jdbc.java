@@ -5,6 +5,7 @@ import org.joychou.security.SecurityUtil;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.nio.charset.StandardCharsets;
 import java.sql.DriverManager;
 
 /**
@@ -21,23 +22,24 @@ public class Jdbc {
     @RequestMapping("/postgresql")
     public void postgresql(String jdbcUrlBase64) throws Exception{
         byte[] b = java.util.Base64.getDecoder().decode(jdbcUrlBase64);
-        String jdbcUrl = new String(b);
-        if (!SecurityUtil.checkJdbcUrl(jdbcUrl, "postgresql")) {
+        // Connect only with the url rebuilt from validated parts (allowlisted driver/host/port/db name).
+        String safeJdbcUrl = SecurityUtil.buildJdbcUrl(new String(b, StandardCharsets.UTF_8), "postgresql");
+        if (safeJdbcUrl == null) {
             throw new IllegalArgumentException("Illegal jdbc url");
         }
-        log.info(jdbcUrl);
-        DriverManager.getConnection(jdbcUrl);
+        log.info(safeJdbcUrl);
+        DriverManager.getConnection(safeJdbcUrl);
     }
 
     @RequestMapping("/db2")
     public void db2(String jdbcUrlBase64) throws Exception{
         Class.forName("com.ibm.db2.jcc.DB2Driver");
         byte[] b = java.util.Base64.getDecoder().decode(jdbcUrlBase64);
-        String jdbcUrl = new String(b);
-        if (!SecurityUtil.checkJdbcUrl(jdbcUrl, "db2")) {
+        String safeJdbcUrl = SecurityUtil.buildJdbcUrl(new String(b, StandardCharsets.UTF_8), "db2");
+        if (safeJdbcUrl == null) {
             throw new IllegalArgumentException("Illegal jdbc url");
         }
-        log.info(jdbcUrl);
-        DriverManager.getConnection(jdbcUrl);
+        log.info(safeJdbcUrl);
+        DriverManager.getConnection(safeJdbcUrl);
     }
 }

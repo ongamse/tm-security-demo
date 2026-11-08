@@ -1,9 +1,11 @@
 package org.joychou.security.ssrf;
 
 import java.net.HttpURLConnection;
+import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.URI;
-import java.net.URL;
+import java.net.URISyntaxException;
+import java.net.UnknownHostException;
 import java.util.ArrayList;
 
 import org.apache.commons.lang.StringUtils;
@@ -62,20 +64,16 @@ public class SSRFChecker {
         HttpURLConnection connection;
         int connectTime = 5 * 1000;  // 设置连接超时时间5s
         int i = 1;
-        String finalUrl = url;
+        // Only the server-constructed URI returned by canonicalize() is ever opened.
+        URI current = canonicalize(url);
         try {
             do {
-                // 判断当前请求的URL是否是内网ip
-                if (isInternalIpByUrl(finalUrl)) {
-                    logger.error("[-] SSRF check failed. Dangerous url: " + finalUrl);
+                // Only http(s) urls whose host is not internal may be opened (null = rejected).
+                if (current == null) {
+                    logger.error("[-] SSRF check failed. Illegal or internal url.");
                     return false;  // 内网ip直接return，非内网ip继续判断是否有重定向
                 }
-
-                // Only http(s) urls whose host is not internal may be opened.
-                if (!isSafeHttpUrl(finalUrl)) {
-                    return false;
-                }
-                connection = (HttpURLConnection) new URL(finalUrl).openConnection();
+                connection = (HttpURLConnection) current.toURL().openConnection();
                 connection.setInstanceFollowRedirects(false);
                 connection.setUseCaches(false); // 设置为false，手动处理跳转，可以拿到每个跳转的URL
                 connection.setConnectTimeout(connectTime);
@@ -86,9 +84,10 @@ public class SSRFChecker {
                     String redirectedUrl = connection.getHeaderField("Location");
                     if (null == redirectedUrl)
                         break;
-                    finalUrl = redirectedUrl;
+                    // Every hop is canonicalized again; a rejected hop yields null and fails closed.
+                    current = resolveRedirect(current, redirectedUrl);
                     i += 1;  // 重定向次数加1
-                    logger.info("redirected url: " + finalUrl);
+                    logger.info("redirected to " + (current == null ? "<rejected url>" : current.getHost()));
                     if (i == checkTimes) {
                         return false;
                     }
@@ -292,18 +291,9 @@ public class SSRFChecker {
      * Get host from URL which the protocol must be http:// or https:// and not be //.
      */
     private static String url2host(String url) {
-        try {
-            // Reject non-http(s) schemes before the url is parsed.
-            if (url == null || !SecurityUtil.isHttp(url)) {
-                return "";
-            }
-            // use URI instead of URL
-            URI u = new URI(url);
-            String host = u.getHost();
-            return host == null ? "" : host;
-        } catch (Exception e) {
-            return "";
-        }
+        // Strict component parser: rejects non-http(s) schemes, userinfo, odd characters.
+        ParsedUrl parsed = ParsedUrl.parse(url);
+        return parsed == null ? "" : parsed.host;
     }
 
     /**
@@ -314,10 +304,128 @@ public class SSRFChecker {
      * @return true if the url may be requested, false otherwise (fail closed)
      */
     public static boolean isSafeHttpUrl(String url) {
-        if (url == null || !SecurityUtil.isHttp(url)) {
+        return canonicalize(url) != null;
+    }
+
+    /**
+     * The single canonicalization point for outgoing requests. The untrusted string is parsed
+     * into components by {@link ParsedUrl}; scheme must be http/https, host must be a plain host
+     * name or strict dotted-decimal ipv4 literal (no userinfo), the port must be in the allowed
+     * set and EVERY address the host resolves to must be public. The returned {@link URI} is
+     * rebuilt from the validated components. Callers must use only the returned object and never
+     * the raw string afterwards.
+     *
+     * @param raw untrusted url
+     * @return rebuilt, validated URI, or null when the url must not be requested (fail closed)
+     */
+    public static URI canonicalize(String raw) {
+        ParsedUrl parsed = ParsedUrl.parse(raw);
+        if (parsed == null) {
+            return null;
+        }
+        if (parsed.port != -1 && !isAllowedPort(parsed.port)) {
+            return null;
+        }
+        if (!isStrictHostName(parsed.host)) {
+            return null;
+        }
+        try {
+            resolvePublic(parsed.host);
+            return parsed.toURI();
+        } catch (UnknownHostException | URISyntaxException e) {
+            logger.error("[-] SSRF check failed. Rejected host: " + parsed.host);
+            return null;
+        }
+    }
+
+    /**
+     * Resolve a redirect Location against the (already validated) current URI and canonicalize it.
+     * Only absolute http(s) urls and same-origin absolute paths are accepted.
+     *
+     * @return validated URI of the next hop, or null if it must not be followed
+     */
+    public static URI resolveRedirect(URI base, String location) {
+        if (base == null || location == null || location.length() > 2048) {
+            return null;
+        }
+        if (location.startsWith("http://") || location.startsWith("https://")) {
+            return canonicalize(location);
+        }
+        if (location.startsWith("/") && !location.startsWith("//")) {
+            return canonicalize(base.getScheme() + "://" + base.getRawAuthority() + location);
+        }
+        return null;
+    }
+
+    /**
+     * Resolve a host name and fail unless every returned address is public.
+     * Also usable as the DNS step of an HTTP client so the connect-time lookup is validated too.
+     *
+     * @throws UnknownHostException if the host does not resolve or any address is internal
+     */
+    public static InetAddress[] resolvePublic(String host) throws UnknownHostException {
+        InetAddress[] addresses = InetAddress.getAllByName(host);
+        if (addresses.length == 0) {
+            throw new UnknownHostException(host);
+        }
+        for (InetAddress address : addresses) {
+            if (isBlockedAddress(address)) {
+                throw new UnknownHostException("blocked address for host " + host);
+            }
+        }
+        return addresses;
+    }
+
+    private static boolean isAllowedPort(int port) {
+        return port == 80 || port == 443 || port == 8080 || port == 8443;
+    }
+
+    /**
+     * Host names are accepted as is; numeric hosts must be a strict dotted-decimal ipv4 literal
+     * (no octal, hex, short or integer forms that resolvers interpret differently).
+     */
+    private static boolean isStrictHostName(String host) {
+        if (!isNumberOrDot(host)) {
+            return true;
+        }
+        String[] parts = host.split("\\.", -1);
+        if (parts.length != 4) {
             return false;
         }
-        return !isInternalIpByUrl(url);
+        for (String part : parts) {
+            if (part.isEmpty() || part.length() > 3) {
+                return false;
+            }
+            if (part.length() > 1 && part.startsWith("0")) {
+                return false;
+            }
+            if (Integer.parseInt(part) > 255) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Loopback, any-local, link-local (incl. cloud metadata 169.254.169.254), site-local,
+     * multicast, 0.0.0.0/8, CGNAT 100.64.0.0/10, IPv6 unique-local fc00::/7 and the configured
+     * block list.
+     */
+    private static boolean isBlockedAddress(InetAddress address) {
+        if (address.isAnyLocalAddress() || address.isLoopbackAddress() || address.isLinkLocalAddress()
+                || address.isSiteLocalAddress() || address.isMulticastAddress()) {
+            return true;
+        }
+        byte[] b = address.getAddress();
+        if (address instanceof Inet4Address) {
+            int b0 = b[0] & 0xff;
+            int b1 = b[1] & 0xff;
+            if (b0 == 0 || (b0 == 100 && b1 >= 64 && b1 <= 127)) {
+                return true;
+            }
+            return isInternalIp(address.getHostAddress());
+        }
+        return (b[0] & 0xfe) == 0xfc;
     }
 
 }
