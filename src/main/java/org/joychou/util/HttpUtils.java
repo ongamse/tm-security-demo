@@ -1,8 +1,10 @@
 package org.joychou.util;
 
 import com.squareup.okhttp.OkHttpClient;
+import org.apache.commons.httpclient.HostConfiguration;
 import org.apache.commons.httpclient.HttpClient;
 import org.apache.commons.httpclient.methods.GetMethod;
+import org.apache.commons.httpclient.protocol.Protocol;
 import org.apache.commons.io.IOUtils;
 import org.apache.http.Header;
 import org.apache.http.HttpEntity;
@@ -140,10 +142,17 @@ public class HttpUtils {
         try {
             URI current = safeUri(url);
             for (int i = 0; i <= MAX_REDIRECTS; i++) {
-                GetMethod method = new GetMethod(current.toASCIIString());
+                // Target is set from components (host config + path + query), no url string is parsed.
+                Protocol protocol = Protocol.getProtocol("https".equals(current.getScheme()) ? "https" : "http");
+                int port = current.getPort() == -1 ? protocol.getDefaultPort() : current.getPort();
+                HostConfiguration hostConfig = new HostConfiguration();
+                hostConfig.setHost(current.getHost(), port, protocol);
+                GetMethod method = new GetMethod();
+                method.setPath(current.getRawPath());
+                method.setQueryString(current.getRawQuery());
                 method.setFollowRedirects(false);
                 try {
-                    int code = client.executeMethod(method); // send request
+                    int code = client.executeMethod(hostConfig, method); // send request
                     if (isRedirect(code)) {
                         org.apache.commons.httpclient.Header location = method.getResponseHeader("Location");
                         current = nextHop(current, location == null ? null : location.getValue());

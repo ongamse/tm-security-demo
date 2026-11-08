@@ -17,8 +17,16 @@ public final class ParsedUrl {
 
     private static final int MAX_URL_LENGTH = 2048;
     private static final Pattern HOST_PATTERN = Pattern.compile("^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$");
-    private static final Pattern PATH_PATTERN = Pattern.compile("^(?:[A-Za-z0-9._~!$&'()*+,;=:@/-]|%[0-9A-Fa-f]{2})*$");
-    private static final Pattern QUERY_PATTERN = Pattern.compile("^(?:[A-Za-z0-9._~!$&'()*+,;=:@/?-]|%[0-9A-Fa-f]{2})*$");
+
+    // Trusted alphabets. Every output character is taken from one of these constants (never copied
+    // from the input), so the components of the outgoing URI are server-constructed values.
+    private static final String HOST_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789.-";
+    private static final String PATH_CHARS =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._~!$&'()*+,;=:@/-";
+    private static final String QUERY_CHARS = PATH_CHARS + "?";
+    private static final String HEX_UPPER = "0123456789ABCDEF";
+    /** All printable ascii characters (0x20 - 0x7E), generated, never copied from input. */
+    private static final String PRINTABLE = printableAscii();
 
     /** "http" or "https" (constant, never copied from the input). */
     public final String scheme;
@@ -127,40 +135,147 @@ public final class ParsedUrl {
             return null;
         }
 
-        String path = tail;
-        String query = null;
+        String rawPath = tail;
+        String rawQuery = null;
         int q = tail.indexOf('?');
         if (q >= 0) {
-            path = tail.substring(0, q);
-            query = tail.substring(q + 1);
+            rawPath = tail.substring(0, q);
+            rawQuery = tail.substring(q + 1);
         }
-        if (path.isEmpty()) {
-            path = "/";
+        if (rawPath.isEmpty()) {
+            rawPath = "/";
         }
+        String path = "/";
+        String query = null;
         if (validateTail) {
-            if (!PATH_PATTERN.matcher(path).matches()) {
+            path = rebuild(rawPath, PATH_CHARS);
+            if (path == null) {
                 return null;
             }
-            if (query != null && !QUERY_PATTERN.matcher(query).matches()) {
-                return null;
+            if (rawQuery != null) {
+                query = rebuild(rawQuery, QUERY_CHARS);
+                if (query == null) {
+                    return null;
+                }
             }
         }
-        return new ParsedUrl(scheme, hostPart.toLowerCase(java.util.Locale.ROOT), port, path, query);
+        String host = rebuild(hostPart.toLowerCase(java.util.Locale.ROOT), HOST_CHARS);
+        if (host == null) {
+            return null;
+        }
+        return new ParsedUrl(scheme, host, port, path, query);
     }
 
     /**
-     * Build the outgoing URI from the validated components.
+     * Assemble a new string from the trusted alphabet. Each input character must be found in the
+     * alphabet (the character that is appended is the alphabet's own) or be part of a well formed
+     * percent escape (re-emitted with upper-case hex digits taken from {@link #HEX_UPPER}).
+     * Encoded NUL and encoded '/' are refused so that escapes cannot change the path structure.
+     *
+     * @return the rebuilt value, or null if the value contains anything else
+     */
+    private static String rebuild(String value, String alphabet) {
+        StringBuilder sb = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            if (ch == '%') {
+                if (i + 2 >= value.length()) {
+                    return null;
+                }
+                int hi = hexValue(value.charAt(i + 1));
+                int lo = hexValue(value.charAt(i + 2));
+                if (hi < 0 || lo < 0) {
+                    return null;
+                }
+                int octet = hi * 16 + lo;
+                if (octet == 0x00 || octet == 0x2F) {
+                    return null;
+                }
+                sb.append('%').append(HEX_UPPER.charAt(hi)).append(HEX_UPPER.charAt(lo));
+                i += 2;
+            } else {
+                int idx = alphabet.indexOf(ch);
+                if (idx < 0) {
+                    return null;
+                }
+                sb.append(alphabet.charAt(idx));
+            }
+        }
+        return sb.toString();
+    }
+
+    private static String printableAscii() {
+        StringBuilder sb = new StringBuilder(95);
+        for (int c = 0x20; c <= 0x7E; c++) {
+            sb.append((char) c);
+        }
+        return sb.toString();
+    }
+
+    private static int hexValue(char ch) {
+        if (ch >= '0' && ch <= '9') {
+            return ch - '0';
+        }
+        if (ch >= 'a' && ch <= 'f') {
+            return ch - 'a' + 10;
+        }
+        if (ch >= 'A' && ch <= 'F') {
+            return ch - 'A' + 10;
+        }
+        return -1;
+    }
+
+    /**
+     * Build the outgoing URI from the validated, server-assembled components with the
+     * multi-argument {@link URI} constructor: constant scheme, alphabet-rebuilt host, int port and
+     * path / query whose characters are all looked up in trusted tables (the constructor quotes
+     * what must be quoted). No concatenated string is parsed.
+     *
+     * @throws URISyntaxException if a percent escape cannot be represented safely (fail closed)
      */
     public URI toURI() throws URISyntaxException {
-        StringBuilder sb = new StringBuilder();
-        sb.append(scheme).append("://").append(host);
-        if (port != -1) {
-            sb.append(':').append(port);
+        String outScheme = "https".equals(scheme) ? "https" : "http";
+        String plainPath = decode(path, PATH_CHARS, false);
+        String plainQuery = query == null ? null : decode(query, QUERY_CHARS, true);
+        return new URI(outScheme, null, host, port, plainPath, plainQuery, null);
+    }
+
+    /**
+     * Turn the percent escapes of an already rebuilt component into characters taken from the
+     * {@link #PRINTABLE} table (the {@link URI} constructor quotes them again where needed). All
+     * other characters are looked up in the given alphabet. Escapes of non printable / non ascii
+     * bytes are refused; in a query so are escapes of delimiter characters (they would change
+     * its meaning once decoded).
+     */
+    private static String decode(String value, String alphabet, boolean query) throws URISyntaxException {
+        StringBuilder sb = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            if (ch != '%') {
+                int idx = alphabet.indexOf(ch);
+                if (idx < 0) {
+                    throw new URISyntaxException("url", "illegal character");
+                }
+                sb.append(alphabet.charAt(idx));
+                continue;
+            }
+            if (i + 2 >= value.length()) {
+                throw new URISyntaxException("url", "illegal percent escape");
+            }
+            int octet = hexValue(value.charAt(i + 1)) * 16 + hexValue(value.charAt(i + 2));
+            i += 2;
+            if (octet < 0x20 || octet > 0x7E) {
+                throw new URISyntaxException("url", "unsupported percent escape");
+            }
+            char decoded = PRINTABLE.charAt(octet - 0x20);
+            boolean unreserved = (decoded >= 'A' && decoded <= 'Z') || (decoded >= 'a' && decoded <= 'z')
+                    || (decoded >= '0' && decoded <= '9') || decoded == '-' || decoded == '.'
+                    || decoded == '_' || decoded == '~';
+            if (query && !unreserved && QUERY_CHARS.indexOf(decoded) >= 0) {
+                throw new URISyntaxException("url", "unsupported percent escape");
+            }
+            sb.append(decoded);
         }
-        sb.append(path);
-        if (query != null) {
-            sb.append('?').append(query);
-        }
-        return new URI(sb.toString());
+        return sb.toString();
     }
 }
