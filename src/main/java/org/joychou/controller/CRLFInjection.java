@@ -36,6 +36,7 @@ public class CRLFInjection {
             cookie.setHttpOnly(true);
             cookie.setSecure(true);
             cookie.setPath("/");
+            cookie.setMaxAge(3600);    // 1 HOUR
             response.addCookie(cookie);
         }
     }
