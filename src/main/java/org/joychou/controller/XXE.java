@@ -261,9 +261,8 @@ public class XXE {
             }
             return HtmlUtils.htmlEscape(buf.toString());
         } catch (Exception e) {
-            e.printStackTrace();
             logger.error("XML processing failed", e);
-            return HtmlUtils.htmlEscape(e.toString());
+            return EXCEPT;
         }
     }
 
