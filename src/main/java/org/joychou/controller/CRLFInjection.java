@@ -21,10 +21,22 @@ public class CRLFInjection {
     @RequestMapping("/safecode")
     @ResponseBody
     public void crlf(HttpServletRequest request, HttpServletResponse response) {
-        response.addHeader("test1", SecurityUtil.sanitizeHeaderValue(request.getParameter("test1")));
-        response.setHeader("test2", SecurityUtil.sanitizeHeaderValue(request.getParameter("test2")));
-        String author = request.getParameter("test3");
-        Cookie cookie = new Cookie("test3", author);
-        response.addCookie(cookie);
+        // Values are re-assembled from whitelisted characters only (max 128), never copied from the request.
+        String test1 = SecurityUtil.whitelistRebuild(request.getParameter("test1"), 128);
+        String test2 = SecurityUtil.whitelistRebuild(request.getParameter("test2"), 128);
+        String author = SecurityUtil.cookieValueRebuild(request.getParameter("test3"), 128);
+        if (test1 != null) {
+            response.addHeader("test1", test1);
+        }
+        if (test2 != null) {
+            response.setHeader("test2", test2);
+        }
+        if (author != null) {
+            Cookie cookie = new Cookie("test3", author);
+            cookie.setHttpOnly(true);
+            cookie.setSecure(true);
+            cookie.setPath("/");
+            response.addCookie(cookie);
+        }
     }
 }

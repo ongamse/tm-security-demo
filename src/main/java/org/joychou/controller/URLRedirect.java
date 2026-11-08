@@ -32,12 +32,13 @@ public class URLRedirect {
      */
     @GetMapping("/redirect")
     public ResponseEntity<String> redirect(@RequestParam("url") String url) {
-        String safeUrl = SecurityUtil.checkRedirectURL(url);
+        // Location is rebuilt from validated components (fixed scheme, whitelisted chars).
+        String safeUrl = SecurityUtil.safeRedirectLocation(url);
         if (safeUrl == null) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body("url forbidden");
         }
         return ResponseEntity.status(HttpStatus.FOUND)
-                .header("Location", SecurityUtil.sanitizeHeaderValue(safeUrl))
+                .header("Location", safeUrl)
                 .build();
     }
 
@@ -48,13 +49,14 @@ public class URLRedirect {
     @RequestMapping("/setHeader")
     @ResponseBody
     public static void setHeader(HttpServletRequest request, HttpServletResponse response) {
-        String url = SecurityUtil.checkRedirectURL(request.getParameter("url"));
+        // Location is rebuilt from validated components (fixed scheme, whitelisted chars).
+        String url = SecurityUtil.safeRedirectLocation(request.getParameter("url"));
         if (url == null) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             return;
         }
         response.setStatus(HttpServletResponse.SC_MOVED_PERMANENTLY); // 301 redirect
-        response.setHeader("Location", SecurityUtil.sanitizeHeaderValue(url));
+        response.setHeader("Location", url);
     }
 
 

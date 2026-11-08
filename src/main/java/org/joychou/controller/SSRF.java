@@ -121,9 +121,11 @@ public class SSRF {
         InputStream inputStream = null;
         OutputStream outputStream = null;
         try {
-            String downLoadImgFileName = WebUtils.getNameWithoutExtension(url) + "." + WebUtils.getFileExtension(url);
+            String requestedName = WebUtils.getNameWithoutExtension(url) + "." + WebUtils.getFileExtension(url);
+            // The file name is re-assembled from [A-Za-z0-9._-] (or a server-generated UUID); never the request string.
+            String downLoadImgFileName = SecurityUtil.safeFilename(requestedName);
             // download
-            response.setHeader("content-disposition", "attachment;fileName=" + SecurityUtil.sanitizeHeaderValue(downLoadImgFileName));
+            response.setHeader("content-disposition", "attachment; filename*=UTF-8''" + downLoadImgFileName);
 
             int length;
             byte[] bytes = new byte[1024];

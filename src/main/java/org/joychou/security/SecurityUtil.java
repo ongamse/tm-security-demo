@@ -12,9 +12,13 @@ import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.UUID;
 import java.util.regex.Pattern;
 
 
@@ -28,6 +32,18 @@ public class SecurityUtil {
     private static final Set<String> JDBC_PORTS = new HashSet<>(Arrays.asList("5432", "5433", "50000", "50001"));
     private static final Pattern JDBC_DB_NAME_PATTERN = Pattern.compile("^[A-Za-z0-9_-]{1,63}$");
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
+
+    private static final String HEADER_VALUE_CHARS =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 _.,:=@/+-";
+    private static final String COOKIE_VALUE_CHARS =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.:=@/+-";
+    private static final String FILENAME_CHARS =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-";
+    private static final String HOST_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789.-";
+    private static final String URL_CHARS =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._~!$&'()*+,;=:@/?#%-";
+    private static final int MAX_URL_LENGTH = 2048;
+    private static final List<String> SCHEMES = Collections.unmodifiableList(Arrays.asList("http", "https"));
 
 
     /**
@@ -330,6 +346,160 @@ public class SecurityUtil {
             }
         }
         return sb.toString();
+    }
+
+
+    /**
+     * Rebuild a value character by character. Every character that is accepted is looked up in the
+     * server-owned {@code allowed} table and the table's character is appended, so the result is a
+     * new String assembled only from whitelisted constants. Anything else is dropped.
+     */
+    private static String rebuildFrom(String value, String allowed, int maxLength) {
+        if (value == null) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder(Math.min(value.length(), maxLength));
+        for (int i = 0; i < value.length() && sb.length() < maxLength; i++) {
+            int idx = allowed.indexOf(value.charAt(i));
+            if (idx >= 0) {
+                sb.append(allowed.charAt(idx));
+            }
+        }
+        return sb.toString();
+    }
+
+
+    /**
+     * Rebuild an untrusted value so that it only consists of characters from the whitelist
+     * <code>[A-Za-z0-9 _.,:=@/+-]</code> (at most {@code maxLength} characters). Suitable for
+     * header and cookie values.
+     *
+     * @param value untrusted value, may be null
+     * @param maxLength maximum length of the result
+     * @return newly assembled value, or null if value is null
+     */
+    public static String whitelistRebuild(String value, int maxLength) {
+        return rebuildFrom(value, HEADER_VALUE_CHARS, maxLength);
+    }
+
+
+    /**
+     * Rebuild an untrusted value for use as a cookie value: only <code>[A-Za-z0-9_.:=@/+-]</code>
+     * (no space, comma, semicolon, quote or backslash), at most {@code maxLength} characters.
+     *
+     * @param value untrusted value, may be null
+     * @param maxLength maximum length of the result
+     * @return newly assembled value, or null if value is null
+     */
+    public static String cookieValueRebuild(String value, int maxLength) {
+        return rebuildFrom(value, COOKIE_VALUE_CHARS, maxLength);
+    }
+
+
+    /**
+     * Compare an untrusted value with a server-owned allowlist and return the matching constant
+     * from the allowlist (never the untrusted string itself).
+     *
+     * @param value untrusted value, may be null
+     * @param allowlist server-owned constants
+     * @return the matching element of the allowlist, or null if nothing matches
+     */
+    public static String matchAllowlisted(String value, Collection<String> allowlist) {
+        if (value == null || allowlist == null) {
+            return null;
+        }
+        for (String candidate : allowlist) {
+            if (candidate != null && candidate.equals(value)) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+
+    /**
+     * Validate an Origin / Referer style url against the safe-domain list ({@link #checkURL(String)})
+     * and return a server-built origin (<code>scheme://host[:port]</code>) that is assembled from
+     * constants (scheme from a fixed list, host characters from a whitelist table, port from an int).
+     * The request string itself is never returned.
+     *
+     * @param origin untrusted Origin header value
+     * @return server-built origin, or null if the origin is not allowed
+     */
+    public static String safeOrigin(String origin) {
+        if (checkURL(origin) == null) {
+            return null;
+        }
+        ParsedUrl parsed = ParsedUrl.parse(origin);
+        if (parsed == null) {
+            return null;
+        }
+        String scheme = matchAllowlisted(parsed.scheme, SCHEMES);
+        String host = rebuildFrom(parsed.host, HOST_CHARS, 253);
+        if (scheme == null || host == null || host.isEmpty()) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder(scheme).append("://").append(host);
+        if (parsed.port != -1) {
+            sb.append(':').append(parsed.port);
+        }
+        return sb.toString();
+    }
+
+
+    /**
+     * Validate a redirect target ({@link #checkRedirectURL(String)}) and return a server-built
+     * Location value: scheme from a fixed list, host / path / query re-assembled from whitelist
+     * tables. Targets containing any character outside the whitelist are rejected.
+     *
+     * @param url untrusted redirect target
+     * @return server-built redirect target, or null if the target must not be used
+     */
+    public static String safeRedirectLocation(String url) {
+        String checked = checkRedirectURL(url);
+        if (checked == null) {
+            return null;
+        }
+        if (checked.startsWith("/")) {
+            String path = rebuildFrom(checked, URL_CHARS, MAX_URL_LENGTH);
+            return path.equals(checked) ? path : null;
+        }
+        ParsedUrl parsed = ParsedUrl.parse(checked);
+        if (parsed == null) {
+            return null;
+        }
+        String scheme = matchAllowlisted(parsed.scheme, SCHEMES);
+        String host = rebuildFrom(parsed.host, HOST_CHARS, 253);
+        String path = rebuildFrom(parsed.path, URL_CHARS, MAX_URL_LENGTH);
+        if (scheme == null || host == null || host.isEmpty() || path == null) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder(scheme).append("://").append(host);
+        if (parsed.port != -1) {
+            sb.append(':').append(parsed.port);
+        }
+        sb.append(path);
+        if (parsed.query != null) {
+            sb.append('?').append(rebuildFrom(parsed.query, URL_CHARS, MAX_URL_LENGTH));
+        }
+        return sb.toString();
+    }
+
+
+    /**
+     * Build a download file name for a Content-Disposition header from untrusted input. The name is
+     * re-assembled from <code>[A-Za-z0-9._-]</code> only (max 64 chars); when nothing is left a
+     * server-generated UUID is used. The result needs no further escaping (RFC 5987 safe).
+     *
+     * @param untrustedName untrusted file name, may be null
+     * @return server-built file name, never null or empty
+     */
+    public static String safeFilename(String untrustedName) {
+        String name = rebuildFrom(untrustedName, FILENAME_CHARS, 64);
+        if (name == null || name.isEmpty() || name.replace(".", "").isEmpty()) {
+            return UUID.randomUUID().toString();
+        }
+        return name;
     }
 
 
