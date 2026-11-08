@@ -3,15 +3,21 @@ package org.joychou.controller;
 
 import org.joychou.mapper.UserMapper;
 import org.joychou.dao.User;
-import org.joychou.security.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
 import java.sql.*;
 import java.util.List;
+import java.util.stream.Collectors;
 
 
 /**
@@ -42,6 +48,87 @@ public class SQLI {
     @Resource
     private UserMapper userMapper;
 
+    /**
+     * Name of the authenticated caller, or null when there is none.
+     */
+    private static String currentUsername() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated() || auth instanceof AnonymousAuthenticationToken) {
+            return null;
+        }
+        return auth.getName();
+    }
+
+    private static boolean isCurrentUser(String username) {
+        String current = currentUsername();
+        return current != null && current.equals(username);
+    }
+
+    private static boolean isAdmin() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated() || auth instanceof AnonymousAuthenticationToken) {
+            return false;
+        }
+        for (GrantedAuthority a : auth.getAuthorities()) {
+            if ("ROLE_ADMIN".equals(a.getAuthority())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    @ResponseStatus(HttpStatus.UNAUTHORIZED)
+    private static class UnauthenticatedException extends RuntimeException {
+        UnauthenticatedException() {
+            super("Authentication required");
+        }
+    }
+
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    private static class ForbiddenLookupException extends RuntimeException {
+        ForbiddenLookupException() {
+            super("Access denied");
+        }
+    }
+
+    /**
+     * Lookup key for user queries. It is always the server-owned name of the authenticated
+     * principal, never the request string. A request username is accepted only for backwards
+     * compatibility and only when it names the caller.
+     *
+     * @param requested username supplied by the client (may be null)
+     * @return the authenticated principal's name
+     * @throws UnauthenticatedException (401) when there is no authenticated principal
+     * @throws ForbiddenLookupException (403) when the requested username is not the caller
+     */
+    private static String lookupKey(String requested) {
+        String current = currentUsername();
+        if (current == null) {
+            throw new UnauthenticatedException();
+        }
+        if (requested != null && !requested.equals(current)) {
+            throw new ForbiddenLookupException();
+        }
+        return current;
+    }
+
+    /**
+     * Returns a copy of the user without the password (hash).
+     */
+    private static User redact(User u) {
+        if (u == null) {
+            return null;
+        }
+        User copy = new User();
+        copy.setId(u.getId());
+        copy.setUsername(u.getUsername());
+        return copy;
+    }
+
+    private static List<User> redact(List<User> users) {
+        return users.stream().map(SQLI::redact).collect(Collectors.toList());
+    }
+
 
     /**
      * <p>Sql injection jbdc vuln code.</p><br>
@@ -51,6 +138,8 @@ public class SQLI {
     @RequestMapping("/jdbc/vuln")
     public String jdbc_sqli_vul(@RequestParam("username") String username) {
 
+        // The lookup key is the authenticated principal, not the request string.
+        final String owner = lookupKey(username);
         StringBuilder result = new StringBuilder();
 
         try {
@@ -61,17 +150,18 @@ public class SQLI {
                 System.out.println("Connect to database successfully.");
 
             // sqli vuln code
-            Statement statement = con.createStatement();
-            String sql = "select * from users where username = '" + username + "'";
-            logger.info(sql);
-            ResultSet rs = statement.executeQuery(sql);
+            String sql = "select * from users where username = ?";
+            PreparedStatement statement = con.prepareStatement(sql);
+            statement.setString(1, owner);
+            logger.info("Executing prepared statement");
+            ResultSet rs = statement.executeQuery();
 
             while (rs.next()) {
+                // Never return the stored password (hash) to the caller.
                 String res_name = rs.getString("username");
-                String res_pwd = rs.getString("password");
-                String info = String.format("%s: %s\n", res_name, res_pwd);
+                String info = String.format("%s\n", res_name);
                 result.append(info);
-                logger.info(info);
+                logger.info("Query result row read");
             }
             rs.close();
             con.close();
@@ -80,7 +170,7 @@ public class SQLI {
         } catch (ClassNotFoundException e) {
             logger.error("Sorry, can't find the Driver!");
         } catch (SQLException e) {
-            logger.error(e.toString());
+            logger.error("SQL execution failed", e);
         }
         return result.toString();
     }
@@ -94,6 +184,7 @@ public class SQLI {
     @RequestMapping("/jdbc/sec")
     public String jdbc_sqli_sec(@RequestParam("username") String username) {
 
+        final String owner = lookupKey(username);
         StringBuilder result = new StringBuilder();
         try {
             Class.forName(driver);
@@ -105,17 +196,17 @@ public class SQLI {
             // fix code
             String sql = "select * from users where username = ?";
             PreparedStatement st = con.prepareStatement(sql);
-            st.setString(1, username);
+            st.setString(1, owner);
 
-            logger.info(st.toString());  // sql after prepare statement
+            logger.info("Executing prepared statement");
             ResultSet rs = st.executeQuery();
 
             while (rs.next()) {
+                // Never return the stored password (hash) to the caller.
                 String res_name = rs.getString("username");
-                String res_pwd = rs.getString("password");
-                String info = String.format("%s: %s\n", res_name, res_pwd);
+                String info = String.format("%s\n", res_name);
                 result.append(info);
-                logger.info(info);
+                logger.info("Query result row read");
             }
 
             rs.close();
@@ -125,7 +216,7 @@ public class SQLI {
             logger.error("Sorry, can't find the Driver!");
             e.printStackTrace();
         } catch (SQLException e) {
-            logger.error(e.toString());
+            logger.error("SQL execution failed", e);
         }
         return result.toString();
     }
@@ -138,6 +229,8 @@ public class SQLI {
     @RequestMapping("/jdbc/ps/vuln")
     public String jdbc_ps_vuln(@RequestParam("username") String username) {
 
+        // The lookup key is the authenticated principal, not the request string.
+        final String owner = lookupKey(username);
         StringBuilder result = new StringBuilder();
         try {
             Class.forName(driver);
@@ -146,18 +239,19 @@ public class SQLI {
             if (!con.isClosed())
                 System.out.println("Connecting to Database successfully.");
 
-            String sql = "select * from users where username = '" + username + "'";
+            String sql = "select * from users where username = ?";
             PreparedStatement st = con.prepareStatement(sql);
+            st.setString(1, owner);
 
-            logger.info(st.toString());
+            logger.info("Executing prepared statement");
             ResultSet rs = st.executeQuery();
 
             while (rs.next()) {
+                // Never return the stored password (hash) to the caller.
                 String res_name = rs.getString("username");
-                String res_pwd = rs.getString("password");
-                String info = String.format("%s: %s\n", res_name, res_pwd);
+                String info = String.format("%s\n", res_name);
                 result.append(info);
-                logger.info(info);
+                logger.info("Query result row read");
             }
 
             rs.close();
@@ -167,7 +261,7 @@ public class SQLI {
             logger.error("Sorry, can't find the Driver!");
             e.printStackTrace();
         } catch (SQLException e) {
-            logger.error(e.toString());
+            logger.error("SQL execution failed", e);
         }
         return result.toString();
     }
@@ -180,7 +274,7 @@ public class SQLI {
      */
     @GetMapping("/mybatis/vuln01")
     public List<User> mybatisVuln01(@RequestParam("username") String username) {
-        return userMapper.findByUserNameVuln01(username);
+        return redact(userMapper.findByUserNameVuln01(lookupKey(username)));
     }
 
     /**
@@ -190,7 +284,8 @@ public class SQLI {
      */
     @GetMapping("/mybatis/vuln02")
     public List<User> mybatisVuln02(@RequestParam("username") String username) {
-        return userMapper.findByUserNameVuln02(username);
+        // The lookup key is the authenticated principal, not the request string.
+        return redact(userMapper.findByUserNameVuln02(lookupKey(username)));
     }
 
     /**
@@ -200,7 +295,29 @@ public class SQLI {
      */
     @GetMapping("/mybatis/orderby/vuln03")
     public List<User> mybatisVuln03(@RequestParam("sort") String sort) {
-        return userMapper.findByUserNameVuln03(sort);
+        return userMapper.findByUserNameVuln03(orderByColumn(sort));
+    }
+
+    /**
+     * Allowlist of sortable columns. ORDER BY identifiers cannot be bound as
+     * parameters, so only a fixed, known column name is ever passed on.
+     *
+     * @return the allowlisted column name, or null (no ordering) if not allowed
+     */
+    private static String orderByColumn(String sort) {
+        if (sort == null) {
+            return null;
+        }
+        switch (sort.trim().toLowerCase(java.util.Locale.ROOT)) {
+            case "id":
+                return "id";
+            case "username":
+                return "username";
+            case "password":
+                return "password";
+            default:
+                return null;
+        }
     }
 
 
@@ -210,7 +327,7 @@ public class SQLI {
      */
     @GetMapping("/mybatis/sec01")
     public User mybatisSec01(@RequestParam("username") String username) {
-        return userMapper.findByUserName(username);
+        return redact(userMapper.findByUserName(lookupKey(username)));
     }
 
     /**
@@ -219,7 +336,11 @@ public class SQLI {
      */
     @GetMapping("/mybatis/sec02")
     public User mybatisSec02(@RequestParam("id") Integer id) {
-        return userMapper.findById(id);
+        User found = userMapper.findById(id);
+        if (!isAdmin() && (found == null || !isCurrentUser(found.getUsername()))) {
+            throw new AccessDeniedException("Access denied");
+        }
+        return redact(found);
     }
 
 
@@ -239,7 +360,7 @@ public class SQLI {
      */
     @GetMapping("/mybatis/orderby/sec04")
     public List<User> mybatisOrderBySec04(@RequestParam("sort") String sort) {
-        return userMapper.findByUserNameVuln03(SecurityUtil.sqlFilter(sort));
+        return userMapper.findByUserNameVuln03(orderByColumn(sort));
     }
 
 }

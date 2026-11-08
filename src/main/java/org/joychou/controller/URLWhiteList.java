@@ -1,6 +1,7 @@
 package org.joychou.controller;
 
 
+import org.springframework.web.util.HtmlUtils;
 import org.joychou.security.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -8,8 +9,10 @@ import org.springframework.web.bind.annotation.*;
 
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.net.URL;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -27,6 +30,20 @@ public class URLWhiteList {
 
 
     private String domainwhitelist[] = {"joychou.org", "joychou.com"};
+
+    /**
+     * Server-owned redirect targets (allowlisted domain -> constant absolute url).
+     * The request url is never used as the redirect Location.
+     */
+    private static final Map<String, String> REDIRECT_TARGETS;
+
+    static {
+        Map<String, String> targets = new LinkedHashMap<>();
+        targets.put("joychou.org", "https://www.joychou.org/");
+        targets.put("joychou.com", "https://www.joychou.com/");
+        REDIRECT_TARGETS = Collections.unmodifiableMap(targets);
+    }
+
     private static final Logger logger = LoggerFactory.getLogger(URLWhiteList.class);
 
     /**
@@ -98,23 +115,30 @@ public class URLWhiteList {
     @GetMapping("/vuln/url_bypass")
     public void url_bypass(String url, HttpServletResponse res) throws IOException {
 
-        logger.info("url:  " + url);
+        logger.info("url_bypass request received");
 
         if (!SecurityUtil.isHttp(url)) {
             return;
         }
 
-        URL u = new URL(url);
-        String host = u.getHost();
-        logger.info("host:  " + host);
+        // Strict RFC 3986 parsing (java.net.URI) rejects the backslash tricks that java.net.URL accepts.
+        String host = SecurityUtil.gethost(url);
 
         // endsWith .
         for (String domain : domainwhitelist) {
             if (host.endsWith("." + domain)) {
-                res.sendRedirect(url);
+                // The request value is only used for matching; the Location is the server-owned constant.
+                String target = REDIRECT_TARGETS.get(domain);
+                if (target == null || SecurityUtil.checkRedirectURL(url) == null) {
+                    res.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                    return;
+                }
+                res.sendRedirect(target);
+                return;
             }
         }
 
+        res.setStatus(HttpServletResponse.SC_FORBIDDEN);
     }
 
 
@@ -135,9 +159,9 @@ public class URLWhiteList {
 
         for (String whiteHost: whiteDomainlists){
             if (whiteHost.startsWith(".") && host.endsWith(whiteHost)) {
-                return url;
+                return HtmlUtils.htmlEscape(url);
             } else if (!whiteHost.startsWith(".") && host.equals(whiteHost)) {
-                return url;
+                return HtmlUtils.htmlEscape(url);
             }
         }
 

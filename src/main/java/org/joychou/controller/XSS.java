@@ -1,6 +1,6 @@
 package org.joychou.controller;
 
-import org.apache.commons.lang.StringUtils;
+import org.springframework.web.util.HtmlUtils;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -27,7 +27,7 @@ public class XSS {
     @RequestMapping("/reflect")
     @ResponseBody
     public static String reflect(String xss) {
-        return xss;
+        return encode(xss);
     }
 
     /**
@@ -41,6 +41,8 @@ public class XSS {
     @ResponseBody
     public String store(String xss, HttpServletResponse response) {
         Cookie cookie = new Cookie("xss", xss);
+        cookie.setSecure(true);
+        cookie.setHttpOnly(true);
         response.addCookie(cookie);
         return "Set param into cookie";
     }
@@ -55,7 +57,7 @@ public class XSS {
     @RequestMapping("/stored/show")
     @ResponseBody
     public String show(@CookieValue("xss") String xss) {
-        return xss;
+        return encode(xss);
     }
 
     /**
@@ -69,12 +71,6 @@ public class XSS {
     }
 
     private static String encode(String origin) {
-        origin = StringUtils.replace(origin, "&", "&amp;");
-        origin = StringUtils.replace(origin, "<", "&lt;");
-        origin = StringUtils.replace(origin, ">", "&gt;");
-        origin = StringUtils.replace(origin, "\"", "&quot;");
-        origin = StringUtils.replace(origin, "'", "&#x27;");
-        origin = StringUtils.replace(origin, "/", "&#x2F;");
-        return origin;
+        return HtmlUtils.htmlEscape(origin);
     }
 }

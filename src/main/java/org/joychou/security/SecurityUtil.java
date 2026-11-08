@@ -1,6 +1,7 @@
 package org.joychou.security;
 
 import org.joychou.config.WebConfig;
+import org.joychou.security.ssrf.ParsedUrl;
 import org.joychou.security.ssrf.SSRFChecker;
 import org.joychou.security.ssrf.SocketHook;
 import org.slf4j.Logger;
@@ -8,17 +9,37 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.UUID;
 import java.util.regex.Pattern;
 
 
 public class SecurityUtil {
 
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
+    private static final Pattern CMD_ARG_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.=-]+$");
+    private static final Set<String> CMD_ALLOWLIST = new HashSet<>(
+            Arrays.asList("whoami", "id", "date", "hostname", "uname", "pwd", "uptime", "ls"));
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
+
+    private static final String HEADER_VALUE_CHARS =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 _.,:=@/+-";
+    private static final String COOKIE_VALUE_CHARS =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.:=@/+-";
+    private static final String FILENAME_CHARS =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-";
+    private static final String HOST_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789.-";
+    private static final String URL_CHARS =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._~!$&'()*+,;=:@/?#%-";
+    private static final int MAX_URL_LENGTH = 2048;
+    private static final List<String> SCHEMES = Collections.unmodifiableList(Arrays.asList("http", "https"));
 
 
     /**
@@ -39,12 +60,11 @@ public class SecurityUtil {
      * @return host
      */
     public static String gethost(String url) {
-        try {
-            URI uri = new URI(url);
-            return uri.getHost().toLowerCase();
-        } catch (URISyntaxException e) {
+        if (url == null || !isHttp(url)) {
             return "";
         }
+        // Strict authority parsing (no userinfo / odd characters); the raw string never reaches URI/URL.
+        return ParsedUrl.hostOf(url);
     }
 
 
@@ -95,9 +115,39 @@ public class SecurityUtil {
             }
             return null;
         } catch (NullPointerException e) {
-            logger.error(e.toString());
+            logger.error("Url check failed", e);
             return null;
         }
+    }
+
+
+    /**
+     * Validate a user supplied redirect target. It is accepted only if it is either an absolute
+     * http(s) url whose host passes {@link #checkURL(String)} (safe domain list), or a same-site
+     * absolute path such as <code>/a/b</code>. Protocol-relative urls (<code>//host</code>),
+     * backslashes and control characters are rejected.
+     *
+     * @param url user supplied redirect target
+     * @return the original url if it is safe to redirect to, otherwise null
+     */
+    public static String checkRedirectURL(String url) {
+        if (url == null || url.isEmpty()) {
+            return null;
+        }
+        for (int i = 0; i < url.length(); i++) {
+            char ch = url.charAt(i);
+            if (ch == '\\' || Character.isISOControl(ch) || Character.isWhitespace(ch)) {
+                return null;
+            }
+        }
+        if (url.startsWith("/")) {
+            // Same-site path only: "//host" and "/\host" are treated as network-path by browsers.
+            if (url.startsWith("//")) {
+                return null;
+            }
+            return url;
+        }
+        return checkURL(url);
     }
 
 
@@ -183,10 +233,10 @@ public class SecurityUtil {
             try {
                 temp = URLDecoder.decode(temp, "utf-8");
             } catch (UnsupportedEncodingException e) {
-                logger.info("Unsupported encoding exception: " + filepath);
+                logger.info("Unsupported encoding exception");
                 return null;
             } catch (Exception e) {
-                logger.info(e.toString());
+                logger.info("Path decode failed", e);
                 return null;
             }
         }
@@ -199,12 +249,218 @@ public class SecurityUtil {
     }
 
 
+    /**
+     * Make an attacker-controlled value safe to use as an HTTP header value (or Location value)
+     * by removing CR, LF and all other ISO control characters (horizontal tab is kept),
+     * which prevents HTTP response splitting / header injection.
+     *
+     * @param value untrusted header value, may be null
+     * @return the value without control characters, or null if value is null
+     */
+    public static String sanitizeHeaderValue(String value) {
+        if (value == null) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            if (ch == '\t' || !Character.isISOControl(ch)) {
+                sb.append(ch);
+            }
+        }
+        return sb.toString();
+    }
+
+
+    /**
+     * Rebuild a value character by character. Every character that is accepted is looked up in the
+     * server-owned {@code allowed} table and the table's character is appended, so the result is a
+     * new String assembled only from whitelisted constants. Anything else is dropped.
+     */
+    private static String rebuildFrom(String value, String allowed, int maxLength) {
+        if (value == null) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder(Math.min(value.length(), maxLength));
+        for (int i = 0; i < value.length() && sb.length() < maxLength; i++) {
+            int idx = allowed.indexOf(value.charAt(i));
+            if (idx >= 0) {
+                sb.append(allowed.charAt(idx));
+            }
+        }
+        return sb.toString();
+    }
+
+
+    /**
+     * Rebuild an untrusted value so that it only consists of characters from the whitelist
+     * <code>[A-Za-z0-9 _.,:=@/+-]</code> (at most {@code maxLength} characters). Suitable for
+     * header and cookie values.
+     *
+     * @param value untrusted value, may be null
+     * @param maxLength maximum length of the result
+     * @return newly assembled value, or null if value is null
+     */
+    public static String whitelistRebuild(String value, int maxLength) {
+        return rebuildFrom(value, HEADER_VALUE_CHARS, maxLength);
+    }
+
+
+    /**
+     * Rebuild an untrusted value for use as a cookie value: only <code>[A-Za-z0-9_.:=@/+-]</code>
+     * (no space, comma, semicolon, quote or backslash), at most {@code maxLength} characters.
+     *
+     * @param value untrusted value, may be null
+     * @param maxLength maximum length of the result
+     * @return newly assembled value, or null if value is null
+     */
+    public static String cookieValueRebuild(String value, int maxLength) {
+        return rebuildFrom(value, COOKIE_VALUE_CHARS, maxLength);
+    }
+
+
+    /**
+     * Compare an untrusted value with a server-owned allowlist and return the matching constant
+     * from the allowlist (never the untrusted string itself).
+     *
+     * @param value untrusted value, may be null
+     * @param allowlist server-owned constants
+     * @return the matching element of the allowlist, or null if nothing matches
+     */
+    public static String matchAllowlisted(String value, Collection<String> allowlist) {
+        if (value == null || allowlist == null) {
+            return null;
+        }
+        for (String candidate : allowlist) {
+            if (candidate != null && candidate.equals(value)) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+
+    /**
+     * Validate an Origin / Referer style url against the safe-domain list ({@link #checkURL(String)})
+     * and return a server-built origin (<code>scheme://host[:port]</code>) that is assembled from
+     * constants (scheme from a fixed list, host characters from a whitelist table, port from an int).
+     * The request string itself is never returned.
+     *
+     * @param origin untrusted Origin header value
+     * @return server-built origin, or null if the origin is not allowed
+     */
+    public static String safeOrigin(String origin) {
+        if (checkURL(origin) == null) {
+            return null;
+        }
+        ParsedUrl parsed = ParsedUrl.parse(origin);
+        if (parsed == null) {
+            return null;
+        }
+        String scheme = matchAllowlisted(parsed.scheme, SCHEMES);
+        String host = rebuildFrom(parsed.host, HOST_CHARS, 253);
+        if (scheme == null || host == null || host.isEmpty()) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder(scheme).append("://").append(host);
+        if (parsed.port != -1) {
+            sb.append(':').append(parsed.port);
+        }
+        return sb.toString();
+    }
+
+
+    /**
+     * Validate a redirect target ({@link #checkRedirectURL(String)}) and return a server-built
+     * Location value: scheme from a fixed list, host / path / query re-assembled from whitelist
+     * tables. Targets containing any character outside the whitelist are rejected.
+     *
+     * @param url untrusted redirect target
+     * @return server-built redirect target, or null if the target must not be used
+     */
+    public static String safeRedirectLocation(String url) {
+        String checked = checkRedirectURL(url);
+        if (checked == null) {
+            return null;
+        }
+        if (checked.startsWith("/")) {
+            String path = rebuildFrom(checked, URL_CHARS, MAX_URL_LENGTH);
+            return path.equals(checked) ? path : null;
+        }
+        ParsedUrl parsed = ParsedUrl.parse(checked);
+        if (parsed == null) {
+            return null;
+        }
+        String scheme = matchAllowlisted(parsed.scheme, SCHEMES);
+        String host = rebuildFrom(parsed.host, HOST_CHARS, 253);
+        String path = rebuildFrom(parsed.path, URL_CHARS, MAX_URL_LENGTH);
+        if (scheme == null || host == null || host.isEmpty() || path == null) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder(scheme).append("://").append(host);
+        if (parsed.port != -1) {
+            sb.append(':').append(parsed.port);
+        }
+        sb.append(path);
+        if (parsed.query != null) {
+            sb.append('?').append(rebuildFrom(parsed.query, URL_CHARS, MAX_URL_LENGTH));
+        }
+        return sb.toString();
+    }
+
+
+    /**
+     * Build a download file name for a Content-Disposition header from untrusted input. The name is
+     * re-assembled from <code>[A-Za-z0-9._-]</code> only (max 64 chars); when nothing is left a
+     * server-generated UUID is used. The result needs no further escaping (RFC 5987 safe).
+     *
+     * @param untrustedName untrusted file name, may be null
+     * @return server-built file name, never null or empty
+     */
+    public static String safeFilename(String untrustedName) {
+        String name = rebuildFrom(untrustedName, FILENAME_CHARS, 64);
+        if (name == null || name.isEmpty() || name.replace(".", "").isEmpty()) {
+            return UUID.randomUUID().toString();
+        }
+        return name;
+    }
+
+
     public static String cmdFilter(String input) {
-        if (!FILTER_PATTERN.matcher(input).matches()) {
+        if (input == null || !FILTER_PATTERN.matcher(input).matches()) {
             return null;
         }
 
         return input;
+    }
+
+
+    /**
+     * Parse a user supplied command line into an argv array without involving a shell.
+     * The program must be on a fixed allowlist and every argument must match a strict
+     * character set, so the result can be passed directly to ProcessBuilder.
+     *
+     * @param cmd user supplied command line, e.g. "ls -la /tmp"
+     * @return argv array, or null if the command is not allowed
+     */
+    public static String[] cmdArgv(String cmd) {
+        if (cmd == null) {
+            return null;
+        }
+        String trimmed = cmd.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        String[] argv = trimmed.split("\\s+");
+        if (!CMD_ALLOWLIST.contains(argv[0])) {
+            return null;
+        }
+        for (int i = 1; i < argv.length; i++) {
+            if (!CMD_ARG_PATTERN.matcher(argv[i]).matches()) {
+                return null;
+            }
+        }
+        return argv;
     }
 
 
