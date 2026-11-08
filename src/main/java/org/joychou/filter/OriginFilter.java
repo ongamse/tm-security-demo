@@ -45,9 +45,16 @@ public class OriginFilter implements Filter {
             return;
         }
 
-        response.setHeader("Access-Control-Allow-Origin", SecurityUtil.sanitizeHeaderValue(origin));
-        response.setHeader("Access-Control-Allow-Credentials", "true");
-        response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTION");
+        // The echoed origin depends on the request, so caches must key on Origin.
+        response.addHeader("Vary", "Origin");
+
+        // Only echo an origin that passed the safe-domain check; same-origin requests (no Origin) get no CORS headers.
+        String safeOrigin = SecurityUtil.checkURL(origin);
+        if (safeOrigin != null) {
+            response.setHeader("Access-Control-Allow-Origin", SecurityUtil.sanitizeHeaderValue(safeOrigin));
+            response.setHeader("Access-Control-Allow-Credentials", "true");
+            response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTION");
+        }
 
         filterChain.doFilter(req, res);
     }
