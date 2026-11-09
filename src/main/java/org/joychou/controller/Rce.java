@@ -1,6 +1,9 @@
 package org.joychou.controller;
 
 import groovy.lang.GroovyShell;
+import jdk.nashorn.api.scripting.ClassFilter;
+import jdk.nashorn.api.scripting.NashornScriptEngineFactory;
+import org.joychou.security.SecurityUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -11,7 +14,6 @@ import org.yaml.snakeyaml.constructor.SafeConstructor;
 import javax.script.Bindings;
 import javax.script.ScriptContext;
 import javax.script.ScriptEngine;
-import javax.script.ScriptEngineManager;
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -30,11 +32,14 @@ public class Rce {
 
     @GetMapping("/runtime/exec")
     public String CommandExec(String cmd) {
-        Runtime run = Runtime.getRuntime();
         StringBuilder sb = new StringBuilder();
 
         try {
-            Process p = run.exec(cmd);
+            String[] argv = SecurityUtil.parseAllowedCommand(cmd);
+            if (argv == null) {
+                return "Bad boy. I got u.";
+            }
+            Process p = new ProcessBuilder(argv).start();
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
             String tmpStr;
@@ -66,7 +71,10 @@ public class Rce {
         StringBuilder sb = new StringBuilder();
 
         try {
-            String[] arrCmd = {"/bin/sh", "-c", cmd};
+            String[] arrCmd = SecurityUtil.parseAllowedCommand(cmd);
+            if (arrCmd == null) {
+                return "Bad boy. I got u.";
+            }
             ProcessBuilder processBuilder = new ProcessBuilder(arrCmd);
             Process p = processBuilder.start();
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
@@ -95,10 +103,20 @@ public class Rce {
     @GetMapping("/jscmd")
     public void jsEngine(String jsurl) throws Exception{
         // js nashorn javascript ecmascript
-        ScriptEngine engine = new ScriptEngineManager().getEngineByName("js");
+        // Only allowlisted script URLs, and the script cannot reach any Java class.
+        String safeUrl = SecurityUtil.checkURL(jsurl);
+        if (safeUrl == null) {
+            throw new IllegalArgumentException("jsurl is not allowed");
+        }
+        ScriptEngine engine = new NashornScriptEngineFactory().getScriptEngine(new ClassFilter() {
+            @Override
+            public boolean exposeToScripts(String className) {
+                return false;
+            }
+        });
         Bindings bindings = engine.getBindings(ScriptContext.ENGINE_SCOPE);
-        String cmd = String.format("load(\"%s\")", jsurl);
-        engine.eval(cmd, bindings);
+        bindings.put("jsurl", safeUrl);
+        engine.eval("load(jsurl)", bindings);
     }
 
 
@@ -110,7 +128,7 @@ public class Rce {
      */
     @GetMapping("/vuln/yarm")
     public void yarm(String content) {
-        Yaml y = new Yaml();
+        Yaml y = new Yaml(new SafeConstructor());
         y.load(content);
     }
 
