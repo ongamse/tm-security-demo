@@ -650,7 +650,8 @@ public class SecurityUtil {
     }
 
     /**
-     * Emit CORS Allow-Origin / Allow-Credentials headers only for an allowlisted origin.
+     * Emit the CORS Allow-Origin header only for an allowlisted origin.
+     * Access-Control-Allow-Credentials is intentionally never emitted (no credentialed cross-site requests).
      *
      * @return true if the origin was allowlisted and headers were written
      */
@@ -663,7 +664,6 @@ public class SecurityUtil {
             if (allowed.equals(origin)) {
                 // header value comes from the server-side constant, not from the request
                 response.setHeader("Access-Control-Allow-Origin", allowed);
-                response.setHeader("Access-Control-Allow-Credentials", "true");
                 return true;
             }
         }
