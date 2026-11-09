@@ -17,11 +17,20 @@ import java.nio.file.InvalidPathException;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Locale;
+import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Stream;
 
 @RestController
 public class PathTraversal {
 
     protected final Logger logger = LoggerFactory.getLogger(this.getClass());
+
+    private static final Set<String> ALLOWED_IMAGE_EXTENSIONS =
+            new HashSet<>(Arrays.asList("png", "jpg", "jpeg", "gif", "bmp", "webp"));
 
     /**
      * http://localhost:8080/path_traversal/vul?filepath=../../../../../etc/passwd
@@ -48,22 +57,21 @@ public class PathTraversal {
             return "File doesn't exist or is not a file.";
         }
 
-        // Resolve against the fixed working directory, normalize ("..", "."), and enforce
-        // base-directory containment on the real (symlink-free) parent directory.
-        Path target;
-        try {
-            target = resolveInAllowedDir(imgFile);
-        } catch (InvalidPathException e) {
-            return "File doesn't exist or is not a file.";
-        }
-        if (target == null) {
+        // Only a plain file name (no separators, no "." / "..") with an image extension is accepted.
+        if (!isAllowedImageName(imgFile)) {
             logger.info("File path outside of allowed directories");
             return "Bad boy. Illegal file path.";
         }
 
-        // Open the already-resolved path directly (no exists()/isFile() pre-check); the final
-        // component is never followed if it is a symlink. Missing files and directories
-        // surface as IOException.
+        // The Path that is opened comes from listing a fixed server-side directory, never from
+        // request text. Only direct children of the base directory can match the requested name.
+        Path target = findInAllowedDirs(imgFile);
+        if (target == null) {
+            return "File doesn't exist or is not a file.";
+        }
+
+        // The final component is never followed if it is a symlink. Directories surface as
+        // IOException.
         try (InputStream in = Files.newInputStream(target, LinkOption.NOFOLLOW_LINKS)) {
             byte[] data = StreamUtils.copyToByteArray(in);
             return new String(Base64.encodeBase64(data));
@@ -72,44 +80,38 @@ public class PathTraversal {
         }
     }
 
-    /**
-     * Only files under the working directory or the upload directory may be read.
-     * Returns the normalized path (parent directory resolved to its real path) when it lies
-     * inside an allowed base directory, or null when it does not.
-     */
-    private static Path resolveInAllowedDir(String requested) throws IOException {
-        Path workDir = Paths.get(System.getProperty("user.dir")).toRealPath();
-        Path resolved = workDir.resolve(requested).normalize();
-        Path parent = resolved.getParent();
-        Path name = resolved.getFileName();
-        if (parent == null || name == null) {
-            return null;
+    private static boolean isAllowedImageName(String name) {
+        if (name.isEmpty() || name.indexOf('/') != -1 || name.indexOf('\\') != -1
+                || name.equals(".") || name.equals("..")) {
+            return false;
         }
-
-        Path realParent;
-        try {
-            realParent = parent.toRealPath();
-        } catch (IOException e) {
-            // Parent directory does not exist: only report "not found" if it was lexically inside.
-            return isUnderAllowedBase(resolved) ? parent.resolve(name) : null;
+        int dot = name.lastIndexOf('.');
+        if (dot <= 0) {
+            return false;
         }
-        Path candidate = realParent.resolve(name);
-        return isUnderAllowedBase(candidate) ? candidate : null;
+        String ext = name.substring(dot + 1).toLowerCase(Locale.ROOT);
+        return ALLOWED_IMAGE_EXTENSIONS.contains(ext);
     }
 
-    private static boolean isUnderAllowedBase(Path path) {
+    /**
+     * Lists each allowed base directory (server-side constants) and returns the directory entry
+     * whose file name equals the requested name, or null when there is none.
+     */
+    private static Path findInAllowedDirs(String name) {
         String[] allowedDirs = {System.getProperty("user.dir"), "/tmp"};
         for (String dir : allowedDirs) {
-            try {
-                Path base = Paths.get(dir).toRealPath();
-                if (path.startsWith(base) && !path.equals(base)) {
-                    return true;
+            try (Stream<Path> entries = Files.list(Paths.get(dir).toRealPath())) {
+                Optional<Path> match = entries
+                        .filter(p -> p.getFileName() != null && p.getFileName().toString().equals(name))
+                        .findFirst();
+                if (match.isPresent()) {
+                    return match.get();
                 }
-            } catch (IOException e) {
+            } catch (IOException | InvalidPathException e) {
                 // base directory unavailable; skip it
             }
         }
-        return false;
+        return null;
     }
 
     public static void main(String[] argv) throws IOException {
