@@ -21,14 +21,23 @@ public class CustomCorsProcessor extends DefaultCorsProcessor {
     @Override
     protected String checkOrigin(CorsConfiguration config, String requestOrigin) {
 
-        // 支持checkOrigin原装的域名配置
-        String result = super.checkOrigin(config, requestOrigin);
-        if (result != null) {
-            return result;
-        }
-
         if (StringUtils.isBlank(requestOrigin)) {
             return null;
+        }
+
+        // 支持原装的域名配置: the returned value is the configured constant, never the request string
+        java.util.List<String> configured = config.getAllowedOrigins();
+        if (configured != null) {
+            for (String allowed : configured) {
+                if ("*".equals(allowed)) {
+                    // wildcard is never combined with credentials
+                    if (!Boolean.TRUE.equals(config.getAllowCredentials())) {
+                        return "*";
+                    }
+                } else if (allowed != null && allowed.equals(requestOrigin)) {
+                    return allowed;
+                }
+            }
         }
 
         return customCheckOrigin(requestOrigin);

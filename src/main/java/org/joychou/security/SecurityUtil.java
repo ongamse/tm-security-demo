@@ -27,7 +27,15 @@ public class SecurityUtil {
 
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
     private static final Pattern ARG_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.=:-]+$");
-    private static final Pattern CORS_HOST_PATTERN = Pattern.compile("^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$");
+    /**
+     * Fixed server-side list of trusted CORS origins (keep in sync with resources/url/url_safe_domain.xml).
+     * Access-Control-Allow-Origin is only ever set from an element of this list.
+     */
+    private static final String[] CORS_ALLOWED_ORIGINS = {
+            "https://www.joychou.org",
+            "https://www.joychou.com",
+            "https://test.joychou.org"
+    };
     private static final Set<String> ALLOWED_COMMANDS = new HashSet<String>(
             Arrays.asList("whoami", "pwd", "date", "id", "uname", "hostname", "uptime", "ls", "echo"));
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
@@ -614,35 +622,31 @@ public class SecurityUtil {
      * The Origin must be a bare http/https origin (scheme://host[:port]) with no user info, path,
      * query or fragment, otherwise it is rejected (fail closed).
      *
-     * The returned string is rebuilt from validated parts (a fixed scheme constant, the encoded
-     * allowlisted host and the numeric port) and never the raw request string.
+     * The request Origin is only compared (String.equals) with a fixed list of origin constants
+     * ({@link #CORS_ALLOWED_ORIGINS}); the returned string is the list's own element and never the
+     * request string. Sub-domain suffix matching is intentionally not supported here.
      *
      * @param origin value of the Origin request header
-     * @return the canonical origin if it is allowlisted, null otherwise (including null/"null"/malformed values)
+     * @return the allowlisted origin constant if the request matches it, null otherwise (including null/"null"/malformed values)
      */
     public static String checkCorsOrigin(String origin) {
-        if (origin == null || checkURL(origin) == null) {
+        if (origin == null) {
             return null;
         }
-        ParsedUrl parsed = parseUrl(origin);
-        if (parsed == null || parsed.getUserInfo() != null || parsed.getRawQuery() != null
-                || origin.indexOf('#') >= 0) {
-            return null;
+        for (String allowed : CORS_ALLOWED_ORIGINS) {
+            if (allowed.equals(origin)) {
+                // return the server-side constant, never the request value
+                return allowed;
+            }
         }
-        String path = parsed.getRawPath();
-        if (path != null && !path.isEmpty()) {
-            return null;
-        }
-        String host = parsed.getHost();
-        if (!CORS_HOST_PATTERN.matcher(host).matches()) {
-            return null;
-        }
-        int port = parsed.getPort();
-        if (port != -1 && (port < 1 || port > 65535)) {
-            return null;
-        }
-        String scheme = origin.startsWith("https://") ? "https" : "http";
-        return scheme + "://" + encodeHeaderValue(host) + (port == -1 ? "" : ":" + port);
+        return null;
+    }
+
+    /**
+     * @return a copy of the fixed server-side list of allowed CORS origins
+     */
+    public static String[] getCorsAllowedOrigins() {
+        return CORS_ALLOWED_ORIGINS.clone();
     }
 
     /**
@@ -651,14 +655,19 @@ public class SecurityUtil {
      * @return true if the origin was allowlisted and headers were written
      */
     public static boolean applyCorsHeaders(String origin, javax.servlet.http.HttpServletResponse response) {
-        String safeOrigin = checkCorsOrigin(origin);
-        if (safeOrigin == null) {
+        response.addHeader("Vary", "Origin");
+        if (origin == null) {
             return false;
         }
-        response.setHeader("Access-Control-Allow-Origin", safeOrigin);
-        response.setHeader("Access-Control-Allow-Credentials", "true");
-        response.addHeader("Vary", "Origin");
-        return true;
+        for (String allowed : CORS_ALLOWED_ORIGINS) {
+            if (allowed.equals(origin)) {
+                // header value comes from the server-side constant, not from the request
+                response.setHeader("Access-Control-Allow-Origin", allowed);
+                response.setHeader("Access-Control-Allow-Credentials", "true");
+                return true;
+            }
+        }
+        return false;
     }
 
     public static void main(String[] args) {
