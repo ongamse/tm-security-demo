@@ -2,7 +2,6 @@ package org.joychou.controller;
 
 import lombok.extern.slf4j.Slf4j;
 import org.joychou.security.SecurityUtil;
-import org.joychou.util.LogSanitizer;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -88,7 +87,7 @@ public class Jdbc {
     @RequestMapping("/postgresql")
     public void postgresql(String jdbcUrlBase64) throws Exception{
         String jdbcUrl = checkedJdbcUrl(jdbcUrlBase64, POSTGRESQL_URL);
-        log.info("jdbc url: {}", LogSanitizer.clean(jdbcUrl));
+        log.info("jdbc url validated, length={}", jdbcUrl.length());
         DriverManager.getConnection(jdbcUrl);
     }
 
@@ -96,7 +95,7 @@ public class Jdbc {
     public void db2(String jdbcUrlBase64) throws Exception{
         Class.forName("com.ibm.db2.jcc.DB2Driver");
         String jdbcUrl = checkedJdbcUrl(jdbcUrlBase64, DB2_URL);
-        log.info("jdbc url: {}", LogSanitizer.clean(jdbcUrl));
+        log.info("jdbc url validated, length={}", jdbcUrl.length());
         DriverManager.getConnection(jdbcUrl);
     }
 }

@@ -20,7 +20,6 @@ import java.util.Locale;
 import java.util.UUID;
 
 import org.joychou.security.SecurityUtil;
-import org.joychou.util.LogSanitizer;
 
 
 /**
@@ -111,7 +110,7 @@ public class FileUpload {
         for (String blackMimeType : mimeTypeBlackList) {
             // 用contains是为了防止text/html;charset=UTF-8绕过
             if (SecurityUtil.replaceSpecialStr(mimeType).toLowerCase().contains(blackMimeType)) {
-                logger.error("[-] Mime type error: {}", LogSanitizer.clean(mimeType));
+                logger.error("[-] Mime type error: blacklisted MIME type");
                 return "Upload failed. Illeagl picture.";
             }
         }
@@ -140,8 +139,8 @@ public class FileUpload {
             return "Upload failed";
         }
 
-        logger.info("[+] Safe file. Suffix: {}, MIME: {}", LogSanitizer.clean(Suffix), LogSanitizer.clean(mimeType));
-        logger.info("[+] Successfully uploaded {}", LogSanitizer.clean(filePath));
+        logger.info("[+] Safe file. Size: {} bytes", bytes.length);
+        logger.info("[+] Successfully uploaded a file");
         return String.format("You successfully uploaded '%s'", HtmlUtils.htmlEscape(filePath));
     }
 

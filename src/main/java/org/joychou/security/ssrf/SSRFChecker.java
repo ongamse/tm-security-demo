@@ -9,7 +9,6 @@ import org.apache.commons.net.util.SubnetUtils;
 import org.joychou.config.WebConfig;
 import org.joychou.security.SecurityUtil;
 import org.joychou.util.HttpUtils;
-import org.joychou.util.LogSanitizer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -91,7 +90,7 @@ public class SSRFChecker {
                 }
             }
         } catch (Exception e) {
-            logger.error("SSRFChecker checkSSRF exception: {}", LogSanitizer.clean(e.getMessage()));
+            logger.error("SSRFChecker checkSSRF exception: {}", e.getClass().getName());
             return false;  // fail closed: a url that cannot be verified is not considered safe
         }
     }
@@ -126,7 +125,7 @@ public class SSRFChecker {
      */
     public static boolean isInternalIp(String strIP) {
         if (StringUtils.isEmpty(strIP)) {
-            logger.error("[-] SSRF check failed. IP is empty. {}", LogSanitizer.clean(strIP));
+            logger.error("[-] SSRF check failed. IP is empty.");
             return true;
         }
 
@@ -134,7 +133,7 @@ public class SSRFChecker {
         for (String subnet : blackSubnets) {
             SubnetUtils utils = new SubnetUtils(subnet);
             if (utils.getInfo().isInRange(strIP)) {
-                logger.error("[-] SSRF check failed. Internal IP: {}", LogSanitizer.clean(strIP));
+                logger.error("[-] SSRF check failed. IP is in a blocked subnet.");
                 return true;
             }
         }
@@ -186,7 +185,7 @@ public class SSRFChecker {
             InetAddress IpAddress = InetAddress.getByName(host);
             return IpAddress.getHostAddress();
         } catch (Exception e) {
-            logger.error("host2ip exception {}", LogSanitizer.clean(e.getMessage()));
+            logger.error("host2ip exception {}", e.getClass().getName());
             return "";
         }
     }
@@ -207,7 +206,7 @@ public class SSRFChecker {
 
                 // not support ipv6
                 if (ipParts.length > 4) {
-                    logger.error("Illegal ipv4: {}", LogSanitizer.clean(host));
+                    logger.error("Illegal ipv4: too many parts");
                     return false;
                 }
 
@@ -220,20 +219,20 @@ public class SSRFChecker {
                 // 012.23.78.233
                 for(String ip : ipParts) {
                     if (!isNumber(ip)){
-                        logger.error("Illegal ipv4: {}", LogSanitizer.clean(host));
+                        logger.error("Illegal ipv4: part is not a number");
                         return false;
                     }
                     // start with "0", but not "0"
                     if (ip.startsWith("0") && !ip.equals("0")) {
                         if (Integer.valueOf(ip, 8) >= 256){
-                            logger.error("Illegal ipv4: {}", LogSanitizer.clean(host));
+                            logger.error("Illegal ipv4: octal part out of range");
                             return false;
                         }
                         newDecimalIP.append(Integer.valueOf(ip, 8)).append(".");
                         is_octal = true;
                     }else{
                         if (Integer.valueOf(ip, 10) >= 256) {
-                            logger.error("Illegal ipv4: {}", LogSanitizer.clean(host));
+                            logger.error("Illegal ipv4: decimal part out of range");
                             return false;
                         }
                         newDecimalIP.append(ip).append(".");
@@ -244,7 +243,7 @@ public class SSRFChecker {
             }
             return is_octal;
         } catch (Exception e){
-            logger.error("SSRFChecker isOctalIP exception: {}", LogSanitizer.clean(e.getMessage()));
+            logger.error("SSRFChecker isOctalIP exception: {}", e.getClass().getName());
             return false;
         }
 

@@ -4,7 +4,6 @@ package org.joychou.controller;
 import org.joychou.mapper.UserMapper;
 import org.joychou.dao.User;
 import org.joychou.security.SecurityUtil;
-import org.joychou.util.LogSanitizer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -92,7 +91,7 @@ public class SQLI {
             String sql = "select * from users where username = ?";
             PreparedStatement statement = con.prepareStatement(sql);
             statement.setString(1, username);
-            logger.info("{}", LogSanitizer.clean(statement.toString()));
+            logger.info("Executing prepared statement");
             ResultSet rs = statement.executeQuery();
 
             while (rs.next()) {
@@ -138,7 +137,7 @@ public class SQLI {
             PreparedStatement st = con.prepareStatement(sql);
             st.setString(1, username);
 
-            logger.info("{}", LogSanitizer.clean(st.toString()));  // sql after prepare statement
+            logger.info("Executing prepared statement");
             ResultSet rs = st.executeQuery();
 
             while (rs.next()) {
@@ -183,7 +182,7 @@ public class SQLI {
             PreparedStatement st = con.prepareStatement(sql);
             st.setString(1, username);
 
-            logger.info("{}", LogSanitizer.clean(st.toString()));
+            logger.info("Executing prepared statement");
             ResultSet rs = st.executeQuery();
 
             while (rs.next()) {

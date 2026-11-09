@@ -2,7 +2,6 @@ package org.joychou.controller;
 
 
 import org.joychou.security.SecurityUtil;
-import org.joychou.util.LogSanitizer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.*;
@@ -101,7 +100,7 @@ public class URLWhiteList {
     @GetMapping("/vuln/url_bypass")
     public void url_bypass(String url, HttpServletResponse res) throws IOException {
 
-        logger.info("url:  {}", LogSanitizer.clean(url));
+        logger.info("url_bypass request received");
 
         if (!SecurityUtil.isHttp(url)) {
             return;
@@ -123,7 +122,7 @@ public class URLWhiteList {
             return;
         }
         host = host.toLowerCase();
-        logger.info("host:  {}", LogSanitizer.clean(host));
+        logger.info("host parsed, length={}", host.length());
 
         // endsWith .
         for (String domain : domainwhitelist) {
