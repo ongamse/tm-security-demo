@@ -7,10 +7,14 @@ import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.io.File;
+import org.springframework.util.StreamUtils;
+
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
@@ -45,29 +49,65 @@ public class PathTraversal {
             return "File doesn't exist or is not a file.";
         }
 
-        // Canonicalize (resolves "..", "." and symlinks) and enforce base-directory containment.
-        File f = new File(imgFile).getCanonicalFile();
-        if (!isInAllowedDir(f)) {
+        // Resolve against the fixed working directory, normalize ("..", "."), and enforce
+        // base-directory containment on the real (symlink-free) parent directory.
+        Path target;
+        try {
+            target = resolveInAllowedDir(imgFile);
+        } catch (InvalidPathException e) {
+            return "File doesn't exist or is not a file.";
+        }
+        if (target == null) {
             logger.info("File path outside of allowed directories: " + imgFile);
             return "Bad boy. Illegal file path.";
         }
-        if (f.exists() && !f.isDirectory()) {
-            byte[] data = Files.readAllBytes(f.toPath());
+
+        // Open the already-resolved path directly (no exists()/isFile() pre-check); the final
+        // component is never followed if it is a symlink. Missing files and directories
+        // surface as IOException.
+        try (InputStream in = Files.newInputStream(target, LinkOption.NOFOLLOW_LINKS)) {
+            byte[] data = StreamUtils.copyToByteArray(in);
             return new String(Base64.encodeBase64(data));
-        } else {
+        } catch (IOException e) {
             return "File doesn't exist or is not a file.";
         }
     }
 
     /**
      * Only files under the working directory or the upload directory may be read.
+     * Returns the normalized path (parent directory resolved to its real path) when it lies
+     * inside an allowed base directory, or null when it does not.
      */
-    private static boolean isInAllowedDir(File canonicalFile) throws IOException {
+    private static Path resolveInAllowedDir(String requested) throws IOException {
+        Path workDir = Paths.get(System.getProperty("user.dir")).toRealPath();
+        Path resolved = workDir.resolve(requested).normalize();
+        Path parent = resolved.getParent();
+        Path name = resolved.getFileName();
+        if (parent == null || name == null) {
+            return null;
+        }
+
+        Path realParent;
+        try {
+            realParent = parent.toRealPath();
+        } catch (IOException e) {
+            // Parent directory does not exist: only report "not found" if it was lexically inside.
+            return isUnderAllowedBase(resolved) ? parent.resolve(name) : null;
+        }
+        Path candidate = realParent.resolve(name);
+        return isUnderAllowedBase(candidate) ? candidate : null;
+    }
+
+    private static boolean isUnderAllowedBase(Path path) {
         String[] allowedDirs = {System.getProperty("user.dir"), "/tmp"};
         for (String dir : allowedDirs) {
-            Path base = new File(dir).getCanonicalFile().toPath();
-            if (canonicalFile.toPath().startsWith(base)) {
-                return true;
+            try {
+                Path base = Paths.get(dir).toRealPath();
+                if (path.startsWith(base) && !path.equals(base)) {
+                    return true;
+                }
+            } catch (IOException e) {
+                // base directory unavailable; skip it
             }
         }
         return false;

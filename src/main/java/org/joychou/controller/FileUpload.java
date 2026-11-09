@@ -1,6 +1,5 @@
 package org.joychou.controller;
 
-import com.fasterxml.uuid.Generators;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Controller;
@@ -11,12 +10,13 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
-import java.io.File;
-import java.io.FileOutputStream;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
+import java.util.Locale;
 import java.util.UUID;
 
 import org.joychou.security.SecurityUtil;
@@ -34,7 +34,7 @@ public class FileUpload {
     // Save the uploaded file to this folder
     private static final String UPLOADED_FOLDER = "/tmp/";
     private final Logger logger = LoggerFactory.getLogger(this.getClass());
-    private static String randomFilePath = "";
+    private static final String[] PIC_SUFFIX_LIST = {".jpg", ".png", ".jpeg", ".gif", ".bmp", ".ico"};
 
     // uplaod any file
     @GetMapping("/any")
@@ -60,8 +60,8 @@ public class FileUpload {
         try {
             // Get the file and save it somewhere
             byte[] bytes = file.getBytes();
-            Path path = resolveUploadPath(file.getOriginalFilename());
-            Files.write(path, bytes);
+            Path path = newUploadPath(allowedExtension(file.getOriginalFilename(), null));
+            saveNew(path, bytes);
 
             redirectAttributes.addFlashAttribute("message",
                     "You successfully uploaded '" + path + "'");
@@ -87,38 +87,13 @@ public class FileUpload {
             return "Please select a file to upload";
         }
 
-        // Strip any directory part from the client supplied name and enforce containment.
-        Path safePath;
-        try {
-            safePath = resolveUploadPath(multifile.getOriginalFilename());
-        } catch (IOException e) {
-            logger.error("[-] Illegal file name");
-            return "Upload failed. Illeagl picture.";
-        }
-        String fileName = safePath.getFileName().toString();
-        int dotIndex = fileName.lastIndexOf(".");
-        if (dotIndex < 0) {
-            logger.error("[-] Suffix error: no suffix");
-            return "Upload failed. Illeagl picture.";
-        }
-        String Suffix = fileName.substring(dotIndex); // 获取文件后缀名
         String mimeType = multifile.getContentType(); // 获取MIME类型
-        String filePath = safePath.toString();
-        File excelFile = convert(multifile, Suffix);
-
 
         // 判断文件后缀名是否在白名单内  校验1
-        String[] picSuffixList = {".jpg", ".png", ".jpeg", ".gif", ".bmp", ".ico"};
-        boolean suffixFlag = false;
-        for (String white_suffix : picSuffixList) {
-            if (Suffix.toLowerCase().equals(white_suffix)) {
-                suffixFlag = true;
-                break;
-            }
-        }
-        if (!suffixFlag) {
-            logger.error("[-] Suffix error: " + Suffix);
-            deleteFile(filePath);
+        // The returned suffix is always one of the constants in PIC_SUFFIX_LIST (or "").
+        String Suffix = allowedExtension(multifile.getOriginalFilename(), PIC_SUFFIX_LIST);
+        if (Suffix.isEmpty()) {
+            logger.error("[-] Suffix error: suffix missing or not allowed");
             return "Upload failed. Illeagl picture.";
         }
 
@@ -136,29 +111,31 @@ public class FileUpload {
             // 用contains是为了防止text/html;charset=UTF-8绕过
             if (SecurityUtil.replaceSpecialStr(mimeType).toLowerCase().contains(blackMimeType)) {
                 logger.error("[-] Mime type error: " + mimeType);
-                deleteFile(filePath);
                 return "Upload failed. Illeagl picture.";
             }
         }
 
-        // 判断文件内容是否是图片 校验3
-        boolean isImageFlag = isImage(excelFile);
-        deleteFile(randomFilePath);
-
-        if (!isImageFlag) {
-            logger.error("[-] File is not Image");
-            deleteFile(filePath);
-            return "Upload failed. Illeagl picture.";
-        }
-
-
+        // 判断文件内容是否是图片 校验3 (validated in memory, nothing touches disk before it passes)
+        byte[] bytes;
         try {
-            // Get the file and save it somewhere
-            byte[] bytes = multifile.getBytes();
-            Files.write(safePath, bytes);
+            bytes = multifile.getBytes();
+            if (!isImage(bytes)) {
+                logger.error("[-] File is not Image");
+                return "Upload failed. Illeagl picture.";
+            }
         } catch (IOException e) {
             logger.error(e.toString());
-            deleteFile(filePath);
+            return "Upload failed";
+        }
+
+        // Server-generated destination name; the client name only contributes an allowlisted suffix.
+        String filePath;
+        try {
+            Path safePath = newUploadPath(Suffix);
+            filePath = safePath.toString();
+            saveNew(safePath, bytes);
+        } catch (IOException e) {
+            logger.error(e.toString());
             return "Upload failed";
         }
 
@@ -168,70 +145,60 @@ public class FileUpload {
     }
 
     /**
-     * Build a path inside UPLOADED_FOLDER from an untrusted file name.
-     * Directory components are dropped; empty, dot-only and NUL names are rejected.
+     * Return the lower-cased suffix (including the dot) of an untrusted file name, or "" when it
+     * is missing or not acceptable. With a non-null allowlist the suffix must be one of its
+     * entries; otherwise it must be a short alphanumeric suffix. The result never contains
+     * path separators, so it is safe to append to a server-generated name.
      */
-    private static Path resolveUploadPath(String originalName) throws IOException {
+    private static String allowedExtension(String originalName, String[] allowList) {
         if (originalName == null) {
-            throw new IOException("Illegal file name");
+            return "";
         }
         String name = originalName.replace('\\', '/');
         name = name.substring(name.lastIndexOf('/') + 1);
-        if (name.isEmpty() || name.equals(".") || name.equals("..") || name.indexOf('\0') != -1) {
-            throw new IOException("Illegal file name");
+        int dotIndex = name.lastIndexOf('.');
+        if (dotIndex < 0) {
+            return "";
         }
-        Path base = Paths.get(UPLOADED_FOLDER).toAbsolutePath().normalize();
-        Path resolved = base.resolve(name).normalize();
-        if (!base.equals(resolved.getParent())) {
+        String suffix = name.substring(dotIndex).toLowerCase(Locale.ROOT);
+        if (allowList != null) {
+            for (String allowed : allowList) {
+                if (allowed.equals(suffix)) {
+                    return allowed;
+                }
+            }
+            return "";
+        }
+        return suffix.matches("\\.[a-z0-9]{1,10}") ? suffix : "";
+    }
+
+    /**
+     * Build a new destination inside UPLOADED_FOLDER. The file name is a random UUID
+     * (SecureRandom based) plus a pre-sanitized suffix, never user input. The base directory is
+     * resolved with toRealPath() and the result must be a direct child of it.
+     */
+    private static Path newUploadPath(String sanitizedSuffix) throws IOException {
+        Path base = Paths.get(UPLOADED_FOLDER).toRealPath();
+        Path resolved = base.resolve(UUID.randomUUID().toString() + sanitizedSuffix).normalize();
+        if (!resolved.startsWith(base) || !base.equals(resolved.getParent())) {
             throw new IOException("Illegal file path");
         }
         return resolved;
     }
 
-    private void deleteFile(String filePath) {
-        File delFile;
-        try {
-            delFile = resolveUploadPath(new File(filePath).getName()).toFile();
-        } catch (IOException e) {
-            logger.info("Illegal file path, delete skipped");
-            return;
-        }
-        if(delFile.isFile() && delFile.exists()) {
-            if (delFile.delete()) {
-                logger.info("[+] " + filePath + " delete successfully!");
-                return;
-            }
-        }
-        logger.info(filePath + " delete failed!");
+    /**
+     * Create the file atomically (CREATE_NEW fails if anything, including a symlink, already
+     * exists at the path), so there is no check-then-write window.
+     */
+    private static void saveNew(Path dest, byte[] bytes) throws IOException {
+        Files.write(dest, bytes, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
     }
 
     /**
-     * 为了使用ImageIO.read()
-     *
-     * 不建议使用transferTo，因为原始的MultipartFile会被覆盖
-     * https://stackoverflow.com/questions/24339990/how-to-convert-a-multipart-file-to-file
+     * Check if the content is a picture.
      */
-    private File convert(MultipartFile multiFile, String suffix) throws Exception {
-        UUID uuid = Generators.timeBasedGenerator().generate();
-        // 随机生成一个同后缀名的文件
-        Path convPath = resolveUploadPath(uuid + suffix);
-        randomFilePath = convPath.toString();
-        File convFile = convPath.toFile();
-        boolean ret = convFile.createNewFile();
-        if (!ret) {
-            return null;
-        }
-        FileOutputStream fos = new FileOutputStream(convFile);
-        fos.write(multiFile.getBytes());
-        fos.close();
-        return convFile;
-    }
-
-    /**
-     * Check if the file is a picture.
-     */
-    private static boolean isImage(File file) throws IOException {
-        BufferedImage bi = ImageIO.read(file);
+    private static boolean isImage(byte[] content) throws IOException {
+        BufferedImage bi = ImageIO.read(new ByteArrayInputStream(content));
         return bi != null;
     }
 }
