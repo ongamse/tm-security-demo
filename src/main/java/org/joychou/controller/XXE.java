@@ -17,6 +17,8 @@ import org.w3c.dom.NodeList;
 import org.xml.sax.helpers.XMLReaderFactory;
 import org.xml.sax.XMLReader;
 
+import javax.xml.XMLConstants;
+
 import java.io.*;
 
 import org.xml.sax.InputSource;
@@ -28,9 +30,10 @@ import javax.xml.parsers.SAXParser;
 
 import org.xml.sax.helpers.DefaultHandler;
 import org.apache.commons.digester3.Digester;
-import org.jdom2.input.SAXBuilder;
+import org.jdom2.input.DOMBuilder;
 import org.joychou.util.WebUtils;
 import org.xmlbeam.annotation.XBRead;
+import org.springframework.web.util.HtmlUtils;
 
 /**
  * Java xxe vuln and security code.
@@ -49,12 +52,15 @@ public class XXE {
     public String xmlReaderVuln(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info(body);
+            logger.info("Request body length={}", body.length());
             XMLReader xmlReader = XMLReaderFactory.createXMLReader();
+            xmlReader.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            xmlReader.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            xmlReader.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             xmlReader.parse(new InputSource(new StringReader(body)));  // parse xml
             return "xmlReader xxe vuln code";
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("XXE parse error: {}", e.getClass().getName());
             return EXCEPT;
         }
     }
@@ -64,7 +70,7 @@ public class XXE {
     public String xmlReaderSec(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info(body);
+            logger.info("Request body length={}", body.length());
 
             XMLReader xmlReader = XMLReaderFactory.createXMLReader();
             // fix code start
@@ -75,7 +81,7 @@ public class XXE {
             xmlReader.parse(new InputSource(new StringReader(body)));  // parse xml
 
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("XXE parse error: {}", e.getClass().getName());
             return EXCEPT;
         }
 
@@ -87,14 +93,21 @@ public class XXE {
     public String SAXBuilderVuln(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info(body);
+            logger.info("Request body length={}", body.length());
 
-            SAXBuilder builder = new SAXBuilder();
+            DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+            dbf.setNamespaceAware(true);
+            dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            dbf.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            dbf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            dbf.setXIncludeAware(false);
+            dbf.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+            Document w3cDoc = dbf.newDocumentBuilder().parse(new InputSource(new StringReader(body)));
             // org.jdom2.Document document
-            builder.build(new InputSource(new StringReader(body)));  // cause xxe
+            new DOMBuilder().build(w3cDoc);
             return "SAXBuilder xxe vuln code";
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("XXE parse error: {}", e.getClass().getName());
             return EXCEPT;
         }
     }
@@ -103,17 +116,21 @@ public class XXE {
     public String SAXBuilderSec(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info(body);
+            logger.info("Request body length={}", body.length());
 
-            SAXBuilder builder = new SAXBuilder();
-            builder.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            builder.setFeature("http://xml.org/sax/features/external-general-entities", false);
-            builder.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+            dbf.setNamespaceAware(true);
+            dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            dbf.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            dbf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            dbf.setXIncludeAware(false);
+            dbf.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+            Document w3cDoc = dbf.newDocumentBuilder().parse(new InputSource(new StringReader(body)));
             // org.jdom2.Document document
-            builder.build(new InputSource(new StringReader(body)));
+            new DOMBuilder().build(w3cDoc);
 
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("XXE parse error: {}", e.getClass().getName());
             return EXCEPT;
         }
 
@@ -124,14 +141,14 @@ public class XXE {
     public String SAXReaderVuln(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info(body);
+            logger.info("Request body length={}", body.length());
 
             SAXReader reader = new SAXReader();
             // org.dom4j.Document document
             reader.read(new InputSource(new StringReader(body))); // cause xxe
 
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("XXE parse error: {}", e.getClass().getName());
             return EXCEPT;
         }
 
@@ -142,7 +159,7 @@ public class XXE {
     public String SAXReaderSec(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info(body);
+            logger.info("Request body length={}", body.length());
 
             SAXReader reader = new SAXReader();
             reader.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
@@ -151,7 +168,7 @@ public class XXE {
             // org.dom4j.Document document
             reader.read(new InputSource(new StringReader(body)));
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("XXE parse error: {}", e.getClass().getName());
             return EXCEPT;
         }
         return "SAXReader xxe security code";
@@ -161,15 +178,18 @@ public class XXE {
     public String SAXParserVuln(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info(body);
+            logger.info("Request body length={}", body.length());
 
             SAXParserFactory spf = SAXParserFactory.newInstance();
+            spf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            spf.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            spf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             SAXParser parser = spf.newSAXParser();
             parser.parse(new InputSource(new StringReader(body)), new DefaultHandler());  // parse xml
 
             return "SAXParser xxe vuln code";
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("XXE parse error: {}", e.getClass().getName());
             return EXCEPT;
         }
     }
@@ -179,7 +199,7 @@ public class XXE {
     public String SAXParserSec(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info(body);
+            logger.info("Request body length={}", body.length());
 
             SAXParserFactory spf = SAXParserFactory.newInstance();
             spf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
@@ -188,7 +208,7 @@ public class XXE {
             SAXParser parser = spf.newSAXParser();
             parser.parse(new InputSource(new StringReader(body)), new DefaultHandler());  // parse xml
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("XXE parse error: {}", e.getClass().getName());
             return EXCEPT;
         }
         return "SAXParser xxe security code";
@@ -199,12 +219,19 @@ public class XXE {
     public String DigesterVuln(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info(body);
+            logger.info("Request body length={}", body.length());
 
-            Digester digester = new Digester();
+            SAXParserFactory spf = SAXParserFactory.newInstance();
+            spf.setNamespaceAware(false);
+            spf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            spf.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            spf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            spf.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+
+            Digester digester = new Digester(spf.newSAXParser());
             digester.parse(new StringReader(body));  // parse xml
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("XXE parse error: {}", e.getClass().getName());
             return EXCEPT;
         }
         return "Digester xxe vuln code";
@@ -214,17 +241,21 @@ public class XXE {
     public String DigesterSec(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info(body);
+            logger.info("Request body length={}", body.length());
 
-            Digester digester = new Digester();
-            digester.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            digester.setFeature("http://xml.org/sax/features/external-general-entities", false);
-            digester.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            SAXParserFactory spf = SAXParserFactory.newInstance();
+            spf.setNamespaceAware(false);
+            spf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            spf.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            spf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            spf.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+
+            Digester digester = new Digester(spf.newSAXParser());
             digester.parse(new StringReader(body));  // parse xml
 
             return "Digester xxe security code";
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("XXE parse error: {}", e.getClass().getName());
             return EXCEPT;
         }
     }
@@ -237,6 +268,9 @@ public class XXE {
     public String DocumentBuilderVuln(HttpServletRequest request) {
         try {
             DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+            dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            dbf.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            dbf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             DocumentBuilder db = dbf.newDocumentBuilder();
             InputSource is = new InputSource(request.getInputStream());
             Document document = db.parse(is);  // parse xml
@@ -252,11 +286,10 @@ public class XXE {
                     buf.append(String.format("%s: %s\n", node.getNodeName(), node.getTextContent()));
                 }
             }
-            return buf.toString();
+            return HtmlUtils.htmlEscape(buf.toString());
         } catch (Exception e) {
-            e.printStackTrace();
-            logger.error(e.toString());
-            return e.toString();
+            logger.error("XXE parse error: {}", e.getClass().getName());
+            return EXCEPT;
         }
     }
 
@@ -264,7 +297,7 @@ public class XXE {
     public String DocumentBuilderSec(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info(body);
+            logger.info("Request body length={}", body.length());
 
             DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
             dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
@@ -276,7 +309,7 @@ public class XXE {
             db.parse(is);  // parse xml
             sr.close();
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("XXE parse error: {}", e.getClass().getName());
             return EXCEPT;
         }
         return "DocumentBuilder xxe security code";
@@ -287,11 +320,14 @@ public class XXE {
     public String DocumentBuilderXincludeVuln(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info(body);
+            logger.info("Request body length={}", body.length());
 
             DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
-            dbf.setXIncludeAware(true);   // 支持XInclude
-            dbf.setNamespaceAware(true);  // 支持XInclude
+            dbf.setXIncludeAware(false);  // XInclude can read local/remote resources
+            dbf.setNamespaceAware(true);
+            dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            dbf.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            dbf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             DocumentBuilder db = dbf.newDocumentBuilder();
             StringReader sr = new StringReader(body);
             InputSource is = new InputSource(sr);
@@ -303,7 +339,7 @@ public class XXE {
             sr.close();
             return "DocumentBuilder xinclude xxe vuln code";
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("XXE parse error: {}", e.getClass().getName());
             return EXCEPT;
         }
     }
@@ -313,7 +349,7 @@ public class XXE {
     public String DocumentBuilderXincludeSec(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info(body);
+            logger.info("Request body length={}", body.length());
             DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
 
             dbf.setXIncludeAware(true);   // 支持XInclude
@@ -332,7 +368,7 @@ public class XXE {
 
             sr.close();
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("XXE parse error: {}", e.getClass().getName());
             return EXCEPT;
         }
         return "DocumentBuilder xinclude xxe vuln code";
@@ -343,15 +379,18 @@ public class XXE {
     public String XMLReaderVuln(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info(body);
+            logger.info("Request body length={}", body.length());
 
             SAXParserFactory spf = SAXParserFactory.newInstance();
             SAXParser saxParser = spf.newSAXParser();
             XMLReader xmlReader = saxParser.getXMLReader();
+            xmlReader.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            xmlReader.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            xmlReader.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             xmlReader.parse(new InputSource(new StringReader(body)));
 
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("XXE parse error: {}", e.getClass().getName());
             return EXCEPT;
         }
 
@@ -363,7 +402,7 @@ public class XXE {
     public String XMLReaderSec(HttpServletRequest request) {
         try {
             String body = WebUtils.getRequestBody(request);
-            logger.info(body);
+            logger.info("Request body length={}", body.length());
 
             SAXParserFactory spf = SAXParserFactory.newInstance();
             SAXParser saxParser = spf.newSAXParser();
@@ -374,7 +413,7 @@ public class XXE {
             xmlReader.parse(new InputSource(new StringReader(body)));
 
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("XXE parse error: {}", e.getClass().getName());
             return EXCEPT;
         }
         return "XMLReader xxe security code";
@@ -391,7 +430,7 @@ public class XXE {
             String body = WebUtils.getRequestBody(req);
             DocumentHelper.parseText(body); // parse xml
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("XXE parse error: {}", e.getClass().getName());
             return EXCEPT;
         }
 
@@ -400,16 +439,8 @@ public class XXE {
 
 
     private static void response(NodeList rootNodeList){
-        for (int i = 0; i < rootNodeList.getLength(); i++) {
-            Node rootNode = rootNodeList.item(i);
-            NodeList xxe = rootNode.getChildNodes();
-            for (int j = 0; j < xxe.getLength(); j++) {
-                Node xxeNode = xxe.item(j);
-                // 测试不能blind xxe，所以强行加了一个回显
-                logger.info("xxeNode: " + xxeNode.getNodeValue());
-            }
-
-        }
+        // Do not log values derived from the parsed request body (log forging).
+        logger.info("xxe response nodes processed");
     }
 
         /**
@@ -419,7 +450,7 @@ public class XXE {
         @PostMapping(value = "/xmlbeam/vuln")
         HttpEntity<String> post(@RequestBody UserPayload user) {
             try {
-                logger.info(user.toString());
+                logger.info("xmlbeam user payload received");
                 return ResponseEntity.ok(String.format("hello, %s!", user.getUserName()));
             }catch (Exception e){
                 e.printStackTrace();

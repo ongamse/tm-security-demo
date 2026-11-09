@@ -7,10 +7,14 @@ import org.joychou.security.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
+import javax.servlet.http.HttpServletRequest;
+import java.security.Principal;
 import java.sql.*;
+import java.util.ArrayList;
 import java.util.List;
 
 
@@ -42,6 +46,27 @@ public class SQLI {
     @Resource
     private UserMapper userMapper;
 
+    private static final String ADMIN_ROLE = "ADMIN";
+
+    /**
+     * Object-level authorization: only the authenticated principal itself or an ADMIN may access
+     * the record of the given username. Fails closed (403 via Spring Security's access denied
+     * handler) when unauthenticated or when the username belongs to someone else.
+     */
+    private static void requireOwnerOrAdmin(HttpServletRequest request, String username) {
+        if (!isOwnerOrAdmin(request, username)) {
+            throw new AccessDeniedException("Access denied");
+        }
+    }
+
+    private static boolean isOwnerOrAdmin(HttpServletRequest request, String username) {
+        Principal principal = request.getUserPrincipal();
+        if (principal == null || principal.getName() == null) {
+            return false;
+        }
+        return request.isUserInRole(ADMIN_ROLE) || principal.getName().equals(username);
+    }
+
 
     /**
      * <p>Sql injection jbdc vuln code.</p><br>
@@ -49,7 +74,9 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/jdbc/vuln?username=joychou">http://localhost:8080/sqli/jdbc/vuln?username=joychou</a>
      */
     @RequestMapping("/jdbc/vuln")
-    public String jdbc_sqli_vul(@RequestParam("username") String username) {
+    public String jdbc_sqli_vul(HttpServletRequest request, @RequestParam("username") String username) {
+
+        requireOwnerOrAdmin(request, username);
 
         StringBuilder result = new StringBuilder();
 
@@ -61,10 +88,11 @@ public class SQLI {
                 System.out.println("Connect to database successfully.");
 
             // sqli vuln code
-            Statement statement = con.createStatement();
-            String sql = "select * from users where username = '" + username + "'";
-            logger.info(sql);
-            ResultSet rs = statement.executeQuery(sql);
+            String sql = "select * from users where username = ?";
+            PreparedStatement statement = con.prepareStatement(sql);
+            statement.setString(1, username);
+            logger.info("Executing prepared statement");
+            ResultSet rs = statement.executeQuery();
 
             while (rs.next()) {
                 String res_name = rs.getString("username");
@@ -92,7 +120,9 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/jdbc/sec?username=joychou">http://localhost:8080/sqli/jdbc/sec?username=joychou</a>
      */
     @RequestMapping("/jdbc/sec")
-    public String jdbc_sqli_sec(@RequestParam("username") String username) {
+    public String jdbc_sqli_sec(HttpServletRequest request, @RequestParam("username") String username) {
+
+        requireOwnerOrAdmin(request, username);
 
         StringBuilder result = new StringBuilder();
         try {
@@ -107,7 +137,7 @@ public class SQLI {
             PreparedStatement st = con.prepareStatement(sql);
             st.setString(1, username);
 
-            logger.info(st.toString());  // sql after prepare statement
+            logger.info("Executing prepared statement");
             ResultSet rs = st.executeQuery();
 
             while (rs.next()) {
@@ -136,7 +166,9 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/jdbc/ps/vuln?username=joychou' or 'a'='a">http://localhost:8080/sqli/jdbc/ps/vuln?username=joychou' or 'a'='a</a>
      */
     @RequestMapping("/jdbc/ps/vuln")
-    public String jdbc_ps_vuln(@RequestParam("username") String username) {
+    public String jdbc_ps_vuln(HttpServletRequest request, @RequestParam("username") String username) {
+
+        requireOwnerOrAdmin(request, username);
 
         StringBuilder result = new StringBuilder();
         try {
@@ -146,10 +178,11 @@ public class SQLI {
             if (!con.isClosed())
                 System.out.println("Connecting to Database successfully.");
 
-            String sql = "select * from users where username = '" + username + "'";
+            String sql = "select * from users where username = ?";
             PreparedStatement st = con.prepareStatement(sql);
+            st.setString(1, username);
 
-            logger.info(st.toString());
+            logger.info("Executing prepared statement");
             ResultSet rs = st.executeQuery();
 
             while (rs.next()) {
@@ -179,7 +212,8 @@ public class SQLI {
      * <p>select * from users where username = 'joychou' or '1'='1' </p>
      */
     @GetMapping("/mybatis/vuln01")
-    public List<User> mybatisVuln01(@RequestParam("username") String username) {
+    public List<User> mybatisVuln01(HttpServletRequest request, @RequestParam("username") String username) {
+        requireOwnerOrAdmin(request, username);
         return userMapper.findByUserNameVuln01(username);
     }
 
@@ -189,8 +223,16 @@ public class SQLI {
      * <p>select * from users where username like '%joychou' or '1'='1%' </p>
      */
     @GetMapping("/mybatis/vuln02")
-    public List<User> mybatisVuln02(@RequestParam("username") String username) {
-        return userMapper.findByUserNameVuln02(username);
+    public List<User> mybatisVuln02(HttpServletRequest request, @RequestParam("username") String username) {
+        requireOwnerOrAdmin(request, username);
+        // LIKE search can match other users; only return records the caller may access.
+        List<User> visible = new ArrayList<>();
+        for (User u : userMapper.findByUserNameVuln02(username)) {
+            if (isOwnerOrAdmin(request, u.getUsername())) {
+                visible.add(u);
+            }
+        }
+        return visible;
     }
 
     /**
@@ -200,7 +242,7 @@ public class SQLI {
      */
     @GetMapping("/mybatis/orderby/vuln03")
     public List<User> mybatisVuln03(@RequestParam("sort") String sort) {
-        return userMapper.findByUserNameVuln03(sort);
+        return userMapper.findByUserNameVuln03(allowedSortColumn(sort));
     }
 
 
@@ -209,7 +251,8 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/mybatis/sec01?username=joychou">http://localhost:8080/sqli/mybatis/sec01?username=joychou</a>
      */
     @GetMapping("/mybatis/sec01")
-    public User mybatisSec01(@RequestParam("username") String username) {
+    public User mybatisSec01(HttpServletRequest request, @RequestParam("username") String username) {
+        requireOwnerOrAdmin(request, username);
         return userMapper.findByUserName(username);
     }
 
@@ -218,8 +261,15 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/mybatis/sec02?id=1">http://localhost:8080/sqli/mybatis/sec02?id=1</a>
      */
     @GetMapping("/mybatis/sec02")
-    public User mybatisSec02(@RequestParam("id") Integer id) {
-        return userMapper.findById(id);
+    public User mybatisSec02(HttpServletRequest request, @RequestParam("id") Integer id) {
+        User found = userMapper.findById(id);
+        // Deny identically for missing and foreign records so ids cannot be enumerated.
+        if (found == null) {
+            requireOwnerOrAdmin(request, null);
+            return null;
+        }
+        requireOwnerOrAdmin(request, found.getUsername());
+        return found;
     }
 
 
@@ -239,7 +289,28 @@ public class SQLI {
      */
     @GetMapping("/mybatis/orderby/sec04")
     public List<User> mybatisOrderBySec04(@RequestParam("sort") String sort) {
-        return userMapper.findByUserNameVuln03(SecurityUtil.sqlFilter(sort));
+        return userMapper.findByUserNameVuln03(allowedSortColumn(SecurityUtil.sqlFilter(sort)));
+    }
+
+    /**
+     * Allowlist of columns usable in ORDER BY (MyBatis cannot bind identifiers with #{}).
+     *
+     * @return the matching constant column name, or null (no ordering) when not allowlisted
+     */
+    private static String allowedSortColumn(String sort) {
+        if (sort == null) {
+            return null;
+        }
+        switch (sort) {
+            case "id":
+                return "id";
+            case "username":
+                return "username";
+            case "password":
+                return "password";
+            default:
+                return null;
+        }
     }
 
 }

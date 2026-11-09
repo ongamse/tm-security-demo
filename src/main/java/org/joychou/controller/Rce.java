@@ -1,10 +1,12 @@
 package org.joychou.controller;
 
-import groovy.lang.GroovyShell;
+import org.joychou.security.FixedCommands;
+import org.joychou.security.SecurityUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.util.HtmlUtils;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
 
@@ -30,11 +32,14 @@ public class Rce {
 
     @GetMapping("/runtime/exec")
     public String CommandExec(String cmd) {
-        Runtime run = Runtime.getRuntime();
         StringBuilder sb = new StringBuilder();
 
         try {
-            Process p = run.exec(cmd);
+            String[] argv = FixedCommands.lookup(cmd);
+            if (argv == null) {
+                return "Bad boy. I got u.";
+            }
+            Process p = new ProcessBuilder(argv).start();
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
             String tmpStr;
@@ -51,9 +56,10 @@ public class Rce {
             inBr.close();
             in.close();
         } catch (Exception e) {
-            return e.toString();
+            log.error("Command exec failed: {}", e.getClass().getName());
+            return "Request failed.";
         }
-        return sb.toString();
+        return HtmlUtils.htmlEscape(sb.toString());
     }
 
 
@@ -66,7 +72,10 @@ public class Rce {
         StringBuilder sb = new StringBuilder();
 
         try {
-            String[] arrCmd = {"/bin/sh", "-c", cmd};
+            String[] arrCmd = FixedCommands.lookup(cmd);
+            if (arrCmd == null) {
+                return "Bad boy. I got u.";
+            }
             ProcessBuilder processBuilder = new ProcessBuilder(arrCmd);
             Process p = processBuilder.start();
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
@@ -77,10 +86,11 @@ public class Rce {
                 sb.append(tmpStr);
             }
         } catch (Exception e) {
-            return e.toString();
+            log.error("ProcessBuilder exec failed: {}", e.getClass().getName());
+            return "Request failed.";
         }
 
-        return sb.toString();
+        return HtmlUtils.htmlEscape(sb.toString());
     }
 
 
@@ -93,12 +103,22 @@ public class Rce {
      * @param jsurl js url
      */
     @GetMapping("/jscmd")
-    public void jsEngine(String jsurl) throws Exception{
+    public String jsEngine(String jsurl) throws Exception{
         // js nashorn javascript ecmascript
-        ScriptEngine engine = new ScriptEngineManager().getEngineByName("js");
+        // Only allowlisted script URLs; the URL is passed as an engine binding, never concatenated into script source.
+        String safeUrl = SecurityUtil.checkURL(jsurl);
+        if (safeUrl == null) {
+            throw new IllegalArgumentException("jsurl is not allowed");
+        }
+        ScriptEngine engine = new ScriptEngineManager().getEngineByName("javascript");
+        if (engine == null) {
+            log.warn("No JavaScript script engine available");
+            return "JavaScript engine is not available.";
+        }
         Bindings bindings = engine.getBindings(ScriptContext.ENGINE_SCOPE);
-        String cmd = String.format("load(\"%s\")", jsurl);
-        engine.eval(cmd, bindings);
+        bindings.put("jsurl", safeUrl);
+        engine.eval("load(jsurl)", bindings);
+        return "ok";
     }
 
 
@@ -110,7 +130,7 @@ public class Rce {
      */
     @GetMapping("/vuln/yarm")
     public void yarm(String content) {
-        Yaml y = new Yaml();
+        Yaml y = new Yaml(new SafeConstructor());
         y.load(content);
     }
 
@@ -120,17 +140,8 @@ public class Rce {
         y.load(content);
     }
 
-    /**
-     * http://localhost:8080/rce/groovy?content="open -a Calculator".execute()
-     * @param content groovy shell
-     */
-    @GetMapping("groovy")
-    public void groovyshell(String content) {
-        GroovyShell groovyShell = new GroovyShell();
-        groovyShell.evaluate(content);
-    }
-
-
+    // The former /rce/groovy endpoint evaluated request-supplied Groovy source with GroovyShell
+    // (arbitrary code execution). It was removed; there is no safe way to evaluate untrusted Groovy.
 
     public static void main(String[] args) throws Exception{
         Runtime.getRuntime().exec("touch /tmp/x");

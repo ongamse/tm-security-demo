@@ -4,6 +4,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * RASP：Hook java/io/ObjectInputStream类的resolveClass方法
@@ -36,18 +39,37 @@ public class AntObjectInputStream extends ObjectInputStream {
         // Deserialize class name: org.joychou.security.AntObjectInputStream$MyObject
         logger.info("Deserialize class name: " + className);
 
-        String[] denyClasses = {"java.net.InetAddress",
-                                "org.apache.commons.collections.Transformer",
-                                "org.apache.commons.collections.functors"};
+        // Allowlist: only these exact classes may be deserialized.
+        String baseName = className;
+        while (baseName.startsWith("[")) {
+            baseName = baseName.substring(1);
+        }
+        // Array descriptors: primitive component ("[B") or object component ("[Lname;").
+        if (baseName.startsWith("L") && baseName.endsWith(";")) {
+            baseName = baseName.substring(1, baseName.length() - 1);
+        } else if (baseName.length() == 1 && !className.equals(baseName)) {
+            return super.resolveClass(desc);
+        }
 
-        for (String denyClass : denyClasses) {
-            if (className.startsWith(denyClass)) {
-                throw new InvalidClassException("Unauthorized deserialization attempt", className);
-            }
+        if (!ALLOWED_CLASSES.contains(baseName)) {
+            throw new InvalidClassException("Unauthorized deserialization attempt", className);
         }
 
         return super.resolveClass(desc);
     }
+
+    private static final Set<String> ALLOWED_CLASSES = new HashSet<String>(Arrays.asList(
+            "org.joychou.security.AntObjectInputStream$MyObject",
+            "java.lang.String",
+            "java.lang.Number",
+            "java.lang.Integer",
+            "java.lang.Long",
+            "java.lang.Short",
+            "java.lang.Byte",
+            "java.lang.Boolean",
+            "java.lang.Character",
+            "java.lang.Double",
+            "java.lang.Float"));
 
     public static void main(String args[]) throws Exception{
         // 定义myObj对象

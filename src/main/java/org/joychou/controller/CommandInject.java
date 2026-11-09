@@ -1,63 +1,51 @@
 package org.joychou.controller;
 
-import org.joychou.security.SecurityUtil;
+import org.joychou.security.FixedCommands;
 import org.joychou.util.WebUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.util.HtmlUtils;
 
-import javax.servlet.http.HttpServletRequest;
 import java.io.IOException;
 
 @RestController
 public class CommandInject {
 
-    protected final Logger logger = LoggerFactory.getLogger(this.getClass());
-
     /**
-     * http://localhost:8080/codeinject?filepath=/tmp;cat /etc/passwd
+     * http://localhost:8080/codeinject?filepath=list
+     * The request value is only a key into a server-side catalogue of constant commands.
      *
-     * @param filepath filepath
+     * @param filepath command key (e.g. "list")
      * @return result
      */
     @GetMapping("/codeinject")
     public String codeInject(String filepath) throws IOException {
-
-        String[] cmdList = new String[]{"sh", "-c", "ls -la " + filepath};
-        ProcessBuilder builder = new ProcessBuilder(cmdList);
-        builder.redirectErrorStream(true);
-        Process process = builder.start();
-        return WebUtils.convertStreamToString(process.getInputStream());
+        return runFixed(filepath);
     }
 
     /**
-     * Host Injection
-     * Host: hacked by joychou;cat /etc/passwd
+     * The former implementation ran an external curl against the Host header. Request headers
+     * must never reach a process or an outbound fetch, so the endpoint now returns a constant message.
      * http://localhost:8080/codeinject/host
      */
     @GetMapping("/codeinject/host")
-    public String codeInjectHost(HttpServletRequest request) throws IOException {
-
-        String host = request.getHeader("host");
-        logger.info(host);
-        String[] cmdList = new String[]{"sh", "-c", "curl " + host};
-        ProcessBuilder builder = new ProcessBuilder(cmdList);
-        builder.redirectErrorStream(true);
-        Process process = builder.start();
-        return WebUtils.convertStreamToString(process.getInputStream());
+    public String codeInjectHost() {
+        return "Host header processing is disabled.";
     }
 
-    @GetMapping("/codeinject/sec")
+    @GetMapping(value = "/codeinject/sec", produces = "text/plain;charset=UTF-8")
     public String codeInjectSec(String filepath) throws IOException {
-        String filterFilePath = SecurityUtil.cmdFilter(filepath);
-        if (null == filterFilePath) {
+        return runFixed(filepath);
+    }
+
+    private static String runFixed(String key) throws IOException {
+        String[] cmdList = FixedCommands.lookup(key);
+        if (null == cmdList) {
             return "Bad boy. I got u.";
         }
-        String[] cmdList = new String[]{"sh", "-c", "ls -la " + filterFilePath};
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);
         Process process = builder.start();
-        return WebUtils.convertStreamToString(process.getInputStream());
+        return HtmlUtils.htmlEscape(WebUtils.convertStreamToString(process.getInputStream()));
     }
 }

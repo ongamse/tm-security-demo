@@ -14,6 +14,10 @@ import java.io.StringWriter;
 @RequestMapping("/ssti")
 public class SSTI {
 
+    /** Fixed template source; request data must only be passed as context variables. */
+    private static final String FIXED_TEMPLATE =
+            "Author: $author, Address: $address, Phone: $phone, Input: $!userInput";
+
     /**
      * SSTI of Java velocity. The latest Velocity version still has this problem.
      * Fix method: Avoid to use Velocity.evaluate method.
@@ -32,8 +36,10 @@ public class SSTI {
         context.put("author", "Elliot A.");
         context.put("address", "217 E Broadway");
         context.put("phone", "555-1337");
+        // User input is only data in the context; it is never parsed as template source.
+        context.put("userInput", template);
 
         StringWriter swOut = new StringWriter();
-        Velocity.evaluate(context, swOut, "test", template);
+        Velocity.evaluate(context, swOut, "test", FIXED_TEMPLATE);
     }
 }

@@ -1,15 +1,14 @@
 package org.joychou.security.ssrf;
 
-import java.net.HttpURLConnection;
 import java.net.InetAddress;
 import java.net.URI;
-import java.net.URL;
 import java.util.ArrayList;
 
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.net.util.SubnetUtils;
 import org.joychou.config.WebConfig;
 import org.joychou.security.SecurityUtil;
+import org.joychou.util.HttpUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -42,7 +41,7 @@ public class SSRFChecker {
                 }
             }
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("SSRFChecker checkURLFckSSRF exception: {}", e.getClass().getName());
             return false;
         }
         return false;
@@ -51,7 +50,7 @@ public class SSRFChecker {
     /**
      * 解析url的ip，判断ip是否是内网ip，所以TTL设置为0的情况不适用。
      * url只允许https或者http，并且设置默认连接超时时间。
-     * 该修复方案会主动请求重定向后的链接。
+     * 该修复方案会主动请求重定向后的链接（只连接已校验过的IP，逐跳校验重定向，校验失败按不安全处理）。
      *
      * @param url        check的url
      * @param checkTimes 设置重定向检测的最大次数，建议设置为10次
@@ -59,43 +58,78 @@ public class SSRFChecker {
      */
     public static boolean checkSSRF(String url, int checkTimes) {
 
-        HttpURLConnection connection;
-        int connectTime = 5 * 1000;  // 设置连接超时时间5s
         int i = 1;
         String finalUrl = url;
         try {
-            do {
-                // 判断当前请求的URL是否是内网ip
+            while (true) {
+                // 判断当前请求的URL是否是内网ip（含八进制等写法）
                 if (isInternalIpByUrl(finalUrl)) {
-                    logger.error("[-] SSRF check failed. Dangerous url: " + finalUrl);
+                    logger.error("[-] SSRF check failed. Dangerous url");
                     return false;  // 内网ip直接return，非内网ip继续判断是否有重定向
                 }
 
-                connection = (HttpURLConnection) new URL(finalUrl).openConnection();
-                connection.setInstanceFollowRedirects(false);
-                connection.setUseCaches(false); // 设置为false，手动处理跳转，可以拿到每个跳转的URL
-                connection.setConnectTimeout(connectTime);
-                //connection.setRequestMethod("GET");
-                connection.connect(); // send dns request
-                int responseCode = connection.getResponseCode(); // 发起网络请求
-                if (responseCode >= 300 && responseCode <= 307 && responseCode != 304 && responseCode != 306) {
-                    String redirectedUrl = connection.getHeaderField("Location");
-                    if (null == redirectedUrl)
-                        break;
-                    finalUrl = redirectedUrl;
-                    i += 1;  // 重定向次数加1
-                    logger.info("redirected url: " + finalUrl);
-                    if (i == checkTimes) {
-                        return false;
-                    }
-                } else
-                    break;
-            } while (connection.getResponseCode() != HttpURLConnection.HTTP_OK);
-            connection.disconnect();
+                // Resolve the host once, validate every address and connect to exactly those
+                // addresses (no second DNS lookup, so DNS rebinding cannot swap the address).
+                // The request URI is rebuilt from the validated components (see SecurityUtil.OutboundTarget).
+                SecurityUtil.OutboundTarget target = SecurityUtil.resolveOutboundTarget(finalUrl);
+                if (target == null) {
+                    logger.error("[-] SSRF check failed. Illegal or internal url");
+                    return false;
+                }
+
+                // redirects are not followed automatically, each hop is validated by this loop
+                String location = HttpUtils.pinnedRedirectLocation(target);
+                if (null == location) {
+                    return true;  // no redirect, the url chain is safe
+                }
+                // Location may be relative; make it absolute against the validated current target,
+                // the next loop iteration validates the new hop from scratch.
+                finalUrl = nextHop(target.getUri(), location);
+                if (finalUrl == null) {
+                    logger.error("[-] SSRF check failed. Unsupported redirect location");
+                    return false;
+                }
+                i += 1;  // 重定向次数加1
+                logger.info("redirected to the next hop");
+                if (i >= checkTimes) {
+                    return false;
+                }
+            }
         } catch (Exception e) {
-            return true;  // 如果异常了，认为是安全的，防止是超时导致的异常而验证不成功。
+            logger.error("SSRFChecker checkSSRF exception: {}", e.getClass().getName());
+            return false;  // fail closed: a url that cannot be verified is not considered safe
         }
-        return true; // 默认返回true
+    }
+
+
+    /**
+     * Turn a redirect Location into an absolute url text: absolute http(s) urls are passed on as they are
+     * (and validated by the caller's next iteration), absolute-path and relative-path references are
+     * attached to the scheme/authority of the already validated current URI. Anything else (other
+     * schemes, scheme-relative "//host", whitespace or backslashes) is rejected.
+     *
+     * @return the next hop url text, or null when the location is not supported (fail closed)
+     */
+    private static String nextHop(URI current, String location) {
+        if (location == null || location.isEmpty()) {
+            return null;
+        }
+        if (SecurityUtil.isHttp(location)) {
+            return location;
+        }
+        if (location.startsWith("//") || location.indexOf(':') >= 0 || location.indexOf('\\') >= 0) {
+            return null;
+        }
+        String base = current.getScheme() + "://" + current.getRawAuthority();
+        if (location.startsWith("/")) {
+            return base + location;
+        }
+        String dir = current.getRawPath() == null ? "/" : current.getRawPath();
+        dir = dir.substring(0, dir.lastIndexOf('/') + 1);
+        if (dir.isEmpty()) {
+            dir = "/";
+        }
+        return base + dir + location;
     }
 
 
@@ -128,7 +162,7 @@ public class SSRFChecker {
      */
     public static boolean isInternalIp(String strIP) {
         if (StringUtils.isEmpty(strIP)) {
-            logger.error("[-] SSRF check failed. IP is empty. " + strIP);
+            logger.error("[-] SSRF check failed. IP is empty.");
             return true;
         }
 
@@ -136,7 +170,7 @@ public class SSRFChecker {
         for (String subnet : blackSubnets) {
             SubnetUtils utils = new SubnetUtils(subnet);
             if (utils.getInfo().isInRange(strIP)) {
-                logger.error("[-] SSRF check failed. Internal IP: " + strIP);
+                logger.error("[-] SSRF check failed. IP is in a blocked subnet.");
                 return true;
             }
         }
@@ -188,7 +222,7 @@ public class SSRFChecker {
             InetAddress IpAddress = InetAddress.getByName(host);
             return IpAddress.getHostAddress();
         } catch (Exception e) {
-            logger.error("host2ip exception " + e.getMessage());
+            logger.error("host2ip exception {}", e.getClass().getName());
             return "";
         }
     }
@@ -209,7 +243,7 @@ public class SSRFChecker {
 
                 // not support ipv6
                 if (ipParts.length > 4) {
-                    logger.error("Illegal ipv4: " + host);
+                    logger.error("Illegal ipv4: too many parts");
                     return false;
                 }
 
@@ -222,20 +256,20 @@ public class SSRFChecker {
                 // 012.23.78.233
                 for(String ip : ipParts) {
                     if (!isNumber(ip)){
-                        logger.error("Illegal ipv4: " + host);
+                        logger.error("Illegal ipv4: part is not a number");
                         return false;
                     }
                     // start with "0", but not "0"
                     if (ip.startsWith("0") && !ip.equals("0")) {
                         if (Integer.valueOf(ip, 8) >= 256){
-                            logger.error("Illegal ipv4: " + host);
+                            logger.error("Illegal ipv4: octal part out of range");
                             return false;
                         }
                         newDecimalIP.append(Integer.valueOf(ip, 8)).append(".");
                         is_octal = true;
                     }else{
                         if (Integer.valueOf(ip, 10) >= 256) {
-                            logger.error("Illegal ipv4: " + host);
+                            logger.error("Illegal ipv4: decimal part out of range");
                             return false;
                         }
                         newDecimalIP.append(ip).append(".");
@@ -246,7 +280,7 @@ public class SSRFChecker {
             }
             return is_octal;
         } catch (Exception e){
-            logger.error("SSRFChecker isOctalIP exception: " + e.getMessage());
+            logger.error("SSRFChecker isOctalIP exception: {}", e.getClass().getName());
             return false;
         }
 
@@ -288,16 +322,11 @@ public class SSRFChecker {
      * Get host from URL which the protocol must be http:// or https:// and not be //.
      */
     private static String url2host(String url) {
-        try {
-            // use URI instead of URL
-            URI u = new URI(url);
-            if (SecurityUtil.isHttp(url)) {
-                return u.getHost();
-            }
-            return "";
-        } catch (Exception e) {
+        if (!SecurityUtil.isHttp(url)) {
             return "";
         }
+        // strict RFC 3986 parser (rejects backslash / userinfo confusion); empty host when malformed
+        return SecurityUtil.gethost(url);
     }
 
 }

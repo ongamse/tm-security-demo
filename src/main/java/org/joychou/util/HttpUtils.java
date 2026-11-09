@@ -1,32 +1,36 @@
 package org.joychou.util;
 
-import com.squareup.okhttp.OkHttpClient;
-import org.apache.commons.httpclient.HttpClient;
-import org.apache.commons.httpclient.methods.GetMethod;
 import org.apache.commons.io.IOUtils;
 import org.apache.http.HttpResponse;
+import org.apache.http.client.config.RequestConfig;
+import org.apache.http.client.fluent.Executor;
 import org.apache.http.client.fluent.Request;
 import org.apache.http.client.methods.HttpGet;
+import org.apache.http.config.Registry;
+import org.apache.http.config.RegistryBuilder;
+import org.apache.http.conn.DnsResolver;
+import org.apache.http.conn.socket.ConnectionSocketFactory;
+import org.apache.http.conn.socket.PlainConnectionSocketFactory;
+import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
-import org.apache.http.impl.nio.client.CloseableHttpAsyncClient;
-import org.apache.http.impl.nio.client.HttpAsyncClients;
+import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
 import org.apache.http.util.EntityUtils;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
+import org.joychou.security.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.imageio.ImageIO;
 import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.URI;
-import java.net.URL;
-import java.net.URLConnection;
-import java.util.concurrent.*;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
+import java.nio.charset.StandardCharsets;
 
 /**
  * @author JoyChou 2020-04-06
@@ -35,30 +39,150 @@ public class HttpUtils {
 
     private final static Logger logger = LoggerFactory.getLogger(HttpUtils.class);
 
+    private static final String ILLEGAL_URL = "Illegal url";
+    private static final String REQUEST_FAILED = "Request failed.";
+
+    private static RequestConfig noRedirectConfig() {
+        return RequestConfig.custom().setRedirectsEnabled(false).build();
+    }
+
+    /**
+     * Build an Apache HttpClient that can only connect to the already validated addresses of one host.
+     * The host name is resolved once (in {@link SecurityUtil#resolveSafeOutboundAddresses(String)}) and the
+     * connection manager is given a DnsResolver that returns exactly those addresses, so a DNS-rebinding
+     * answer cannot swap in an internal address between validation and connect (TOCTOU). Redirect handling
+     * is disabled, any other host name fails to resolve. TLS host name verification is unchanged because the
+     * request still uses the original host name.
+     *
+     * @param target the validated target (request URI rebuilt from validated components + validated addresses)
+     * @return a client bound to the validated addresses; the caller must close it
+     */
+    private static CloseableHttpClient pinnedClient(SecurityUtil.OutboundTarget target) {
+        final InetAddress[] addrs = target.getAddresses();
+        final String validatedHost = target.getUri().getHost();
+        DnsResolver pinnedResolver = new DnsResolver() {
+            @Override
+            public InetAddress[] resolve(String host) throws UnknownHostException {
+                if (validatedHost != null && validatedHost.equalsIgnoreCase(host)) {
+                    return addrs.clone();
+                }
+                throw new UnknownHostException(host);
+            }
+        };
+        Registry<ConnectionSocketFactory> registry = RegistryBuilder.<ConnectionSocketFactory>create()
+                .register("http", PlainConnectionSocketFactory.getSocketFactory())
+                .register("https", SSLConnectionSocketFactory.getSocketFactory())
+                .build();
+        PoolingHttpClientConnectionManager connManager = new PoolingHttpClientConnectionManager(registry, pinnedResolver);
+        return HttpClients.custom()
+                .setConnectionManager(connManager)
+                .setDefaultRequestConfig(noRedirectConfig())
+                .disableRedirectHandling()
+                .build();
+    }
+
+    /**
+     * GET a public http(s) url, connecting only to the addresses that were validated (no second DNS lookup).
+     *
+     * @param url http request url
+     * @return the response body, or null if the url is not a safe outbound url
+     */
+    public static String pinnedGet(String url) {
+        try {
+            byte[] body = pinnedGetBytes(url);
+            return body == null ? null : new String(body);
+        } catch (IOException e) {
+            logger.error("pinnedGet failed: {}", e.getClass().getName());
+            return REQUEST_FAILED;
+        }
+    }
+
+    /**
+     * Same as {@link #pinnedGet(String)} but returns the raw response body.
+     *
+     * @param url http request url
+     * @return the response body, or null if the url is not a safe outbound url
+     * @throws IOException if the request fails
+     */
+    public static byte[] pinnedGetBytes(String url) throws IOException {
+        SecurityUtil.OutboundTarget target = SecurityUtil.resolveOutboundTarget(url);
+        if (target == null) {
+            logger.error("Blocked outbound request to illegal url");
+            return null;
+        }
+        try (CloseableHttpClient client = pinnedClient(target)) {
+            // the request URI is the one rebuilt from validated components, not the request string
+            HttpResponse httpResponse = client.execute(new HttpGet(target.getUri())); // send request
+            if (httpResponse.getEntity() == null) {
+                return new byte[0];
+            }
+            return EntityUtils.toByteArray(httpResponse.getEntity());
+        }
+    }
+
+    /**
+     * Send one GET to a url through the address-pinned client (redirects are NOT followed) and return the
+     * redirect target of the response, so a caller can validate every hop itself.
+     *
+     * @param target the validated target, see {@link SecurityUtil#resolveOutboundTarget(String)}
+     * @return the Location header of a 3xx redirect response (may be relative), otherwise null
+     * @throws IOException if the request fails
+     */
+    public static String pinnedRedirectLocation(SecurityUtil.OutboundTarget target) throws IOException {
+        try (CloseableHttpClient client = pinnedClient(target)) {
+            HttpGet httpGet = new HttpGet(target.getUri());
+            httpGet.setConfig(RequestConfig.custom()
+                    .setRedirectsEnabled(false)
+                    .setConnectTimeout(5000)
+                    .setSocketTimeout(5000)
+                    .build());
+            HttpResponse httpResponse = client.execute(httpGet); // send request
+            int code = httpResponse.getStatusLine().getStatusCode();
+            if (code >= 300 && code <= 307 && code != 304 && code != 306
+                    && httpResponse.getFirstHeader("Location") != null) {
+                return httpResponse.getFirstHeader("Location").getValue();
+            }
+            return null;
+        }
+    }
+
+    private static String joinLines(byte[] body) throws IOException {
+        BufferedReader in = new BufferedReader(new InputStreamReader(new ByteArrayInputStream(body)));
+        StringBuilder html = new StringBuilder();
+        String inputLine;
+        while ((inputLine = in.readLine()) != null) {
+            html.append(inputLine);
+        }
+        return html.toString();
+    }
+
     public static String commonHttpClient(String url) {
 
-        HttpClient client = new HttpClient();
-        GetMethod method = new GetMethod(url);
-
+        // commons-httpclient 3.1 has no pluggable DNS, so fetch through the address-pinned client.
         try {
-            client.executeMethod(method); // send request
-            byte[] resBody = method.getResponseBody();
+            byte[] resBody = pinnedGetBytes(url);
+            if (resBody == null) {
+                return ILLEGAL_URL;
+            }
             return new String(resBody);
-
         } catch (IOException e) {
-            return "Error: " + e.getMessage();
-        } finally {
-            // Release the connection.
-            method.releaseConnection();
+            logger.error("commonHttpClient failed: {}", e.getClass().getName());
+            return REQUEST_FAILED;
         }
     }
 
 
     public static String request(String url) {
-        try {
-            return Request.Get(url).execute().returnContent().toString();
+        SecurityUtil.OutboundTarget target = SecurityUtil.resolveOutboundTarget(url);
+        if (target == null) {
+            logger.error("Blocked outbound request to illegal url");
+            return ILLEGAL_URL;
+        }
+        try (CloseableHttpClient pinned = pinnedClient(target)) {
+            return Executor.newInstance(pinned).execute(Request.Get(target.getUri())).returnContent().toString();
         } catch (Exception e) {
-            return e.getMessage();
+            logger.error("request failed: {}", e.getClass().getName());
+            return REQUEST_FAILED;
         }
     }
 
@@ -67,12 +191,17 @@ public class HttpUtils {
 
         StringBuilder result = new StringBuilder();
 
-        try {
+        SecurityUtil.OutboundTarget target = SecurityUtil.resolveOutboundTarget(url);
+        if (target == null) {
+            logger.error("Blocked outbound request to illegal url");
+            return ILLEGAL_URL;
+        }
 
-            CloseableHttpClient client = HttpClients.createDefault();
-            HttpGet httpGet = new HttpGet(url);
-            // set redirect enable false
-            // httpGet.setConfig(RequestConfig.custom().setRedirectsEnabled(false).build());
+        try (CloseableHttpClient client = pinnedClient(target)) {
+
+            HttpGet httpGet = new HttpGet(target.getUri());
+            // do not follow redirects to unvalidated hosts
+            httpGet.setConfig(noRedirectConfig());
             HttpResponse httpResponse = client.execute(httpGet); // send request
             BufferedReader rd = new BufferedReader(new InputStreamReader(httpResponse.getEntity().getContent()));
 
@@ -84,27 +213,23 @@ public class HttpUtils {
             return result.toString();
 
         } catch (Exception e) {
-            return e.getMessage();
+            logger.error("httpClient failed: {}", e.getClass().getName());
+            return REQUEST_FAILED;
         }
     }
 
 
     public static String URLConnection(String url) {
         try {
-            URL u = new URL(url);
-            URLConnection urlConnection = u.openConnection();
-            BufferedReader in = new BufferedReader(new InputStreamReader(urlConnection.getInputStream())); //send request
-            String inputLine;
-            StringBuilder html = new StringBuilder();
-
-            while ((inputLine = in.readLine()) != null) {
-                html.append(inputLine);
+            // validate once, then connect to the validated addresses only (no second DNS lookup)
+            byte[] body = pinnedGetBytes(url);
+            if (body == null) {
+                return ILLEGAL_URL;
             }
-            in.close();
-            return html.toString();
+            return joinLines(body);
         } catch (Exception e) {
-            logger.error(e.getMessage());
-            return e.getMessage();
+            logger.error("URLConnection failed: {}", e.getClass().getName());
+            return REQUEST_FAILED;
         }
     }
 
@@ -115,24 +240,15 @@ public class HttpUtils {
      */
     public static String HttpURLConnection(String url) {
         try {
-            URL u = new URL(url);
-            URLConnection urlConnection = u.openConnection();
-            HttpURLConnection conn = (HttpURLConnection) urlConnection;
-//             conn.setInstanceFollowRedirects(false);
-//             Many HttpURLConnection methods can send http request, such as getResponseCode, getHeaderField
-            InputStream is = conn.getInputStream();  // send request
-            BufferedReader in = new BufferedReader(new InputStreamReader(is));
-            String inputLine;
-            StringBuilder html = new StringBuilder();
-
-            while ((inputLine = in.readLine()) != null) {
-                html.append(inputLine);
+            // validate once, then connect to the validated addresses only (no second DNS lookup)
+            byte[] body = pinnedGetBytes(url);
+            if (body == null) {
+                return ILLEGAL_URL;
             }
-            in.close();
-            return html.toString();
+            return joinLines(body);
         } catch (IOException e) {
-            logger.error(e.getMessage());
-            return e.getMessage();
+            logger.error("HttpURLConnection failed: {}", e.getClass().getName());
+            return REQUEST_FAILED;
         }
     }
 
@@ -144,14 +260,17 @@ public class HttpUtils {
      */
     public static String Jsoup(String url) {
         try {
-            Document doc = Jsoup.connect(url)
-//                    .followRedirects(false)
-                    .timeout(3000)
-                    .cookie("name", "joychou") // request cookies
-                    .execute().parse();
+            // Jsoup.connect() re-resolves the host name itself, so fetch through the address-pinned
+            // client and only use Jsoup as the HTML parser.
+            byte[] body = pinnedGetBytes(url);
+            if (body == null) {
+                return ILLEGAL_URL;
+            }
+            Document doc = Jsoup.parse(new String(body, StandardCharsets.UTF_8), url);
             return doc.outerHtml();
         } catch (IOException e) {
-            return e.getMessage();
+            logger.error("Jsoup failed: {}", e.getClass().getName());
+            return REQUEST_FAILED;
         }
     }
 
@@ -162,10 +281,12 @@ public class HttpUtils {
      * UserAgent is <code>okhttp/2.5.0</code>.
      */
     public static String okhttp(String url) throws IOException {
-        OkHttpClient client = new OkHttpClient();
-//         client.setFollowRedirects(false);
-        com.squareup.okhttp.Request ok_http = new com.squareup.okhttp.Request.Builder().url(url).build();
-        return client.newCall(ok_http).execute().body().string();
+        // OkHttp 2.5 has no pluggable DNS, so fetch through the address-pinned client.
+        byte[] body = pinnedGetBytes(url);
+        if (body == null) {
+            throw new IOException(ILLEGAL_URL);
+        }
+        return new String(body, StandardCharsets.UTF_8);
     }
 
 
@@ -177,9 +298,16 @@ public class HttpUtils {
      * @param url http request url
      */
     public static void imageIO(String url) {
+        // Only remote public http(s) pictures; reject file:, jar: and internal destinations.
         try {
-            URL u = new URL(url);
-            ImageIO.read(u); // send request
+            // validate once, then connect to the validated addresses only (no second DNS lookup)
+            byte[] body = pinnedGetBytes(url);
+            if (body == null) {
+                return;
+            }
+            try (InputStream in = new ByteArrayInputStream(body)) {
+                ImageIO.read(in);
+            }
         } catch (IOException e) {
             logger.error(e.getMessage());
         }
@@ -195,7 +323,12 @@ public class HttpUtils {
      */
     public static void IOUtils(String url) {
         try {
-            IOUtils.toByteArray(URI.create(url));
+            // validate once, then connect to the validated addresses only (no second DNS lookup)
+            byte[] body = pinnedGetBytes(url);
+            if (body == null) {
+                return;
+            }
+            IOUtils.toByteArray(new ByteArrayInputStream(body));
         } catch (IOException e) {
             logger.error(e.getMessage());
         }
@@ -203,21 +336,16 @@ public class HttpUtils {
 
 
     public static String HttpAsyncClients(String url) {
-        CloseableHttpAsyncClient httpclient = HttpAsyncClients.createDefault();
+        // The async client resolves host names on its own, so fetch through the address-pinned client.
         try {
-            httpclient.start();
-            final HttpGet request = new HttpGet(url);
-            Future<HttpResponse> future = httpclient.execute(request, null);
-            HttpResponse response = future.get(6000, TimeUnit.MILLISECONDS);
-            return EntityUtils.toString(response.getEntity());
-        } catch (Exception e) {
-            return e.getMessage();
-        } finally {
-            try {
-                httpclient.close();
-            } catch (Exception e) {
-                logger.error(e.getMessage());
+            byte[] body = pinnedGetBytes(url);
+            if (body == null) {
+                return ILLEGAL_URL;
             }
+            return new String(body, StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            logger.error("HttpAsyncClients failed: {}", e.getClass().getName());
+            return REQUEST_FAILED;
         }
     }
 }

@@ -7,6 +7,7 @@
     <meta name="_csrf" th:content="${_csrf.token}" />
     <meta name="_csrf_headerName" th:content="${_csrf.headerName}" />
     <meta name="_csrf_parameterName" th:content="${_csrf.parameterName}" />
+    <meta name="_ctx" th:content="@{/}" />
     <link rel="stylesheet" th:href="@{/css/login.css}" type="text/css" />
     <script th:src="@{https://cdn.jsdelivr.net/npm/jquery@3.4.1/dist/jquery.min.js}"></script>
 
@@ -33,8 +34,9 @@
     </div>
 </div>
 </body>
-<script th:inline="javascript">
-    var ctx = [[@{/}]];
+<script>
+    // Context path is passed through an HTML-escaped meta attribute, not inlined into JS.
+    var ctx = $("meta[name='_ctx']").attr("content");
     var tokenHeader = {};
     tokenHeader[csrfToken.tokenName] = csrfToken.tokenValue;  // header must be a object
 
@@ -53,13 +55,21 @@
             success: function (r) {
                 if (r.code == "0") {
                     // alert(r.message);
-                    if (r.redirectUrl == '') {
-                        location.href = ctx + "index";
-                    } else {
-                        location.href = r.redirectUrl;
+                    // Only follow same-origin http(s) redirects; never javascript:/data: URLs.
+                    var target = null;
+                    if (r.redirectUrl) {
+                        try {
+                            var u = new URL(r.redirectUrl, window.location.href);
+                            if ((u.protocol === "http:" || u.protocol === "https:") && u.origin === window.location.origin) {
+                                target = u.href;
+                            }
+                        } catch (e) {
+                            target = null;
+                        }
                     }
+                    location.href = target === null ? ctx + "index" : target;
                 } else {
-                    alert(r.message);
+                    alert(String(r.message));
                 }
             }
         });

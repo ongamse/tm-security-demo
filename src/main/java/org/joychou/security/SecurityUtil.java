@@ -8,16 +8,36 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
+import java.net.InetAddress;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLDecoder;
+import java.net.URLEncoder;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 
 public class SecurityUtil {
 
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
+    private static final Pattern ARG_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.=:-]+$");
+    /**
+     * Fixed server-side list of trusted CORS origins (keep in sync with resources/url/url_safe_domain.xml).
+     * Access-Control-Allow-Origin is only ever set from an element of this list.
+     */
+    private static final String[] CORS_ALLOWED_ORIGINS = {
+            "https://www.joychou.org",
+            "https://www.joychou.com",
+            "https://test.joychou.org"
+    };
+    private static final Set<String> ALLOWED_COMMANDS = new HashSet<String>(
+            Arrays.asList("whoami", "pwd", "date", "id", "uname", "hostname", "uptime", "ls", "echo"));
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
 
 
@@ -39,11 +59,258 @@ public class SecurityUtil {
      * @return host
      */
     public static String gethost(String url) {
-        try {
-            URI uri = new URI(url);
-            return uri.getHost().toLowerCase();
-        } catch (URISyntaxException e) {
+        ParsedUrl parsed = parseUrl(url);
+        // no host for opaque / malformed urls; fail closed with an empty host
+        return parsed == null ? "" : parsed.getHost();
+    }
+
+
+    /**
+     * Strict RFC 3986 shaped absolute url: scheme://[userinfo@]host[:port][/path][?query][#fragment].
+     * Only printable ASCII is accepted and backslashes / whitespace never match, so the host that is
+     * validated is the host a client connects to (no backslash / userinfo confusion).
+     */
+    private static final Pattern URL_PATTERN = Pattern.compile(
+            "^([A-Za-z][A-Za-z0-9+.-]*)://"
+                    + "(?:([!-~&&[^@/?#\\\\]]*)@)?"
+                    + "(\\[[0-9A-Fa-f:.]+\\]|[A-Za-z0-9.-]+)"
+                    + "(?::([0-9]{1,5}))?"
+                    + "(/[!-~&&[^?#\\\\]]*)?"
+                    + "(?:\\?([!-~&&[^#\\\\]]*))?"
+                    + "(?:#[!-~]*)?$");
+
+    /** Percent-encoded delimiters that cannot survive a decode / re-encode round trip unchanged. */
+    private static final Pattern PATH_AMBIGUOUS_ESCAPE = Pattern.compile("(?i)%2f");
+    private static final Pattern QUERY_AMBIGUOUS_ESCAPE = Pattern.compile("(?i)%(26|3d|2b)");
+
+    /**
+     * The validated components of an absolute url (host lower-cased, port as int, -1 when absent).
+     */
+    public static final class ParsedUrl {
+        private final String scheme;
+        private final String userInfo;
+        private final String host;
+        private final int port;
+        private final String rawPath;
+        private final String rawQuery;
+
+        private ParsedUrl(String scheme, String userInfo, String host, int port, String rawPath, String rawQuery) {
+            this.scheme = scheme;
+            this.userInfo = userInfo;
+            this.host = host;
+            this.port = port;
+            this.rawPath = rawPath;
+            this.rawQuery = rawQuery;
+        }
+
+        public String getScheme() {
+            return scheme;
+        }
+
+        public String getUserInfo() {
+            return userInfo;
+        }
+
+        public String getHost() {
+            return host;
+        }
+
+        public int getPort() {
+            return port;
+        }
+
+        public String getRawPath() {
+            return rawPath;
+        }
+
+        public String getRawQuery() {
+            return rawQuery;
+        }
+    }
+
+    /**
+     * Parse an absolute url into validated components without building a java.net.URI from the raw string.
+     *
+     * @param url url text
+     * @return the components, or null when the text is not a well formed absolute url (fail closed)
+     */
+    public static ParsedUrl parseUrl(String url) {
+        if (url == null) {
+            return null;
+        }
+        java.util.regex.Matcher m = URL_PATTERN.matcher(url);
+        if (!m.matches()) {
+            return null;
+        }
+        int port = -1;
+        if (m.group(4) != null) {
+            port = Integer.parseInt(m.group(4));
+            if (port > 65535) {
+                return null;
+            }
+        }
+        return new ParsedUrl(m.group(1), m.group(2), m.group(3).toLowerCase(), port, m.group(5), m.group(6));
+    }
+
+
+    /**
+     * Percent-decode a url component as UTF-8 ('+' is kept literally).
+     *
+     * @return the decoded text, or null when the escapes are malformed
+     */
+    private static String decodePercent(String raw) {
+        if (raw == null) {
             return "";
+        }
+        try {
+            return URLDecoder.decode(raw.replace("+", "%2B"), "UTF-8");
+        } catch (UnsupportedEncodingException e) {
+            return null;
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+
+    /**
+     * A validated outbound request target: the request URI is rebuilt from validated components
+     * (constant scheme, validated host, numeric port, re-encoded path and query) and never from the raw
+     * request string, together with the public addresses the host resolved to.
+     */
+    public static final class OutboundTarget {
+        private final URI uri;
+        private final InetAddress[] addresses;
+
+        private OutboundTarget(URI uri, InetAddress[] addresses) {
+            this.uri = uri;
+            this.addresses = addresses;
+        }
+
+        public URI getUri() {
+            return uri;
+        }
+
+        public InetAddress[] getAddresses() {
+            return addresses.clone();
+        }
+    }
+
+    /**
+     * Validate an outbound http(s) url and resolve its host exactly once (see
+     * {@link #resolveSafeOutboundAddresses(String)}). The returned request URI is rebuilt with the
+     * multi-argument {@link URI} constructor from the validated components.
+     *
+     * @param url the url to check
+     * @return the validated target, or null if the url is not safe (fail closed)
+     */
+    public static OutboundTarget resolveOutboundTarget(String url) {
+        if (url == null || !isHttp(url)) {
+            return null;
+        }
+        ParsedUrl parsed = parseUrl(url);
+        if (parsed == null || parsed.getUserInfo() != null) {
+            return null;
+        }
+        if (parsed.getRawPath() != null && PATH_AMBIGUOUS_ESCAPE.matcher(parsed.getRawPath()).find()) {
+            return null;
+        }
+        if (parsed.getRawQuery() != null && QUERY_AMBIGUOUS_ESCAPE.matcher(parsed.getRawQuery()).find()) {
+            return null;
+        }
+        String path = decodePercent(parsed.getRawPath());
+        String query = parsed.getRawQuery() == null ? null : decodePercent(parsed.getRawQuery());
+        if (path == null || (parsed.getRawQuery() != null && query == null)) {
+            return null;
+        }
+        InetAddress[] addrs = resolveSafeOutboundHost(parsed.getHost());
+        if (addrs == null) {
+            return null;
+        }
+        try {
+            String scheme = "https".equals(parsed.getScheme()) ? "https" : "http";
+            URI uri = new URI(scheme, null, parsed.getHost(), parsed.getPort(), path, query, null);
+            if (uri.getHost() == null) {
+                return null;
+            }
+            return new OutboundTarget(uri, addrs);
+        } catch (URISyntaxException e) {
+            return null;
+        }
+    }
+
+
+    /**
+     * Check that an outbound request URL is safe to fetch: strict http/https URI without user info,
+     * and every address the host resolves to is public (not loopback, any-local, link-local such as
+     * cloud metadata 169.254.169.254, site-local, unique-local IPv6, multicast or in the configured
+     * block subnets). Callers must also disable redirect following (or re-validate each hop).
+     *
+     * @param url the url to check
+     * @return true if safe, false otherwise (fail closed)
+     */
+    public static boolean isSafeOutboundUrl(String url) {
+        return resolveSafeOutboundAddresses(url) != null;
+    }
+
+
+    /**
+     * Validate an outbound request URL (see {@link #isSafeOutboundUrl(String)}) and resolve its host
+     * exactly once. The returned addresses are the validated ones: callers must connect to these
+     * addresses (pin them, e.g. through a custom DnsResolver) instead of resolving the host name a
+     * second time, otherwise a DNS-rebinding answer can swap in an internal address between the check
+     * and the connection.
+     *
+     * @param url the url to check
+     * @return the validated public addresses of the url host, or null if the url is not safe (fail closed)
+     */
+    public static InetAddress[] resolveSafeOutboundAddresses(String url) {
+        OutboundTarget target = resolveOutboundTarget(url);
+        return target == null ? null : target.getAddresses();
+    }
+
+
+    /**
+     * Check that a host only resolves to public addresses. See {@link #isSafeOutboundUrl(String)}.
+     *
+     * @param host host name or ip literal
+     * @return true if safe, false otherwise (fail closed)
+     */
+    public static boolean isSafeOutboundHost(String host) {
+        return resolveSafeOutboundHost(host) != null;
+    }
+
+
+    /**
+     * Resolve a host once and return its addresses only if every one of them is public.
+     *
+     * @param host host name or ip literal
+     * @return the validated addresses, or null if the host is not safe (fail closed)
+     */
+    public static InetAddress[] resolveSafeOutboundHost(String host) {
+        if (host == null || host.isEmpty()) {
+            return null;
+        }
+        try {
+            InetAddress[] addrs = InetAddress.getAllByName(host);
+            if (addrs.length == 0) {
+                return null;
+            }
+            for (InetAddress addr : addrs) {
+                if (addr.isAnyLocalAddress() || addr.isLoopbackAddress() || addr.isLinkLocalAddress()
+                        || addr.isSiteLocalAddress() || addr.isMulticastAddress()) {
+                    return null;
+                }
+                byte[] raw = addr.getAddress();
+                if (raw.length == 16 && (raw[0] & 0xfe) == 0xfc) {
+                    return null;  // IPv6 unique local fc00::/7
+                }
+                if (raw.length == 4 && SSRFChecker.isInternalIp(addr.getHostAddress())) {
+                    return null;
+                }
+            }
+            return addrs;
+        } catch (Exception e) {
+            return null;
         }
     }
 
@@ -98,6 +365,58 @@ public class SecurityUtil {
             logger.error(e.toString());
             return null;
         }
+    }
+
+
+    /**
+     * Server-side allowlist of redirect destinations. The user supplied value is only a lookup key
+     * (a short name, or the exact destination string); the redirect target that is returned always
+     * comes from this fixed table, never from the request itself.
+     */
+    private static final Map<String, String> REDIRECT_TARGETS;
+
+    static {
+        Map<String, String> targets = new HashMap<String, String>();
+        // same-origin paths
+        targets.put("home", "/");
+        targets.put("/", "/");
+        targets.put("index", "/index");
+        targets.put("/index", "/index");
+        targets.put("login", "/login");
+        targets.put("/login", "/login");
+        targets.put("file-status", "/file/status");
+        targets.put("/file/status", "/file/status");
+        // trusted external destinations (keep in sync with resources/url/url_safe_domain.xml)
+        targets.put("joychou-org", "https://www.joychou.org");
+        targets.put("https://www.joychou.org", "https://www.joychou.org");
+        targets.put("joychou-com", "https://www.joychou.com");
+        targets.put("https://www.joychou.com", "https://www.joychou.com");
+        targets.put("test-joychou-org", "https://test.joychou.org");
+        targets.put("https://test.joychou.org", "https://test.joychou.org");
+        REDIRECT_TARGETS = Collections.unmodifiableMap(targets);
+    }
+
+
+    /**
+     * Resolve an untrusted redirect key to a trusted redirect destination. The key is looked up in a
+     * fixed server-side allowlist ({@link #REDIRECT_TARGETS}); the returned string is the server-side
+     * constant stored in that table, so no part of the request is ever used as the redirect target.
+     * Unknown keys (javascript:, data:, //evil.com, /\evil.com, evil.com\@good.com ...) yield null.
+     *
+     * @param key untrusted redirect key supplied by the client
+     * @return the allowlisted destination, otherwise null (callers must fail closed)
+     */
+    public static String resolveRedirectTarget(String key) {
+        if (key == null) {
+            return null;
+        }
+        // compare against each allowlist key and hand back the table's own constant, never the request string
+        for (Map.Entry<String, String> entry : REDIRECT_TARGETS.entrySet()) {
+            if (entry.getKey().equals(key)) {
+                return entry.getValue();
+            }
+        }
+        return null;
     }
 
 
@@ -183,10 +502,10 @@ public class SecurityUtil {
             try {
                 temp = URLDecoder.decode(temp, "utf-8");
             } catch (UnsupportedEncodingException e) {
-                logger.info("Unsupported encoding exception: " + filepath);
+                logger.info("Unsupported encoding exception in pathFilter");
                 return null;
             } catch (Exception e) {
-                logger.info(e.toString());
+                logger.info("pathFilter decode exception: {}", e.getClass().getName());
                 return null;
             }
         }
@@ -205,6 +524,35 @@ public class SecurityUtil {
         }
 
         return input;
+    }
+
+
+    /**
+     * Parse a user supplied command line into an argv array without involving a shell.
+     * The program must be on a fixed allowlist and every argument must match a strict
+     * character allowlist (no shell metacharacters, quotes or whitespace).
+     *
+     * @param input user supplied command line, e.g. "ls -la /tmp"
+     * @return argv array that can be passed to ProcessBuilder, or null if the command is not allowed
+     */
+    public static String[] parseAllowedCommand(String input) {
+        if (input == null) {
+            return null;
+        }
+        String trimmed = input.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        String[] argv = trimmed.split("\\s+");
+        if (!ALLOWED_COMMANDS.contains(argv[0])) {
+            return null;
+        }
+        for (int i = 1; i < argv.length; i++) {
+            if (!ARG_PATTERN.matcher(argv[i]).matches()) {
+                return null;
+            }
+        }
+        return argv;
     }
 
 
@@ -247,6 +595,79 @@ public class SecurityUtil {
         }
 
         return sb.toString();
+    }
+
+    /**
+     * Encode an untrusted value so it is safe to place in an HTTP response header or cookie value.
+     * The value is URL-encoded (UTF-8), so the result only contains <code>[A-Za-z0-9.*_%-]</code>:
+     * CR, LF, ';', ',', quotes, spaces and any other control or separator character can never appear.
+     *
+     * @param value untrusted header value
+     * @return the URL-encoded value, or null when value is null
+     */
+    public static String encodeHeaderValue(String value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            return URLEncoder.encode(value, "UTF-8").replace("+", "%20");
+        } catch (UnsupportedEncodingException e) {
+            // UTF-8 is always supported; fail closed
+            return "";
+        }
+    }
+
+    /**
+     * Validate a CORS Origin request header against the safe-domain allowlist (see {@link #checkURL}).
+     * The Origin must be a bare http/https origin (scheme://host[:port]) with no user info, path,
+     * query or fragment, otherwise it is rejected (fail closed).
+     *
+     * The request Origin is only compared (String.equals) with a fixed list of origin constants
+     * ({@link #CORS_ALLOWED_ORIGINS}); the returned string is the list's own element and never the
+     * request string. Sub-domain suffix matching is intentionally not supported here.
+     *
+     * @param origin value of the Origin request header
+     * @return the allowlisted origin constant if the request matches it, null otherwise (including null/"null"/malformed values)
+     */
+    public static String checkCorsOrigin(String origin) {
+        if (origin == null) {
+            return null;
+        }
+        for (String allowed : CORS_ALLOWED_ORIGINS) {
+            if (allowed.equals(origin)) {
+                // return the server-side constant, never the request value
+                return allowed;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * @return a copy of the fixed server-side list of allowed CORS origins
+     */
+    public static String[] getCorsAllowedOrigins() {
+        return CORS_ALLOWED_ORIGINS.clone();
+    }
+
+    /**
+     * Emit the CORS Allow-Origin header only for an allowlisted origin.
+     * Access-Control-Allow-Credentials is intentionally never emitted (no credentialed cross-site requests).
+     *
+     * @return true if the origin was allowlisted and headers were written
+     */
+    public static boolean applyCorsHeaders(String origin, javax.servlet.http.HttpServletResponse response) {
+        response.addHeader("Vary", "Origin");
+        if (origin == null) {
+            return false;
+        }
+        for (String allowed : CORS_ALLOWED_ORIGINS) {
+            if (allowed.equals(origin)) {
+                // header value comes from the server-side constant, not from the request
+                response.setHeader("Access-Control-Allow-Origin", allowed);
+                return true;
+            }
+        }
+        return false;
     }
 
     public static void main(String[] args) {
