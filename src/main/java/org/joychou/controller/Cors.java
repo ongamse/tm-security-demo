@@ -25,7 +25,7 @@ public class Cors {
     @GetMapping("/vuln/origin")
     public String vuls1(HttpServletRequest request, HttpServletResponse response) {
         String origin = request.getHeader("origin");
-        // only allowlisted origins get Allow-Origin / Allow-Credentials (cookie)
+        // only allowlisted origins get Allow-Origin (no credentials / cookies cross-site)
         SecurityUtil.applyCorsHeaders(origin, response);
         return info;
     }
