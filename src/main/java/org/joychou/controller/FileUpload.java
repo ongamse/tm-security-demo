@@ -139,7 +139,6 @@ public class FileUpload {
             return "Upload failed";
         }
 
-        logger.info("[+] Safe file. Size: {} bytes", bytes.length);
         logger.info("[+] Successfully uploaded a file");
         return String.format("You successfully uploaded '%s'", HtmlUtils.htmlEscape(filePath));
     }

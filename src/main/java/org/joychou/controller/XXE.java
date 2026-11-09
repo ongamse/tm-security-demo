@@ -439,16 +439,8 @@ public class XXE {
 
 
     private static void response(NodeList rootNodeList){
-        for (int i = 0; i < rootNodeList.getLength(); i++) {
-            Node rootNode = rootNodeList.item(i);
-            NodeList xxe = rootNode.getChildNodes();
-            for (int j = 0; j < xxe.getLength(); j++) {
-                Node xxeNode = xxe.item(j);
-                // 测试不能blind xxe，所以强行加了一个回显
-                logger.info("xxeNode type={}", xxeNode.getNodeType());
-            }
-
-        }
+        // Do not log values derived from the parsed request body (log forging).
+        logger.info("xxe response nodes processed");
     }
 
         /**
