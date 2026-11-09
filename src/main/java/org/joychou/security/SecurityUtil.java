@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
+import java.net.InetAddress;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLDecoder;
@@ -50,6 +51,62 @@ public class SecurityUtil {
             return uri.getHost().toLowerCase();
         } catch (URISyntaxException e) {
             return "";
+        }
+    }
+
+
+    /**
+     * Check that an outbound request URL is safe to fetch: strict http/https URI without user info,
+     * and every address the host resolves to is public (not loopback, any-local, link-local such as
+     * cloud metadata 169.254.169.254, site-local, unique-local IPv6, multicast or in the configured
+     * block subnets). Callers must also disable redirect following (or re-validate each hop).
+     *
+     * @param url the url to check
+     * @return true if safe, false otherwise (fail closed)
+     */
+    public static boolean isSafeOutboundUrl(String url) {
+        if (url == null || !isHttp(url)) {
+            return false;
+        }
+        try {
+            URI uri = new URI(url);
+            if (uri.getUserInfo() != null) {
+                return false;
+            }
+            return isSafeOutboundHost(uri.getHost());
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+
+    /**
+     * Check that a host only resolves to public addresses. See {@link #isSafeOutboundUrl(String)}.
+     *
+     * @param host host name or ip literal
+     * @return true if safe, false otherwise (fail closed)
+     */
+    public static boolean isSafeOutboundHost(String host) {
+        if (host == null || host.isEmpty()) {
+            return false;
+        }
+        try {
+            for (InetAddress addr : InetAddress.getAllByName(host)) {
+                if (addr.isAnyLocalAddress() || addr.isLoopbackAddress() || addr.isLinkLocalAddress()
+                        || addr.isSiteLocalAddress() || addr.isMulticastAddress()) {
+                    return false;
+                }
+                byte[] raw = addr.getAddress();
+                if (raw.length == 16 && (raw[0] & 0xfe) == 0xfc) {
+                    return false;  // IPv6 unique local fc00::/7
+                }
+                if (raw.length == 4 && SSRFChecker.isInternalIp(addr.getHostAddress())) {
+                    return false;
+                }
+            }
+            return true;
+        } catch (Exception e) {
+            return false;
         }
     }
 

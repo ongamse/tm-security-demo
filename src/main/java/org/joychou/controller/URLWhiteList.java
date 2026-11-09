@@ -9,7 +9,8 @@ import org.springframework.web.util.HtmlUtils;
 
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.net.URL;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -105,14 +106,29 @@ public class URLWhiteList {
             return;
         }
 
-        URL u = new URL(url);
-        String host = u.getHost();
+        // Parse with the strict RFC 3986 java.net.URI (rejects backslash / userinfo confusion that
+        // java.net.URL.getHost() tolerates) so the validated host is the host the browser follows.
+        String host;
+        try {
+            URI u = new URI(url);
+            if (u.getUserInfo() != null) {
+                return;
+            }
+            host = u.getHost();
+        } catch (URISyntaxException e) {
+            return;
+        }
+        if (host == null) {
+            return;
+        }
+        host = host.toLowerCase();
         logger.info("host:  " + host);
 
         // endsWith .
         for (String domain : domainwhitelist) {
             if (host.endsWith("." + domain)) {
                 res.sendRedirect(url);
+                return;
             }
         }
 

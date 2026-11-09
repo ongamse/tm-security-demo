@@ -125,10 +125,20 @@ public class SSRF {
             // download
             response.setHeader("content-disposition", "attachment;fileName=" + downLoadImgFileName);
 
+            // Only public http(s) destinations; no redirect following to unvalidated hosts.
+            if (!SecurityUtil.isSafeOutboundUrl(url)) {
+                logger.error("Blocked openStream to illegal url");
+                response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+                return;
+            }
             URL u = new URL(url);
             int length;
             byte[] bytes = new byte[1024];
-            inputStream = u.openStream(); // send request
+            URLConnection urlConnection = u.openConnection();
+            if (urlConnection instanceof HttpURLConnection) {
+                ((HttpURLConnection) urlConnection).setInstanceFollowRedirects(false);
+            }
+            inputStream = urlConnection.getInputStream(); // send request
             outputStream = response.getOutputStream();
             while ((length = inputStream.read(bytes)) > 0) {
                 outputStream.write(bytes, 0, length);
