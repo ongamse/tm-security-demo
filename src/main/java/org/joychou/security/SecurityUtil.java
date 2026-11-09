@@ -14,7 +14,10 @@ import java.net.URISyntaxException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -198,39 +201,48 @@ public class SecurityUtil {
 
 
     /**
-     * Validate an untrusted redirect target. Accepts only (a) a same-origin absolute path such as
-     * <code>/a/b?x=1</code> (not protocol-relative <code>//host</code>, no backslash, no control chars), or
-     * (b) a strict RFC 3986 http/https URL without user info whose host passes {@link #checkURL(String)}.
-     * Everything else (javascript:, data:, //evil.com, /\evil.com, evil.com\@good.com ...) is rejected.
-     *
-     * @param target untrusted redirect target
-     * @return the original target when safe, otherwise null (callers must fail closed)
+     * Server-side allowlist of redirect destinations. The user supplied value is only a lookup key
+     * (a short name, or the exact destination string); the redirect target that is returned always
+     * comes from this fixed table, never from the request itself.
      */
-    public static String checkRedirectURL(String target) {
-        if (target == null || target.isEmpty()) {
+    private static final Map<String, String> REDIRECT_TARGETS;
+
+    static {
+        Map<String, String> targets = new HashMap<String, String>();
+        // same-origin paths
+        targets.put("home", "/");
+        targets.put("/", "/");
+        targets.put("index", "/index");
+        targets.put("/index", "/index");
+        targets.put("login", "/login");
+        targets.put("/login", "/login");
+        targets.put("file-status", "/file/status");
+        targets.put("/file/status", "/file/status");
+        // trusted external destinations (keep in sync with resources/url/url_safe_domain.xml)
+        targets.put("joychou-org", "https://www.joychou.org");
+        targets.put("https://www.joychou.org", "https://www.joychou.org");
+        targets.put("joychou-com", "https://www.joychou.com");
+        targets.put("https://www.joychou.com", "https://www.joychou.com");
+        targets.put("test-joychou-org", "https://test.joychou.org");
+        targets.put("https://test.joychou.org", "https://test.joychou.org");
+        REDIRECT_TARGETS = Collections.unmodifiableMap(targets);
+    }
+
+
+    /**
+     * Resolve an untrusted redirect key to a trusted redirect destination. The key is looked up in a
+     * fixed server-side allowlist ({@link #REDIRECT_TARGETS}); the returned string is the server-side
+     * constant stored in that table, so no part of the request is ever used as the redirect target.
+     * Unknown keys (javascript:, data:, //evil.com, /\evil.com, evil.com\@good.com ...) yield null.
+     *
+     * @param key untrusted redirect key supplied by the client
+     * @return the allowlisted destination, otherwise null (callers must fail closed)
+     */
+    public static String resolveRedirectTarget(String key) {
+        if (key == null) {
             return null;
         }
-        for (int i = 0; i < target.length(); i++) {
-            char c = target.charAt(i);
-            if (c <= 0x20 || c == 0x7f || c == '\\') {
-                return null;
-            }
-        }
-        try {
-            URI uri = new URI(target);
-            if (target.startsWith("/")) {
-                if (target.startsWith("//") || uri.getScheme() != null || uri.getRawAuthority() != null) {
-                    return null;
-                }
-                return target;
-            }
-            if (!isHttp(target) || uri.getRawUserInfo() != null || uri.getHost() == null) {
-                return null;
-            }
-            return checkURL(target);
-        } catch (URISyntaxException e) {
-            return null;
-        }
+        return REDIRECT_TARGETS.get(key);
     }
 
 

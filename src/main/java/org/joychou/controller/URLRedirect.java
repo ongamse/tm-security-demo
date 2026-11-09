@@ -30,7 +30,8 @@ public class URLRedirect {
      */
     @GetMapping("/redirect")
     public String redirect(@RequestParam("url") String url) {
-        String safeUrl = SecurityUtil.checkRedirectURL(url);
+        // the request value is only a lookup key; the target comes from a server-side allowlist
+        String safeUrl = SecurityUtil.resolveRedirectTarget(url);
         if (safeUrl == null) {
             return "redirect:/";  // fail closed: untrusted target, go to the default page
         }
@@ -45,7 +46,7 @@ public class URLRedirect {
     @ResponseBody
     public static void setHeader(HttpServletRequest request, HttpServletResponse response) {
         String url = request.getParameter("url");
-        String safeUrl = SecurityUtil.checkRedirectURL(url);
+        String safeUrl = SecurityUtil.resolveRedirectTarget(url);
         if (safeUrl == null) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             return;
@@ -62,7 +63,7 @@ public class URLRedirect {
     @ResponseBody
     public static void sendRedirect(HttpServletRequest request, HttpServletResponse response) throws IOException {
         String url = request.getParameter("url");
-        String safeUrl = SecurityUtil.checkRedirectURL(url);
+        String safeUrl = SecurityUtil.resolveRedirectTarget(url);
         if (safeUrl == null) {
             response.sendError(HttpServletResponse.SC_FORBIDDEN, "url forbidden");
             return;
@@ -97,7 +98,7 @@ public class URLRedirect {
     public void sendRedirect_seccode(HttpServletRequest request, HttpServletResponse response)
             throws IOException {
         String url = request.getParameter("url");
-        String safeUrl = SecurityUtil.checkRedirectURL(url);
+        String safeUrl = SecurityUtil.resolveRedirectTarget(url);
         if (safeUrl == null) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             response.getWriter().write("url forbidden");
