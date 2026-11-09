@@ -15,13 +15,9 @@ import org.w3c.dom.Document;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 import org.xml.sax.helpers.XMLReaderFactory;
-import org.xml.sax.SAXException;
 import org.xml.sax.XMLReader;
 
 import javax.xml.XMLConstants;
-import javax.xml.parsers.ParserConfigurationException;
-import org.jdom2.JDOMException;
-import org.jdom2.input.sax.XMLReaderJDOMFactory;
 
 import java.io.*;
 
@@ -99,7 +95,11 @@ public class XXE {
             String body = WebUtils.getRequestBody(request);
             logger.info("Request body length={}", body.length());
 
-            SAXBuilder builder = newHardenedSaxBuilder();
+            SAXBuilder builder = new SAXBuilder();
+            builder.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            builder.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            builder.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            builder.setExpandEntities(false);
             // org.jdom2.Document document
             builder.build(new InputSource(new StringReader(body)));
             return "SAXBuilder xxe vuln code";
@@ -115,7 +115,11 @@ public class XXE {
             String body = WebUtils.getRequestBody(request);
             logger.info("Request body length={}", body.length());
 
-            SAXBuilder builder = newHardenedSaxBuilder();
+            SAXBuilder builder = new SAXBuilder();
+            builder.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            builder.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            builder.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            builder.setExpandEntities(false);
             // org.jdom2.Document document
             builder.build(new InputSource(new StringReader(body)));
 
@@ -211,7 +215,19 @@ public class XXE {
             String body = WebUtils.getRequestBody(request);
             logger.info("Request body length={}", body.length());
 
-            Digester digester = new Digester(newHardenedXmlReader());
+            // Reject DOCTYPE before the body reaches Digester.
+            DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+            dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            dbf.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            dbf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            dbf.setXIncludeAware(false);
+            dbf.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+            dbf.newDocumentBuilder().parse(new InputSource(new StringReader(body)));
+
+            Digester digester = new Digester();
+            digester.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            digester.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            digester.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             digester.parse(new StringReader(body));  // parse xml
         } catch (Exception e) {
             logger.error("XXE parse error: {}", e.getClass().getName());
@@ -226,7 +242,19 @@ public class XXE {
             String body = WebUtils.getRequestBody(request);
             logger.info("Request body length={}", body.length());
 
-            Digester digester = new Digester(newHardenedXmlReader());
+            // Reject DOCTYPE before the body reaches Digester.
+            DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+            dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            dbf.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            dbf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            dbf.setXIncludeAware(false);
+            dbf.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+            dbf.newDocumentBuilder().parse(new InputSource(new StringReader(body)));
+
+            Digester digester = new Digester();
+            digester.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            digester.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            digester.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             digester.parse(new StringReader(body));  // parse xml
 
             return "Digester xxe security code";
@@ -411,51 +439,6 @@ public class XXE {
         }
 
         return "DocumentHelper xxe vuln code";
-    }
-
-
-    /**
-     * Create an XMLReader that rejects DOCTYPE declarations and external entities.
-     * Used to hand a pre-hardened parser to JDOM and Digester so the object that
-     * actually parses the request body carries the secure configuration.
-     */
-    private static XMLReader newHardenedXmlReader() throws ParserConfigurationException, SAXException {
-        SAXParserFactory spf = SAXParserFactory.newInstance();
-        spf.setNamespaceAware(true);
-        spf.setXIncludeAware(false);
-        spf.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
-        spf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-        spf.setFeature("http://xml.org/sax/features/external-general-entities", false);
-        spf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
-        spf.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
-        XMLReader xmlReader = spf.newSAXParser().getXMLReader();
-        xmlReader.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-        xmlReader.setFeature("http://xml.org/sax/features/external-general-entities", false);
-        xmlReader.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
-        return xmlReader;
-    }
-
-    /**
-     * JDOM reader factory that always returns the hardened XMLReader above.
-     */
-    private static SAXBuilder newHardenedSaxBuilder() {
-        SAXBuilder builder = new SAXBuilder(new XMLReaderJDOMFactory() {
-            @Override
-            public XMLReader createXMLReader() throws JDOMException {
-                try {
-                    return newHardenedXmlReader();
-                } catch (ParserConfigurationException | SAXException e) {
-                    throw new JDOMException("Unable to create hardened XMLReader", e);
-                }
-            }
-
-            @Override
-            public boolean isValidating() {
-                return false;
-            }
-        });
-        builder.setExpandEntities(false);
-        return builder;
     }
 
 
