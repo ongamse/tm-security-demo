@@ -1,8 +1,6 @@
 package org.joychou.controller;
 
 import groovy.lang.GroovyShell;
-import jdk.nashorn.api.scripting.ClassFilter;
-import jdk.nashorn.api.scripting.NashornScriptEngineFactory;
 import org.joychou.security.SecurityUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -15,6 +13,7 @@ import org.yaml.snakeyaml.constructor.SafeConstructor;
 import javax.script.Bindings;
 import javax.script.ScriptContext;
 import javax.script.ScriptEngine;
+import javax.script.ScriptEngineManager;
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -102,22 +101,22 @@ public class Rce {
      * @param jsurl js url
      */
     @GetMapping("/jscmd")
-    public void jsEngine(String jsurl) throws Exception{
+    public String jsEngine(String jsurl) throws Exception{
         // js nashorn javascript ecmascript
-        // Only allowlisted script URLs, and the script cannot reach any Java class.
+        // Only allowlisted script URLs; the URL is passed as an engine binding, never concatenated into script source.
         String safeUrl = SecurityUtil.checkURL(jsurl);
         if (safeUrl == null) {
             throw new IllegalArgumentException("jsurl is not allowed");
         }
-        ScriptEngine engine = new NashornScriptEngineFactory().getScriptEngine(new ClassFilter() {
-            @Override
-            public boolean exposeToScripts(String className) {
-                return false;
-            }
-        });
+        ScriptEngine engine = new ScriptEngineManager().getEngineByName("javascript");
+        if (engine == null) {
+            log.warn("No JavaScript script engine available");
+            return "JavaScript engine is not available.";
+        }
         Bindings bindings = engine.getBindings(ScriptContext.ENGINE_SCOPE);
         bindings.put("jsurl", safeUrl);
         engine.eval("load(jsurl)", bindings);
+        return "ok";
     }
 
 
