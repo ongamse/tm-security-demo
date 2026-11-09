@@ -29,8 +29,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.InetAddress;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
 
@@ -56,12 +54,12 @@ public class HttpUtils {
      * is disabled, any other host name fails to resolve. TLS host name verification is unchanged because the
      * request still uses the original host name.
      *
-     * @param url   the url that is going to be requested
-     * @param addrs validated addresses of the url host
+     * @param target the validated target (request URI rebuilt from validated components + validated addresses)
      * @return a client bound to the validated addresses; the caller must close it
      */
-    private static CloseableHttpClient pinnedClient(String url, final InetAddress[] addrs) throws URISyntaxException {
-        final String validatedHost = new URI(url).getHost();
+    private static CloseableHttpClient pinnedClient(SecurityUtil.OutboundTarget target) {
+        final InetAddress[] addrs = target.getAddresses();
+        final String validatedHost = target.getUri().getHost();
         DnsResolver pinnedResolver = new DnsResolver() {
             @Override
             public InetAddress[] resolve(String host) throws UnknownHostException {
@@ -107,19 +105,18 @@ public class HttpUtils {
      * @throws IOException if the request fails
      */
     public static byte[] pinnedGetBytes(String url) throws IOException {
-        InetAddress[] addrs = SecurityUtil.resolveSafeOutboundAddresses(url);
-        if (addrs == null) {
+        SecurityUtil.OutboundTarget target = SecurityUtil.resolveOutboundTarget(url);
+        if (target == null) {
             logger.error("Blocked outbound request to illegal url");
             return null;
         }
-        try (CloseableHttpClient client = pinnedClient(url, addrs)) {
-            HttpResponse httpResponse = client.execute(new HttpGet(url)); // send request
+        try (CloseableHttpClient client = pinnedClient(target)) {
+            // the request URI is the one rebuilt from validated components, not the request string
+            HttpResponse httpResponse = client.execute(new HttpGet(target.getUri())); // send request
             if (httpResponse.getEntity() == null) {
                 return new byte[0];
             }
             return EntityUtils.toByteArray(httpResponse.getEntity());
-        } catch (URISyntaxException e) {
-            throw new IOException(ILLEGAL_URL);
         }
     }
 
@@ -127,14 +124,13 @@ public class HttpUtils {
      * Send one GET to a url through the address-pinned client (redirects are NOT followed) and return the
      * redirect target of the response, so a caller can validate every hop itself.
      *
-     * @param url   http request url, already validated
-     * @param addrs the validated addresses of the url host, see {@link SecurityUtil#resolveSafeOutboundAddresses(String)}
+     * @param target the validated target, see {@link SecurityUtil#resolveOutboundTarget(String)}
      * @return the Location header of a 3xx redirect response (may be relative), otherwise null
      * @throws IOException if the request fails
      */
-    public static String pinnedRedirectLocation(String url, InetAddress[] addrs) throws IOException {
-        try (CloseableHttpClient client = pinnedClient(url, addrs)) {
-            HttpGet httpGet = new HttpGet(url);
+    public static String pinnedRedirectLocation(SecurityUtil.OutboundTarget target) throws IOException {
+        try (CloseableHttpClient client = pinnedClient(target)) {
+            HttpGet httpGet = new HttpGet(target.getUri());
             httpGet.setConfig(RequestConfig.custom()
                     .setRedirectsEnabled(false)
                     .setConnectTimeout(5000)
@@ -147,8 +143,6 @@ public class HttpUtils {
                 return httpResponse.getFirstHeader("Location").getValue();
             }
             return null;
-        } catch (URISyntaxException e) {
-            throw new IOException(ILLEGAL_URL);
         }
     }
 
@@ -179,13 +173,13 @@ public class HttpUtils {
 
 
     public static String request(String url) {
-        InetAddress[] addrs = SecurityUtil.resolveSafeOutboundAddresses(url);
-        if (addrs == null) {
+        SecurityUtil.OutboundTarget target = SecurityUtil.resolveOutboundTarget(url);
+        if (target == null) {
             logger.error("Blocked outbound request to illegal url");
             return ILLEGAL_URL;
         }
-        try (CloseableHttpClient pinned = pinnedClient(url, addrs)) {
-            return Executor.newInstance(pinned).execute(Request.Get(url)).returnContent().toString();
+        try (CloseableHttpClient pinned = pinnedClient(target)) {
+            return Executor.newInstance(pinned).execute(Request.Get(target.getUri())).returnContent().toString();
         } catch (Exception e) {
             logger.error("request failed: {}", e.getClass().getName());
             return REQUEST_FAILED;
@@ -197,15 +191,15 @@ public class HttpUtils {
 
         StringBuilder result = new StringBuilder();
 
-        InetAddress[] addrs = SecurityUtil.resolveSafeOutboundAddresses(url);
-        if (addrs == null) {
+        SecurityUtil.OutboundTarget target = SecurityUtil.resolveOutboundTarget(url);
+        if (target == null) {
             logger.error("Blocked outbound request to illegal url");
             return ILLEGAL_URL;
         }
 
-        try (CloseableHttpClient client = pinnedClient(url, addrs)) {
+        try (CloseableHttpClient client = pinnedClient(target)) {
 
-            HttpGet httpGet = new HttpGet(url);
+            HttpGet httpGet = new HttpGet(target.getUri());
             // do not follow redirects to unvalidated hosts
             httpGet.setConfig(noRedirectConfig());
             HttpResponse httpResponse = client.execute(httpGet); // send request

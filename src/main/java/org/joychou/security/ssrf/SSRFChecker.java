@@ -70,19 +70,25 @@ public class SSRFChecker {
 
                 // Resolve the host once, validate every address and connect to exactly those
                 // addresses (no second DNS lookup, so DNS rebinding cannot swap the address).
-                InetAddress[] addrs = SecurityUtil.resolveSafeOutboundAddresses(finalUrl);
-                if (addrs == null) {
+                // The request URI is rebuilt from the validated components (see SecurityUtil.OutboundTarget).
+                SecurityUtil.OutboundTarget target = SecurityUtil.resolveOutboundTarget(finalUrl);
+                if (target == null) {
                     logger.error("[-] SSRF check failed. Illegal or internal url");
                     return false;
                 }
 
                 // redirects are not followed automatically, each hop is validated by this loop
-                String location = HttpUtils.pinnedRedirectLocation(finalUrl, addrs);
+                String location = HttpUtils.pinnedRedirectLocation(target);
                 if (null == location) {
                     return true;  // no redirect, the url chain is safe
                 }
-                // Location may be relative; resolve it against the current url before validating it
-                finalUrl = new URI(finalUrl).resolve(location).toString();
+                // Location may be relative; make it absolute against the validated current target,
+                // the next loop iteration validates the new hop from scratch.
+                finalUrl = nextHop(target.getUri(), location);
+                if (finalUrl == null) {
+                    logger.error("[-] SSRF check failed. Unsupported redirect location");
+                    return false;
+                }
                 i += 1;  // 重定向次数加1
                 logger.info("redirected to the next hop");
                 if (i >= checkTimes) {
@@ -93,6 +99,37 @@ public class SSRFChecker {
             logger.error("SSRFChecker checkSSRF exception: {}", e.getClass().getName());
             return false;  // fail closed: a url that cannot be verified is not considered safe
         }
+    }
+
+
+    /**
+     * Turn a redirect Location into an absolute url text: absolute http(s) urls are passed on as they are
+     * (and validated by the caller's next iteration), absolute-path and relative-path references are
+     * attached to the scheme/authority of the already validated current URI. Anything else (other
+     * schemes, scheme-relative "//host", whitespace or backslashes) is rejected.
+     *
+     * @return the next hop url text, or null when the location is not supported (fail closed)
+     */
+    private static String nextHop(URI current, String location) {
+        if (location == null || location.isEmpty()) {
+            return null;
+        }
+        if (SecurityUtil.isHttp(location)) {
+            return location;
+        }
+        if (location.startsWith("//") || location.indexOf(':') >= 0 || location.indexOf('\\') >= 0) {
+            return null;
+        }
+        String base = current.getScheme() + "://" + current.getRawAuthority();
+        if (location.startsWith("/")) {
+            return base + location;
+        }
+        String dir = current.getRawPath() == null ? "/" : current.getRawPath();
+        dir = dir.substring(0, dir.lastIndexOf('/') + 1);
+        if (dir.isEmpty()) {
+            dir = "/";
+        }
+        return base + dir + location;
     }
 
 
@@ -285,16 +322,11 @@ public class SSRFChecker {
      * Get host from URL which the protocol must be http:// or https:// and not be //.
      */
     private static String url2host(String url) {
-        try {
-            // use URI instead of URL
-            URI u = new URI(url);
-            if (SecurityUtil.isHttp(url)) {
-                return u.getHost();
-            }
-            return "";
-        } catch (Exception e) {
+        if (!SecurityUtil.isHttp(url)) {
             return "";
         }
+        // strict RFC 3986 parser (rejects backslash / userinfo confusion); empty host when malformed
+        return SecurityUtil.gethost(url);
     }
 
 }

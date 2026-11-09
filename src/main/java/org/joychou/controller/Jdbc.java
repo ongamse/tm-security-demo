@@ -1,17 +1,14 @@
 package org.joychou.controller;
 
 import lombok.extern.slf4j.Slf4j;
-import org.joychou.security.SecurityUtil;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.net.Inet4Address;
-import java.net.Inet6Address;
-import java.net.InetAddress;
 import java.nio.charset.StandardCharsets;
 import java.sql.DriverManager;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * Jdbc Attack @2023.04
@@ -22,63 +19,54 @@ import java.util.regex.Pattern;
 public class Jdbc {
 
     /**
-     * Strict JDBC URL shape: fixed subprotocol, plain host[:port][/database]. Connection
-     * properties (query string, ';' or ':' property lists such as socketFactory,
-     * loggerFile, clientRerouteServerListJNDIName ...) are rejected.
+     * Server-side allowlists of databases the endpoints may connect to. The request value is only a
+     * lookup key (a short name, or the base64 of the exact connection string); the JDBC URL handed to
+     * the driver is always the constant stored in these tables, so no part of the request ever reaches
+     * DriverManager and connection properties (socketFactory, loggerFile, ...) cannot be injected.
      */
-    private static final Pattern POSTGRESQL_URL =
-            Pattern.compile("^jdbc:postgresql://([A-Za-z0-9.-]{1,253})(?::(\\d{1,5}))?(?:/([A-Za-z0-9_.-]{1,63}))?$");
-    private static final Pattern DB2_URL =
-            Pattern.compile("^jdbc:db2://([A-Za-z0-9.-]{1,253})(?::(\\d{1,5}))?(?:/([A-Za-z0-9_.-]{1,63}))?$");
+    private static final Map<String, String> POSTGRESQL_TARGETS;
+    private static final Map<String, String> DB2_TARGETS;
+
+    static {
+        Map<String, String> pg = new HashMap<String, String>();
+        pg.put("postgres", "jdbc:postgresql://127.0.0.1:5432/postgres");
+        pg.put("amRiYzpwb3N0Z3Jlc3FsOi8vMTI3LjAuMC4xOjU0MzIvcG9zdGdyZXM=", "jdbc:postgresql://127.0.0.1:5432/postgres");
+        POSTGRESQL_TARGETS = Collections.unmodifiableMap(pg);
+
+        Map<String, String> db2 = new HashMap<String, String>();
+        db2.put("sample", "jdbc:db2://127.0.0.1:50000/sample");
+        db2.put("amRiYzpkYjI6Ly8xMjcuMC4wLjE6NTAwMDAvc2FtcGxl", "jdbc:db2://127.0.0.1:50000/sample");
+        DB2_TARGETS = Collections.unmodifiableMap(db2);
+    }
 
     /**
-     * Decode and validate the user supplied JDBC URL: allowlisted subprotocol, no connection
-     * properties, and a host that only resolves to public addresses. The host is resolved exactly
-     * once and replaced by the validated IP literal in the returned URL, so the driver connects to the
-     * address that was checked and a DNS-rebinding answer cannot swap in an internal address.
+     * Resolve the untrusted request value to a server-side constant JDBC URL.
+     *
+     * @param key   untrusted lookup key supplied by the client
+     * @param table the allowlist for this endpoint
+     * @return the constant JDBC URL stored in the table
+     * @throws IllegalArgumentException when the key is not allowlisted (fail closed)
      */
-    private static String checkedJdbcUrl(String jdbcUrlBase64, Pattern allowed) {
-        if (jdbcUrlBase64 == null) {
-            throw new IllegalArgumentException("Illegal jdbc url");
-        }
-        String jdbcUrl;
-        try {
-            jdbcUrl = new String(java.util.Base64.getDecoder().decode(jdbcUrlBase64), StandardCharsets.UTF_8);
-        } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException("Illegal jdbc url");
-        }
-        Matcher m = allowed.matcher(jdbcUrl);
-        if (!m.matches()) {
-            throw new IllegalArgumentException("Illegal jdbc url");
-        }
-        InetAddress[] addrs = SecurityUtil.resolveSafeOutboundHost(m.group(1));
-        if (addrs == null) {
-            throw new IllegalArgumentException("Illegal jdbc url");
-        }
-        InetAddress pinned = addrs[0];
-        for (InetAddress a : addrs) {
-            if (a instanceof Inet4Address) {
-                pinned = a;
-                break;
+    private static String resolveJdbcTarget(String key, Map<String, String> table) {
+        if (key != null) {
+            for (Map.Entry<String, String> entry : table.entrySet()) {
+                if (entry.getKey().equals(key)) {
+                    return entry.getValue();
+                }
+            }
+            // also accept the base64 of an allowlisted connection string given with different padding
+            try {
+                String decoded = new String(java.util.Base64.getDecoder().decode(key), StandardCharsets.UTF_8);
+                for (String constant : table.values()) {
+                    if (constant.equals(decoded)) {
+                        return constant;
+                    }
+                }
+            } catch (IllegalArgumentException e) {
+                // not base64: fall through, fail closed
             }
         }
-        String hostLiteral = pinned.getHostAddress();
-        int scope = hostLiteral.indexOf('%');
-        if (scope >= 0) {
-            hostLiteral = hostLiteral.substring(0, scope);
-        }
-        if (pinned instanceof Inet6Address) {
-            hostLiteral = "[" + hostLiteral + "]";
-        }
-        String subprotocol = jdbcUrl.substring(0, jdbcUrl.indexOf("//") + 2);
-        StringBuilder pinnedUrl = new StringBuilder(subprotocol).append(hostLiteral);
-        if (m.group(2) != null) {
-            pinnedUrl.append(':').append(m.group(2));
-        }
-        if (m.group(3) != null) {
-            pinnedUrl.append('/').append(m.group(3));
-        }
-        return pinnedUrl.toString();
+        throw new IllegalArgumentException("Illegal jdbc url");
     }
 
     /**
@@ -86,16 +74,16 @@ public class Jdbc {
      */
     @RequestMapping("/postgresql")
     public void postgresql(String jdbcUrlBase64) throws Exception{
-        String jdbcUrl = checkedJdbcUrl(jdbcUrlBase64, POSTGRESQL_URL);
-        log.info("jdbc url validated, length={}", jdbcUrl.length());
+        String jdbcUrl = resolveJdbcTarget(jdbcUrlBase64, POSTGRESQL_TARGETS);
+        log.info("jdbc target allowlisted, length={}", jdbcUrl.length());
         DriverManager.getConnection(jdbcUrl);
     }
 
     @RequestMapping("/db2")
     public void db2(String jdbcUrlBase64) throws Exception{
         Class.forName("com.ibm.db2.jcc.DB2Driver");
-        String jdbcUrl = checkedJdbcUrl(jdbcUrlBase64, DB2_URL);
-        log.info("jdbc url validated, length={}", jdbcUrl.length());
+        String jdbcUrl = resolveJdbcTarget(jdbcUrlBase64, DB2_TARGETS);
+        log.info("jdbc target allowlisted, length={}", jdbcUrl.length());
         DriverManager.getConnection(jdbcUrl);
     }
 }

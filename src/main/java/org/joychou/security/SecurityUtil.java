@@ -51,13 +51,182 @@ public class SecurityUtil {
      * @return host
      */
     public static String gethost(String url) {
-        try {
-            URI uri = new URI(url);
-            String host = uri.getHost();
-            // host is null for opaque / registry-based authorities; fail closed with an empty host
-            return host == null ? "" : host.toLowerCase();
-        } catch (URISyntaxException e) {
+        ParsedUrl parsed = parseUrl(url);
+        // no host for opaque / malformed urls; fail closed with an empty host
+        return parsed == null ? "" : parsed.getHost();
+    }
+
+
+    /**
+     * Strict RFC 3986 shaped absolute url: scheme://[userinfo@]host[:port][/path][?query][#fragment].
+     * Only printable ASCII is accepted and backslashes / whitespace never match, so the host that is
+     * validated is the host a client connects to (no backslash / userinfo confusion).
+     */
+    private static final Pattern URL_PATTERN = Pattern.compile(
+            "^([A-Za-z][A-Za-z0-9+.-]*)://"
+                    + "(?:([!-~&&[^@/?#\\\\]]*)@)?"
+                    + "(\\[[0-9A-Fa-f:.]+\\]|[A-Za-z0-9.-]+)"
+                    + "(?::([0-9]{1,5}))?"
+                    + "(/[!-~&&[^?#\\\\]]*)?"
+                    + "(?:\\?([!-~&&[^#\\\\]]*))?"
+                    + "(?:#[!-~]*)?$");
+
+    /** Percent-encoded delimiters that cannot survive a decode / re-encode round trip unchanged. */
+    private static final Pattern PATH_AMBIGUOUS_ESCAPE = Pattern.compile("(?i)%2f");
+    private static final Pattern QUERY_AMBIGUOUS_ESCAPE = Pattern.compile("(?i)%(26|3d|2b)");
+
+    /**
+     * The validated components of an absolute url (host lower-cased, port as int, -1 when absent).
+     */
+    public static final class ParsedUrl {
+        private final String scheme;
+        private final String userInfo;
+        private final String host;
+        private final int port;
+        private final String rawPath;
+        private final String rawQuery;
+
+        private ParsedUrl(String scheme, String userInfo, String host, int port, String rawPath, String rawQuery) {
+            this.scheme = scheme;
+            this.userInfo = userInfo;
+            this.host = host;
+            this.port = port;
+            this.rawPath = rawPath;
+            this.rawQuery = rawQuery;
+        }
+
+        public String getScheme() {
+            return scheme;
+        }
+
+        public String getUserInfo() {
+            return userInfo;
+        }
+
+        public String getHost() {
+            return host;
+        }
+
+        public int getPort() {
+            return port;
+        }
+
+        public String getRawPath() {
+            return rawPath;
+        }
+
+        public String getRawQuery() {
+            return rawQuery;
+        }
+    }
+
+    /**
+     * Parse an absolute url into validated components without building a java.net.URI from the raw string.
+     *
+     * @param url url text
+     * @return the components, or null when the text is not a well formed absolute url (fail closed)
+     */
+    public static ParsedUrl parseUrl(String url) {
+        if (url == null) {
+            return null;
+        }
+        java.util.regex.Matcher m = URL_PATTERN.matcher(url);
+        if (!m.matches()) {
+            return null;
+        }
+        int port = -1;
+        if (m.group(4) != null) {
+            port = Integer.parseInt(m.group(4));
+            if (port > 65535) {
+                return null;
+            }
+        }
+        return new ParsedUrl(m.group(1), m.group(2), m.group(3).toLowerCase(), port, m.group(5), m.group(6));
+    }
+
+
+    /**
+     * Percent-decode a url component as UTF-8 ('+' is kept literally).
+     *
+     * @return the decoded text, or null when the escapes are malformed
+     */
+    private static String decodePercent(String raw) {
+        if (raw == null) {
             return "";
+        }
+        try {
+            return URLDecoder.decode(raw.replace("+", "%2B"), "UTF-8");
+        } catch (UnsupportedEncodingException e) {
+            return null;
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+
+    /**
+     * A validated outbound request target: the request URI is rebuilt from validated components
+     * (constant scheme, validated host, numeric port, re-encoded path and query) and never from the raw
+     * request string, together with the public addresses the host resolved to.
+     */
+    public static final class OutboundTarget {
+        private final URI uri;
+        private final InetAddress[] addresses;
+
+        private OutboundTarget(URI uri, InetAddress[] addresses) {
+            this.uri = uri;
+            this.addresses = addresses;
+        }
+
+        public URI getUri() {
+            return uri;
+        }
+
+        public InetAddress[] getAddresses() {
+            return addresses.clone();
+        }
+    }
+
+    /**
+     * Validate an outbound http(s) url and resolve its host exactly once (see
+     * {@link #resolveSafeOutboundAddresses(String)}). The returned request URI is rebuilt with the
+     * multi-argument {@link URI} constructor from the validated components.
+     *
+     * @param url the url to check
+     * @return the validated target, or null if the url is not safe (fail closed)
+     */
+    public static OutboundTarget resolveOutboundTarget(String url) {
+        if (url == null || !isHttp(url)) {
+            return null;
+        }
+        ParsedUrl parsed = parseUrl(url);
+        if (parsed == null || parsed.getUserInfo() != null) {
+            return null;
+        }
+        if (parsed.getRawPath() != null && PATH_AMBIGUOUS_ESCAPE.matcher(parsed.getRawPath()).find()) {
+            return null;
+        }
+        if (parsed.getRawQuery() != null && QUERY_AMBIGUOUS_ESCAPE.matcher(parsed.getRawQuery()).find()) {
+            return null;
+        }
+        String path = decodePercent(parsed.getRawPath());
+        String query = parsed.getRawQuery() == null ? null : decodePercent(parsed.getRawQuery());
+        if (path == null || (parsed.getRawQuery() != null && query == null)) {
+            return null;
+        }
+        InetAddress[] addrs = resolveSafeOutboundHost(parsed.getHost());
+        if (addrs == null) {
+            return null;
+        }
+        try {
+            String scheme = "https".equals(parsed.getScheme()) ? "https" : "http";
+            URI uri = new URI(scheme, null, parsed.getHost(), parsed.getPort(), path, query, null);
+            if (uri.getHost() == null) {
+                return null;
+            }
+            return new OutboundTarget(uri, addrs);
+        } catch (URISyntaxException e) {
+            return null;
         }
     }
 
@@ -87,18 +256,8 @@ public class SecurityUtil {
      * @return the validated public addresses of the url host, or null if the url is not safe (fail closed)
      */
     public static InetAddress[] resolveSafeOutboundAddresses(String url) {
-        if (url == null || !isHttp(url)) {
-            return null;
-        }
-        try {
-            URI uri = new URI(url);
-            if (uri.getUserInfo() != null) {
-                return null;
-            }
-            return resolveSafeOutboundHost(uri.getHost());
-        } catch (Exception e) {
-            return null;
-        }
+        OutboundTarget target = resolveOutboundTarget(url);
+        return target == null ? null : target.getAddresses();
     }
 
 
@@ -465,28 +624,25 @@ public class SecurityUtil {
         if (origin == null || checkURL(origin) == null) {
             return null;
         }
-        try {
-            URI uri = new URI(origin);
-            if (uri.getUserInfo() != null || uri.getQuery() != null || uri.getFragment() != null) {
-                return null;
-            }
-            String path = uri.getRawPath();
-            if (path != null && !path.isEmpty()) {
-                return null;
-            }
-            String host = gethost(origin);
-            if (!CORS_HOST_PATTERN.matcher(host).matches()) {
-                return null;
-            }
-            int port = uri.getPort();
-            if (port != -1 && (port < 1 || port > 65535)) {
-                return null;
-            }
-            String scheme = origin.startsWith("https://") ? "https" : "http";
-            return scheme + "://" + encodeHeaderValue(host) + (port == -1 ? "" : ":" + port);
-        } catch (URISyntaxException e) {
+        ParsedUrl parsed = parseUrl(origin);
+        if (parsed == null || parsed.getUserInfo() != null || parsed.getRawQuery() != null
+                || origin.indexOf('#') >= 0) {
             return null;
         }
+        String path = parsed.getRawPath();
+        if (path != null && !path.isEmpty()) {
+            return null;
+        }
+        String host = parsed.getHost();
+        if (!CORS_HOST_PATTERN.matcher(host).matches()) {
+            return null;
+        }
+        int port = parsed.getPort();
+        if (port != -1 && (port < 1 || port > 65535)) {
+            return null;
+        }
+        String scheme = origin.startsWith("https://") ? "https" : "http";
+        return scheme + "://" + encodeHeaderValue(host) + (port == -1 ? "" : ":" + port);
     }
 
     /**
