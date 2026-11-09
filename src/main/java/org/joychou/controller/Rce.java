@@ -55,7 +55,8 @@ public class Rce {
             inBr.close();
             in.close();
         } catch (Exception e) {
-            return HtmlUtils.htmlEscape(e.toString());
+            log.error("Command exec failed: {}", e.getClass().getName());
+            return "Request failed.";
         }
         return HtmlUtils.htmlEscape(sb.toString());
     }
@@ -84,7 +85,8 @@ public class Rce {
                 sb.append(tmpStr);
             }
         } catch (Exception e) {
-            return HtmlUtils.htmlEscape(e.toString());
+            log.error("ProcessBuilder exec failed: {}", e.getClass().getName());
+            return "Request failed.";
         }
 
         return HtmlUtils.htmlEscape(sb.toString());

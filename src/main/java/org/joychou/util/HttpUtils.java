@@ -42,6 +42,7 @@ public class HttpUtils {
     private final static Logger logger = LoggerFactory.getLogger(HttpUtils.class);
 
     private static final String ILLEGAL_URL = "Illegal url";
+    private static final String REQUEST_FAILED = "Request failed.";
 
     private static RequestConfig noRedirectConfig() {
         return RequestConfig.custom().setRedirectsEnabled(false).build();
@@ -93,7 +94,8 @@ public class HttpUtils {
             byte[] body = pinnedGetBytes(url);
             return body == null ? null : new String(body);
         } catch (IOException e) {
-            return e.getMessage();
+            logger.error("pinnedGet failed: {}", e.getClass().getName());
+            return REQUEST_FAILED;
         }
     }
 
@@ -170,7 +172,8 @@ public class HttpUtils {
             }
             return new String(resBody);
         } catch (IOException e) {
-            return "Error: " + e.getMessage();
+            logger.error("commonHttpClient failed: {}", e.getClass().getName());
+            return REQUEST_FAILED;
         }
     }
 
@@ -184,7 +187,8 @@ public class HttpUtils {
         try (CloseableHttpClient pinned = pinnedClient(url, addrs)) {
             return Executor.newInstance(pinned).execute(Request.Get(url)).returnContent().toString();
         } catch (Exception e) {
-            return e.getMessage();
+            logger.error("request failed: {}", e.getClass().getName());
+            return REQUEST_FAILED;
         }
     }
 
@@ -215,7 +219,8 @@ public class HttpUtils {
             return result.toString();
 
         } catch (Exception e) {
-            return e.getMessage();
+            logger.error("httpClient failed: {}", e.getClass().getName());
+            return REQUEST_FAILED;
         }
     }
 
@@ -229,8 +234,8 @@ public class HttpUtils {
             }
             return joinLines(body);
         } catch (Exception e) {
-            logger.error(e.getMessage());
-            return e.getMessage();
+            logger.error("URLConnection failed: {}", e.getClass().getName());
+            return REQUEST_FAILED;
         }
     }
 
@@ -248,8 +253,8 @@ public class HttpUtils {
             }
             return joinLines(body);
         } catch (IOException e) {
-            logger.error(e.getMessage());
-            return e.getMessage();
+            logger.error("HttpURLConnection failed: {}", e.getClass().getName());
+            return REQUEST_FAILED;
         }
     }
 
@@ -270,7 +275,8 @@ public class HttpUtils {
             Document doc = Jsoup.parse(new String(body, StandardCharsets.UTF_8), url);
             return doc.outerHtml();
         } catch (IOException e) {
-            return e.getMessage();
+            logger.error("Jsoup failed: {}", e.getClass().getName());
+            return REQUEST_FAILED;
         }
     }
 
@@ -344,7 +350,8 @@ public class HttpUtils {
             }
             return new String(body, StandardCharsets.UTF_8);
         } catch (Exception e) {
-            return e.getMessage();
+            logger.error("HttpAsyncClients failed: {}", e.getClass().getName());
+            return REQUEST_FAILED;
         }
     }
 }
