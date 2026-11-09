@@ -30,12 +30,10 @@ public class Jdbc {
     static {
         Map<String, String> pg = new HashMap<String, String>();
         pg.put("postgres", "jdbc:postgresql://127.0.0.1:5432/postgres");
-        pg.put("amRiYzpwb3N0Z3Jlc3FsOi8vMTI3LjAuMC4xOjU0MzIvcG9zdGdyZXM=", "jdbc:postgresql://127.0.0.1:5432/postgres");
         POSTGRESQL_TARGETS = Collections.unmodifiableMap(pg);
 
         Map<String, String> db2 = new HashMap<String, String>();
         db2.put("sample", "jdbc:db2://127.0.0.1:50000/sample");
-        db2.put("amRiYzpkYjI6Ly8xMjcuMC4wLjE6NTAwMDAvc2FtcGxl", "jdbc:db2://127.0.0.1:50000/sample");
         DB2_TARGETS = Collections.unmodifiableMap(db2);
     }
 
@@ -54,7 +52,7 @@ public class Jdbc {
                     return entry.getValue();
                 }
             }
-            // also accept the base64 of an allowlisted connection string given with different padding
+            // also accept the base64 of an allowlisted connection string (decoded and compared to the constants)
             try {
                 String decoded = new String(java.util.Base64.getDecoder().decode(key), StandardCharsets.UTF_8);
                 for (String constant : table.values()) {
