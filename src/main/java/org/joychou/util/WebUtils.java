@@ -3,7 +3,9 @@ package org.joychou.util;
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
 import java.io.*;
-import java.util.regex.Pattern;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 
 import com.google.common.base.Preconditions;
 import org.springframework.web.util.HtmlUtils;
@@ -28,25 +30,45 @@ public class WebUtils {
     }
 
 
-    // JS identifier (optionally dotted, e.g. "jQuery.cb_1"), bounded length.
-    private static final Pattern JSONP_CALLBACK_PATTERN =
-            Pattern.compile("^[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z_$][A-Za-z0-9_$]*)*$");
+    // Server-side allowlist of JSONP function names. The requested callback is only
+    // used as a lookup key; the emitted function name is the constant map value.
+    private static final Map<String, String> JSONP_CALLBACK_ALLOWLIST;
 
-    public static boolean isValidJsonpCallback(String callback) {
-        return callback != null && callback.length() <= 64 && JSONP_CALLBACK_PATTERN.matcher(callback).matches();
+    static {
+        Map<String, String> m = new HashMap<String, String>();
+        m.put("test", "test");
+        m.put("aa", "aa");
+        m.put("callback", "callback");
+        m.put("jsonp", "jsonp");
+        m.put("cb", "cb");
+        JSONP_CALLBACK_ALLOWLIST = Collections.unmodifiableMap(m);
     }
 
     /**
-     * Build a JSONP response. The callback name is allowlisted so request data
-     * can never be interpreted as arbitrary JavaScript.
+     * Map a requested JSONP callback name to a server-side constant function name.
+     *
+     * @return the allowlisted constant name, or null when the request is not allowlisted
+     */
+    public static String resolveJsonpCallback(String requested) {
+        if (requested == null) {
+            return null;
+        }
+        return JSONP_CALLBACK_ALLOWLIST.get(requested);
+    }
+
+    /**
+     * Build a JSONP response. The function name is a server-side constant chosen
+     * through {@link #resolveJsonpCallback(String)}, so request data can never be
+     * interpreted as JavaScript.
      */
     public static String json2Jsonp(String callback, String jsonStr) {
-        if (!isValidJsonpCallback(callback)) {
+        String functionName = resolveJsonpCallback(callback);
+        if (functionName == null) {
             return "error";
         }
         // Leading comment mitigates Rosetta-Flash style content sniffing; the JSON
         // payload is additionally made safe for any script/HTML embedding context.
-        return "/**/" + callback + "(" + escapeJsonForScript(jsonStr) + ")";
+        return "/**/" + functionName + "(" + escapeJsonForScript(jsonStr) + ")";
     }
 
     /**

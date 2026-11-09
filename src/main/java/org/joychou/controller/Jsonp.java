@@ -20,6 +20,9 @@ import org.joychou.util.WebUtils;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.security.Principal;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.regex.Pattern;
 
 
 /**
@@ -34,6 +37,8 @@ public class Jsonp {
 
     private String callback = WebConfig.getBusinessCallback();
 
+    private static final Pattern CSRF_TOKEN_PATTERN = Pattern.compile("^[A-Za-z0-9-]{1,128}$");
+
     @Autowired
     CookieCsrfTokenRepository cookieCsrfTokenRepository;
     /**
@@ -41,10 +46,13 @@ public class Jsonp {
      * <p>
      * http://localhost:8080/jsonp/vuln/referer?callback_=test
      */
-    @RequestMapping(value = "/vuln/referer", produces = "application/javascript")
+    @RequestMapping(value = "/vuln/referer", produces = "application/javascript;charset=UTF-8")
     public String referer(HttpServletRequest request, HttpServletResponse response) {
         response.setHeader("X-Content-Type-Options", "nosniff");
-        String callback = request.getParameter(this.callback);
+        String callback = WebUtils.resolveJsonpCallback(request.getParameter(this.callback));
+        if (callback == null) {
+            return "error";
+        }
         return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
     }
 
@@ -54,7 +62,7 @@ public class Jsonp {
      * <p>
      * http://localhost:8080/jsonp/vuln/emptyReferer?callback_=test
      */
-    @RequestMapping(value = "/vuln/emptyReferer", produces = "application/javascript")
+    @RequestMapping(value = "/vuln/emptyReferer", produces = "application/javascript;charset=UTF-8")
     public String emptyReferer(HttpServletRequest request, HttpServletResponse response) {
         response.setHeader("X-Content-Type-Options", "nosniff");
         String referer = request.getHeader("referer");
@@ -62,7 +70,10 @@ public class Jsonp {
         if (null != referer && SecurityUtil.checkURL(referer) == null) {
             return "error";
         }
-        String callback = request.getParameter(this.callback);
+        String callback = WebUtils.resolveJsonpCallback(request.getParameter(this.callback));
+        if (callback == null) {
+            return "error";
+        }
         return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
     }
 
@@ -100,7 +111,7 @@ public class Jsonp {
      * Safe code.
      * http://localhost:8080/jsonp/sec?callback_=test
      */
-    @RequestMapping(value = "/sec/checkReferer", produces = "application/javascript")
+    @RequestMapping(value = "/sec/checkReferer", produces = "application/javascript;charset=UTF-8")
     public String safecode(HttpServletRequest request, HttpServletResponse response) {
         response.setHeader("X-Content-Type-Options", "nosniff");
         String referer = request.getHeader("referer");
@@ -108,7 +119,10 @@ public class Jsonp {
         if (SecurityUtil.checkURL(referer) == null) {
             return "error";
         }
-        String callback = request.getParameter(this.callback);
+        String callback = WebUtils.resolveJsonpCallback(request.getParameter(this.callback));
+        if (callback == null) {
+            return "error";
+        }
         return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
     }
 
@@ -127,19 +141,30 @@ public class Jsonp {
      *
      * fastjsonp to jsonp
      */
-    @GetMapping(value = "/fastjsonp/getToken", produces = "application/javascript")
+    @GetMapping(value = "/fastjsonp/getToken", produces = "application/javascript;charset=UTF-8")
     public String getCsrfToken2(HttpServletRequest request, HttpServletResponse response) {
         response.setHeader("X-Content-Type-Options", "nosniff");
         CsrfToken csrfToken = cookieCsrfTokenRepository.loadToken(request); // get csrf token
 
-        String callback = request.getParameter("fastjsonpCallback");
-        if (StringUtils.isNotBlank(callback)) {
-            if (!WebUtils.isValidJsonpCallback(callback)) {
+        // csrfToken is read from a cookie, so only emit it when it is a UUID (the format
+        // CookieCsrfTokenRepository generates); the JSON is rebuilt from server-side field names.
+        Map<String, String> tokenData = new LinkedHashMap<String, String>();
+        if (csrfToken != null && csrfToken.getToken() != null
+                && CSRF_TOKEN_PATTERN.matcher(csrfToken.getToken()).matches()) {
+            tokenData.put("headerName", csrfToken.getHeaderName());
+            tokenData.put("parameterName", csrfToken.getParameterName());
+            tokenData.put("token", csrfToken.getToken());
+        }
+        String json = JSON.toJSONString(tokenData);
+
+        String callback = WebUtils.resolveJsonpCallback(request.getParameter("fastjsonpCallback"));
+        if (StringUtils.isNotBlank(request.getParameter("fastjsonpCallback"))) {
+            if (callback == null) {
                 return "error";
             }
-            return WebUtils.json2Jsonp(callback, JSON.toJSONString(csrfToken));
+            return WebUtils.json2Jsonp(callback, json);
         } else {
-            return WebUtils.escapeJsonForScript(JSON.toJSONString(csrfToken));
+            return WebUtils.escapeJsonForScript(json);
         }
     }
 
