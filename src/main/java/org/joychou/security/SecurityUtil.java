@@ -400,6 +400,49 @@ public class SecurityUtil {
         return current;
     }
 
+    /**
+     * Validate a CORS Origin request header against the safe-domain allowlist (see {@link #checkURL}).
+     * The Origin must be a bare http/https origin (scheme://host[:port]) with no user info, path,
+     * query or fragment, otherwise it is rejected (fail closed).
+     *
+     * @param origin value of the Origin request header
+     * @return the origin if it is allowlisted, null otherwise (including null/"null"/malformed values)
+     */
+    public static String checkCorsOrigin(String origin) {
+        if (origin == null || checkURL(origin) == null) {
+            return null;
+        }
+        try {
+            URI uri = new URI(origin);
+            if (uri.getUserInfo() != null || uri.getQuery() != null || uri.getFragment() != null) {
+                return null;
+            }
+            String path = uri.getRawPath();
+            if (path != null && !path.isEmpty()) {
+                return null;
+            }
+            return origin;
+        } catch (URISyntaxException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Emit CORS Allow-Origin / Allow-Credentials headers only for an allowlisted origin.
+     *
+     * @return true if the origin was allowlisted and headers were written
+     */
+    public static boolean applyCorsHeaders(String origin, javax.servlet.http.HttpServletResponse response) {
+        String safeOrigin = checkCorsOrigin(origin);
+        if (safeOrigin == null) {
+            return false;
+        }
+        response.setHeader("Access-Control-Allow-Origin", sanitizeHeaderValue(safeOrigin));
+        response.setHeader("Access-Control-Allow-Credentials", "true");
+        response.addHeader("Vary", "Origin");
+        return true;
+    }
+
     public static void main(String[] args) {
     }
 
