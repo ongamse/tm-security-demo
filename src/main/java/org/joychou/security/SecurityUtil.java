@@ -23,6 +23,7 @@ public class SecurityUtil {
 
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
     private static final Pattern ARG_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.=:-]+$");
+    private static final Pattern HEADER_CRLF_PATTERN = Pattern.compile("[\\r\\n]|%0[dD]|%0[aA]|%25(?=0[dDaA])");
     private static final Set<String> ALLOWED_COMMANDS = new HashSet<String>(
             Arrays.asList("whoami", "pwd", "date", "id", "uname", "hostname", "uptime", "ls", "echo"));
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
@@ -339,6 +340,27 @@ public class SecurityUtil {
         }
 
         return sb.toString();
+    }
+
+    /**
+     * Neutralize a value before it is written into an HTTP response header, Location or Set-Cookie.
+     * Removes raw CR/LF and their percent-encoded forms (<code>%0d</code>, <code>%0a</code>), repeating
+     * until stable so that nested sequences such as <code>%250d</code> cannot reassemble into a line break.
+     *
+     * @param value untrusted header value
+     * @return value without CR/LF sequences, or null when value is null
+     */
+    public static String sanitizeHeaderValue(String value) {
+        if (value == null) {
+            return null;
+        }
+        String previous;
+        String current = value;
+        do {
+            previous = current;
+            current = HEADER_CRLF_PATTERN.matcher(current).replaceAll("");
+        } while (!current.equals(previous));
+        return current;
     }
 
     public static void main(String[] args) {
