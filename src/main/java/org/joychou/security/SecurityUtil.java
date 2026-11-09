@@ -49,7 +49,9 @@ public class SecurityUtil {
     public static String gethost(String url) {
         try {
             URI uri = new URI(url);
-            return uri.getHost().toLowerCase();
+            String host = uri.getHost();
+            // host is null for opaque / registry-based authorities; fail closed with an empty host
+            return host == null ? "" : host.toLowerCase();
         } catch (URISyntaxException e) {
             return "";
         }
@@ -66,17 +68,32 @@ public class SecurityUtil {
      * @return true if safe, false otherwise (fail closed)
      */
     public static boolean isSafeOutboundUrl(String url) {
+        return resolveSafeOutboundAddresses(url) != null;
+    }
+
+
+    /**
+     * Validate an outbound request URL (see {@link #isSafeOutboundUrl(String)}) and resolve its host
+     * exactly once. The returned addresses are the validated ones: callers must connect to these
+     * addresses (pin them, e.g. through a custom DnsResolver) instead of resolving the host name a
+     * second time, otherwise a DNS-rebinding answer can swap in an internal address between the check
+     * and the connection.
+     *
+     * @param url the url to check
+     * @return the validated public addresses of the url host, or null if the url is not safe (fail closed)
+     */
+    public static InetAddress[] resolveSafeOutboundAddresses(String url) {
         if (url == null || !isHttp(url)) {
-            return false;
+            return null;
         }
         try {
             URI uri = new URI(url);
             if (uri.getUserInfo() != null) {
-                return false;
+                return null;
             }
-            return isSafeOutboundHost(uri.getHost());
+            return resolveSafeOutboundHost(uri.getHost());
         } catch (Exception e) {
-            return false;
+            return null;
         }
     }
 
@@ -88,26 +105,41 @@ public class SecurityUtil {
      * @return true if safe, false otherwise (fail closed)
      */
     public static boolean isSafeOutboundHost(String host) {
+        return resolveSafeOutboundHost(host) != null;
+    }
+
+
+    /**
+     * Resolve a host once and return its addresses only if every one of them is public.
+     *
+     * @param host host name or ip literal
+     * @return the validated addresses, or null if the host is not safe (fail closed)
+     */
+    public static InetAddress[] resolveSafeOutboundHost(String host) {
         if (host == null || host.isEmpty()) {
-            return false;
+            return null;
         }
         try {
-            for (InetAddress addr : InetAddress.getAllByName(host)) {
+            InetAddress[] addrs = InetAddress.getAllByName(host);
+            if (addrs.length == 0) {
+                return null;
+            }
+            for (InetAddress addr : addrs) {
                 if (addr.isAnyLocalAddress() || addr.isLoopbackAddress() || addr.isLinkLocalAddress()
                         || addr.isSiteLocalAddress() || addr.isMulticastAddress()) {
-                    return false;
+                    return null;
                 }
                 byte[] raw = addr.getAddress();
                 if (raw.length == 16 && (raw[0] & 0xfe) == 0xfc) {
-                    return false;  // IPv6 unique local fc00::/7
+                    return null;  // IPv6 unique local fc00::/7
                 }
                 if (raw.length == 4 && SSRFChecker.isInternalIp(addr.getHostAddress())) {
-                    return false;
+                    return null;
                 }
             }
-            return true;
+            return addrs;
         } catch (Exception e) {
-            return false;
+            return null;
         }
     }
 

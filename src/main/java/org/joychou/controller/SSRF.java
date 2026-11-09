@@ -125,21 +125,18 @@ public class SSRF {
             // download
             response.setHeader("content-disposition", "attachment;fileName=" + SecurityUtil.sanitizeHeaderValue(downLoadImgFileName));
 
-            // Only public http(s) destinations; no redirect following to unvalidated hosts.
-            if (!SecurityUtil.isSafeOutboundUrl(url)) {
+            // Only public http(s) destinations; the host is resolved once and the validated address is
+            // the one connected to; redirects are not followed.
+            byte[] body = HttpUtils.pinnedGetBytes(url);
+            if (body == null) {
                 logger.error("Blocked openStream to illegal url");
                 response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
                 return;
             }
-            URL u = new URL(url);
+            inputStream = new ByteArrayInputStream(body);
+            outputStream = response.getOutputStream();
             int length;
             byte[] bytes = new byte[1024];
-            URLConnection urlConnection = u.openConnection();
-            if (urlConnection instanceof HttpURLConnection) {
-                ((HttpURLConnection) urlConnection).setInstanceFollowRedirects(false);
-            }
-            inputStream = urlConnection.getInputStream(); // send request
-            outputStream = response.getOutputStream();
             while ((length = inputStream.read(bytes)) > 0) {
                 outputStream.write(bytes, 0, length);
             }
@@ -318,11 +315,13 @@ public class SSRF {
      */
     @GetMapping("/dnsrebind/vuln")
     public String DnsRebind(String url) {
-        java.security.Security.setProperty("networkaddress.cache.negative.ttl" , "0");
-        if (!SecurityUtil.checkSSRFWithoutRedirect(url)) {
+        // Validation and request must use the same DNS answer: HttpUtils.pinnedGet resolves the host once,
+        // rejects internal addresses and connects to exactly the validated addresses.
+        String body = HttpUtils.pinnedGet(url);
+        if (body == null) {
             return "Dangerous url";
         }
-        return HttpUtil.get(url);
+        return body;
     }
 
 

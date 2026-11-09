@@ -1,15 +1,14 @@
 package org.joychou.security.ssrf;
 
-import java.net.HttpURLConnection;
 import java.net.InetAddress;
 import java.net.URI;
-import java.net.URL;
 import java.util.ArrayList;
 
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.net.util.SubnetUtils;
 import org.joychou.config.WebConfig;
 import org.joychou.security.SecurityUtil;
+import org.joychou.util.HttpUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -51,7 +50,7 @@ public class SSRFChecker {
     /**
      * 解析url的ip，判断ip是否是内网ip，所以TTL设置为0的情况不适用。
      * url只允许https或者http，并且设置默认连接超时时间。
-     * 该修复方案会主动请求重定向后的链接。
+     * 该修复方案会主动请求重定向后的链接（只连接已校验过的IP，逐跳校验重定向，校验失败按不安全处理）。
      *
      * @param url        check的url
      * @param checkTimes 设置重定向检测的最大次数，建议设置为10次
@@ -59,43 +58,41 @@ public class SSRFChecker {
      */
     public static boolean checkSSRF(String url, int checkTimes) {
 
-        HttpURLConnection connection;
-        int connectTime = 5 * 1000;  // 设置连接超时时间5s
         int i = 1;
         String finalUrl = url;
         try {
-            do {
-                // 判断当前请求的URL是否是内网ip
+            while (true) {
+                // 判断当前请求的URL是否是内网ip（含八进制等写法）
                 if (isInternalIpByUrl(finalUrl)) {
-                    logger.error("[-] SSRF check failed. Dangerous url: " + finalUrl);
+                    logger.error("[-] SSRF check failed. Dangerous url");
                     return false;  // 内网ip直接return，非内网ip继续判断是否有重定向
                 }
 
-                connection = (HttpURLConnection) new URL(finalUrl).openConnection();
-                connection.setInstanceFollowRedirects(false);
-                connection.setUseCaches(false); // 设置为false，手动处理跳转，可以拿到每个跳转的URL
-                connection.setConnectTimeout(connectTime);
-                //connection.setRequestMethod("GET");
-                connection.connect(); // send dns request
-                int responseCode = connection.getResponseCode(); // 发起网络请求
-                if (responseCode >= 300 && responseCode <= 307 && responseCode != 304 && responseCode != 306) {
-                    String redirectedUrl = connection.getHeaderField("Location");
-                    if (null == redirectedUrl)
-                        break;
-                    finalUrl = redirectedUrl;
-                    i += 1;  // 重定向次数加1
-                    logger.info("redirected url: " + finalUrl);
-                    if (i == checkTimes) {
-                        return false;
-                    }
-                } else
-                    break;
-            } while (connection.getResponseCode() != HttpURLConnection.HTTP_OK);
-            connection.disconnect();
+                // Resolve the host once, validate every address and connect to exactly those
+                // addresses (no second DNS lookup, so DNS rebinding cannot swap the address).
+                InetAddress[] addrs = SecurityUtil.resolveSafeOutboundAddresses(finalUrl);
+                if (addrs == null) {
+                    logger.error("[-] SSRF check failed. Illegal or internal url");
+                    return false;
+                }
+
+                // redirects are not followed automatically, each hop is validated by this loop
+                String location = HttpUtils.pinnedRedirectLocation(finalUrl, addrs);
+                if (null == location) {
+                    return true;  // no redirect, the url chain is safe
+                }
+                // Location may be relative; resolve it against the current url before validating it
+                finalUrl = new URI(finalUrl).resolve(location).toString();
+                i += 1;  // 重定向次数加1
+                logger.info("redirected to the next hop");
+                if (i >= checkTimes) {
+                    return false;
+                }
+            }
         } catch (Exception e) {
-            return true;  // 如果异常了，认为是安全的，防止是超时导致的异常而验证不成功。
+            logger.error("SSRFChecker checkSSRF exception: " + e.getMessage());
+            return false;  // fail closed: a url that cannot be verified is not considered safe
         }
-        return true; // 默认返回true
     }
 
 

@@ -5,6 +5,9 @@ import org.joychou.security.SecurityUtil;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.net.Inet4Address;
+import java.net.Inet6Address;
+import java.net.InetAddress;
 import java.nio.charset.StandardCharsets;
 import java.sql.DriverManager;
 import java.util.regex.Matcher;
@@ -30,18 +33,52 @@ public class Jdbc {
 
     /**
      * Decode and validate the user supplied JDBC URL: allowlisted subprotocol, no connection
-     * properties, and a host that only resolves to public addresses.
+     * properties, and a host that only resolves to public addresses. The host is resolved exactly
+     * once and replaced by the validated IP literal in the returned URL, so the driver connects to the
+     * address that was checked and a DNS-rebinding answer cannot swap in an internal address.
      */
     private static String checkedJdbcUrl(String jdbcUrlBase64, Pattern allowed) {
         if (jdbcUrlBase64 == null) {
             throw new IllegalArgumentException("Illegal jdbc url");
         }
-        String jdbcUrl = new String(java.util.Base64.getDecoder().decode(jdbcUrlBase64), StandardCharsets.UTF_8);
-        Matcher m = allowed.matcher(jdbcUrl);
-        if (!m.matches() || !SecurityUtil.isSafeOutboundHost(m.group(1))) {
+        String jdbcUrl;
+        try {
+            jdbcUrl = new String(java.util.Base64.getDecoder().decode(jdbcUrlBase64), StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException e) {
             throw new IllegalArgumentException("Illegal jdbc url");
         }
-        return jdbcUrl;
+        Matcher m = allowed.matcher(jdbcUrl);
+        if (!m.matches()) {
+            throw new IllegalArgumentException("Illegal jdbc url");
+        }
+        InetAddress[] addrs = SecurityUtil.resolveSafeOutboundHost(m.group(1));
+        if (addrs == null) {
+            throw new IllegalArgumentException("Illegal jdbc url");
+        }
+        InetAddress pinned = addrs[0];
+        for (InetAddress a : addrs) {
+            if (a instanceof Inet4Address) {
+                pinned = a;
+                break;
+            }
+        }
+        String hostLiteral = pinned.getHostAddress();
+        int scope = hostLiteral.indexOf('%');
+        if (scope >= 0) {
+            hostLiteral = hostLiteral.substring(0, scope);
+        }
+        if (pinned instanceof Inet6Address) {
+            hostLiteral = "[" + hostLiteral + "]";
+        }
+        String subprotocol = jdbcUrl.substring(0, jdbcUrl.indexOf("//") + 2);
+        StringBuilder pinnedUrl = new StringBuilder(subprotocol).append(hostLiteral);
+        if (m.group(2) != null) {
+            pinnedUrl.append(':').append(m.group(2));
+        }
+        if (m.group(3) != null) {
+            pinnedUrl.append('/').append(m.group(3));
+        }
+        return pinnedUrl.toString();
     }
 
     /**
