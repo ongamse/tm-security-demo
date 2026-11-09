@@ -20,6 +20,7 @@ import java.util.Locale;
 import java.util.UUID;
 
 import org.joychou.security.SecurityUtil;
+import org.joychou.util.LogSanitizer;
 
 
 /**
@@ -68,7 +69,7 @@ public class FileUpload {
 
         } catch (IOException e) {
             redirectAttributes.addFlashAttribute("message", "upload failed");
-            logger.error(e.toString());
+            logger.error("File upload I/O error: {}", e.getClass().getName());
         }
 
         return "redirect:/file/status";
@@ -110,7 +111,7 @@ public class FileUpload {
         for (String blackMimeType : mimeTypeBlackList) {
             // 用contains是为了防止text/html;charset=UTF-8绕过
             if (SecurityUtil.replaceSpecialStr(mimeType).toLowerCase().contains(blackMimeType)) {
-                logger.error("[-] Mime type error: " + mimeType);
+                logger.error("[-] Mime type error: {}", LogSanitizer.clean(mimeType));
                 return "Upload failed. Illeagl picture.";
             }
         }
@@ -124,7 +125,7 @@ public class FileUpload {
                 return "Upload failed. Illeagl picture.";
             }
         } catch (IOException e) {
-            logger.error(e.toString());
+            logger.error("File upload I/O error: {}", e.getClass().getName());
             return "Upload failed";
         }
 
@@ -135,12 +136,12 @@ public class FileUpload {
             filePath = safePath.toString();
             saveNew(safePath, bytes);
         } catch (IOException e) {
-            logger.error(e.toString());
+            logger.error("File upload I/O error: {}", e.getClass().getName());
             return "Upload failed";
         }
 
-        logger.info("[+] Safe file. Suffix: {}, MIME: {}", Suffix, mimeType);
-        logger.info("[+] Successfully uploaded {}", filePath);
+        logger.info("[+] Safe file. Suffix: {}, MIME: {}", LogSanitizer.clean(Suffix), LogSanitizer.clean(mimeType));
+        logger.info("[+] Successfully uploaded {}", LogSanitizer.clean(filePath));
         return String.format("You successfully uploaded '%s'", HtmlUtils.htmlEscape(filePath));
     }
 

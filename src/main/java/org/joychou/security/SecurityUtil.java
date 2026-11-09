@@ -3,6 +3,7 @@ package org.joychou.security;
 import org.joychou.config.WebConfig;
 import org.joychou.security.ssrf.SSRFChecker;
 import org.joychou.security.ssrf.SocketHook;
+import org.joychou.util.LogSanitizer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -335,10 +336,10 @@ public class SecurityUtil {
             try {
                 temp = URLDecoder.decode(temp, "utf-8");
             } catch (UnsupportedEncodingException e) {
-                logger.info("Unsupported encoding exception: " + filepath);
+                logger.info("Unsupported encoding exception: {}", LogSanitizer.clean(filepath));
                 return null;
             } catch (Exception e) {
-                logger.info(e.toString());
+                logger.info("pathFilter decode exception: {}", LogSanitizer.clean(e.toString()));
                 return null;
             }
         }

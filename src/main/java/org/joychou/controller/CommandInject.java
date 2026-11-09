@@ -1,6 +1,7 @@
 package org.joychou.controller;
 
 import org.joychou.security.SecurityUtil;
+import org.joychou.util.LogSanitizer;
 import org.joychou.util.WebUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -48,7 +49,7 @@ public class CommandInject {
     public String codeInjectHost(HttpServletRequest request) throws IOException {
 
         String host = request.getHeader("host");
-        logger.info(host);
+        logger.info("Host header: {}", LogSanitizer.clean(host));
         if (host == null || !HOST_PATTERN.matcher(host).matches()) {
             return "Bad boy. I got u.";
         }
