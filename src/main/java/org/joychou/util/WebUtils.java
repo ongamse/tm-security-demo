@@ -44,7 +44,26 @@ public class WebUtils {
         if (!isValidJsonpCallback(callback)) {
             return "error";
         }
-        return callback + "(" + jsonStr + ")";
+        // Leading comment mitigates Rosetta-Flash style content sniffing; the JSON
+        // payload is additionally made safe for any script/HTML embedding context.
+        return "/**/" + callback + "(" + escapeJsonForScript(jsonStr) + ")";
+    }
+
+    /**
+     * Escape characters in a JSON document that are dangerous when the document is
+     * embedded in JavaScript or HTML. In JSON these characters can only occur inside
+     * string literals, so the unicode escapes preserve the decoded value.
+     */
+    public static String escapeJsonForScript(String jsonStr) {
+        if (jsonStr == null) {
+            return "null";
+        }
+        return jsonStr
+                .replace("<", "\\u003c")
+                .replace(">", "\\u003e")
+                .replace("&", "\\u0026")
+                .replace("\u2028", "\\u2028")
+                .replace("\u2029", "\\u2029");
     }
 
 
