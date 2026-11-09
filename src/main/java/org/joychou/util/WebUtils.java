@@ -3,6 +3,7 @@ package org.joychou.util;
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
 import java.io.*;
+import java.util.regex.Pattern;
 
 import com.google.common.base.Preconditions;
 import org.springframework.web.util.HtmlUtils;
@@ -27,8 +28,23 @@ public class WebUtils {
     }
 
 
+    // JS identifier (optionally dotted, e.g. "jQuery.cb_1"), bounded length.
+    private static final Pattern JSONP_CALLBACK_PATTERN =
+            Pattern.compile("^[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z_$][A-Za-z0-9_$]*)*$");
+
+    public static boolean isValidJsonpCallback(String callback) {
+        return callback != null && callback.length() <= 64 && JSONP_CALLBACK_PATTERN.matcher(callback).matches();
+    }
+
+    /**
+     * Build a JSONP response. The callback name is allowlisted so request data
+     * can never be interpreted as arbitrary JavaScript.
+     */
     public static String json2Jsonp(String callback, String jsonStr) {
-        return HtmlUtils.htmlEscape(callback) + "(" + jsonStr + ")";
+        if (!isValidJsonpCallback(callback)) {
+            return "error";
+        }
+        return callback + "(" + jsonStr + ")";
     }
 
 
