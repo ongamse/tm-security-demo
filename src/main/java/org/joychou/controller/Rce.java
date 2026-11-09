@@ -1,6 +1,5 @@
 package org.joychou.controller;
 
-import groovy.lang.GroovyShell;
 import org.joychou.security.SecurityUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -138,17 +137,8 @@ public class Rce {
         y.load(content);
     }
 
-    /**
-     * http://localhost:8080/rce/groovy?content="open -a Calculator".execute()
-     * @param content groovy shell
-     */
-    @GetMapping("groovy")
-    public void groovyshell(String content) {
-        GroovyShell groovyShell = new GroovyShell();
-        groovyShell.evaluate(content);
-    }
-
-
+    // The former /rce/groovy endpoint evaluated request-supplied Groovy source with GroovyShell
+    // (arbitrary code execution). It was removed; there is no safe way to evaluate untrusted Groovy.
 
     public static void main(String[] args) throws Exception{
         Runtime.getRuntime().exec("touch /tmp/x");
