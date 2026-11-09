@@ -16,6 +16,7 @@ import javax.xml.XMLConstants;
 import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.parsers.SAXParser;
 import javax.xml.parsers.SAXParserFactory;
+import java.io.ByteArrayInputStream;
 import java.io.FileInputStream;
 import java.io.FilterInputStream;
 import java.io.IOException;
@@ -47,10 +48,14 @@ public class xlsxStreamerXXE {
     public void xllx_streamer_xxe(MultipartFile file) throws IOException {
         // xlsx-streamer 2.0.0 parses the package XML parts without disabling DTDs, so reject
         // any part that declares a DOCTYPE / entities before handing the upload to it.
-        try (InputStream in = file.getInputStream()) {
+        // Validate and parse the exact same bytes (no second read of the upload).
+        byte[] content = file.getBytes();
+        try (InputStream in = new ByteArrayInputStream(content)) {
             rejectDoctypeInXmlParts(in);
         }
-        StreamingReader.builder().open(file.getInputStream());
+        try (InputStream validated = new ByteArrayInputStream(content)) {
+            StreamingReader.builder().open(validated);
+        }
     }
 
 
