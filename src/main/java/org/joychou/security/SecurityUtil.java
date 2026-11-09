@@ -12,6 +12,7 @@ import java.net.InetAddress;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLDecoder;
+import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -26,7 +27,7 @@ public class SecurityUtil {
 
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
     private static final Pattern ARG_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.=:-]+$");
-    private static final Pattern HEADER_CRLF_PATTERN = Pattern.compile("[\\r\\n]|%0[dD]|%0[aA]|%25(?=0[dDaA])");
+    private static final Pattern CORS_HOST_PATTERN = Pattern.compile("^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$");
     private static final Set<String> ALLOWED_COMMANDS = new HashSet<String>(
             Arrays.asList("whoami", "pwd", "date", "id", "uname", "hostname", "uptime", "ls", "echo"));
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
@@ -242,7 +243,13 @@ public class SecurityUtil {
         if (key == null) {
             return null;
         }
-        return REDIRECT_TARGETS.get(key);
+        // compare against each allowlist key and hand back the table's own constant, never the request string
+        for (Map.Entry<String, String> entry : REDIRECT_TARGETS.entrySet()) {
+            if (entry.getKey().equals(key)) {
+                return entry.getValue();
+            }
+        }
+        return null;
     }
 
 
@@ -424,24 +431,23 @@ public class SecurityUtil {
     }
 
     /**
-     * Neutralize a value before it is written into an HTTP response header, Location or Set-Cookie.
-     * Removes raw CR/LF and their percent-encoded forms (<code>%0d</code>, <code>%0a</code>), repeating
-     * until stable so that nested sequences such as <code>%250d</code> cannot reassemble into a line break.
+     * Encode an untrusted value so it is safe to place in an HTTP response header or cookie value.
+     * The value is URL-encoded (UTF-8), so the result only contains <code>[A-Za-z0-9.*_%-]</code>:
+     * CR, LF, ';', ',', quotes, spaces and any other control or separator character can never appear.
      *
      * @param value untrusted header value
-     * @return value without CR/LF sequences, or null when value is null
+     * @return the URL-encoded value, or null when value is null
      */
-    public static String sanitizeHeaderValue(String value) {
+    public static String encodeHeaderValue(String value) {
         if (value == null) {
             return null;
         }
-        String previous;
-        String current = value;
-        do {
-            previous = current;
-            current = HEADER_CRLF_PATTERN.matcher(current).replaceAll("");
-        } while (!current.equals(previous));
-        return current;
+        try {
+            return URLEncoder.encode(value, "UTF-8").replace("+", "%20");
+        } catch (UnsupportedEncodingException e) {
+            // UTF-8 is always supported; fail closed
+            return "";
+        }
     }
 
     /**
@@ -449,8 +455,11 @@ public class SecurityUtil {
      * The Origin must be a bare http/https origin (scheme://host[:port]) with no user info, path,
      * query or fragment, otherwise it is rejected (fail closed).
      *
+     * The returned string is rebuilt from validated parts (a fixed scheme constant, the encoded
+     * allowlisted host and the numeric port) and never the raw request string.
+     *
      * @param origin value of the Origin request header
-     * @return the origin if it is allowlisted, null otherwise (including null/"null"/malformed values)
+     * @return the canonical origin if it is allowlisted, null otherwise (including null/"null"/malformed values)
      */
     public static String checkCorsOrigin(String origin) {
         if (origin == null || checkURL(origin) == null) {
@@ -465,7 +474,16 @@ public class SecurityUtil {
             if (path != null && !path.isEmpty()) {
                 return null;
             }
-            return origin;
+            String host = gethost(origin);
+            if (!CORS_HOST_PATTERN.matcher(host).matches()) {
+                return null;
+            }
+            int port = uri.getPort();
+            if (port != -1 && (port < 1 || port > 65535)) {
+                return null;
+            }
+            String scheme = origin.startsWith("https://") ? "https" : "http";
+            return scheme + "://" + encodeHeaderValue(host) + (port == -1 ? "" : ":" + port);
         } catch (URISyntaxException e) {
             return null;
         }
@@ -481,7 +499,7 @@ public class SecurityUtil {
         if (safeOrigin == null) {
             return false;
         }
-        response.setHeader("Access-Control-Allow-Origin", sanitizeHeaderValue(safeOrigin));
+        response.setHeader("Access-Control-Allow-Origin", safeOrigin);
         response.setHeader("Access-Control-Allow-Credentials", "true");
         response.addHeader("Vary", "Origin");
         return true;
