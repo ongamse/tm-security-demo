@@ -74,7 +74,9 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/jdbc/vuln?username=joychou">http://localhost:8080/sqli/jdbc/vuln?username=joychou</a>
      */
     @RequestMapping("/jdbc/vuln")
-    public String jdbc_sqli_vul(@RequestParam("username") String username) {
+    public String jdbc_sqli_vul(HttpServletRequest request, @RequestParam("username") String username) {
+
+        requireOwnerOrAdmin(request, username);
 
         StringBuilder result = new StringBuilder();
 
@@ -164,7 +166,9 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/jdbc/ps/vuln?username=joychou' or 'a'='a">http://localhost:8080/sqli/jdbc/ps/vuln?username=joychou' or 'a'='a</a>
      */
     @RequestMapping("/jdbc/ps/vuln")
-    public String jdbc_ps_vuln(@RequestParam("username") String username) {
+    public String jdbc_ps_vuln(HttpServletRequest request, @RequestParam("username") String username) {
+
+        requireOwnerOrAdmin(request, username);
 
         StringBuilder result = new StringBuilder();
         try {

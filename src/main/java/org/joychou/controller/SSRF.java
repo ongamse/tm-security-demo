@@ -315,13 +315,48 @@ public class SSRF {
      */
     @GetMapping("/dnsrebind/vuln")
     public String DnsRebind(String url) {
+        // The request value is only a lookup key into a fixed server-side allowlist: the remote resource that
+        // is fetched always comes from DNSREBIND_TARGETS, never from the request itself.
+        String target = resolveDnsRebindTarget(url);
+        if (target == null) {
+            return "Dangerous url";
+        }
         // Validation and request must use the same DNS answer: HttpUtils.pinnedGet resolves the host once,
         // rejects internal addresses and connects to exactly the validated addresses.
-        String body = HttpUtils.pinnedGet(url);
+        String body = HttpUtils.pinnedGet(target);
         if (body == null) {
             return "Dangerous url";
         }
         return body;
+    }
+
+    /**
+     * Server-side allowlist of remote resources the DnsRebind demo endpoint may fetch (short key or the
+     * exact destination url -> constant destination url).
+     */
+    private static final java.util.Map<String, String> DNSREBIND_TARGETS;
+
+    static {
+        java.util.Map<String, String> targets = new java.util.HashMap<String, String>();
+        targets.put("test-joychou-org", "http://test.joychou.org");
+        targets.put("http://test.joychou.org", "http://test.joychou.org");
+        DNSREBIND_TARGETS = java.util.Collections.unmodifiableMap(targets);
+    }
+
+    /**
+     * @param key untrusted key supplied by the client
+     * @return the allowlisted destination constant, or null when the key is not allowlisted (fail closed)
+     */
+    private static String resolveDnsRebindTarget(String key) {
+        if (key == null) {
+            return null;
+        }
+        for (java.util.Map.Entry<String, String> entry : DNSREBIND_TARGETS.entrySet()) {
+            if (entry.getKey().equals(key)) {
+                return entry.getValue();
+            }
+        }
+        return null;
     }
 
 
