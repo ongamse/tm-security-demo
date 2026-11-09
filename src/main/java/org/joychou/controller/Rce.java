@@ -1,5 +1,6 @@
 package org.joychou.controller;
 
+import org.joychou.security.FixedCommands;
 import org.joychou.security.SecurityUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -34,7 +35,7 @@ public class Rce {
         StringBuilder sb = new StringBuilder();
 
         try {
-            String[] argv = SecurityUtil.parseAllowedCommand(cmd);
+            String[] argv = FixedCommands.lookup(cmd);
             if (argv == null) {
                 return "Bad boy. I got u.";
             }
@@ -71,7 +72,7 @@ public class Rce {
         StringBuilder sb = new StringBuilder();
 
         try {
-            String[] arrCmd = SecurityUtil.parseAllowedCommand(cmd);
+            String[] arrCmd = FixedCommands.lookup(cmd);
             if (arrCmd == null) {
                 return "Bad boy. I got u.";
             }
