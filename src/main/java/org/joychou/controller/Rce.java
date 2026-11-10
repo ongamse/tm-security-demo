@@ -18,6 +18,7 @@ import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.sql.DriverManager;
+import java.util.regex.Pattern;
 
 
 /**
@@ -29,6 +30,8 @@ import java.sql.DriverManager;
 @RestController
 @RequestMapping("/rce")
 public class Rce {
+
+    private static final Pattern ARITHMETIC_PATTERN = Pattern.compile("^[0-9+\\-*/%().\\s]{1,100}$");
 
     @GetMapping("/runtime/exec")
     public String CommandExec(String cmd) {
@@ -143,6 +146,10 @@ public class Rce {
      */
     @GetMapping("groovy")
     public void groovyshell(String content) {
+        // Only plain arithmetic expressions are evaluated; no identifiers, quotes or method calls can be expressed.
+        if (null == content || !ARITHMETIC_PATTERN.matcher(content).matches()) {
+            return;
+        }
         GroovyShell groovyShell = new GroovyShell();
         groovyShell.evaluate(content);
     }

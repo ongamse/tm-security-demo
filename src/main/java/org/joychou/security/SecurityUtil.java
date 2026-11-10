@@ -13,9 +13,8 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.Set;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -25,8 +24,17 @@ public class SecurityUtil {
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
     private static final Pattern JDBC_URL_PATTERN = Pattern.compile(
             "^jdbc:(postgresql|db2)://([A-Za-z0-9][A-Za-z0-9.-]*)(:[0-9]{1,5})?(/[A-Za-z0-9_.-]*)?$");
-    private static final Set<String> ALLOWED_COMMANDS = new HashSet<>(
-            Arrays.asList("whoami", "id", "pwd", "date", "uname", "hostname", "ls"));
+    // allowlist: request-supplied name -> literal executable name (resolved by name only, no path component)
+    private static final Map<String, String> ALLOWED_COMMANDS = new HashMap<>();
+    static {
+        ALLOWED_COMMANDS.put("whoami", "whoami");
+        ALLOWED_COMMANDS.put("id", "id");
+        ALLOWED_COMMANDS.put("pwd", "pwd");
+        ALLOWED_COMMANDS.put("date", "date");
+        ALLOWED_COMMANDS.put("uname", "uname");
+        ALLOWED_COMMANDS.put("hostname", "hostname");
+        ALLOWED_COMMANDS.put("ls", "ls");
+    }
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
 
 
@@ -371,15 +379,20 @@ public class SecurityUtil {
         if (null == cmd || cmd.trim().isEmpty()) {
             return null;
         }
-        String[] argv = cmd.trim().split("\\s+");
-        if (!ALLOWED_COMMANDS.contains(argv[0])) {
+        String[] parts = cmd.trim().split("\\s+");
+        // the executable is taken from the fixed allowlist itself (a literal), never from the request
+        String executable = ALLOWED_COMMANDS.get(parts[0]);
+        if (null == executable) {
             return null;
         }
-        // the executable itself is resolved by name only (no path component)
-        for (int i = 1; i < argv.length; i++) {
-            if (null == cmdFilter(argv[i])) {
+        String[] argv = new String[parts.length];
+        argv[0] = executable;
+        for (int i = 1; i < parts.length; i++) {
+            String safeArg = cmdFilter(parts[i]);
+            if (null == safeArg) {
                 return null;
             }
+            argv[i] = safeArg;
         }
         return argv;
     }
