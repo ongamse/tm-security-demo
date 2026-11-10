@@ -252,12 +252,33 @@ public class SSRFChecker {
      * @throws SSRFException if the url is not safe to request
      */
     public static URI requireSafeUri(String url) {
+        return requireSafeUri(url, false);
+    }
+
+
+    /**
+     * Same as {@link #requireSafeUri(String)}, but the url must use the https scheme: an http url is
+     * rejected, so the result is never a plain-http URI.
+     *
+     * @param url untrusted url
+     * @return the validated, normalized https URI
+     * @throws SSRFException if the url is not https or not safe to request
+     */
+    public static URI requireSafeHttpsUri(String url) {
+        return requireSafeUri(url, true);
+    }
+
+
+    private static URI requireSafeUri(String url, boolean requireHttps) {
         if (null == url) {
             throw new SSRFException("[-] SSRF check failed. Empty url");
         }
         HttpUrl parsed = parseHttpUrl(url.trim());
         if (null == parsed) {
             throw new SSRFException("[-] SSRF check failed. Illegal url protocol or syntax");
+        }
+        if (requireHttps && !"https".equals(parsed.getScheme())) {
+            throw new SSRFException("[-] SSRF check failed. https is required");
         }
         if (StringUtils.isEmpty(parsed.getHost()) || null != parsed.getRawUserInfo()) {
             throw new SSRFException("[-] SSRF check failed. Illegal url host");

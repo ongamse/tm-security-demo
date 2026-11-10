@@ -592,16 +592,16 @@ public class SecurityUtil {
 
 
     /**
-     * Turn an untrusted <code>host[:port]</code> (e.g. a Host header) into a canonical http url that is
+     * Turn an untrusted <code>host[:port]</code> (e.g. a Host header) into a canonical https url that is
      * <b>rebuilt</b> from parsed parts: the host must be allowed by {@link #checkURL(String)}, must resolve to
      * public addresses only, and is replaced by its resolved IP address; the port is re-rendered from the
      * parsed integer. The request string itself is never part of the result.
      *
      * @param hostPort untrusted host and optional port
-     * @return canonical <code>http://ip[:port]</code> url, or null when the value is not acceptable
+     * @return canonical <code>https://ip[:port]</code> url, or null when the value is not acceptable
      */
     public static String canonicalHostUrl(String hostPort) {
-        if (null == hostPort || null == checkURL("http://" + hostPort)) {
+        if (null == hostPort || null == checkURL("https://" + hostPort)) {
             return null;
         }
         String hostPart = hostPort;
@@ -632,7 +632,7 @@ public class SecurityUtil {
                 int scope = ip.indexOf('%');
                 ip = "[" + (scope < 0 ? ip : ip.substring(0, scope)) + "]";
             }
-            return "http://" + ip + (port < 0 ? "" : ":" + port);
+            return SSRFChecker.requireSafeHttpsUri("https://" + ip + (port < 0 ? "" : ":" + port)).toString();
         } catch (SSRFException e) {
             logger.error("Host url rejected by validation");
             return null;

@@ -60,7 +60,7 @@ public class CommandInject {
             return "Bad boy. I got u.";
         }
         // no shell: argv only
-        String[] cmdList = new String[]{"curl", "--", url};
+        String[] cmdList = new String[]{"curl", "--proto", "=https", "--tlsv1.2", "--", url};
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);
         Process process = builder.start();
