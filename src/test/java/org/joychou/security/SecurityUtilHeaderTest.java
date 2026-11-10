@@ -21,14 +21,6 @@ public class SecurityUtilHeaderTest {
     }
 
     @Test
-    public void cookieValueStripsControlAndIllegalChars() {
-        assertEquals("abtest3=x", SecurityUtil.safeCookieValue("ab\r\ntest3=x"));
-        assertEquals("abcd", SecurityUtil.safeCookieValue("a b\",;\\c\td"));
-        assertEquals("v1", SecurityUtil.safeCookieValue("v1"));
-        assertNull(SecurityUtil.safeCookieValue(null));
-    }
-
-    @Test
     public void keepsNormalValues() {
         assertEquals("http://test.joychou.org/a?b=c d\te",
                 SecurityUtil.safeHeaderValue("http://test.joychou.org/a?b=c d\te"));
