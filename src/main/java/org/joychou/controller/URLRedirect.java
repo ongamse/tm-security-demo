@@ -30,7 +30,7 @@ public class URLRedirect {
      */
     @GetMapping("/redirect")
     public String redirect(@RequestParam("url") String url) {
-        return "redirect:" + SecurityUtil.safeRedirectUrlOrRoot(url);
+        return "redirect:" + SecurityUtil.redirectTargetOrRoot(url);
     }
 
 
@@ -41,7 +41,7 @@ public class URLRedirect {
     @ResponseBody
     public static void setHeader(HttpServletRequest request, HttpServletResponse response) {
         response.setStatus(HttpServletResponse.SC_MOVED_PERMANENTLY); // 301 redirect
-        response.setHeader("Location", SecurityUtil.safeRedirectUrlOrRoot(request.getParameter("url")));
+        response.setHeader("Location", SecurityUtil.redirectTargetOrRoot(request.getParameter("url")));
     }
 
 
@@ -51,7 +51,7 @@ public class URLRedirect {
     @RequestMapping("/sendRedirect")
     @ResponseBody
     public static void sendRedirect(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        response.sendRedirect(SecurityUtil.safeRedirectUrlOrRoot(request.getParameter("url"))); // 302 redirect
+        response.sendRedirect(SecurityUtil.redirectTargetOrRoot(request.getParameter("url"))); // 302 redirect
     }
 
 
@@ -81,6 +81,6 @@ public class URLRedirect {
     public void sendRedirect_seccode(HttpServletRequest request, HttpServletResponse response)
             throws IOException {
         String url = request.getParameter("url");
-        response.sendRedirect(SecurityUtil.safeRedirectUrlOrRoot(url));
+        response.sendRedirect(SecurityUtil.redirectTargetOrRoot(url));
     }
 }

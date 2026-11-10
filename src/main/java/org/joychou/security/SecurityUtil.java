@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -57,6 +58,20 @@ public class SecurityUtil {
         ALLOWED_DIRECTORIES.put("/tmp", "/tmp");
         ALLOWED_DIRECTORIES.put("/var/tmp", "/var/tmp");
         ALLOWED_DIRECTORIES.put(".", ".");
+    }
+    // allowlist: validated host (or parent domain) -> literal redirect destination
+    private static final Map<String, String> REDIRECT_HOST_TARGETS = new LinkedHashMap<>();
+    static {
+        REDIRECT_HOST_TARGETS.put("test.joychou.org", "https://test.joychou.org/");
+        REDIRECT_HOST_TARGETS.put("joychou.org", "https://www.joychou.org/");
+        REDIRECT_HOST_TARGETS.put("joychou.com", "https://www.joychou.com/");
+        REDIRECT_HOST_TARGETS.put("localhost", "http://localhost:8080/");
+    }
+    // allowlist: validated same-origin path -> literal redirect destination
+    private static final Map<String, String> REDIRECT_PATH_TARGETS = new LinkedHashMap<>();
+    static {
+        REDIRECT_PATH_TARGETS.put("/", "/");
+        REDIRECT_PATH_TARGETS.put("/urlRedirect/test", "/urlRedirect/test");
     }
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
 
@@ -255,15 +270,51 @@ public class SecurityUtil {
 
 
     /**
-     * Same validation as {@link #safeRedirectUrl(String)}, but never returns null: an unsafe
-     * destination is replaced by the fixed same-origin path "/".
+     * Indirect reference for redirects: the untrusted destination is validated with
+     * {@link #safeRedirectUrl(String)} and then only used as a lookup key. The returned value is always
+     * one of the string literals of {@link #REDIRECT_HOST_TARGETS} / {@link #REDIRECT_PATH_TARGETS}
+     * (or "/"), never a substring or copy of the request data. Path, query and fragment of the
+     * requested destination are therefore not preserved.
      *
      * @param url untrusted redirect destination
-     * @return a validated destination, or "/" when validation fails
+     * @return a literal, allowlisted destination; "/" when the input is unsafe or not in the table
      */
-    public static String safeRedirectUrlOrRoot(String url) {
+    public static String redirectTargetOrRoot(String url) {
         String safe = safeRedirectUrl(url);
-        return null == safe ? "/" : safe;
+        if (null == safe) {
+            return "/";
+        }
+        if (safe.startsWith("/")) {
+            int end = safe.length();
+            int q = safe.indexOf('?');
+            int f = safe.indexOf('#');
+            if (q >= 0) {
+                end = q;
+            }
+            if (f >= 0 && f < end) {
+                end = f;
+            }
+            String path = safe.substring(0, end);
+            for (Map.Entry<String, String> entry : REDIRECT_PATH_TARGETS.entrySet()) {
+                if (entry.getKey().equals(path)) {
+                    return entry.getValue();
+                }
+            }
+            return "/";
+        }
+        String host = gethost(safe);
+        // exact host match first, then registered-domain (subdomain) match
+        for (Map.Entry<String, String> entry : REDIRECT_HOST_TARGETS.entrySet()) {
+            if (entry.getKey().equals(host)) {
+                return entry.getValue();
+            }
+        }
+        for (Map.Entry<String, String> entry : REDIRECT_HOST_TARGETS.entrySet()) {
+            if (host.endsWith("." + entry.getKey())) {
+                return entry.getValue();
+            }
+        }
+        return "/";
     }
 
 
