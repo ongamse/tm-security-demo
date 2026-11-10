@@ -64,6 +64,25 @@ public class SafeCorsOriginTest {
     }
 
     @Test
+    public void writesLiteralOriginAndCredentialsOnlyForMatch() {
+        org.springframework.mock.web.MockHttpServletResponse ok = new org.springframework.mock.web.MockHttpServletResponse();
+        assertEquals(true, SecurityUtil.writeCorsOriginHeaders(ok, "HTTPS://JOYCHOU.ORG", true));
+        assertEquals("https://joychou.org", ok.getHeader("Access-Control-Allow-Origin"));
+        assertEquals("true", ok.getHeader("Access-Control-Allow-Credentials"));
+        assertEquals("Origin", ok.getHeader("Vary"));
+
+        org.springframework.mock.web.MockHttpServletResponse bad = new org.springframework.mock.web.MockHttpServletResponse();
+        assertEquals(false, SecurityUtil.writeCorsOriginHeaders(bad, "https://evil.com", true));
+        assertNull(bad.getHeader("Access-Control-Allow-Origin"));
+        assertNull(bad.getHeader("Access-Control-Allow-Credentials"));
+        assertEquals("Origin", bad.getHeader("Vary"));
+
+        org.springframework.mock.web.MockHttpServletResponse none = new org.springframework.mock.web.MockHttpServletResponse();
+        assertEquals(false, SecurityUtil.writeCorsOriginHeaders(none, null, true));
+        assertNull(none.getHeader("Access-Control-Allow-Origin"));
+    }
+
+    @Test
     public void rejectsUntrustedOrigins() {
         assertNull(SecurityUtil.safeCorsOrigin(null));
         assertNull(SecurityUtil.safeCorsOrigin("null"));
