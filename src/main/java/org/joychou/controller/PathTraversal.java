@@ -50,19 +50,29 @@ public class PathTraversal {
         Path target;
         try {
             target = base.resolve(imgFile).normalize();
-            if (Files.exists(target)) {
-                target = target.toRealPath();
-            }
         } catch (InvalidPathException e) {
             return "Bad boy. Illegal file path.";
         }
+        // Lexical containment check before any filesystem access on the request-derived path.
         if (!target.startsWith(base)) {
             logger.info("Illegal file path outside working directory");
             return "Bad boy. Illegal file path.";
         }
 
-        if (Files.isRegularFile(target)) {
-            byte[] data = Files.readAllBytes(target);
+        // Resolve symlinks and re-verify containment; only the verified real path is opened.
+        Path realTarget;
+        try {
+            realTarget = target.toRealPath();
+        } catch (IOException e) {
+            return "File doesn't exist or is not a file.";
+        }
+        if (!realTarget.startsWith(base)) {
+            logger.info("Illegal file path outside working directory");
+            return "Bad boy. Illegal file path.";
+        }
+
+        if (Files.isRegularFile(realTarget)) {
+            byte[] data = Files.readAllBytes(realTarget);
             return new String(Base64.encodeBase64(data));
         } else {
             return "File doesn't exist or is not a file.";
