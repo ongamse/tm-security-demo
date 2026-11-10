@@ -1,5 +1,7 @@
 package org.joychou.security;
 
+import org.joychou.security.ssrf.SSRFChecker;
+import org.joychou.security.ssrf.SSRFException;
 import org.junit.Test;
 
 import static org.junit.Assert.assertArrayEquals;
@@ -50,6 +52,19 @@ public class SecurityUtilCommandTest {
         assertNull(SecurityUtil.canonicalHostUrl(null));
         assertNull(SecurityUtil.canonicalHostUrl("evil.com;cat /etc/passwd"));
         assertNull(SecurityUtil.canonicalHostUrl("localhost:99999"));
+    }
+
+    @Test(expected = SSRFException.class)
+    public void httpsOnlyUriRejectsPlainHttp() {
+        SSRFChecker.requireSafeHttpsUri("http://93.184.216.34/");
+    }
+
+    @Test
+    public void canonicalHostUrlNeverProducesPlainHttp() {
+        String url = SecurityUtil.canonicalHostUrl("93.184.216.34:8443");
+        if (url != null) {
+            assertEquals("https://93.184.216.34:8443", url);
+        }
     }
 
     @Test
