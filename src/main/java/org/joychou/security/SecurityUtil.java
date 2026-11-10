@@ -9,8 +9,10 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
+import java.net.Inet4Address;
+import java.net.Inet6Address;
+import java.net.InetAddress;
 import java.net.URI;
-import java.net.URISyntaxException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -24,6 +26,8 @@ public class SecurityUtil {
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
     private static final Pattern JDBC_URL_PATTERN = Pattern.compile(
             "^jdbc:(postgresql|db2)://([A-Za-z0-9][A-Za-z0-9.-]*)(:[0-9]{1,5})?(/[A-Za-z0-9_.-]*)?$");
+    private static final Pattern RELATIVE_PATH_PATTERN = Pattern.compile(
+            "^/(?:%[0-9A-Fa-f]{2}|[A-Za-z0-9._~!$&'()*+,;=:@/?#-])*$");
     // allowlist: request-supplied name -> literal executable name (resolved by name only, no path component)
     private static final Map<String, String> ALLOWED_COMMANDS = new HashMap<>();
     static {
@@ -63,17 +67,10 @@ public class SecurityUtil {
      * @return true if the url is safe to hand to the driver
      */
     public static boolean isSafeJdbcUrl(String jdbcUrl, String subprotocol) {
-        if (null == jdbcUrl || null == subprotocol) {
-            return false;
-        }
-        Matcher m = JDBC_URL_PATTERN.matcher(jdbcUrl);
-        if (!m.matches() || !subprotocol.equals(m.group(1))) {
-            return false;
-        }
         try {
-            SSRFChecker.resolveSafeAddresses(m.group(2));
+            requireSafeJdbcUrl(jdbcUrl, subprotocol);
             return true;
-        } catch (SSRFException e) {
+        } catch (IllegalArgumentException | SSRFException e) {
             logger.error(e.getMessage());
             return false;
         }
@@ -81,19 +78,59 @@ public class SecurityUtil {
 
 
     /**
-     * Get http url host.
+     * The chokepoint for every untrusted JDBC url. The url is matched against a strict allowlist
+     * pattern (only the given subprotocol, plain host, optional port and database name), the host is
+     * resolved and must be public, and the returned url is <b>rebuilt</b> from the validated parts with
+     * the validated IP address instead of the host name, so the driver connects to the address that
+     * was checked (no DNS rebinding). Callers must pass only the returned value to
+     * {@code DriverManager.getConnection}.
+     *
+     * @param jdbcUrl     untrusted jdbc url
+     * @param subprotocol expected jdbc subprotocol, e.g. postgresql or db2
+     * @return the validated jdbc url
+     * @throws IllegalArgumentException if the url is not allowed
+     * @throws SSRFException            if the host is not a public address
+     */
+    public static String requireSafeJdbcUrl(String jdbcUrl, String subprotocol) {
+        if (null == jdbcUrl || null == subprotocol) {
+            throw new IllegalArgumentException("Illegal jdbc url");
+        }
+        Matcher m = JDBC_URL_PATTERN.matcher(jdbcUrl);
+        if (!m.matches() || !subprotocol.equals(m.group(1))) {
+            throw new IllegalArgumentException("Illegal jdbc url");
+        }
+        InetAddress[] addresses = SSRFChecker.resolveSafeAddresses(m.group(2));
+        InetAddress pinned = addresses[0];
+        for (InetAddress address : addresses) {
+            if (address instanceof Inet4Address) {
+                pinned = address;
+                break;
+            }
+        }
+        String host = pinned.getHostAddress();
+        if (pinned instanceof Inet6Address) {
+            int scope = host.indexOf('%');
+            host = "[" + (scope < 0 ? host : host.substring(0, scope)) + "]";
+        }
+        return "jdbc:" + m.group(1) + "://" + host
+                + (null == m.group(3) ? "" : m.group(3))
+                + (null == m.group(4) ? "" : m.group(4));
+    }
+
+
+    /**
+     * Get http url host. Only absolute http/https urls have a host, see
+     * {@link SSRFChecker#parseHttpUri(String)}.
      *
      * @param url url
-     * @return host
+     * @return host (lower case), or "" when the url is not a well-formed http(s) url
      */
     public static String gethost(String url) {
-        try {
-            URI uri = new URI(url);
-            String host = uri.getHost();
-            return null == host ? "" : host.toLowerCase();
-        } catch (URISyntaxException | NullPointerException e) {
+        URI uri = SSRFChecker.parseHttpUri(url);
+        if (null == uri || null == uri.getHost()) {
             return "";
         }
+        return uri.getHost().toLowerCase();
     }
 
 
@@ -161,12 +198,8 @@ public class SecurityUtil {
         if (!isHttp(url) || hasUnsafeRedirectChars(url)) {
             return false;
         }
-        try {
-            URI uri = new URI(url);
-            return null != uri.getHost() && !uri.getHost().isEmpty() && null == uri.getRawUserInfo();
-        } catch (URISyntaxException e) {
-            return false;
-        }
+        URI uri = SSRFChecker.parseHttpUri(url);
+        return null != uri && null != uri.getHost() && !uri.getHost().isEmpty() && null == uri.getRawUserInfo();
     }
 
 
@@ -183,18 +216,12 @@ public class SecurityUtil {
             return null;
         }
         if (url.startsWith("/")) {
-            if (url.startsWith("//")) {
+            // single leading "/" followed by RFC 3986 path/query/fragment characters only
+            // (no scheme, no authority, no backslash, no whitespace/control characters)
+            if (url.startsWith("//") || !RELATIVE_PATH_PATTERN.matcher(url).matches()) {
                 return null;
             }
-            try {
-                URI uri = new URI(url);
-                if (null != uri.getScheme() || null != uri.getRawAuthority()) {
-                    return null;
-                }
-                return url;
-            } catch (URISyntaxException e) {
-                return null;
-            }
+            return url;
         }
         if (isSafeHttpUrl(url) && null != checkURL(url)) {
             return url;
@@ -346,13 +373,12 @@ public class SecurityUtil {
         if (null == origin || !isSafeHttpUrl(origin) || null == checkURL(origin)) {
             return null;
         }
-        try {
-            URI uri = new URI(origin);
-            String path = uri.getRawPath();
-            if ((null != path && !path.isEmpty()) || null != uri.getRawQuery() || null != uri.getRawFragment()) {
-                return null;
-            }
-        } catch (URISyntaxException e) {
+        URI uri = SSRFChecker.parseHttpUri(origin);
+        if (null == uri) {
+            return null;
+        }
+        String path = uri.getRawPath();
+        if ((null != path && !path.isEmpty()) || null != uri.getRawQuery() || null != uri.getRawFragment()) {
             return null;
         }
         return safeHeaderValue(origin);

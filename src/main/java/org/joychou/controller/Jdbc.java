@@ -22,11 +22,10 @@ public class Jdbc {
     public void postgresql(String jdbcUrlBase64) throws Exception{
         byte[] b = java.util.Base64.getDecoder().decode(jdbcUrlBase64);
         String jdbcUrl = new String(b);
-        if (!SecurityUtil.isSafeJdbcUrl(jdbcUrl, "postgresql")) {
-            throw new IllegalArgumentException("Illegal jdbc url");
-        }
-        log.info(jdbcUrl);
-        DriverManager.getConnection(jdbcUrl);
+        // allowlisted driver/host pattern, public address only, url rebuilt from the validated parts
+        String safeJdbcUrl = SecurityUtil.requireSafeJdbcUrl(jdbcUrl, "postgresql");
+        log.info(safeJdbcUrl);
+        DriverManager.getConnection(safeJdbcUrl);
     }
 
     @RequestMapping("/db2")
@@ -34,10 +33,9 @@ public class Jdbc {
         Class.forName("com.ibm.db2.jcc.DB2Driver");
         byte[] b = java.util.Base64.getDecoder().decode(jdbcUrlBase64);
         String jdbcUrl = new String(b);
-        if (!SecurityUtil.isSafeJdbcUrl(jdbcUrl, "db2")) {
-            throw new IllegalArgumentException("Illegal jdbc url");
-        }
-        log.info(jdbcUrl);
-        DriverManager.getConnection(jdbcUrl);
+        // allowlisted driver/host pattern, public address only, url rebuilt from the validated parts
+        String safeJdbcUrl = SecurityUtil.requireSafeJdbcUrl(jdbcUrl, "db2");
+        log.info(safeJdbcUrl);
+        DriverManager.getConnection(safeJdbcUrl);
     }
 }

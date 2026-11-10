@@ -34,6 +34,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
+import java.net.URI;
 import java.net.URL;
 import java.util.concurrent.*;
 
@@ -86,7 +87,8 @@ public class HttpUtils {
                 if (null == location) {
                     throw new IOException("Redirect without Location header");
                 }
-                current = new URL(u, location).toString();
+                // resolve against the validated URL; the next iteration re-validates the new hop
+                current = new URL(u, location).toExternalForm();
                 continue;
             }
             return conn.getInputStream();
@@ -99,7 +101,7 @@ public class HttpUtils {
         HttpClient client = new HttpClient();
         GetMethod method;
         try {
-            method = new GetMethod(SSRFChecker.requireSafeUrl(url).toString());
+            method = new GetMethod(SSRFChecker.requireSafeUri(url).toASCIIString());
         } catch (Exception e) {
             return "Error: " + e.getMessage();
         }
@@ -121,8 +123,8 @@ public class HttpUtils {
 
     public static String request(String url) {
         try {
-            SSRFChecker.requireSafeUrl(url);
-            return Executor.newInstance(safeHttpClient()).execute(Request.Get(url)).returnContent().toString();
+            URI safeUri = SSRFChecker.requireSafeUri(url);
+            return Executor.newInstance(safeHttpClient()).execute(Request.Get(safeUri)).returnContent().toString();
         } catch (Exception e) {
             return e.getMessage();
         }
@@ -135,9 +137,9 @@ public class HttpUtils {
 
         try {
 
-            SSRFChecker.requireSafeUrl(url);
+            URI safeUri = SSRFChecker.requireSafeUri(url);
             CloseableHttpClient client = safeHttpClient();
-            HttpGet httpGet = new HttpGet(url);
+            HttpGet httpGet = new HttpGet(safeUri);
             HttpResponse httpResponse = client.execute(httpGet); // send request
             BufferedReader rd = new BufferedReader(new InputStreamReader(httpResponse.getEntity().getContent()));
 
@@ -202,7 +204,7 @@ public class HttpUtils {
      */
     public static String Jsoup(String url) {
         try {
-            Document doc = Jsoup.connect(SSRFChecker.requireSafeUrl(url).toString())
+            Document doc = Jsoup.connect(SSRFChecker.requireSafeUri(url).toASCIIString())
                     .followRedirects(false)
                     .timeout(3000)
                     .cookie("name", "joychou") // request cookies
@@ -270,7 +272,7 @@ public class HttpUtils {
         CloseableHttpAsyncClient httpclient = HttpAsyncClients.createDefault();
         try {
             httpclient.start();
-            final HttpGet request = new HttpGet(SSRFChecker.requireSafeUrl(url).toString());
+            final HttpGet request = new HttpGet(SSRFChecker.requireSafeUri(url));
             request.setConfig(RequestConfig.custom().setRedirectsEnabled(false).build());
             Future<HttpResponse> future = httpclient.execute(request, null);
             HttpResponse response = future.get(6000, TimeUnit.MILLISECONDS);

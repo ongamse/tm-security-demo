@@ -3,8 +3,11 @@ package org.joychou.security.ssrf;
 import java.net.HttpURLConnection;
 import java.net.InetAddress;
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.util.ArrayList;
+import java.util.Locale;
+import java.util.regex.Pattern;
 
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.net.util.SubnetUtils;
@@ -18,6 +21,9 @@ public class SSRFChecker {
 
     private static final Logger logger = LoggerFactory.getLogger(SSRFChecker.class);
     private static String decimalIp;
+    // http(s):// followed by characters without whitespace, control characters or backslash
+    private static final Pattern HTTP_URL_PATTERN =
+            Pattern.compile("^https?://[^\\x00-\\x20\\x7f\\\\\\u2028\\u2029]+$", Pattern.CASE_INSENSITIVE);
 
     public static boolean checkURLFckSSRF(String url) {
         if (null == url) {
@@ -135,27 +141,93 @@ public class SSRFChecker {
      * @throws SSRFException if the url is not safe to request
      */
     public static URL requireSafeUrl(String url) {
-        if (null == url) {
-            throw new SSRFException("[-] SSRF check failed. Empty url");
-        }
+        URI safe = requireSafeUri(url);
         try {
-            URI uri = new URI(url.trim());
-            String scheme = uri.getScheme();
-            if (!"http".equalsIgnoreCase(scheme) && !"https".equalsIgnoreCase(scheme)) {
-                throw new SSRFException("[-] SSRF check failed. Illegal url protocol");
-            }
-            URL parsed = uri.toURL();
-            String host = uri.getHost();
+            URL parsed = safe.toURL();
             // URI and URL must agree on the host, otherwise parser differentials can bypass the check.
-            if (StringUtils.isEmpty(host) || !host.equalsIgnoreCase(parsed.getHost())) {
+            if (!safe.getHost().equalsIgnoreCase(parsed.getHost())) {
                 throw new SSRFException("[-] SSRF check failed. Illegal url host");
             }
-            resolveSafeAddresses(host);
             return parsed;
         } catch (SSRFException e) {
             throw e;
         } catch (Exception e) {
             throw new SSRFException("[-] SSRF check failed. Illegal url");
+        }
+    }
+
+
+    /**
+     * The single chokepoint for every outbound http(s) request of the application.
+     * <ol>
+     *   <li>parses the untrusted string strictly ({@link #parseHttpUri(String)}: http/https only,
+     *       no whitespace/control characters or backslashes),</li>
+     *   <li>rejects userinfo ("user@host" tricks) and an empty host,</li>
+     *   <li>resolves the host and rejects loopback, link-local/metadata, private and other internal
+     *       addresses ({@link #resolveSafeAddresses(String)}),</li>
+     *   <li>returns a <b>new</b> URI rebuilt from the validated parts (lower-case scheme, host, port,
+     *       path, query; fragment dropped). Callers must request this value, never the raw string.</li>
+     * </ol>
+     * Callers must also disable automatic redirects, or validate each hop with this method.
+     *
+     * @param url untrusted url
+     * @return the validated, normalized URI
+     * @throws SSRFException if the url is not safe to request
+     */
+    public static URI requireSafeUri(String url) {
+        if (null == url) {
+            throw new SSRFException("[-] SSRF check failed. Empty url");
+        }
+        URI parsed = parseHttpUri(url.trim());
+        if (null == parsed) {
+            throw new SSRFException("[-] SSRF check failed. Illegal url protocol or syntax");
+        }
+        String host = parsed.getHost();
+        if (StringUtils.isEmpty(host) || null != parsed.getRawUserInfo()) {
+            throw new SSRFException("[-] SSRF check failed. Illegal url host");
+        }
+        resolveSafeAddresses(host);
+        // Rebuild from the validated parts; raw (still encoded) path and query keep their meaning.
+        StringBuilder rebuilt = new StringBuilder(parsed.getScheme().toLowerCase(Locale.ROOT))
+                .append("://").append(host);
+        if (parsed.getPort() != -1) {
+            rebuilt.append(':').append(parsed.getPort());
+        }
+        if (null != parsed.getRawPath()) {
+            rebuilt.append(parsed.getRawPath());
+        }
+        if (null != parsed.getRawQuery()) {
+            rebuilt.append('?').append(parsed.getRawQuery());
+        }
+        try {
+            return new URI(rebuilt.toString());
+        } catch (URISyntaxException e) {
+            throw new SSRFException("[-] SSRF check failed. Illegal url");
+        }
+    }
+
+
+    /**
+     * Strictly parse an absolute http/https url. This is the only place where an untrusted url string
+     * is turned into a {@link URI}; other classes ask this method instead of calling the constructor.
+     * No network access happens here.
+     *
+     * @param url untrusted url
+     * @return the parsed URI, or null when it is not a well-formed absolute http(s) url
+     */
+    public static URI parseHttpUri(String url) {
+        if (null == url || !HTTP_URL_PATTERN.matcher(url).matches()) {
+            return null;
+        }
+        try {
+            URI uri = new URI(url);
+            String scheme = uri.getScheme();
+            if (!"http".equalsIgnoreCase(scheme) && !"https".equalsIgnoreCase(scheme)) {
+                return null;
+            }
+            return uri;
+        } catch (URISyntaxException e) {
+            return null;
         }
     }
 
@@ -381,16 +453,12 @@ public class SSRFChecker {
      * Get host from URL which the protocol must be http:// or https:// and not be //.
      */
     private static String url2host(String url) {
-        try {
-            // use URI instead of URL
-            if (!SecurityUtil.isHttp(url)) {
-                return "";
-            }
-            String host = new URI(url).getHost();
-            return null == host ? "" : host;
-        } catch (Exception e) {
+        // use URI instead of URL
+        URI uri = parseHttpUri(url);
+        if (null == uri || null == uri.getHost()) {
             return "";
         }
+        return uri.getHost();
     }
 
 }
