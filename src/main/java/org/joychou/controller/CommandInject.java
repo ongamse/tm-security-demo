@@ -50,7 +50,7 @@ public class CommandInject {
     public String codeInjectHost(HttpServletRequest request) throws IOException {
 
         String host = request.getHeader("host");
-        logger.info(SecurityUtil.sanitizeForLog(host));
+        logger.info("Host header received, length: {}", null == host ? 0 : host.length());
         if (null == host || !HOST_PATTERN.matcher(host).matches()) {
             return "Bad boy. I got u.";
         }
