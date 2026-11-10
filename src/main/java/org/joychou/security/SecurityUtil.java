@@ -15,7 +15,10 @@ import java.net.InetAddress;
 import java.net.URI;
 import java.net.URLDecoder;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -389,6 +392,46 @@ public class SecurityUtil {
             return null;
         }
         return safeHeaderValue(origin);
+    }
+
+
+    /**
+     * Fixed allowlist of origins that may receive CORS (including credentialed) responses.
+     */
+    private static final List<String> CORS_ALLOWED_ORIGINS = Collections.unmodifiableList(Arrays.asList(
+            "https://joychou.org",
+            "https://joychou.com",
+            "https://test.joychou.org",
+            "https://test.joychou.me",
+            "http://localhost:8080"));
+
+
+    /**
+     * Look the request Origin up in the fixed {@link #CORS_ALLOWED_ORIGINS} allowlist. The returned value is
+     * always the constant allowlist element, never the request string, so it is safe to emit as
+     * Access-Control-Allow-Origin (and alongside Access-Control-Allow-Credentials).
+     *
+     * @param requestOrigin untrusted Origin header value, may be null
+     * @return the matching allowlist element, or null when the origin is not allowlisted (incl. "null" and "*")
+     */
+    public static String allowedCorsOrigin(String requestOrigin) {
+        if (null == requestOrigin) {
+            return null;
+        }
+        for (String allowed : CORS_ALLOWED_ORIGINS) {
+            if (allowed.equalsIgnoreCase(requestOrigin)) {
+                return allowed;
+            }
+        }
+        return null;
+    }
+
+
+    /**
+     * @return a copy of the explicit CORS origin allowlist, for framework CORS registrations
+     */
+    public static String[] corsAllowedOrigins() {
+        return CORS_ALLOWED_ORIGINS.toArray(new String[0]);
     }
 
 

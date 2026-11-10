@@ -38,6 +38,32 @@ public class SafeCorsOriginTest {
     }
 
     @Test
+    public void allowlistReturnsConstantElement() {
+        assertEquals("https://joychou.org", SecurityUtil.allowedCorsOrigin("https://joychou.org"));
+        assertEquals("https://joychou.org", SecurityUtil.allowedCorsOrigin("HTTPS://JOYCHOU.ORG"));
+        assertEquals("http://localhost:8080", SecurityUtil.allowedCorsOrigin("http://localhost:8080"));
+    }
+
+    @Test
+    public void allowlistRejectsEverythingElse() {
+        assertNull(SecurityUtil.allowedCorsOrigin(null));
+        assertNull(SecurityUtil.allowedCorsOrigin("null"));
+        assertNull(SecurityUtil.allowedCorsOrigin("*"));
+        assertNull(SecurityUtil.allowedCorsOrigin("https://evil.com"));
+        assertNull(SecurityUtil.allowedCorsOrigin("http://joychou.org"));
+        assertNull(SecurityUtil.allowedCorsOrigin("https://a.joychou.org"));
+        assertNull(SecurityUtil.allowedCorsOrigin("https://joychou.org\r\nX-Evil: 1"));
+    }
+
+    @Test
+    public void explicitOriginsHaveNoWildcard() {
+        for (String o : SecurityUtil.corsAllowedOrigins()) {
+            assertEquals(o, SecurityUtil.allowedCorsOrigin(o));
+            org.junit.Assert.assertFalse(o.contains("*"));
+        }
+    }
+
+    @Test
     public void rejectsUntrustedOrigins() {
         assertNull(SecurityUtil.safeCorsOrigin(null));
         assertNull(SecurityUtil.safeCorsOrigin("null"));

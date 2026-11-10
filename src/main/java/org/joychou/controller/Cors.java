@@ -24,8 +24,8 @@ public class Cors {
 
     @GetMapping("/vuln/origin")
     public String vuls1(HttpServletRequest request, HttpServletResponse response) {
-        // only reflect an origin that passes the trusted-domain allowlist; otherwise omit the CORS headers
-        String origin = SecurityUtil.safeCorsOrigin(request.getHeader("origin"));
+        // emit the constant allowlist element matching the request origin; otherwise omit the CORS headers
+        String origin = SecurityUtil.allowedCorsOrigin(request.getHeader("origin"));
         if (origin != null) {
             response.setHeader("Access-Control-Allow-Origin", SecurityUtil.safeHeaderValue(origin));
             response.setHeader("Access-Control-Allow-Credentials", "true");  // allow cookie
@@ -37,7 +37,7 @@ public class Cors {
     @GetMapping("/vuln/setHeader")
     public String vuls2(HttpServletRequest request, HttpServletResponse response) {
         // no wildcard: only allowlisted origins get Access-Control-Allow-Origin (never with credentials here)
-        String origin = SecurityUtil.safeCorsOrigin(request.getHeader("origin"));
+        String origin = SecurityUtil.allowedCorsOrigin(request.getHeader("origin"));
         if (origin != null) {
             response.setHeader("Access-Control-Allow-Origin", SecurityUtil.safeHeaderValue(origin));
             response.addHeader("Vary", "Origin");
@@ -118,7 +118,7 @@ public class Cors {
         if (origin != null && SecurityUtil.checkURL(origin) == null) {
             return "Origin is not safe.";
         }
-        String allowedOrigin = SecurityUtil.safeCorsOrigin(origin);
+        String allowedOrigin = SecurityUtil.allowedCorsOrigin(origin);
         if (allowedOrigin != null) {
             response.setHeader("Access-Control-Allow-Origin", SecurityUtil.safeHeaderValue(allowedOrigin));
             response.setHeader("Access-Control-Allow-Credentials", "true");
