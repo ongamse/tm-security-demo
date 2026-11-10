@@ -43,8 +43,21 @@ public class Jsonp {
      * http://localhost:8080/jsonp/vuln/referer?callback_=test
      */
     @RequestMapping(value = "/vuln/referer", produces = "application/javascript")
-    public String referer(HttpServletRequest request) {
+    public String referer(HttpServletRequest request, HttpServletResponse response) {
         String callback = request.getParameter(this.callback);
+        return toJsonp(callback, request, response);
+    }
+
+    /**
+     * The callback is written into JavaScript code, so it must be a plain identifier.
+     * Anything else is rejected with 400 and a non-executable body.
+     */
+    private static String toJsonp(String callback, HttpServletRequest request, HttpServletResponse response) {
+        response.setHeader("X-Content-Type-Options", "nosniff");
+        if (!WebUtils.isValidJsonpCallback(callback)) {
+            response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+            return "/* invalid callback */";
+        }
         return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
     }
 
@@ -55,14 +68,14 @@ public class Jsonp {
      * http://localhost:8080/jsonp/vuln/emptyReferer?callback_=test
      */
     @RequestMapping(value = "/vuln/emptyReferer", produces = "application/javascript")
-    public String emptyReferer(HttpServletRequest request) {
+    public String emptyReferer(HttpServletRequest request, HttpServletResponse response) {
         String referer = request.getHeader("referer");
 
         if (null != referer && SecurityUtil.checkURL(referer) == null) {
             return "error";
         }
         String callback = request.getParameter(this.callback);
-        return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
+        return toJsonp(callback, request, response);
     }
 
     /**
@@ -100,14 +113,14 @@ public class Jsonp {
      * http://localhost:8080/jsonp/sec?callback_=test
      */
     @RequestMapping(value = "/sec/checkReferer", produces = "application/javascript")
-    public String safecode(HttpServletRequest request) {
+    public String safecode(HttpServletRequest request, HttpServletResponse response) {
         String referer = request.getHeader("referer");
 
         if (SecurityUtil.checkURL(referer) == null) {
             return "error";
         }
         String callback = request.getParameter(this.callback);
-        return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
+        return toJsonp(callback, request, response);
     }
 
     /**
@@ -126,11 +139,16 @@ public class Jsonp {
      * fastjsonp to jsonp
      */
     @GetMapping(value = "/fastjsonp/getToken", produces = "application/javascript")
-    public String getCsrfToken2(HttpServletRequest request) {
+    public String getCsrfToken2(HttpServletRequest request, HttpServletResponse response) {
         CsrfToken csrfToken = cookieCsrfTokenRepository.loadToken(request); // get csrf token
+        response.setHeader("X-Content-Type-Options", "nosniff");
 
         String callback = request.getParameter("fastjsonpCallback");
         if (StringUtils.isNotBlank(callback)) {
+            if (!WebUtils.isValidJsonpCallback(callback)) {
+                response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+                return "/* invalid callback */";
+            }
             JSONPObject jsonpObj = new JSONPObject(callback);
             jsonpObj.addParameter(csrfToken);
             return jsonpObj.toString();
