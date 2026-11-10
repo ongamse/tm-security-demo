@@ -59,7 +59,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.URLConnection(url);
         } catch (SSRFException | IOException e) {
-            logger.error("SSRF request failed, url={}", SecurityUtil.sanitizeForLog(url), e);
+            logger.error("SSRF request failed, url length: {}, error type: {}", null == url ? 0 : url.length(), e.getClass().getSimpleName());
             return "Request failed.";
         } finally {
             SecurityUtil.stopSSRFHook();
@@ -78,7 +78,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.HttpURLConnection(url);
         } catch (SSRFException | IOException e) {
-            logger.error("SSRF request failed, url={}", SecurityUtil.sanitizeForLog(url), e);
+            logger.error("SSRF request failed, url length: {}, error type: {}", null == url ? 0 : url.length(), e.getClass().getSimpleName());
             return "Request failed.";
         } finally {
             SecurityUtil.stopSSRFHook();
@@ -102,13 +102,40 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return WebUtils.escapeHtml(HttpUtils.request(url));
         } catch (SSRFException | IOException e) {
-            logger.error("SSRF request failed, url={}", SecurityUtil.sanitizeForLog(url), e);
+            logger.error("SSRF request failed, url length: {}, error type: {}", null == url ? 0 : url.length(), e.getClass().getSimpleName());
             return "Request failed.";
         } finally {
             SecurityUtil.stopSSRFHook();
         }
     }
 
+
+    private static final String[] DOWNLOAD_EXTENSIONS = {
+            "jpg", "jpeg", "png", "gif", "bmp", "webp", "ico", "pdf", "txt", "html", "json", "xml", "zip"
+    };
+
+    /**
+     * Maps the extension of the requested url to one of the {@link #DOWNLOAD_EXTENSIONS} literals
+     * ("bin" when unknown). The returned value is never a copy of request data.
+     */
+    private static String downloadExtensionLiteral(String url) {
+        int end = url.length();
+        int q = url.indexOf('?');
+        int f = url.indexOf('#');
+        if (q >= 0) {
+            end = q;
+        }
+        if (f >= 0 && f < end) {
+            end = f;
+        }
+        String ext = WebUtils.getFileExtension(url.substring(0, end));
+        for (String known : DOWNLOAD_EXTENSIONS) {
+            if (known.equalsIgnoreCase(ext)) {
+                return known;
+            }
+        }
+        return "bin";
+    }
 
     /**
      * Download the url file. <br>
@@ -123,9 +150,8 @@ public class SSRF {
         InputStream inputStream = null;
         OutputStream outputStream = null;
         try {
-            String downLoadImgFileName = WebUtils.getNameWithoutExtension(url) + "." + WebUtils.getFileExtension(url);
-            // download
-            response.setHeader("content-disposition", "attachment;fileName=" + SecurityUtil.safeHeaderValue(downLoadImgFileName));
+            // download; the file name is a fixed literal, only the extension is mapped to a literal
+            response.setHeader("content-disposition", "attachment;fileName=download." + downloadExtensionLiteral(url));
 
             int length;
             byte[] bytes = new byte[1024];
@@ -137,7 +163,7 @@ public class SSRF {
             }
 
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("SSRF download failed, error type: {}", e.getClass().getSimpleName());
         } finally {
             if (inputStream != null) {
                 inputStream.close();
@@ -159,7 +185,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             HttpUtils.imageIO(url);
         } catch (SSRFException | IOException e) {
-            logger.error("SSRF request failed, url={}", SecurityUtil.sanitizeForLog(url), e);
+            logger.error("SSRF request failed, url length: {}, error type: {}", null == url ? 0 : url.length(), e.getClass().getSimpleName());
             return "Request failed.";
         } finally {
             SecurityUtil.stopSSRFHook();
@@ -176,7 +202,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.okhttp(url);
         } catch (SSRFException | IOException e) {
-            logger.error("SSRF request failed, url={}", SecurityUtil.sanitizeForLog(url), e);
+            logger.error("SSRF request failed, url length: {}, error type: {}", null == url ? 0 : url.length(), e.getClass().getSimpleName());
             return "Request failed.";
         } finally {
             SecurityUtil.stopSSRFHook();
@@ -196,7 +222,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.httpClient(url);
         } catch (SSRFException | IOException e) {
-            logger.error("SSRF request failed, url={}", SecurityUtil.sanitizeForLog(url), e);
+            logger.error("SSRF request failed, url length: {}, error type: {}", null == url ? 0 : url.length(), e.getClass().getSimpleName());
             return "Request failed.";
         } finally {
             SecurityUtil.stopSSRFHook();
@@ -217,7 +243,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.commonHttpClient(url);
         } catch (SSRFException | IOException e) {
-            logger.error("SSRF request failed, url={}", SecurityUtil.sanitizeForLog(url), e);
+            logger.error("SSRF request failed, url length: {}, error type: {}", null == url ? 0 : url.length(), e.getClass().getSimpleName());
             return "Request failed.";
         } finally {
             SecurityUtil.stopSSRFHook();
@@ -237,7 +263,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             return HttpUtils.Jsoup(url);
         } catch (SSRFException | IOException e) {
-            logger.error("SSRF request failed, url={}", SecurityUtil.sanitizeForLog(url), e);
+            logger.error("SSRF request failed, url length: {}, error type: {}", null == url ? 0 : url.length(), e.getClass().getSimpleName());
             return "Request failed.";
         } finally {
             SecurityUtil.stopSSRFHook();
@@ -257,7 +283,7 @@ public class SSRF {
             SecurityUtil.startSSRFHook();
             HttpUtils.IOUtils(url);
         } catch (SSRFException | IOException e) {
-            logger.error("SSRF request failed, url={}", SecurityUtil.sanitizeForLog(url), e);
+            logger.error("SSRF request failed, url length: {}, error type: {}", null == url ? 0 : url.length(), e.getClass().getSimpleName());
             return "Request failed.";
         } finally {
             SecurityUtil.stopSSRFHook();

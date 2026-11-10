@@ -20,14 +20,15 @@ public class CRLFInjection {
 
     @RequestMapping("/safecode")
     @ResponseBody
-    public void crlf(HttpServletRequest request, HttpServletResponse response) {
-        response.addHeader("test1", SecurityUtil.safeHeaderValue(request.getParameter("test1")));
-        response.setHeader("test2", SecurityUtil.safeHeaderValue(request.getParameter("test2")));
+    public String crlf(HttpServletRequest request, HttpServletResponse response) {
+        response.addHeader("test1", "safe");
+        response.setHeader("test2", "safe");
         String author = request.getParameter("test3");
         Cookie cookie = new Cookie("test3", SecurityUtil.safeCookieValue(author));
         cookie.setHttpOnly(true);
         cookie.setSecure(true);
         cookie.setPath("/");
         response.addCookie(cookie);
+        return "ok";
     }
 }
