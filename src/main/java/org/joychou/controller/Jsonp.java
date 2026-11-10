@@ -49,16 +49,19 @@ public class Jsonp {
     }
 
     /**
-     * The callback is written into JavaScript code, so it must be a plain identifier.
-     * Anything else is rejected with 400 and a non-executable body.
+     * The request callback is only a lookup key into a fixed table of allowed callback names;
+     * the table's constant is what gets written. Anything else is rejected with 400 and a
+     * non-executable constant body.
      */
-    private static String toJsonp(String callback, HttpServletRequest request, HttpServletResponse response) {
+    private static String toJsonp(String requestedCallback, HttpServletRequest request, HttpServletResponse response) {
         response.setHeader("X-Content-Type-Options", "nosniff");
-        if (!WebUtils.isValidJsonpCallback(callback)) {
+        response.setContentType("application/javascript;charset=UTF-8");
+        String resolved = WebUtils.resolveJsonpCallback(requestedCallback);
+        if (resolved == null) {
             response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
             return "/* invalid callback */";
         }
-        return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
+        return WebUtils.json2Jsonp(resolved, LoginUtils.getUserInfo2JsonStr(request));
     }
 
     /**
@@ -143,13 +146,16 @@ public class Jsonp {
         CsrfToken csrfToken = cookieCsrfTokenRepository.loadToken(request); // get csrf token
         response.setHeader("X-Content-Type-Options", "nosniff");
 
-        String callback = request.getParameter("fastjsonpCallback");
-        if (StringUtils.isNotBlank(callback)) {
-            if (!WebUtils.isValidJsonpCallback(callback)) {
+        response.setContentType("application/javascript;charset=UTF-8");
+
+        String requested = request.getParameter("fastjsonpCallback");
+        if (StringUtils.isNotBlank(requested)) {
+            String resolved = WebUtils.resolveJsonpCallback(requested);
+            if (resolved == null) {
                 response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
                 return "/* invalid callback */";
             }
-            JSONPObject jsonpObj = new JSONPObject(callback);
+            JSONPObject jsonpObj = new JSONPObject(resolved);
             jsonpObj.addParameter(csrfToken);
             return jsonpObj.toString();
         } else {

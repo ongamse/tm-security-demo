@@ -4,6 +4,7 @@
 <head>
     <title>Login</title>
     <meta charset="UTF-8" />
+    <meta name="_ctx" th:content="@{/}" />
     <meta name="_csrf" th:content="${_csrf.token}" />
     <meta name="_csrf_headerName" th:content="${_csrf.headerName}" />
     <meta name="_csrf_parameterName" th:content="${_csrf.parameterName}" />
@@ -33,8 +34,8 @@
     </div>
 </div>
 </body>
-<script th:inline="javascript">
-    var ctx = [[@{/}]];
+<script>
+    var ctx = $("meta[name='_ctx']").attr("content");
     var tokenHeader = {};
     tokenHeader[csrfToken.tokenName] = csrfToken.tokenValue;  // header must be a object
 

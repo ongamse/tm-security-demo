@@ -3,6 +3,9 @@ package org.joychou.util;
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
 import java.io.*;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.regex.Pattern;
 
 import com.google.common.base.Preconditions;
@@ -44,17 +47,45 @@ public class WebUtils {
         return callback != null && JSONP_CALLBACK.matcher(callback).matches();
     }
 
+    // Fixed table of callback function names that may be emitted into JavaScript.
+    private static final Map<String, String> ALLOWED_JSONP_CALLBACKS;
+
+    static {
+        Map<String, String> m = new HashMap<>();
+        m.put("callback", "callback");
+        m.put("jsonpCallback", "jsonpCallback");
+        m.put("cb", "cb");
+        m.put("handle", "handle");
+        m.put("test", "test");
+        m.put("aa", "aa");
+        ALLOWED_JSONP_CALLBACKS = Collections.unmodifiableMap(m);
+    }
+
     /**
-     * Wrap json into a JSONP response. The callback is written into JavaScript code,
-     * so HTML escaping is not enough: it must match a strict identifier pattern.
+     * Resolve a requested JSONP callback to a server-side constant. The request value is only
+     * used as a lookup key; the returned string is the literal from the fixed table.
      *
-     * @throws IllegalArgumentException if the callback is not a valid identifier
+     * @return the allowed callback name, or null if the request value is not in the table
+     */
+    public static String resolveJsonpCallback(String requested) {
+        if (!isValidJsonpCallback(requested)) {
+            return null;
+        }
+        return ALLOWED_JSONP_CALLBACKS.get(requested);
+    }
+
+    /**
+     * Wrap json into a JSONP response. The callback is written into JavaScript code, so it is
+     * resolved to a constant from a fixed table rather than echoed from the request.
+     *
+     * @throws IllegalArgumentException if the callback is not an allowed callback name
      */
     public static String json2Jsonp(String callback, String jsonStr) {
-        if (!isValidJsonpCallback(callback)) {
+        String resolved = resolveJsonpCallback(callback);
+        if (resolved == null) {
             throw new IllegalArgumentException("Invalid jsonp callback");
         }
-        return callback + "(" + jsonStr + ")";
+        return resolved + "(" + jsonStr + ")";
     }
 
 
