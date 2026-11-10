@@ -46,6 +46,9 @@ public class HttpUtils {
 
     private static final int MAX_REDIRECTS = 5;
 
+    /** Constant body returned to callers when an upstream request fails; never carries exception text. */
+    private static final String REQUEST_FAILED = "Request failed.";
+
     /**
      * Resolves a host and rejects loopback, link-local, private and other internal addresses.
      * Used as the DNS resolver of the Apache clients so the check runs on the very lookup that is
@@ -115,7 +118,8 @@ public class HttpUtils {
             method.setPath(null == path || path.isEmpty() ? "/" : path);
             method.setQueryString(safeUri.getRawQuery());
         } catch (Exception e) {
-            return "Error: " + e.getMessage();
+            logger.error("commonHttpClient request failed, error type: {}", e.getClass().getSimpleName());
+            return REQUEST_FAILED;
         }
         method.setFollowRedirects(false);
 
@@ -125,7 +129,8 @@ public class HttpUtils {
             return new String(resBody);
 
         } catch (IOException e) {
-            return "Error: " + e.getMessage();
+            logger.error("commonHttpClient request failed, error type: {}", e.getClass().getSimpleName());
+            return REQUEST_FAILED;
         } finally {
             // Release the connection.
             method.releaseConnection();
@@ -163,7 +168,8 @@ public class HttpUtils {
             return result.toString();
 
         } catch (Exception e) {
-            return e.getMessage();
+            logger.error("httpClient request failed, error type: {}", e.getClass().getSimpleName());
+            return REQUEST_FAILED;
         }
     }
 
@@ -203,8 +209,8 @@ public class HttpUtils {
             in.close();
             return html.toString();
         } catch (IOException | SSRFException e) {
-            logger.error(e.getMessage());
-            return e.getMessage();
+            logger.error("HttpURLConnection request failed, error type: {}", e.getClass().getSimpleName());
+            return REQUEST_FAILED;
         }
     }
 
@@ -223,7 +229,8 @@ public class HttpUtils {
                     .execute().parse();
             return doc.outerHtml();
         } catch (IOException | SSRFException e) {
-            return e.getMessage();
+            logger.error("Jsoup request failed, error type: {}", e.getClass().getSimpleName());
+            return REQUEST_FAILED;
         }
     }
 
@@ -290,12 +297,13 @@ public class HttpUtils {
             HttpResponse response = future.get(6000, TimeUnit.MILLISECONDS);
             return EntityUtils.toString(response.getEntity());
         } catch (Exception e) {
-            return e.getMessage();
+            logger.error("HttpAsyncClients request failed, error type: {}", e.getClass().getSimpleName());
+            return REQUEST_FAILED;
         } finally {
             try {
                 httpclient.close();
             } catch (Exception e) {
-                logger.error(e.getMessage());
+                logger.error("HttpAsyncClients close failed, error type: {}", e.getClass().getSimpleName());
             }
         }
     }
