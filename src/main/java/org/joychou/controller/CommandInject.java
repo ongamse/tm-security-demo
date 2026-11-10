@@ -28,8 +28,9 @@ public class CommandInject {
     @GetMapping("/codeinject")
     public String codeInject(String filepath) throws IOException {
 
-        String safePath = SecurityUtil.cmdFilter(filepath);
-        if (null == safePath || safePath.startsWith("-")) {
+        // the directory is looked up in a fixed allowlist: argv only ever holds code literals
+        String safePath = SecurityUtil.allowedDirectory(filepath);
+        if (null == safePath) {
             return "Bad boy. I got u.";
         }
         // no shell: argv only, "--" ends option parsing
@@ -53,7 +54,8 @@ public class CommandInject {
         if (null == host || !HOST_PATTERN.matcher(host).matches()) {
             return "Bad boy. I got u.";
         }
-        String url = SecurityUtil.checkURL("http://" + host);
+        // canonical url rebuilt from the resolved public IP and parsed port, not the header string
+        String url = SecurityUtil.canonicalHostUrl(host);
         if (null == url) {
             return "Bad boy. I got u.";
         }
@@ -67,11 +69,9 @@ public class CommandInject {
 
     @GetMapping("/codeinject/sec")
     public String codeInjectSec(String filepath) throws IOException {
-        String filterFilePath = SecurityUtil.cmdFilter(filepath);
+        // the directory is looked up in a fixed allowlist: argv only ever holds code literals
+        String filterFilePath = SecurityUtil.allowedDirectory(filepath);
         if (null == filterFilePath) {
-            return "Bad boy. I got u.";
-        }
-        if (filterFilePath.startsWith("-")) {
             return "Bad boy. I got u.";
         }
         // no shell: argv only, "--" ends option parsing

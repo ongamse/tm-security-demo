@@ -1,15 +1,14 @@
 package org.joychou.controller;
 
+import org.joychou.security.ArithmeticEvaluator;
 import org.joychou.util.WebUtils;
-import org.springframework.expression.EvaluationContext;
 import org.springframework.expression.ExpressionParser;
-import org.springframework.expression.spel.support.SimpleEvaluationContext;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.regex.Pattern;
+import java.math.BigDecimal;
 
 
 /**
@@ -20,8 +19,6 @@ import java.util.regex.Pattern;
 @RestController
 public class SpEL {
 
-    private static final Pattern SAFE_EXPRESSION = Pattern.compile("^[A-Za-z0-9_+\\-*/%.\\s'<>=!&|?:\\[\\]]{1,200}$");
-
     /**
      * SpEL to RCE
      * http://localhost:8080/spel/vul/?expression=xxx.
@@ -30,15 +27,13 @@ public class SpEL {
      */
     @GetMapping("/spel/vuln")
     public String rce(String expression) {
-        // property/literal/operator syntax only: no calls, type refs (T(..)), variables, beans or constructors
-        if (null == expression || !SAFE_EXPRESSION.matcher(expression).matches()) {
+        // The request string is parsed by our own arithmetic evaluator and never reaches the SpEL engine:
+        // no calls, type refs (T(..)), variables, beans or constructors can be expressed.
+        BigDecimal result = ArithmeticEvaluator.evaluate(expression);
+        if (null == result) {
             return "Bad boy. I got u.";
         }
-        ExpressionParser parser = new SpelExpressionParser();
-        // SimpleEvaluationContext disables type references, constructors and bean references
-        EvaluationContext context = SimpleEvaluationContext.forReadOnlyDataBinding().build();
-        Object result = parser.parseExpression(expression).getValue(context);
-        return WebUtils.escapeHtml(String.valueOf(result));
+        return WebUtils.escapeHtml(result.toPlainString());
     }
 
     public static void main(String[] args) {

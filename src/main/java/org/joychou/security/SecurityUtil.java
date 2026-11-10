@@ -42,6 +42,23 @@ public class SecurityUtil {
         ALLOWED_COMMANDS.put("hostname", "hostname");
         ALLOWED_COMMANDS.put("ls", "ls");
     }
+    // allowlist: request-supplied option -> literal ls option
+    private static final Map<String, String> ALLOWED_LS_OPTIONS = new HashMap<>();
+    static {
+        ALLOWED_LS_OPTIONS.put("-l", "-l");
+        ALLOWED_LS_OPTIONS.put("-a", "-a");
+        ALLOWED_LS_OPTIONS.put("-la", "-la");
+        ALLOWED_LS_OPTIONS.put("-al", "-al");
+        ALLOWED_LS_OPTIONS.put("-lh", "-lh");
+        ALLOWED_LS_OPTIONS.put("-lah", "-lah");
+    }
+    // allowlist: request-supplied directory -> literal directory
+    private static final Map<String, String> ALLOWED_DIRECTORIES = new HashMap<>();
+    static {
+        ALLOWED_DIRECTORIES.put("/tmp", "/tmp");
+        ALLOWED_DIRECTORIES.put("/var/tmp", "/var/tmp");
+        ALLOWED_DIRECTORIES.put(".", ".");
+    }
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
 
 
@@ -483,30 +500,114 @@ public class SecurityUtil {
 
 
     /**
-     * Parse an untrusted command line into an argv array for a shell-less process start.
-     * The executable must be in a fixed allowlist and every argument must pass {@link #cmdFilter}.
+     * Look an untrusted directory up in a fixed allowlist.
+     *
+     * @param dir untrusted directory
+     * @return the matching allowlist literal (never the request string), or null when not allowlisted
+     */
+    public static String allowedDirectory(String dir) {
+        if (null == dir) {
+            return null;
+        }
+        return literalOf(ALLOWED_DIRECTORIES, dir);
+    }
+
+
+    /**
+     * Return the allowlist's own constant that equals the request value (never the request string itself).
+     */
+    private static String literalOf(Map<String, String> allowlist, String requested) {
+        for (Map.Entry<String, String> entry : allowlist.entrySet()) {
+            if (entry.getKey().equals(requested)) {
+                return entry.getValue();
+            }
+        }
+        return null;
+    }
+
+
+    /**
+     * Turn an untrusted <code>host[:port]</code> (e.g. a Host header) into a canonical http url that is
+     * <b>rebuilt</b> from parsed parts: the host must be allowed by {@link #checkURL(String)}, must resolve to
+     * public addresses only, and is replaced by its resolved IP address; the port is re-rendered from the
+     * parsed integer. The request string itself is never part of the result.
+     *
+     * @param hostPort untrusted host and optional port
+     * @return canonical <code>http://ip[:port]</code> url, or null when the value is not acceptable
+     */
+    public static String canonicalHostUrl(String hostPort) {
+        if (null == hostPort || null == checkURL("http://" + hostPort)) {
+            return null;
+        }
+        String hostPart = hostPort;
+        int port = -1;
+        int colon = hostPort.lastIndexOf(':');
+        if (colon >= 0) {
+            hostPart = hostPort.substring(0, colon);
+            try {
+                port = Integer.parseInt(hostPort.substring(colon + 1));
+            } catch (NumberFormatException e) {
+                return null;
+            }
+            if (port < 1 || port > 65535) {
+                return null;
+            }
+        }
+        try {
+            InetAddress[] addresses = SSRFChecker.resolveSafeAddresses(hostPart);
+            InetAddress pinned = addresses[0];
+            for (InetAddress address : addresses) {
+                if (address instanceof Inet4Address) {
+                    pinned = address;
+                    break;
+                }
+            }
+            String ip = pinned.getHostAddress();
+            if (pinned instanceof Inet6Address) {
+                int scope = ip.indexOf('%');
+                ip = "[" + (scope < 0 ? ip : ip.substring(0, scope)) + "]";
+            }
+            return "http://" + ip + (port < 0 ? "" : ":" + port);
+        } catch (SSRFException e) {
+            logger.error(SecurityUtil.sanitizeForLog(e.getMessage()));
+            return null;
+        }
+    }
+
+
+    /**
+     * Map an untrusted command line to a literal argv array for a shell-less process start.
+     * Every element of the returned array is a constant taken from a fixed allowlist (executable name,
+     * ls option or directory); no part of the request string is ever copied into the result.
+     * Only "ls" accepts arguments.
      *
      * @param cmd untrusted command line, e.g. "ls -la /tmp"
-     * @return argv array, or null if the command is empty, not allowlisted, or has an unsafe argument
+     * @return argv array of allowlist literals, or null if the command is empty, not allowlisted,
+     *         or has an argument that is not allowlisted
      */
     public static String[] allowedCommand(String cmd) {
         if (null == cmd || cmd.trim().isEmpty()) {
             return null;
         }
         String[] parts = cmd.trim().split("\\s+");
-        // the executable is taken from the fixed allowlist itself (a literal), never from the request
-        String executable = ALLOWED_COMMANDS.get(parts[0]);
+        String executable = literalOf(ALLOWED_COMMANDS, parts[0]);
         if (null == executable) {
             return null;
         }
         String[] argv = new String[parts.length];
         argv[0] = executable;
         for (int i = 1; i < parts.length; i++) {
-            String safeArg = cmdFilter(parts[i]);
-            if (null == safeArg) {
+            if (!"ls".equals(executable)) {
                 return null;
             }
-            argv[i] = safeArg;
+            String literal = literalOf(ALLOWED_LS_OPTIONS, parts[i]);
+            if (null == literal) {
+                literal = literalOf(ALLOWED_DIRECTORIES, parts[i]);
+            }
+            if (null == literal) {
+                return null;
+            }
+            argv[i] = literal;
         }
         return argv;
     }

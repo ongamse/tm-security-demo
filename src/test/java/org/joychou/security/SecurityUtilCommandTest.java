@@ -3,6 +3,7 @@ package org.joychou.security;
 import org.junit.Test;
 
 import static org.junit.Assert.assertArrayEquals;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 
 public class SecurityUtilCommandTest {
@@ -25,6 +26,30 @@ public class SecurityUtilCommandTest {
         assertNull(SecurityUtil.allowedCommand("ls /tmp;id"));
         assertNull(SecurityUtil.allowedCommand("ls $(id)"));
         assertNull(SecurityUtil.allowedCommand("ls `id`"));
+    }
+
+    @Test
+    public void argumentsOutsideTheAllowlistAreRejected() {
+        assertNull(SecurityUtil.allowedCommand("ls /etc"));
+        assertNull(SecurityUtil.allowedCommand("ls --help"));
+        assertNull(SecurityUtil.allowedCommand("ls -la /tmp/../etc"));
+        assertNull(SecurityUtil.allowedCommand("whoami -a"));
+    }
+
+    @Test
+    public void allowedDirectoryReturnsOnlyAllowlistedLiterals() {
+        assertEquals("/tmp", SecurityUtil.allowedDirectory("/tmp"));
+        assertNull(SecurityUtil.allowedDirectory("/tmp;cat /etc/passwd"));
+        assertNull(SecurityUtil.allowedDirectory("/etc"));
+        assertNull(SecurityUtil.allowedDirectory("-la"));
+        assertNull(SecurityUtil.allowedDirectory(null));
+    }
+
+    @Test
+    public void canonicalHostUrlRejectsMalformedHosts() {
+        assertNull(SecurityUtil.canonicalHostUrl(null));
+        assertNull(SecurityUtil.canonicalHostUrl("evil.com;cat /etc/passwd"));
+        assertNull(SecurityUtil.canonicalHostUrl("localhost:99999"));
     }
 
     @Test

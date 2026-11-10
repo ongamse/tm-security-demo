@@ -1,7 +1,7 @@
 package org.joychou.controller;
 
-import groovy.lang.GroovyShell;
 import lombok.extern.slf4j.Slf4j;
+import org.joychou.security.ArithmeticEvaluator;
 import org.joychou.security.SecurityUtil;
 import org.joychou.util.WebUtils;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -17,8 +17,8 @@ import javax.script.ScriptEngineManager;
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.math.BigDecimal;
 import java.sql.DriverManager;
-import java.util.regex.Pattern;
 
 
 /**
@@ -30,8 +30,6 @@ import java.util.regex.Pattern;
 @RestController
 @RequestMapping("/rce")
 public class Rce {
-
-    private static final Pattern ARITHMETIC_PATTERN = Pattern.compile("^[0-9+\\-*/%().\\s]{1,100}$");
 
     @GetMapping("/runtime/exec")
     public String CommandExec(String cmd) {
@@ -146,12 +144,12 @@ public class Rce {
      */
     @GetMapping("groovy")
     public void groovyshell(String content) {
-        // Only plain arithmetic expressions are evaluated; no identifiers, quotes or method calls can be expressed.
-        if (null == content || !ARITHMETIC_PATTERN.matcher(content).matches()) {
+        // The request string is parsed by our own arithmetic evaluator and never reaches a script engine.
+        BigDecimal result = ArithmeticEvaluator.evaluate(content);
+        if (null == result) {
             return;
         }
-        GroovyShell groovyShell = new GroovyShell();
-        groovyShell.evaluate(content);
+        log.debug("arithmetic result: {}", result.toPlainString());
     }
 
 
