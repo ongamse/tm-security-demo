@@ -46,6 +46,29 @@ public class SQLIAccessTest {
     }
 
     @Test
+    public void ownerLookupKeyIsPrincipalName() {
+        login("joychou", "ROLE_USER");
+        org.junit.Assert.assertEquals("joychou", SQLI.resolveAuthorizedUsername("joychou"));
+    }
+
+    @Test(expected = AccessDeniedException.class)
+    public void resolveDeniesOtherUser() {
+        login("joychou", "ROLE_USER");
+        SQLI.resolveAuthorizedUsername("admin");
+    }
+
+    @Test(expected = AccessDeniedException.class)
+    public void resolveDeniesAnonymous() {
+        SQLI.resolveAuthorizedUsername("joychou");
+    }
+
+    @Test
+    public void adminLookupKeyIsRequestedUsername() {
+        login("admin", "ROLE_USER", "ROLE_ADMIN");
+        org.junit.Assert.assertEquals("joychou", SQLI.resolveAuthorizedUsername("joychou"));
+    }
+
+    @Test
     public void adminIsAllowed() {
         login("admin", "ROLE_USER", "ROLE_ADMIN");
         SQLI.requireOwnerOrAdmin("joychou");

@@ -75,6 +75,23 @@ public class SQLI {
 
 
     /**
+     * Resolve the username to look up. Non-admin callers are always bound to their own
+     * authenticated principal name (the request value must match, otherwise access is
+     * denied); admins may look up the requested username. Fails closed when unauthenticated.
+     */
+    static String resolveAuthorizedUsername(String requestedUsername) {
+        requireOwnerOrAdmin(requestedUsername);
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        for (GrantedAuthority authority : auth.getAuthorities()) {
+            if ("ROLE_ADMIN".equals(authority.getAuthority())) {
+                return requestedUsername;
+            }
+        }
+        return auth.getName();
+    }
+
+
+    /**
      * <p>Sql injection jbdc vuln code.</p><br>
      *
      * <a href="http://localhost:8080/sqli/jdbc/vuln?username=joychou">http://localhost:8080/sqli/jdbc/vuln?username=joychou</a>
@@ -82,6 +99,7 @@ public class SQLI {
     @RequestMapping("/jdbc/vuln")
     public String jdbc_sqli_vul(@RequestParam("username") String username) {
 
+        final String lookupUsername = resolveAuthorizedUsername(username);
         StringBuilder result = new StringBuilder();
 
         try {
@@ -94,7 +112,7 @@ public class SQLI {
             // sqli vuln code
             String sql = "select * from users where username = ?";
             PreparedStatement statement = con.prepareStatement(sql);
-            statement.setString(1, username);
+            statement.setString(1, lookupUsername);
             logger.info(statement.toString());
             ResultSet rs = statement.executeQuery();
 
@@ -172,6 +190,7 @@ public class SQLI {
     @RequestMapping("/jdbc/ps/vuln")
     public String jdbc_ps_vuln(@RequestParam("username") String username) {
 
+        final String lookupUsername = resolveAuthorizedUsername(username);
         StringBuilder result = new StringBuilder();
         try {
             Class.forName(driver);
@@ -182,7 +201,7 @@ public class SQLI {
 
             String sql = "select * from users where username = ?";
             PreparedStatement st = con.prepareStatement(sql);
-            st.setString(1, username);
+            st.setString(1, lookupUsername);
 
             logger.info(st.toString());
             ResultSet rs = st.executeQuery();
