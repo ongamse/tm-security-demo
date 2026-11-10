@@ -113,7 +113,7 @@ public class SQLI {
             String sql = "select * from users where username = ?";
             PreparedStatement statement = con.prepareStatement(sql);
             statement.setString(1, lookupUsername);
-            logger.info(SecurityUtil.sanitizeForLog(statement.toString()));
+            logger.info("Executing prepared statement with one bound parameter");
             ResultSet rs = statement.executeQuery();
 
             while (rs.next()) {
@@ -121,7 +121,7 @@ public class SQLI {
                 String res_pwd = rs.getString("password");
                 String info = String.format("%s: %s\n", res_name, res_pwd);
                 result.append(info);
-                logger.info(SecurityUtil.sanitizeForLog(info));
+                logger.info("Query returned a row");
             }
             rs.close();
             con.close();
@@ -130,7 +130,7 @@ public class SQLI {
         } catch (ClassNotFoundException e) {
             logger.error("Sorry, can't find the Driver!");
         } catch (SQLException e) {
-            logger.error(SecurityUtil.sanitizeForLog(e.toString()));
+            logger.error("Database query failed with an SQL exception");
         }
         return result.toString();
     }
@@ -159,7 +159,7 @@ public class SQLI {
             PreparedStatement st = con.prepareStatement(sql);
             st.setString(1, username);
 
-            logger.info(SecurityUtil.sanitizeForLog(st.toString()));  // sql after prepare statement
+            logger.info("Executing prepared statement with one bound parameter");
             ResultSet rs = st.executeQuery();
 
             while (rs.next()) {
@@ -167,7 +167,7 @@ public class SQLI {
                 String res_pwd = rs.getString("password");
                 String info = String.format("%s: %s\n", res_name, res_pwd);
                 result.append(info);
-                logger.info(SecurityUtil.sanitizeForLog(info));
+                logger.info("Query returned a row");
             }
 
             rs.close();
@@ -177,7 +177,7 @@ public class SQLI {
             logger.error("Sorry, can't find the Driver!");
             e.printStackTrace();
         } catch (SQLException e) {
-            logger.error(SecurityUtil.sanitizeForLog(e.toString()));
+            logger.error("Database query failed with an SQL exception");
         }
         return result.toString();
     }
@@ -203,7 +203,7 @@ public class SQLI {
             PreparedStatement st = con.prepareStatement(sql);
             st.setString(1, lookupUsername);
 
-            logger.info(SecurityUtil.sanitizeForLog(st.toString()));
+            logger.info("Executing prepared statement with one bound parameter");
             ResultSet rs = st.executeQuery();
 
             while (rs.next()) {
@@ -211,7 +211,7 @@ public class SQLI {
                 String res_pwd = rs.getString("password");
                 String info = String.format("%s: %s\n", res_name, res_pwd);
                 result.append(info);
-                logger.info(SecurityUtil.sanitizeForLog(info));
+                logger.info("Query returned a row");
             }
 
             rs.close();
@@ -221,7 +221,7 @@ public class SQLI {
             logger.error("Sorry, can't find the Driver!");
             e.printStackTrace();
         } catch (SQLException e) {
-            logger.error(SecurityUtil.sanitizeForLog(e.toString()));
+            logger.error("Database query failed with an SQL exception");
         }
         return result.toString();
     }
