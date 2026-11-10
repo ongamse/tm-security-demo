@@ -230,6 +230,19 @@ public class SecurityUtil {
     }
 
 
+    /**
+     * Same validation as {@link #safeRedirectUrl(String)}, but never returns null: an unsafe
+     * destination is replaced by the fixed same-origin path "/".
+     *
+     * @param url untrusted redirect destination
+     * @return a validated destination, or "/" when validation fails
+     */
+    public static String safeRedirectUrlOrRoot(String url) {
+        String safe = safeRedirectUrl(url);
+        return null == safe ? "/" : safe;
+    }
+
+
     private static boolean hasUnsafeRedirectChars(String url) {
         for (int i = 0; i < url.length(); i++) {
             char ch = url.charAt(i);

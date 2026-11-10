@@ -27,6 +27,14 @@ public class SecurityUtilRedirectTest {
     }
 
     @Test
+    public void fallsBackToRootWhenUnsafe() {
+        assertEquals("/", SecurityUtil.safeRedirectUrlOrRoot(null));
+        assertEquals("/", SecurityUtil.safeRedirectUrlOrRoot("//evil.com"));
+        assertEquals("/", SecurityUtil.safeRedirectUrlOrRoot("http://evil.com\\@www.joychou.org/"));
+        assertEquals("/urlRedirect/test", SecurityUtil.safeRedirectUrlOrRoot("/urlRedirect/test"));
+    }
+
+    @Test
     public void safeHttpUrlSyntax() {
         assertTrue(SecurityUtil.isSafeHttpUrl("https://a.joychou.org/x?y=1"));
         assertFalse(SecurityUtil.isSafeHttpUrl("http://evil.com\\www.joychou.org/a.html"));
