@@ -12,7 +12,6 @@ import javax.servlet.http.HttpServletRequest;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InvalidClassException;
-import java.io.ObjectInputStream;
 import java.util.Base64;
 
 import static org.springframework.web.util.WebUtils.getCookie;
@@ -45,10 +44,14 @@ public class Deserialize {
         byte[] decoded = Base64.getDecoder().decode(rememberMe);
 
         ByteArrayInputStream bytes = new ByteArrayInputStream(decoded);
-        // Allowlist-based stream: rejects any class that is not explicitly permitted.
-        ObjectInputStream in = new AntObjectInputStream(bytes);
-        in.readObject();
-        in.close();
+        // Allowlist-only stream (resolveClass/resolveProxyClass): any class that is not
+        // explicitly permitted is rejected before it is instantiated.
+        try (AntObjectInputStream in = new AntObjectInputStream(bytes)) {
+            in.readObject();
+        } catch (InvalidClassException e) {
+            logger.info(e.toString());
+            return e.toString();
+        }
 
         return "Are u ok?";
     }
@@ -72,10 +75,9 @@ public class Deserialize {
 
         ByteArrayInputStream bytes = new ByteArrayInputStream(decoded);
 
-        try {
-            AntObjectInputStream in = new AntObjectInputStream(bytes);  // throw InvalidClassException
+        // Allowlist-only stream: throws InvalidClassException for any non-permitted class.
+        try (AntObjectInputStream in = new AntObjectInputStream(bytes)) {
             in.readObject();
-            in.close();
         } catch (InvalidClassException e) {
             logger.info(e.toString());
             return e.toString();

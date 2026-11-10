@@ -53,6 +53,18 @@ public class AntObjectInputStream extends ObjectInputStream {
         return super.resolveClass(desc);
     }
 
+    /**
+     * Dynamic proxy classes are resolved through this method and bypass resolveClass,
+     * so reject them outright (allowlist contains no proxy interfaces).
+     */
+    @Override
+    protected Class<?> resolveProxyClass(String[] interfaces)
+            throws IOException, ClassNotFoundException
+    {
+        throw new InvalidClassException("Unauthorized deserialization attempt (proxy class)",
+                Arrays.toString(interfaces));
+    }
+
     public static void main(String args[]) throws Exception{
         // 定义myObj对象
         MyObject myObj = new MyObject();

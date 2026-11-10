@@ -39,6 +39,8 @@ public class XStreamRce {
         xstream.addPermission(NullPermission.NULL);
         xstream.addPermission(PrimitiveTypePermission.PRIMITIVES);
         xstream.allowTypes(new Class[]{User.class, String.class});
+        // No object references: prevents reference-based gadget tricks on untrusted XML.
+        xstream.setMode(XStream.NO_REFERENCES);
 
         // Parse with a StAX reader that has DTD support and external entities disabled.
         XMLStreamReader xmlReader = hardenedXmlInputFactory().createXMLStreamReader(new StringReader(xml));
