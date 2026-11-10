@@ -2,6 +2,9 @@ package org.joychou.controller;
 
 import com.thoughtworks.xstream.XStream;
 import com.thoughtworks.xstream.io.xml.DomDriver;
+import com.thoughtworks.xstream.security.NoTypePermission;
+import com.thoughtworks.xstream.security.NullPermission;
+import com.thoughtworks.xstream.security.PrimitiveTypePermission;
 import com.thoughtworks.xstream.io.xml.XppDriver;
 import org.joychou.dao.User;
 import org.joychou.util.WebUtils;
@@ -26,6 +29,11 @@ public class XStreamRce {
         String xml = WebUtils.getRequestBody(request);
         // XppDriver (XPP3 pull parser) does not resolve external entities, unlike DomDriver (DOM parser).
         XStream xstream = new XStream(new XppDriver());
+        // Deny everything by default, then allow only the types this endpoint expects.
+        xstream.addPermission(NoTypePermission.NONE);
+        xstream.addPermission(NullPermission.NULL);
+        xstream.addPermission(PrimitiveTypePermission.PRIMITIVES);
+        xstream.allowTypes(new Class[]{User.class, String.class});
         xstream.fromXML(xml);
         return "xstream";
     }

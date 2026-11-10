@@ -125,7 +125,8 @@ public class Rce {
      */
     @GetMapping("/vuln/yarm")
     public void yarm(String content) {
-        Yaml y = new Yaml();
+        // SafeConstructor only builds standard YAML types, never arbitrary classes.
+        Yaml y = new Yaml(new SafeConstructor());
         y.load(content);
     }
 
