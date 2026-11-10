@@ -12,12 +12,17 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 
 public class SecurityUtil {
 
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
+    private static final Set<String> ALLOWED_COMMANDS = new HashSet<>(
+            Arrays.asList("whoami", "id", "pwd", "date", "uname", "hostname", "ls"));
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
 
 
@@ -200,11 +205,36 @@ public class SecurityUtil {
 
 
     public static String cmdFilter(String input) {
-        if (!FILTER_PATTERN.matcher(input).matches()) {
+        if (null == input || !FILTER_PATTERN.matcher(input).matches()) {
             return null;
         }
 
         return input;
+    }
+
+
+    /**
+     * Parse an untrusted command line into an argv array for a shell-less process start.
+     * The executable must be in a fixed allowlist and every argument must pass {@link #cmdFilter}.
+     *
+     * @param cmd untrusted command line, e.g. "ls -la /tmp"
+     * @return argv array, or null if the command is empty, not allowlisted, or has an unsafe argument
+     */
+    public static String[] allowedCommand(String cmd) {
+        if (null == cmd || cmd.trim().isEmpty()) {
+            return null;
+        }
+        String[] argv = cmd.trim().split("\\s+");
+        if (!ALLOWED_COMMANDS.contains(argv[0])) {
+            return null;
+        }
+        // the executable itself is resolved by name only (no path component)
+        for (int i = 1; i < argv.length; i++) {
+            if (null == cmdFilter(argv[i])) {
+                return null;
+            }
+        }
+        return argv;
     }
 
 
