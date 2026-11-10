@@ -506,12 +506,60 @@ public class SecurityUtil {
         if (null == requestOrigin) {
             return null;
         }
-        for (String allowed : CORS_ALLOWED_ORIGINS) {
-            if (allowed.equalsIgnoreCase(requestOrigin)) {
-                return allowed;
-            }
+        switch (requestOrigin.toLowerCase(java.util.Locale.ROOT)) {
+            case "https://joychou.org":
+                return "https://joychou.org";
+            case "https://joychou.com":
+                return "https://joychou.com";
+            case "https://test.joychou.org":
+                return "https://test.joychou.org";
+            case "https://test.joychou.me":
+                return "https://test.joychou.me";
+            case "http://localhost:8080":
+                return "http://localhost:8080";
+            default:
+                return null;
         }
-        return null;
+    }
+
+
+    /**
+     * Write Access-Control-Allow-Origin from a string literal selected by the request Origin (the request string
+     * itself is never written). Access-Control-Allow-Credentials is only sent in the same matched branch.
+     *
+     * @param response         target response
+     * @param requestOrigin    untrusted Origin header value, may be null
+     * @param allowCredentials whether to also send Access-Control-Allow-Credentials: true for a matched origin
+     * @return true when the origin matched the allowlist and CORS headers were written
+     */
+    public static boolean writeCorsOriginHeaders(javax.servlet.http.HttpServletResponse response,
+                                                 String requestOrigin, boolean allowCredentials) {
+        String key = null == requestOrigin ? "" : requestOrigin.toLowerCase(java.util.Locale.ROOT);
+        switch (key) {
+            case "https://joychou.org":
+                response.setHeader("Access-Control-Allow-Origin", "https://joychou.org");
+                break;
+            case "https://joychou.com":
+                response.setHeader("Access-Control-Allow-Origin", "https://joychou.com");
+                break;
+            case "https://test.joychou.org":
+                response.setHeader("Access-Control-Allow-Origin", "https://test.joychou.org");
+                break;
+            case "https://test.joychou.me":
+                response.setHeader("Access-Control-Allow-Origin", "https://test.joychou.me");
+                break;
+            case "http://localhost:8080":
+                response.setHeader("Access-Control-Allow-Origin", "http://localhost:8080");
+                break;
+            default:
+                response.addHeader("Vary", "Origin");
+                return false;
+        }
+        if (allowCredentials) {
+            response.setHeader("Access-Control-Allow-Credentials", "true");
+        }
+        response.addHeader("Vary", "Origin");
+        return true;
     }
 
 

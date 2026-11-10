@@ -24,24 +24,13 @@ public class Cors {
 
     @GetMapping("/vuln/origin")
     public String vuls1(HttpServletRequest request, HttpServletResponse response) {
-        // emit the constant allowlist element matching the request origin; otherwise omit the CORS headers
-        String origin = SecurityUtil.allowedCorsOrigin(request.getHeader("origin"));
-        if (origin != null) {
-            response.setHeader("Access-Control-Allow-Origin", SecurityUtil.safeHeaderValue(origin));
-            response.setHeader("Access-Control-Allow-Credentials", "true");  // allow cookie
-            response.addHeader("Vary", "Origin");
-        }
+        SecurityUtil.writeCorsOriginHeaders(response, request.getHeader("origin"), true);
         return info;
     }
 
     @GetMapping("/vuln/setHeader")
     public String vuls2(HttpServletRequest request, HttpServletResponse response) {
-        // no wildcard: only allowlisted origins get Access-Control-Allow-Origin (never with credentials here)
-        String origin = SecurityUtil.allowedCorsOrigin(request.getHeader("origin"));
-        if (origin != null) {
-            response.setHeader("Access-Control-Allow-Origin", SecurityUtil.safeHeaderValue(origin));
-            response.addHeader("Vary", "Origin");
-        }
+        SecurityUtil.writeCorsOriginHeaders(response, request.getHeader("origin"), false);
         return info;
     }
 
@@ -118,12 +107,7 @@ public class Cors {
         if (origin != null && SecurityUtil.checkURL(origin) == null) {
             return "Origin is not safe.";
         }
-        String allowedOrigin = SecurityUtil.allowedCorsOrigin(origin);
-        if (allowedOrigin != null) {
-            response.setHeader("Access-Control-Allow-Origin", SecurityUtil.safeHeaderValue(allowedOrigin));
-            response.setHeader("Access-Control-Allow-Credentials", "true");
-            response.addHeader("Vary", "Origin");
-        }
+        SecurityUtil.writeCorsOriginHeaders(response, origin, true);
         return LoginUtils.getUserInfo2JsonStr(request);
     }
 
