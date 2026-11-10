@@ -7,9 +7,15 @@ import org.joychou.security.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.sql.*;
 import java.util.List;
 
@@ -41,6 +47,31 @@ public class SQLI {
 
     @Resource
     private UserMapper userMapper;
+
+
+    /**
+     * Fail closed unless the requested username belongs to the authenticated caller
+     * (or the caller has ROLE_ADMIN). Prevents looking up other users' rows by
+     * supplying an arbitrary username.
+     */
+    static void requireOwnerOrAdmin(String requestedUsername) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated() || auth.getName() == null || requestedUsername == null) {
+            throw new AccessDeniedException("Access denied");
+        }
+        for (GrantedAuthority authority : auth.getAuthorities()) {
+            if ("ROLE_ADMIN".equals(authority.getAuthority())) {
+                return;
+            }
+        }
+        // constant-time comparison of identifiers
+        boolean same = MessageDigest.isEqual(
+                auth.getName().getBytes(StandardCharsets.UTF_8),
+                requestedUsername.getBytes(StandardCharsets.UTF_8));
+        if (!same) {
+            throw new AccessDeniedException("Access denied");
+        }
+    }
 
 
     /**
@@ -94,6 +125,8 @@ public class SQLI {
      */
     @RequestMapping("/jdbc/sec")
     public String jdbc_sqli_sec(@RequestParam("username") String username) {
+
+        requireOwnerOrAdmin(username);
 
         StringBuilder result = new StringBuilder();
         try {
@@ -182,6 +215,7 @@ public class SQLI {
      */
     @GetMapping("/mybatis/vuln01")
     public List<User> mybatisVuln01(@RequestParam("username") String username) {
+        requireOwnerOrAdmin(username);
         return userMapper.findByUserNameVuln01(username);
     }
 
@@ -192,6 +226,7 @@ public class SQLI {
      */
     @GetMapping("/mybatis/vuln02")
     public List<User> mybatisVuln02(@RequestParam("username") String username) {
+        requireOwnerOrAdmin(username);
         return userMapper.findByUserNameVuln02(username);
     }
 
@@ -212,6 +247,7 @@ public class SQLI {
      */
     @GetMapping("/mybatis/sec01")
     public User mybatisSec01(@RequestParam("username") String username) {
+        requireOwnerOrAdmin(username);
         return userMapper.findByUserName(username);
     }
 
@@ -221,7 +257,11 @@ public class SQLI {
      */
     @GetMapping("/mybatis/sec02")
     public User mybatisSec02(@RequestParam("id") Integer id) {
-        return userMapper.findById(id);
+        User found = userMapper.findById(id);
+        if (found != null) {
+            requireOwnerOrAdmin(found.getUsername());
+        }
+        return found;
     }
 
 
