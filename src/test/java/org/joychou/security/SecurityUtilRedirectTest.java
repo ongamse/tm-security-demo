@@ -28,10 +28,15 @@ public class SecurityUtilRedirectTest {
 
     @Test
     public void fallsBackToRootWhenUnsafe() {
-        assertEquals("/", SecurityUtil.safeRedirectUrlOrRoot(null));
-        assertEquals("/", SecurityUtil.safeRedirectUrlOrRoot("//evil.com"));
-        assertEquals("/", SecurityUtil.safeRedirectUrlOrRoot("http://evil.com\\@www.joychou.org/"));
-        assertEquals("/urlRedirect/test", SecurityUtil.safeRedirectUrlOrRoot("/urlRedirect/test"));
+        assertEquals("/", SecurityUtil.redirectTargetOrRoot(null));
+        assertEquals("/", SecurityUtil.redirectTargetOrRoot("//evil.com"));
+        assertEquals("/", SecurityUtil.redirectTargetOrRoot("http://evil.com\\@www.joychou.org/"));
+        assertEquals("/", SecurityUtil.redirectTargetOrRoot("/not/in/table"));
+    }
+
+    @Test
+    public void redirectsOnlyToLiteralTableValues() {
+        assertEquals("/urlRedirect/test", SecurityUtil.redirectTargetOrRoot("/urlRedirect/test?a=b"));
     }
 
     @Test
