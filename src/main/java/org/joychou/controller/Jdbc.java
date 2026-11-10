@@ -24,7 +24,7 @@ public class Jdbc {
         String jdbcUrl = new String(b);
         // allowlisted driver/host pattern, public address only, url rebuilt from the validated parts
         String safeJdbcUrl = SecurityUtil.requireSafeJdbcUrl(jdbcUrl, "postgresql");
-        log.info(safeJdbcUrl);
+        log.info(SecurityUtil.sanitizeForLog(safeJdbcUrl));
         DriverManager.getConnection(safeJdbcUrl);
     }
 
@@ -35,7 +35,7 @@ public class Jdbc {
         String jdbcUrl = new String(b);
         // allowlisted driver/host pattern, public address only, url rebuilt from the validated parts
         String safeJdbcUrl = SecurityUtil.requireSafeJdbcUrl(jdbcUrl, "db2");
-        log.info(safeJdbcUrl);
+        log.info(SecurityUtil.sanitizeForLog(safeJdbcUrl));
         DriverManager.getConnection(safeJdbcUrl);
     }
 }

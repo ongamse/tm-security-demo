@@ -74,7 +74,7 @@ public class SecurityUtil {
             requireSafeJdbcUrl(jdbcUrl, subprotocol);
             return true;
         } catch (IllegalArgumentException | SSRFException e) {
-            logger.error(e.getMessage());
+            logger.error(SecurityUtil.sanitizeForLog(e.getMessage()));
             return false;
         }
     }
@@ -184,7 +184,7 @@ public class SecurityUtil {
             }
             return null;
         } catch (NullPointerException e) {
-            logger.error(e.toString());
+            logger.error(SecurityUtil.sanitizeForLog(e.toString()));
             return null;
         }
     }
@@ -339,10 +339,10 @@ public class SecurityUtil {
             try {
                 temp = URLDecoder.decode(temp, "utf-8");
             } catch (UnsupportedEncodingException e) {
-                logger.info("Unsupported encoding exception: " + filepath);
+                logger.info("Unsupported encoding exception: " + SecurityUtil.sanitizeForLog(filepath));
                 return null;
             } catch (Exception e) {
-                logger.info(e.toString());
+                logger.info(SecurityUtil.sanitizeForLog(e.toString()));
                 return null;
             }
         }
@@ -353,6 +353,28 @@ public class SecurityUtil {
 
         return filepath;
     }
+
+
+    /**
+     * Make an untrusted value safe to write to a log (prevents CRLF log forging, CWE-117).
+     * Replaces CR, LF, every other ISO control character and U+2028/U+2029 with "_" and truncates
+     * to {@value #MAX_LOG_VALUE_LENGTH} characters.
+     *
+     * @param value untrusted value to log, may be null
+     * @return the sanitized value, or "null" when the input is null
+     */
+    public static String sanitizeForLog(Object value) {
+        if (null == value) {
+            return "null";
+        }
+        String s = String.valueOf(value);
+        if (s.length() > MAX_LOG_VALUE_LENGTH) {
+            s = s.substring(0, MAX_LOG_VALUE_LENGTH) + "...";
+        }
+        return s.replaceAll("[\\x00-\\x1F\\x7F-\\x9F\\u2028\\u2029]", "_");
+    }
+
+    private static final int MAX_LOG_VALUE_LENGTH = 1000;
 
 
     /**

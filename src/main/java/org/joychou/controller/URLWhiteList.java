@@ -98,7 +98,7 @@ public class URLWhiteList {
     @GetMapping("/vuln/url_bypass")
     public void url_bypass(String url, HttpServletResponse res) throws IOException {
 
-        logger.info("url:  " + url);
+        logger.info("url:  " + SecurityUtil.sanitizeForLog(url));
 
         // Strict http(s) syntax check: rejects backslash, whitespace/control chars, userinfo and empty host.
         if (!SecurityUtil.isSafeHttpUrl(url)) {
@@ -107,7 +107,7 @@ public class URLWhiteList {
 
         // Parse with java.net.URI (strict, RFC 3986); java.net.URL accepts "\" and mis-parses the host.
         String host = SecurityUtil.gethost(url);
-        logger.info("host:  " + host);
+        logger.info("host:  " + SecurityUtil.sanitizeForLog(host));
 
         // endsWith .
         for (String domain : domainwhitelist) {

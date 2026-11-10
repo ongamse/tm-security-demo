@@ -70,7 +70,7 @@ public class FileUpload {
             redirectAttributes.addFlashAttribute("message", "Illegal file name");
         } catch (IOException e) {
             redirectAttributes.addFlashAttribute("message", "upload failed");
-            logger.error(e.toString());
+            logger.error(SecurityUtil.sanitizeForLog(e.toString()));
         }
 
         return "redirect:/file/status";
@@ -115,7 +115,7 @@ public class FileUpload {
             }
         }
         if (!suffixFlag) {
-            logger.error("[-] Suffix error: " + Suffix);
+            logger.error("[-] Suffix error: " + SecurityUtil.sanitizeForLog(Suffix));
             deleteFile(filePath);
             return "Upload failed. Illeagl picture.";
         }
@@ -133,7 +133,7 @@ public class FileUpload {
         for (String blackMimeType : mimeTypeBlackList) {
             // 用contains是为了防止text/html;charset=UTF-8绕过
             if (SecurityUtil.replaceSpecialStr(mimeType).toLowerCase().contains(blackMimeType)) {
-                logger.error("[-] Mime type error: " + mimeType);
+                logger.error("[-] Mime type error: " + SecurityUtil.sanitizeForLog(mimeType));
                 deleteFile(filePath);
                 return "Upload failed. Illeagl picture.";
             }
@@ -156,13 +156,13 @@ public class FileUpload {
             Path path = resolveUploadPath(fileName);
             Files.write(path, bytes);
         } catch (IOException e) {
-            logger.error(e.toString());
+            logger.error(SecurityUtil.sanitizeForLog(e.toString()));
             deleteFile(filePath);
             return "Upload failed";
         }
 
-        logger.info("[+] Safe file. Suffix: {}, MIME: {}", Suffix, mimeType);
-        logger.info("[+] Successfully uploaded {}", filePath);
+        logger.info("[+] Safe file. Suffix: {}, MIME: {}", SecurityUtil.sanitizeForLog(Suffix), SecurityUtil.sanitizeForLog(mimeType));
+        logger.info("[+] Successfully uploaded {}", SecurityUtil.sanitizeForLog(filePath));
         return String.format("You successfully uploaded '%s'", WebUtils.escapeHtml(filePath));
     }
 
@@ -207,11 +207,11 @@ public class FileUpload {
         File delFile = target.toFile();
         if(delFile.isFile() && delFile.exists()) {
             if (delFile.delete()) {
-                logger.info("[+] " + filePath + " delete successfully!");
+                logger.info("[+] " + SecurityUtil.sanitizeForLog(filePath) + " delete successfully!");
                 return;
             }
         }
-        logger.info(filePath + " delete failed!");
+        logger.info(SecurityUtil.sanitizeForLog(filePath) + " delete failed!");
     }
 
     /**

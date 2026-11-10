@@ -49,7 +49,7 @@ public class CommandInject {
     public String codeInjectHost(HttpServletRequest request) throws IOException {
 
         String host = request.getHeader("host");
-        logger.info(host);
+        logger.info(SecurityUtil.sanitizeForLog(host));
         if (null == host || !HOST_PATTERN.matcher(host).matches()) {
             return "Bad boy. I got u.";
         }
