@@ -71,7 +71,7 @@ public class SSRFChecker {
                     return false;  // 内网ip直接return，非内网ip继续判断是否有重定向
                 }
 
-                connection = (HttpURLConnection) new URL(finalUrl).openConnection();
+                connection = (HttpURLConnection) requireSafeUrl(finalUrl).openConnection();
                 connection.setInstanceFollowRedirects(false);
                 connection.setUseCaches(false); // 设置为false，手动处理跳转，可以拿到每个跳转的URL
                 connection.setConnectTimeout(connectTime);
@@ -92,6 +92,9 @@ public class SSRFChecker {
                     break;
             } while (connection.getResponseCode() != HttpURLConnection.HTTP_OK);
             connection.disconnect();
+        } catch (SSRFException e) {
+            logger.error("[-] SSRF check failed. " + e.getMessage());
+            return false;
         } catch (Exception e) {
             return true;  // 如果异常了，认为是安全的，防止是超时导致的异常而验证不成功。
         }
@@ -111,12 +114,102 @@ public class SSRFChecker {
             return true; // 异常URL当成内网IP等非法URL处理
         }
 
-        String ip = host2ip(host);
-        if (ip.equals("")) {
-            return true; // 如果域名转换为IP异常，则认为是非法URL
+        try {
+            // Every resolved address must be public; unresolvable hosts are illegal.
+            resolveSafeAddresses(host);
+            return false;
+        } catch (SSRFException e) {
+            return true;
         }
+    }
 
-        return isInternalIp(ip);
+
+    /**
+     * Validate an untrusted URL before it is requested: the scheme must be http or https,
+     * the host must be present and every address it resolves to must be public
+     * (no loopback, link-local/metadata, private, CGNAT, multicast or configured blocked ranges).
+     * Callers must also disable automatic redirects, or validate each hop.
+     *
+     * @param url untrusted url
+     * @return the parsed, validated URL
+     * @throws SSRFException if the url is not safe to request
+     */
+    public static URL requireSafeUrl(String url) {
+        if (null == url) {
+            throw new SSRFException("[-] SSRF check failed. Empty url");
+        }
+        try {
+            URI uri = new URI(url.trim());
+            String scheme = uri.getScheme();
+            if (!"http".equalsIgnoreCase(scheme) && !"https".equalsIgnoreCase(scheme)) {
+                throw new SSRFException("[-] SSRF check failed. Illegal url protocol");
+            }
+            URL parsed = uri.toURL();
+            String host = uri.getHost();
+            // URI and URL must agree on the host, otherwise parser differentials can bypass the check.
+            if (StringUtils.isEmpty(host) || !host.equalsIgnoreCase(parsed.getHost())) {
+                throw new SSRFException("[-] SSRF check failed. Illegal url host");
+            }
+            resolveSafeAddresses(host);
+            return parsed;
+        } catch (SSRFException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new SSRFException("[-] SSRF check failed. Illegal url");
+        }
+    }
+
+
+    /**
+     * Resolve a host and make sure all of its addresses are public.
+     * The returned addresses are the validated ones and may be used to pin the connection.
+     *
+     * @param host host name or ip literal
+     * @return validated addresses
+     * @throws SSRFException if the host cannot be resolved or any address is not public
+     */
+    public static InetAddress[] resolveSafeAddresses(String host) {
+        if (StringUtils.isEmpty(host)) {
+            throw new SSRFException("[-] SSRF check failed. Empty host");
+        }
+        // Octal ip notation (012.0.0.1) is converted to decimal first, see host2ip.
+        String lookupHost = isOctalIP(host) ? decimalIp : host;
+        InetAddress[] addresses;
+        try {
+            addresses = InetAddress.getAllByName(lookupHost);
+        } catch (Exception e) {
+            throw new SSRFException("[-] SSRF check failed. Host cannot be resolved");
+        }
+        for (InetAddress address : addresses) {
+            if (isBlockedAddress(address)) {
+                throw new SSRFException("[-] SSRF check failed. Internal host");
+            }
+        }
+        return addresses;
+    }
+
+
+    /**
+     * Whether an address is loopback, link-local (cloud metadata), private, CGNAT, multicast,
+     * unspecified, IPv6 unique-local or in the configured blocked subnets.
+     */
+    public static boolean isBlockedAddress(InetAddress address) {
+        if (address.isAnyLocalAddress() || address.isLoopbackAddress() || address.isLinkLocalAddress()
+                || address.isSiteLocalAddress() || address.isMulticastAddress()) {
+            return true;
+        }
+        byte[] raw = address.getAddress();
+        if (raw.length == 4) {
+            int first = raw[0] & 0xff;
+            int second = raw[1] & 0xff;
+            // 0.0.0.0/8 and 100.64.0.0/10 (carrier-grade NAT, e.g. Alibaba metadata 100.100.100.200)
+            if (first == 0 || (first == 100 && second >= 64 && second <= 127)) {
+                return true;
+            }
+            return isInternalIp(address.getHostAddress());
+        }
+        // fc00::/7 unique local addresses
+        return raw.length == 16 && (raw[0] & 0xfe) == 0xfc;
     }
 
 
@@ -290,11 +383,11 @@ public class SSRFChecker {
     private static String url2host(String url) {
         try {
             // use URI instead of URL
-            URI u = new URI(url);
-            if (SecurityUtil.isHttp(url)) {
-                return u.getHost();
+            if (!SecurityUtil.isHttp(url)) {
+                return "";
             }
-            return "";
+            String host = new URI(url).getHost();
+            return null == host ? "" : host;
         } catch (Exception e) {
             return "";
         }

@@ -2,6 +2,7 @@ package org.joychou.security;
 
 import org.joychou.config.WebConfig;
 import org.joychou.security.ssrf.SSRFChecker;
+import org.joychou.security.ssrf.SSRFException;
 import org.joychou.security.ssrf.SocketHook;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,12 +16,15 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 
 public class SecurityUtil {
 
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
+    private static final Pattern JDBC_URL_PATTERN = Pattern.compile(
+            "^jdbc:(postgresql|db2)://([A-Za-z0-9][A-Za-z0-9.-]*)(:[0-9]{1,5})?(/[A-Za-z0-9_.-]*)?$");
     private static final Set<String> ALLOWED_COMMANDS = new HashSet<>(
             Arrays.asList("whoami", "id", "pwd", "date", "uname", "hostname", "ls"));
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
@@ -33,7 +37,38 @@ public class SecurityUtil {
      * @return true or false
      */
     public static boolean isHttp(String url) {
-        return url.startsWith("http://") || url.startsWith("https://");
+        if (null == url) {
+            return false;
+        }
+        String lower = url.toLowerCase();
+        return lower.startsWith("http://") || lower.startsWith("https://");
+    }
+
+
+    /**
+     * Validate an untrusted JDBC url. Only <code>jdbc:&lt;subprotocol&gt;://host[:port][/database]</code>
+     * is accepted: no query string, matrix parameters or other driver properties (which can load
+     * arbitrary classes, e.g. CVE-2022-21724), and the host must resolve to public addresses only.
+     *
+     * @param jdbcUrl     untrusted jdbc url
+     * @param subprotocol expected jdbc subprotocol, e.g. postgresql or db2
+     * @return true if the url is safe to hand to the driver
+     */
+    public static boolean isSafeJdbcUrl(String jdbcUrl, String subprotocol) {
+        if (null == jdbcUrl || null == subprotocol) {
+            return false;
+        }
+        Matcher m = JDBC_URL_PATTERN.matcher(jdbcUrl);
+        if (!m.matches() || !subprotocol.equals(m.group(1))) {
+            return false;
+        }
+        try {
+            SSRFChecker.resolveSafeAddresses(m.group(2));
+            return true;
+        } catch (SSRFException e) {
+            logger.error(e.getMessage());
+            return false;
+        }
     }
 
 
@@ -46,8 +81,9 @@ public class SecurityUtil {
     public static String gethost(String url) {
         try {
             URI uri = new URI(url);
-            return uri.getHost().toLowerCase();
-        } catch (URISyntaxException e) {
+            String host = uri.getHost();
+            return null == host ? "" : host.toLowerCase();
+        } catch (URISyntaxException | NullPointerException e) {
             return "";
         }
     }
