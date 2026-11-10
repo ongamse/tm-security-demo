@@ -4,6 +4,7 @@ import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 public class WebUtilsXssTest {
@@ -34,6 +35,20 @@ public class WebUtilsXssTest {
     @Test(expected = IllegalArgumentException.class)
     public void json2JsonpThrowsOnInvalidCallback() {
         WebUtils.json2Jsonp("alert(1)//", "{}");
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void json2JsonpThrowsOnWellFormedButUnlistedCallback() {
+        WebUtils.json2Jsonp("window.app.cb", "{}");
+    }
+
+    @Test
+    public void resolveJsonpCallbackUsesFixedTable() {
+        assertEquals("callback", WebUtils.resolveJsonpCallback("callback"));
+        assertEquals("cb", WebUtils.resolveJsonpCallback("cb"));
+        assertNull(WebUtils.resolveJsonpCallback("evil"));
+        assertNull(WebUtils.resolveJsonpCallback("alert(1)//"));
+        assertNull(WebUtils.resolveJsonpCallback(null));
     }
 
     @Test
