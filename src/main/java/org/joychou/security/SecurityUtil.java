@@ -240,6 +240,28 @@ public class SecurityUtil {
     }
 
 
+    /**
+     * Make an untrusted value safe to place in an HTTP header (prevents CRLF / response splitting).
+     * Removes CR, LF and all other ISO control characters (horizontal tab is kept) and U+2028/U+2029.
+     *
+     * @param value untrusted header value, may be null
+     * @return the value without control characters, or null when the input is null
+     */
+    public static String safeHeaderValue(String value) {
+        if (null == value) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            if (ch == '\t' || (!Character.isISOControl(ch) && ch != 0x2028 && ch != 0x2029)) {
+                sb.append(ch);
+            }
+        }
+        return sb.toString();
+    }
+
+
     public static String cmdFilter(String input) {
         if (null == input || !FILTER_PATTERN.matcher(input).matches()) {
             return null;
