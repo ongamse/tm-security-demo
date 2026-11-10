@@ -11,7 +11,13 @@ import org.joychou.util.WebUtils;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.thoughtworks.xstream.io.xml.StaxReader;
+import com.thoughtworks.xstream.io.xml.QNameMap;
+
 import javax.servlet.http.HttpServletRequest;
+import javax.xml.stream.XMLInputFactory;
+import javax.xml.stream.XMLStreamReader;
+import java.io.StringReader;
 
 
 @RestController
@@ -27,15 +33,29 @@ public class XStreamRce {
     @PostMapping("/xstream")
     public String parseXml(HttpServletRequest request) throws Exception {
         String xml = WebUtils.getRequestBody(request);
-        // XppDriver (XPP3 pull parser) does not resolve external entities, unlike DomDriver (DOM parser).
         XStream xstream = new XStream(new XppDriver());
         // Deny everything by default, then allow only the types this endpoint expects.
         xstream.addPermission(NoTypePermission.NONE);
         xstream.addPermission(NullPermission.NULL);
         xstream.addPermission(PrimitiveTypePermission.PRIMITIVES);
         xstream.allowTypes(new Class[]{User.class, String.class});
-        xstream.fromXML(xml);
+
+        // Parse with a StAX reader that has DTD support and external entities disabled.
+        XMLStreamReader xmlReader = hardenedXmlInputFactory().createXMLStreamReader(new StringReader(xml));
+        try {
+            xstream.unmarshal(new StaxReader(new QNameMap(), xmlReader));
+        } finally {
+            xmlReader.close();
+        }
         return "xstream";
+    }
+
+    private static XMLInputFactory hardenedXmlInputFactory() {
+        XMLInputFactory factory = XMLInputFactory.newInstance();
+        factory.setProperty(XMLInputFactory.SUPPORT_DTD, false);
+        factory.setProperty(XMLInputFactory.IS_SUPPORTING_EXTERNAL_ENTITIES, false);
+        factory.setProperty(XMLInputFactory.IS_REPLACING_ENTITY_REFERENCES, false);
+        return factory;
     }
 
     public static void main(String[] args) {

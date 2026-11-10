@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayInputStream;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -40,8 +41,12 @@ public class xlsxStreamerXXE {
     public void xllx_streamer_xxe(MultipartFile file) throws IOException {
         // xlsx-streamer 2.0.0 parses the XML parts with an unhardened parser, so reject any
         // package whose XML parts declare a DOCTYPE/ENTITY before handing it to the library.
-        rejectXmlWithDoctype(file.getInputStream());
-        StreamingReader.builder().open(file.getInputStream());
+        // Read the upload once so the exact bytes that were checked are the bytes that get parsed.
+        byte[] content = file.getBytes();
+        rejectXmlWithDoctype(new ByteArrayInputStream(content));
+        try (InputStream checked = new ByteArrayInputStream(content)) {
+            StreamingReader.builder().open(checked);
+        }
     }
 
     private static final long MAX_XML_PART_BYTES = 64L * 1024 * 1024;
