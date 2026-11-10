@@ -1,6 +1,5 @@
 package org.joychou.controller;
 
-import com.fasterxml.uuid.Generators;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Controller;
@@ -224,7 +223,8 @@ public class FileUpload {
     private File convert(MultipartFile multiFile) throws Exception {
         String fileName = sanitizeFileName(multiFile.getOriginalFilename());
         String suffix = fileName.substring(fileName.lastIndexOf("."));
-        UUID uuid = Generators.timeBasedGenerator().generate();
+        // UUID.randomUUID() is backed by SecureRandom (unpredictable, unlike a time-based UUID)
+        UUID uuid = UUID.randomUUID();
         // 随机生成一个同后缀名的文件
         Path convPath = resolveUploadPath(uuid + suffix);
         randomFilePath = convPath.toString();
