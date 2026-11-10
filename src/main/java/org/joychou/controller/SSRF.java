@@ -2,6 +2,7 @@ package org.joychou.controller;
 
 import cn.hutool.http.HttpUtil;
 import org.joychou.security.SecurityUtil;
+import org.joychou.security.ssrf.SSRFChecker;
 import org.joychou.security.ssrf.SSRFException;
 import org.joychou.service.HttpService;
 import org.joychou.util.HttpUtils;
@@ -337,16 +338,18 @@ public class SSRF {
 
 
     /**
-     * DnsRebind SSRF in java by setting ttl is zero. <br>
+     * DnsRebind SSRF in java: the host is resolved once and the request is pinned to the validated address. <br>
      * <a href="http://localhost:8080/ssrf/dnsrebind/vuln?url=http://test.joychou.org">http://localhost:8080/ssrf/dnsrebind/vuln?url=dnsrebind_url</a>
      */
     @GetMapping("/dnsrebind/vuln")
     public String DnsRebind(String url) {
-        java.security.Security.setProperty("networkaddress.cache.negative.ttl" , "0");
-        if (!SecurityUtil.checkSSRFWithoutRedirect(url)) {
+        URI safeUri;
+        try {
+            safeUri = SSRFChecker.requireSafeUri(url);
+        } catch (SSRFException e) {
             return "Dangerous url";
         }
-        return HttpUtil.get(url);
+        return HttpUtil.get(safeUri.toString());
     }
 
 
