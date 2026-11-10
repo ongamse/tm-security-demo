@@ -1,12 +1,14 @@
 package org.joychou.security.ssrf;
 
 import java.net.HttpURLConnection;
+import java.net.Inet4Address;
+import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.util.ArrayList;
-import java.util.Locale;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.apache.commons.lang.StringUtils;
@@ -21,9 +23,81 @@ public class SSRFChecker {
 
     private static final Logger logger = LoggerFactory.getLogger(SSRFChecker.class);
     private static String decimalIp;
-    // http(s):// followed by characters without whitespace, control characters or backslash
-    private static final Pattern HTTP_URL_PATTERN =
-            Pattern.compile("^https?://[^\\x00-\\x20\\x7f\\\\\\u2028\\u2029]+$", Pattern.CASE_INSENSITIVE);
+    private static final String PCT = "%[0-9A-Fa-f]{2}";
+    // Strict RFC 3986 absolute http(s) url: scheme, optional userinfo, host (reg-name or IP literal),
+    // optional port, path, optional query, optional fragment. Anything else (whitespace, control
+    // characters, backslash, non-ASCII, ...) does not match.
+    private static final Pattern HTTP_URL_PATTERN = Pattern.compile(
+            "(?i:(https?))://"
+                    + "(?:((?:" + PCT + "|[A-Za-z0-9._~!$&'()*+,;=:-])*)@)?"
+                    + "([A-Za-z0-9][A-Za-z0-9.-]*|\\[[0-9A-Fa-f:.]+\\])"
+                    + "(?::([0-9]{0,5}))?"
+                    + "((?:/(?:" + PCT + "|[A-Za-z0-9._~!$&'()*+,;=:@-])*)*)"
+                    + "(?:\\?((?:" + PCT + "|[A-Za-z0-9._~!$&'()*+,;=:@/?-])*))?"
+                    + "(?:#((?:" + PCT + "|[A-Za-z0-9._~!$&'()*+,;=:@/?-])*))?");
+    // decoded characters that would change the meaning of a path / query component when re-encoded
+    private static final String PATH_DELIMITERS = "/?#;";
+    private static final String QUERY_DELIMITERS = "&=+;#";
+
+    /**
+     * The parts of a strictly parsed absolute http(s) url. Produced only by
+     * {@link SSRFChecker#parseHttpUrl(String)}; the scheme is always one of the literals "http" / "https".
+     */
+    public static final class HttpUrl {
+        private final String scheme;
+        private final String userInfo;
+        private final String host;
+        private final int port;
+        private final String rawPath;
+        private final String rawQuery;
+        private final String rawFragment;
+
+        private HttpUrl(String scheme, String userInfo, String host, int port,
+                        String rawPath, String rawQuery, String rawFragment) {
+            this.scheme = scheme;
+            this.userInfo = userInfo;
+            this.host = host;
+            this.port = port;
+            this.rawPath = rawPath;
+            this.rawQuery = rawQuery;
+            this.rawFragment = rawFragment;
+        }
+
+        /** @return the literal "http" or "https" */
+        public String getScheme() {
+            return scheme;
+        }
+
+        /** @return the raw userinfo, or null when absent */
+        public String getRawUserInfo() {
+            return userInfo;
+        }
+
+        /** @return the lower-case host (IPv6 literals keep their brackets) */
+        public String getHost() {
+            return host;
+        }
+
+        /** @return the port, or -1 when absent */
+        public int getPort() {
+            return port;
+        }
+
+        /** @return the raw (still percent-encoded) path, "" when empty */
+        public String getRawPath() {
+            return rawPath;
+        }
+
+        /** @return the raw (still percent-encoded) query, or null when absent */
+        public String getRawQuery() {
+            return rawQuery;
+        }
+
+        /** @return the raw fragment, or null when absent */
+        public String getRawFragment() {
+            return rawFragment;
+        }
+    }
 
     public static boolean checkURLFckSSRF(String url) {
         if (null == url) {
@@ -160,14 +234,17 @@ public class SSRFChecker {
     /**
      * The single chokepoint for every outbound http(s) request of the application.
      * <ol>
-     *   <li>parses the untrusted string strictly ({@link #parseHttpUri(String)}: http/https only,
-     *       no whitespace/control characters or backslashes),</li>
+     *   <li>parses the untrusted string strictly ({@link #parseHttpUrl(String)}: http/https only,
+     *       RFC 3986 characters only),</li>
      *   <li>rejects userinfo ("user@host" tricks) and an empty host,</li>
      *   <li>resolves the host and rejects loopback, link-local/metadata, private and other internal
      *       addresses ({@link #resolveSafeAddresses(String)}),</li>
-     *   <li>returns a <b>new</b> URI rebuilt from the validated parts (lower-case scheme, host, port,
-     *       path, query; fragment dropped). Callers must request this value, never the raw string.</li>
+     *   <li>returns a <b>new</b> URI constructed from the validated components only (constant scheme
+     *       literal, the resolved IP address as host, validated port, decoded path and query; fragment
+     *       dropped), see {@link #buildSafeUri}. Callers must request this value, never the raw string.</li>
      * </ol>
+     * Because the host is replaced by the address that was checked, the request connects to exactly
+     * that address (no DNS rebinding between check and use).
      * Callers must also disable automatic redirects, or validate each hop with this method.
      *
      * @param url untrusted url
@@ -178,29 +255,35 @@ public class SSRFChecker {
         if (null == url) {
             throw new SSRFException("[-] SSRF check failed. Empty url");
         }
-        URI parsed = parseHttpUri(url.trim());
+        HttpUrl parsed = parseHttpUrl(url.trim());
         if (null == parsed) {
             throw new SSRFException("[-] SSRF check failed. Illegal url protocol or syntax");
         }
-        String host = parsed.getHost();
-        if (StringUtils.isEmpty(host) || null != parsed.getRawUserInfo()) {
+        if (StringUtils.isEmpty(parsed.getHost()) || null != parsed.getRawUserInfo()) {
             throw new SSRFException("[-] SSRF check failed. Illegal url host");
         }
-        resolveSafeAddresses(host);
-        // Rebuild from the validated parts; raw (still encoded) path and query keep their meaning.
-        StringBuilder rebuilt = new StringBuilder(parsed.getScheme().toLowerCase(Locale.ROOT))
-                .append("://").append(host);
-        if (parsed.getPort() != -1) {
-            rebuilt.append(':').append(parsed.getPort());
-        }
-        if (null != parsed.getRawPath()) {
-            rebuilt.append(parsed.getRawPath());
-        }
-        if (null != parsed.getRawQuery()) {
-            rebuilt.append('?').append(parsed.getRawQuery());
+        InetAddress[] addresses = resolveSafeAddresses(parsed.getHost());
+        return buildSafeUri(parsed, pinnedAddress(addresses));
+    }
+
+
+    /**
+     * The only place where a {@link URI} is created for an outbound request. It is assembled with the
+     * multi-argument constructor from components that were validated before: a constant scheme literal,
+     * the resolved (public) address as host, the validated port and the decoded path and query.
+     * No request string is ever handed to a URI/URL string constructor.
+     */
+    private static URI buildSafeUri(HttpUrl parsed, InetAddress address) {
+        String scheme = "https".equals(parsed.getScheme()) ? "https" : "http";
+        String host = address.getHostAddress();
+        if (address instanceof Inet6Address) {
+            int scope = host.indexOf('%');
+            host = scope < 0 ? host : host.substring(0, scope);  // the constructor adds the brackets
         }
         try {
-            return new URI(rebuilt.toString());
+            return new URI(scheme, null, host, parsed.getPort(),
+                    decodeComponent(parsed.getRawPath(), PATH_DELIMITERS),
+                    decodeComponent(parsed.getRawQuery(), QUERY_DELIMITERS), null);
         } catch (URISyntaxException e) {
             throw new SSRFException("[-] SSRF check failed. Illegal url");
         }
@@ -208,27 +291,88 @@ public class SSRFChecker {
 
 
     /**
-     * Strictly parse an absolute http/https url. This is the only place where an untrusted url string
-     * is turned into a {@link URI}; other classes ask this method instead of calling the constructor.
-     * No network access happens here.
+     * Percent-decode a path or query. Only printable ASCII (and space) may be encoded, and delimiters
+     * that would change the meaning of the component once decoded are rejected. The URI constructor
+     * re-encodes everything that needs it.
+     */
+    private static String decodeComponent(String raw, String forbidden) {
+        if (null == raw) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder(raw.length());
+        for (int i = 0; i < raw.length(); i++) {
+            char ch = raw.charAt(i);
+            if (ch != '%') {
+                sb.append(ch);
+                continue;
+            }
+            int value = Integer.parseInt(raw.substring(i + 1, i + 3), 16);  // shape guaranteed by the pattern
+            i += 2;
+            if (value < 0x20 || value > 0x7e || forbidden.indexOf(value) >= 0) {
+                throw new SSRFException("[-] SSRF check failed. Illegal encoded character in url");
+            }
+            sb.append((char) value);
+        }
+        return sb.toString();
+    }
+
+
+    /**
+     * Pick the address a request is pinned to: the first IPv4 address, otherwise the first address.
+     * The addresses must come from {@link #resolveSafeAddresses(String)}.
+     */
+    private static InetAddress pinnedAddress(InetAddress[] addresses) {
+        for (InetAddress address : addresses) {
+            if (address instanceof Inet4Address) {
+                return address;
+            }
+        }
+        return addresses[0];
+    }
+
+
+    /**
+     * Host literal of the pinned validated address, usable inside a url: dotted IPv4, or the IPv6
+     * address in brackets (without scope id).
+     *
+     * @param addresses addresses returned by {@link #resolveSafeAddresses(String)}
+     */
+    public static String pinnedHostLiteral(InetAddress[] addresses) {
+        InetAddress pinned = pinnedAddress(addresses);
+        String host = pinned.getHostAddress();
+        if (pinned instanceof Inet6Address) {
+            int scope = host.indexOf('%');
+            return "[" + (scope < 0 ? host : host.substring(0, scope)) + "]";
+        }
+        return host;
+    }
+
+
+    /**
+     * Strictly parse an absolute http/https url with a RFC 3986 regular expression. No {@link URI} or
+     * {@link URL} is created from the string and no network access happens here.
      *
      * @param url untrusted url
-     * @return the parsed URI, or null when it is not a well-formed absolute http(s) url
+     * @return the parsed parts, or null when it is not a well-formed absolute http(s) url
      */
-    public static URI parseHttpUri(String url) {
-        if (null == url || !HTTP_URL_PATTERN.matcher(url).matches()) {
+    public static HttpUrl parseHttpUrl(String url) {
+        if (null == url) {
             return null;
         }
-        try {
-            URI uri = new URI(url);
-            String scheme = uri.getScheme();
-            if (!"http".equalsIgnoreCase(scheme) && !"https".equalsIgnoreCase(scheme)) {
+        Matcher m = HTTP_URL_PATTERN.matcher(url);
+        if (!m.matches()) {
+            return null;
+        }
+        int port = -1;
+        if (null != m.group(4) && !m.group(4).isEmpty()) {
+            port = Integer.parseInt(m.group(4));
+            if (port < 1 || port > 65535) {
                 return null;
             }
-            return uri;
-        } catch (URISyntaxException e) {
-            return null;
         }
+        String scheme = "https".equalsIgnoreCase(m.group(1)) ? "https" : "http";
+        return new HttpUrl(scheme, m.group(2), m.group(3).toLowerCase(java.util.Locale.ROOT), port,
+                m.group(5), m.group(6), m.group(7));
     }
 
 
@@ -453,12 +597,11 @@ public class SSRFChecker {
      * Get host from URL which the protocol must be http:// or https:// and not be //.
      */
     private static String url2host(String url) {
-        // use URI instead of URL
-        URI uri = parseHttpUri(url);
-        if (null == uri || null == uri.getHost()) {
+        HttpUrl parsed = parseHttpUrl(url);
+        if (null == parsed) {
             return "";
         }
-        return uri.getHost();
+        return parsed.getHost();
     }
 
 }

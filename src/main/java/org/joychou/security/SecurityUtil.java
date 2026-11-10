@@ -12,7 +12,6 @@ import java.io.UnsupportedEncodingException;
 import java.net.Inet4Address;
 import java.net.Inet6Address;
 import java.net.InetAddress;
-import java.net.URI;
 import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -119,38 +118,43 @@ public class SecurityUtil {
         if (!m.matches() || !subprotocol.equals(m.group(1))) {
             throw new IllegalArgumentException("Illegal jdbc url");
         }
-        InetAddress[] addresses = SSRFChecker.resolveSafeAddresses(m.group(2));
-        InetAddress pinned = addresses[0];
-        for (InetAddress address : addresses) {
-            if (address instanceof Inet4Address) {
-                pinned = address;
-                break;
+        // driver prefix: a literal chosen by comparing against the allowlisted sub-protocols
+        String prefix;
+        if ("postgresql".equals(subprotocol)) {
+            prefix = "jdbc:postgresql://";
+        } else if ("db2".equals(subprotocol)) {
+            prefix = "jdbc:db2://";
+        } else {
+            throw new IllegalArgumentException("Illegal jdbc url");
+        }
+        int port = -1;
+        if (null != m.group(3)) {
+            port = Integer.parseInt(m.group(3).substring(1));  // ":NNNNN", digits only by the pattern
+            if (port < 1 || port > 65535) {
+                throw new IllegalArgumentException("Illegal jdbc url");
             }
         }
-        String host = pinned.getHostAddress();
-        if (pinned instanceof Inet6Address) {
-            int scope = host.indexOf('%');
-            host = "[" + (scope < 0 ? host : host.substring(0, scope)) + "]";
-        }
-        return "jdbc:" + m.group(1) + "://" + host
-                + (null == m.group(3) ? "" : m.group(3))
+        // the host is replaced by the validated (public) address the driver will connect to
+        String host = SSRFChecker.pinnedHostLiteral(SSRFChecker.resolveSafeAddresses(m.group(2)));
+        return prefix + host
+                + (port < 0 ? "" : ":" + port)
                 + (null == m.group(4) ? "" : m.group(4));
     }
 
 
     /**
      * Get http url host. Only absolute http/https urls have a host, see
-     * {@link SSRFChecker#parseHttpUri(String)}.
+     * {@link SSRFChecker#parseHttpUrl(String)}.
      *
      * @param url url
      * @return host (lower case), or "" when the url is not a well-formed http(s) url
      */
     public static String gethost(String url) {
-        URI uri = SSRFChecker.parseHttpUri(url);
-        if (null == uri || null == uri.getHost()) {
+        SSRFChecker.HttpUrl parsed = SSRFChecker.parseHttpUrl(url);
+        if (null == parsed) {
             return "";
         }
-        return uri.getHost().toLowerCase();
+        return parsed.getHost();
     }
 
 
@@ -209,7 +213,7 @@ public class SecurityUtil {
 
     /**
      * Strict syntax check of an absolute http(s) url: no whitespace/control characters, no backslash,
-     * parseable by {@link java.net.URI}, non-empty host and no userinfo ("user@host" tricks).
+     * matching the strict RFC 3986 http(s) pattern, non-empty host and no userinfo ("user@host" tricks).
      *
      * @param url untrusted url
      * @return true if the url is a well-formed http/https url with a plain host
@@ -218,8 +222,8 @@ public class SecurityUtil {
         if (!isHttp(url) || hasUnsafeRedirectChars(url)) {
             return false;
         }
-        URI uri = SSRFChecker.parseHttpUri(url);
-        return null != uri && null != uri.getHost() && !uri.getHost().isEmpty() && null == uri.getRawUserInfo();
+        SSRFChecker.HttpUrl parsed = SSRFChecker.parseHttpUrl(url);
+        return null != parsed && !parsed.getHost().isEmpty() && null == parsed.getRawUserInfo();
     }
 
 
@@ -438,12 +442,12 @@ public class SecurityUtil {
         if (null == origin || !isSafeHttpUrl(origin) || null == checkURL(origin)) {
             return null;
         }
-        URI uri = SSRFChecker.parseHttpUri(origin);
-        if (null == uri) {
+        SSRFChecker.HttpUrl parsed = SSRFChecker.parseHttpUrl(origin);
+        if (null == parsed) {
             return null;
         }
-        String path = uri.getRawPath();
-        if ((null != path && !path.isEmpty()) || null != uri.getRawQuery() || null != uri.getRawFragment()) {
+        String path = parsed.getRawPath();
+        if ((null != path && !path.isEmpty()) || null != parsed.getRawQuery() || null != parsed.getRawFragment()) {
             return null;
         }
         return safeHeaderValue(origin);

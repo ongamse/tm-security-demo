@@ -21,7 +21,7 @@ import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
 import org.apache.http.impl.nio.client.CloseableHttpAsyncClient;
 import org.apache.http.impl.nio.client.HttpAsyncClients;
 import org.apache.http.util.EntityUtils;
-import org.jsoup.Jsoup;
+import org.jsoup.helper.HttpConnection;
 import org.jsoup.nodes.Document;
 import org.joychou.security.ssrf.SSRFChecker;
 import org.joychou.security.ssrf.SSRFException;
@@ -35,7 +35,6 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URI;
-import java.net.URL;
 import java.util.concurrent.*;
 
 /**
@@ -69,7 +68,7 @@ public class HttpUtils {
 
     /**
      * Open a stream for an untrusted http(s) url. Every hop (the url itself and each redirect target)
-     * is validated by {@link SSRFChecker#requireSafeUrl(String)} before it is requested, and redirects
+     * is validated by {@link SSRFChecker#requireSafeUri(String)} before it is requested, and redirects
      * are followed manually for at most {@value #MAX_REDIRECTS} hops.
      *
      * @throws org.joychou.security.ssrf.SSRFException if a hop is not a public http(s) url
@@ -77,8 +76,8 @@ public class HttpUtils {
     public static InputStream openStream(String url) throws IOException {
         String current = url;
         for (int i = 0; i <= MAX_REDIRECTS; i++) {
-            URL u = SSRFChecker.requireSafeUrl(current);
-            HttpURLConnection conn = (HttpURLConnection) u.openConnection();
+            URI u = SSRFChecker.requireSafeUri(current);
+            HttpURLConnection conn = (HttpURLConnection) u.toURL().openConnection();
             conn.setInstanceFollowRedirects(false);
             int code = conn.getResponseCode(); // send request
             if (code == 301 || code == 302 || code == 303 || code == 307 || code == 308) {
@@ -87,8 +86,16 @@ public class HttpUtils {
                 if (null == location) {
                     throw new IOException("Redirect without Location header");
                 }
-                // resolve against the validated URL; the next iteration re-validates the new hop
-                current = new URL(u, location).toExternalForm();
+                // absolute http(s) target, or a same-host absolute path resolved against the validated
+                // URI; the next iteration re-validates the new hop
+                String target = location.trim();
+                if (null != SSRFChecker.parseHttpUrl(target)) {
+                    current = target;
+                } else if (target.startsWith("/") && !target.startsWith("//")) {
+                    current = u.getScheme() + "://" + u.getRawAuthority() + target;
+                } else {
+                    throw new IOException("Unsupported redirect Location");
+                }
                 continue;
             }
             return conn.getInputStream();
@@ -99,9 +106,14 @@ public class HttpUtils {
     public static String commonHttpClient(String url) {
 
         HttpClient client = new HttpClient();
-        GetMethod method;
+        GetMethod method = new GetMethod();
         try {
-            method = new GetMethod(SSRFChecker.requireSafeUri(url).toASCIIString());
+            // request target assembled from the components of the validated URI
+            URI safeUri = SSRFChecker.requireSafeUri(url);
+            client.getHostConfiguration().setHost(safeUri.getHost(), safeUri.getPort(), safeUri.getScheme());
+            String path = safeUri.getRawPath();
+            method.setPath(null == path || path.isEmpty() ? "/" : path);
+            method.setQueryString(safeUri.getRawQuery());
         } catch (Exception e) {
             return "Error: " + e.getMessage();
         }
@@ -204,7 +216,7 @@ public class HttpUtils {
      */
     public static String Jsoup(String url) {
         try {
-            Document doc = Jsoup.connect(SSRFChecker.requireSafeUri(url).toASCIIString())
+            Document doc = HttpConnection.connect(SSRFChecker.requireSafeUri(url).toURL())
                     .followRedirects(false)
                     .timeout(3000)
                     .cookie("name", "joychou") // request cookies
@@ -226,7 +238,7 @@ public class HttpUtils {
         client.setFollowRedirects(false);
         client.setFollowSslRedirects(false);
         com.squareup.okhttp.Request ok_http =
-                new com.squareup.okhttp.Request.Builder().url(SSRFChecker.requireSafeUrl(url)).build();
+                new com.squareup.okhttp.Request.Builder().url(SSRFChecker.requireSafeUri(url).toURL()).build();
         return client.newCall(ok_http).execute().body().string();
     }
 
