@@ -27,7 +27,7 @@ public class Cors {
         // only reflect an origin that passes the trusted-domain allowlist; otherwise omit the CORS headers
         String origin = SecurityUtil.safeCorsOrigin(request.getHeader("origin"));
         if (origin != null) {
-            response.setHeader("Access-Control-Allow-Origin", origin);
+            response.setHeader("Access-Control-Allow-Origin", SecurityUtil.safeHeaderValue(origin));
             response.setHeader("Access-Control-Allow-Credentials", "true");  // allow cookie
             response.addHeader("Vary", "Origin");
         }
@@ -39,7 +39,7 @@ public class Cors {
         // no wildcard: only allowlisted origins get Access-Control-Allow-Origin (never with credentials here)
         String origin = SecurityUtil.safeCorsOrigin(request.getHeader("origin"));
         if (origin != null) {
-            response.setHeader("Access-Control-Allow-Origin", origin);
+            response.setHeader("Access-Control-Allow-Origin", SecurityUtil.safeHeaderValue(origin));
             response.addHeader("Vary", "Origin");
         }
         return info;
@@ -120,7 +120,7 @@ public class Cors {
         }
         String allowedOrigin = SecurityUtil.safeCorsOrigin(origin);
         if (allowedOrigin != null) {
-            response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
+            response.setHeader("Access-Control-Allow-Origin", SecurityUtil.safeHeaderValue(allowedOrigin));
             response.setHeader("Access-Control-Allow-Credentials", "true");
             response.addHeader("Vary", "Origin");
         }

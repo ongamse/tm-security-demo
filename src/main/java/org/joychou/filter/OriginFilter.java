@@ -47,7 +47,7 @@ public class OriginFilter implements Filter {
 
         String allowedOrigin = SecurityUtil.safeCorsOrigin(origin);
         if (allowedOrigin != null) {
-            response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
+            response.setHeader("Access-Control-Allow-Origin", SecurityUtil.safeHeaderValue(allowedOrigin));
             response.setHeader("Access-Control-Allow-Credentials", "true");
             response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTION");
             response.addHeader("Vary", "Origin");

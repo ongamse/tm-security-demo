@@ -350,14 +350,8 @@ public class SecurityUtil {
         if (null == value) {
             return null;
         }
-        StringBuilder sb = new StringBuilder(value.length());
-        for (int i = 0; i < value.length(); i++) {
-            char ch = value.charAt(i);
-            if (ch == '\t' || (!Character.isISOControl(ch) && ch != 0x2028 && ch != 0x2029)) {
-                sb.append(ch);
-            }
-        }
-        return sb.toString();
+        // strip CR, LF, every other ISO control char (keep \t) and the Unicode line/paragraph separators
+        return value.replaceAll("[\\x00-\\x08\\x0A-\\x1F\\x7F-\\x9F\\u2028\\u2029]", "");
     }
 
 

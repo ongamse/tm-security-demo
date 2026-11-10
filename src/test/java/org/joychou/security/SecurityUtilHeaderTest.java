@@ -15,6 +15,12 @@ public class SecurityUtilHeaderTest {
     }
 
     @Test
+    public void stripsDelAndC1ControlChars() {
+        assertEquals("ab", SecurityUtil.safeHeaderValue("a" + (char) 0x7F + "b" + (char) 0x85));
+        assertEquals("ab", SecurityUtil.safeHeaderValue("a\nb\r"));
+    }
+
+    @Test
     public void keepsNormalValues() {
         assertEquals("http://test.joychou.org/a?b=c d\te",
                 SecurityUtil.safeHeaderValue("http://test.joychou.org/a?b=c d\te"));
