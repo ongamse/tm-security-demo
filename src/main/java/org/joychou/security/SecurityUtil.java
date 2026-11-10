@@ -326,6 +326,31 @@ public class SecurityUtil {
     }
 
 
+    /**
+     * Validate a request Origin header against the trusted-domain list used by {@link #checkURL(String)}.
+     * Only a plain <code>scheme://host[:port]</code> origin (no userinfo, path, query or fragment) whose
+     * host is allowed is accepted. Callers must emit Access-Control-Allow-Origin only for a non-null result.
+     *
+     * @param origin untrusted Origin header value, may be null
+     * @return the origin when it is trusted; null otherwise (including for the literal "null" origin)
+     */
+    public static String safeCorsOrigin(String origin) {
+        if (null == origin || !isSafeHttpUrl(origin) || null == checkURL(origin)) {
+            return null;
+        }
+        try {
+            URI uri = new URI(origin);
+            String path = uri.getRawPath();
+            if ((null != path && !path.isEmpty()) || null != uri.getRawQuery() || null != uri.getRawFragment()) {
+                return null;
+            }
+        } catch (URISyntaxException e) {
+            return null;
+        }
+        return safeHeaderValue(origin);
+    }
+
+
     public static String cmdFilter(String input) {
         if (null == input || !FILTER_PATTERN.matcher(input).matches()) {
             return null;
