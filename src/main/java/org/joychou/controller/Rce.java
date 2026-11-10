@@ -3,6 +3,7 @@ package org.joychou.controller;
 import groovy.lang.GroovyShell;
 import lombok.extern.slf4j.Slf4j;
 import org.joychou.security.SecurityUtil;
+import org.joychou.util.WebUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -56,9 +57,9 @@ public class Rce {
             inBr.close();
             in.close();
         } catch (Exception e) {
-            return e.toString();
+            return WebUtils.escapeHtml(e.toString());
         }
-        return sb.toString();
+        return WebUtils.escapeHtml(sb.toString());
     }
 
 
@@ -86,10 +87,10 @@ public class Rce {
                 sb.append(tmpStr);
             }
         } catch (Exception e) {
-            return e.toString();
+            return WebUtils.escapeHtml(e.toString());
         }
 
-        return sb.toString();
+        return WebUtils.escapeHtml(sb.toString());
     }
 
 

@@ -25,7 +25,7 @@ public class Cookies {
     @GetMapping(value = "/vuln01")
     public String vuln01(HttpServletRequest req) {
         String nick = WebUtils.getCookieValueByName(req, NICK); // key code
-        return "Cookie nick: " + nick;
+        return "Cookie nick: " + WebUtils.escapeHtml(nick);
     }
 
 
@@ -38,7 +38,7 @@ public class Cookies {
             nick = getCookie(req, NICK).getValue();  // key code
         }
 
-        return "Cookie nick: " + nick;
+        return "Cookie nick: " + WebUtils.escapeHtml(nick);
     }
 
 
@@ -54,7 +54,7 @@ public class Cookies {
                 }
             }
         }
-        return "Cookie nick: " + nick;
+        return "Cookie nick: " + WebUtils.escapeHtml(nick);
     }
 
 
@@ -69,19 +69,19 @@ public class Cookies {
                 }
             }
         }
-        return "Cookie nick: " + nick;
+        return "Cookie nick: " + WebUtils.escapeHtml(nick);
     }
 
 
     @GetMapping(value = "/vuln05")
     public String vuln05(@CookieValue("nick") String nick) {
-        return "Cookie nick: " + nick;
+        return "Cookie nick: " + WebUtils.escapeHtml(nick);
     }
 
 
     @GetMapping(value = "/vuln06")
     public String vuln06(@CookieValue(value = "nick") String nick) {
-        return "Cookie nick: " + nick;
+        return "Cookie nick: " + WebUtils.escapeHtml(nick);
     }
 
 }

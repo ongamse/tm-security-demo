@@ -98,9 +98,9 @@ public class SSRF {
     public String request(@RequestParam String url) {
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.request(url);
+            return WebUtils.escapeHtml(HttpUtils.request(url));
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return WebUtils.escapeHtml(e.getMessage());
         } finally {
             SecurityUtil.stopSSRFHook();
         }

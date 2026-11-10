@@ -27,6 +27,15 @@ public class WebUtils {
     }
 
 
+    /**
+     * HTML-encode untrusted text before it is written into a text/html response.
+     * Only the HTML special characters are encoded, other characters are kept as is.
+     */
+    public static String escapeHtml(String input) {
+        return input == null ? null : HtmlUtils.htmlEscape(input, "UTF-8");
+    }
+
+
     public static String json2Jsonp(String callback, String jsonStr) {
         return HtmlUtils.htmlEscape(callback) + "(" + jsonStr + ")";
     }

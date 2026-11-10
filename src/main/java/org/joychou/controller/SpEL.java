@@ -1,5 +1,6 @@
 package org.joychou.controller;
 
+import org.joychou.util.WebUtils;
 import org.springframework.expression.EvaluationContext;
 import org.springframework.expression.ExpressionParser;
 import org.springframework.expression.spel.support.SimpleEvaluationContext;
@@ -29,7 +30,7 @@ public class SpEL {
         // SimpleEvaluationContext disables type references, constructors and bean references
         EvaluationContext context = SimpleEvaluationContext.forReadOnlyDataBinding().build();
         Object result = parser.parseExpression(expression).getValue(context);
-        return String.valueOf(result);
+        return WebUtils.escapeHtml(String.valueOf(result));
     }
 
     public static void main(String[] args) {
