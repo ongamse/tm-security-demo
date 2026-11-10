@@ -60,21 +60,17 @@ public class PathTraversal {
         }
 
         // Resolve symlinks and re-verify containment; only the verified real path is opened.
-        Path realTarget;
+        // No separate exists/isFile check: read directly and treat any failure
+        // (missing file, directory, unreadable) as "not a file" to avoid a TOCTOU gap.
         try {
-            realTarget = target.toRealPath();
-        } catch (IOException e) {
-            return "File doesn't exist or is not a file.";
-        }
-        if (!realTarget.startsWith(base)) {
-            logger.info("Illegal file path outside working directory");
-            return "Bad boy. Illegal file path.";
-        }
-
-        if (Files.isRegularFile(realTarget)) {
+            Path realTarget = target.toRealPath();
+            if (!realTarget.startsWith(base)) {
+                logger.info("Illegal file path outside working directory");
+                return "Bad boy. Illegal file path.";
+            }
             byte[] data = Files.readAllBytes(realTarget);
             return new String(Base64.encodeBase64(data));
-        } else {
+        } catch (IOException e) {
             return "File doesn't exist or is not a file.";
         }
     }

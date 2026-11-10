@@ -200,16 +200,17 @@ public class FileUpload {
     private void deleteFile(String filePath) {
         Path base = Paths.get(UPLOADED_FOLDER).toAbsolutePath().normalize();
         Path target = Paths.get(filePath).toAbsolutePath().normalize();
-        if (!target.startsWith(base)) {
+        if (!target.startsWith(base) || target.equals(base)) {
             logger.info("Refusing to delete path outside upload folder");
             return;
         }
-        File delFile = target.toFile();
-        if(delFile.isFile() && delFile.exists()) {
-            if (delFile.delete()) {
-                logger.info("[+] " + SecurityUtil.sanitizeForLog(filePath) + " delete successfully!");
-                return;
-            }
+        // Delete directly (no isFile/exists pre-check) and handle failure to avoid a TOCTOU gap.
+        try {
+            Files.delete(target);
+            logger.info("[+] " + SecurityUtil.sanitizeForLog(filePath) + " delete successfully!");
+            return;
+        } catch (IOException e) {
+            // fall through to the failure log below
         }
         logger.info(SecurityUtil.sanitizeForLog(filePath) + " delete failed!");
     }
