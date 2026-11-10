@@ -56,7 +56,7 @@ public class SSRFCheckerTest {
     @Test
     public void safeUriIsRebuiltFromValidatedParts() {
         URI uri = SSRFChecker.requireSafeUri(" HTTPS://8.8.8.8:8443/a%20b?x=1&y=%2F#frag ");
-        assertEquals("https://8.8.8.8:8443/a%20b?x=1&y=%2F", uri.toString());
+        assertEquals("https://8.8.8.8:8443/a%20b?x=1&y=/", uri.toString());
         assertEquals("http://8.8.8.8", SSRFChecker.requireSafeUri("http://8.8.8.8").toString());
     }
 
@@ -75,11 +75,28 @@ public class SSRFCheckerTest {
     }
 
     @Test
-    public void parseHttpUriOnlyAcceptsHttpUrls() {
-        assertNotNull(SSRFChecker.parseHttpUri("http://example.com/x"));
-        assertNull(SSRFChecker.parseHttpUri("ftp://example.com/"));
-        assertNull(SSRFChecker.parseHttpUri("http://exa mple.com/"));
-        assertNull(SSRFChecker.parseHttpUri(null));
+    public void safeUriRejectsDelimiterSmugglingEscapes() {
+        for (String url : new String[]{"http://8.8.8.8/a%2Fb", "http://8.8.8.8/a%3Fb", "http://8.8.8.8/a%00b",
+                "http://8.8.8.8/?a=b%26c=d", "http://8.8.8.8:99999/", "http://8.8.8.8/%zz"}) {
+            try {
+                SSRFChecker.requireSafeUri(url);
+                fail("Expected SSRFException for " + url);
+            } catch (SSRFException expected) {
+                // ok
+            }
+        }
+    }
+
+    @Test
+    public void parseHttpUrlOnlyAcceptsHttpUrls() {
+        assertNotNull(SSRFChecker.parseHttpUrl("http://example.com/x"));
+        assertEquals("https", SSRFChecker.parseHttpUrl("HTTPS://Example.com:8443/x?y#z").getScheme());
+        assertEquals("example.com", SSRFChecker.parseHttpUrl("HTTPS://Example.com:8443/x?y#z").getHost());
+        assertEquals(8443, SSRFChecker.parseHttpUrl("HTTPS://Example.com:8443/x?y#z").getPort());
+        assertNull(SSRFChecker.parseHttpUrl("ftp://example.com/"));
+        assertNull(SSRFChecker.parseHttpUrl("http://exa mple.com/"));
+        assertNull(SSRFChecker.parseHttpUrl("http://example.com\\@8.8.8.8/"));
+        assertNull(SSRFChecker.parseHttpUrl(null));
         assertEquals("", SecurityUtil.gethost("javascript:alert(1)"));
         assertEquals("example.com", SecurityUtil.gethost("http://Example.com/x"));
     }
