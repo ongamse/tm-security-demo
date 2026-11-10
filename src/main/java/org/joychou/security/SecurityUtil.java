@@ -143,6 +143,70 @@ public class SecurityUtil {
 
 
     /**
+     * Strict syntax check of an absolute http(s) url: no whitespace/control characters, no backslash,
+     * parseable by {@link java.net.URI}, non-empty host and no userinfo ("user@host" tricks).
+     *
+     * @param url untrusted url
+     * @return true if the url is a well-formed http/https url with a plain host
+     */
+    public static boolean isSafeHttpUrl(String url) {
+        if (!isHttp(url) || hasUnsafeRedirectChars(url)) {
+            return false;
+        }
+        try {
+            URI uri = new URI(url);
+            return null != uri.getHost() && !uri.getHost().isEmpty() && null == uri.getRawUserInfo();
+        } catch (URISyntaxException e) {
+            return false;
+        }
+    }
+
+
+    /**
+     * Validate an untrusted redirect destination. Accepts either a same-origin relative path
+     * (single leading "/", never "//host" or "/\host") or an absolute http/https url whose host is
+     * allowed by {@link #checkURL(String)}.
+     *
+     * @param url untrusted redirect destination
+     * @return the url when it is a safe destination; null otherwise
+     */
+    public static String safeRedirectUrl(String url) {
+        if (null == url || url.isEmpty() || hasUnsafeRedirectChars(url)) {
+            return null;
+        }
+        if (url.startsWith("/")) {
+            if (url.startsWith("//")) {
+                return null;
+            }
+            try {
+                URI uri = new URI(url);
+                if (null != uri.getScheme() || null != uri.getRawAuthority()) {
+                    return null;
+                }
+                return url;
+            } catch (URISyntaxException e) {
+                return null;
+            }
+        }
+        if (isSafeHttpUrl(url) && null != checkURL(url)) {
+            return url;
+        }
+        return null;
+    }
+
+
+    private static boolean hasUnsafeRedirectChars(String url) {
+        for (int i = 0; i < url.length(); i++) {
+            char ch = url.charAt(i);
+            if (ch <= 0x20 || ch == 0x7f || ch == '\\' || ch == 0x2028 || ch == 0x2029) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+
+    /**
      * 通过自定义白名单域名处理SSRF漏洞。如果URL范围收敛，强烈建议使用该方案。
      * 这是最简单也最有效的修复方式。因为SSRF都是发起URL请求时造成，大多数场景是图片场景，一般图片的域名都是CDN或者OSS等，所以限定域名白名单即可完成SSRF漏洞修复。
      *

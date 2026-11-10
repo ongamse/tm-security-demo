@@ -100,7 +100,8 @@ public class URLWhiteList {
 
         logger.info("url:  " + url);
 
-        if (!SecurityUtil.isHttp(url)) {
+        // Strict http(s) syntax check: rejects backslash, whitespace/control chars, userinfo and empty host.
+        if (!SecurityUtil.isSafeHttpUrl(url)) {
             return;
         }
 
@@ -112,6 +113,7 @@ public class URLWhiteList {
         for (String domain : domainwhitelist) {
             if (host.endsWith("." + domain)) {
                 res.sendRedirect(url);
+                return;
             }
         }
 
