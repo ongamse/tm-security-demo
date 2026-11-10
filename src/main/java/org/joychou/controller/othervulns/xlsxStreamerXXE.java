@@ -43,20 +43,10 @@ public class xlsxStreamerXXE {
         // package whose XML parts declare a DOCTYPE/ENTITY before handing it to the library.
         // Read the upload once so the exact bytes that were checked are the bytes that get parsed.
         byte[] content = file.getBytes();
-        rejectXmlWithDoctype(new ByteArrayInputStream(content));
-        try (InputStream checked = new ByteArrayInputStream(content)) {
-            StreamingReader.builder().open(checked);
-        }
-    }
 
-    private static final long MAX_XML_PART_BYTES = 64L * 1024 * 1024;
-
-    /**
-     * Fail closed if any XML part of the OOXML zip contains a DOCTYPE or ENTITY declaration.
-     * NUL bytes are stripped before matching so UTF-16/UTF-32 encoded parts are covered too.
-     */
-    private static void rejectXmlWithDoctype(InputStream in) throws IOException {
-        try (ZipInputStream zis = new ZipInputStream(in)) {
+        // Fail closed if any XML part of the OOXML zip contains a DOCTYPE or ENTITY declaration.
+        // NUL bytes are stripped before matching so UTF-16/UTF-32 encoded parts are covered too.
+        try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(content))) {
             ZipEntry entry;
             byte[] buf = new byte[8192];
             while ((entry = zis.getNextEntry()) != null) {
@@ -93,7 +83,14 @@ public class xlsxStreamerXXE {
                 }
             }
         }
+
+        // Hand the exact bytes that were just checked to the library.
+        try (InputStream checked = new ByteArrayInputStream(content)) {
+            StreamingReader.builder().open(checked);
+        }
     }
+
+    private static final long MAX_XML_PART_BYTES = 64L * 1024 * 1024;
 
 
     public static void main(String[] args) throws Exception {

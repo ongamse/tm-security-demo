@@ -94,7 +94,13 @@ public class XXE {
             String body = WebUtils.getRequestBody(request);
             logger.info(SecurityUtil.sanitizeForLog(body));
 
-            SAXBuilder builder = hardenedSaxBuilder();
+            SAXBuilder builder = new SAXBuilder();
+            builder.setExpandEntities(false);
+            builder.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+            builder.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            builder.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            builder.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            builder.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
             // org.jdom2.Document document
             builder.build(new InputSource(new StringReader(body)));
             return "SAXBuilder xxe vuln code";
@@ -110,7 +116,13 @@ public class XXE {
             String body = WebUtils.getRequestBody(request);
             logger.info(SecurityUtil.sanitizeForLog(body));
 
-            SAXBuilder builder = hardenedSaxBuilder();
+            SAXBuilder builder = new SAXBuilder();
+            builder.setExpandEntities(false);
+            builder.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+            builder.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            builder.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            builder.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            builder.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
             // org.jdom2.Document document
             builder.build(new InputSource(new StringReader(body)));
 
@@ -409,19 +421,6 @@ public class XXE {
         return "DocumentHelper xxe vuln code";
     }
 
-
-    /**
-     * JDOM SAXBuilder that rejects DOCTYPE and never expands or loads external entities / DTDs.
-     */
-    private static SAXBuilder hardenedSaxBuilder() {
-        SAXBuilder builder = new SAXBuilder();
-        builder.setExpandEntities(false);
-        builder.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-        builder.setFeature("http://xml.org/sax/features/external-general-entities", false);
-        builder.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
-        builder.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
-        return builder;
-    }
 
     /**
      * Digester backed by a SAX parser built from a hardened factory (no DOCTYPE, no external
