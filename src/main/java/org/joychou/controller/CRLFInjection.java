@@ -1,6 +1,5 @@
 package org.joychou.controller;
 
-import org.joychou.security.SecurityUtil;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseBody;
@@ -8,6 +7,7 @@ import org.springframework.web.bind.annotation.ResponseBody;
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import java.util.UUID;
 
 /**
  * Java 1.7/1.8 no CRLF vulns (test in Java 1.7/1.8)
@@ -23,8 +23,7 @@ public class CRLFInjection {
     public String crlf(HttpServletRequest request, HttpServletResponse response) {
         response.addHeader("test1", "safe");
         response.setHeader("test2", "safe");
-        String author = request.getParameter("test3");
-        Cookie cookie = new Cookie("test3", SecurityUtil.safeCookieValue(author));
+        Cookie cookie = new Cookie("test3", UUID.randomUUID().toString());
         cookie.setHttpOnly(true);
         cookie.setSecure(true);
         cookie.setPath("/");

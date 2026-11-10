@@ -442,22 +442,6 @@ public class SecurityUtil {
         return value.replaceAll("[\\x00-\\x08\\x0A-\\x1F\\x7F-\\x9F\\u2028\\u2029]", "");
     }
 
-    /**
-     * Make an untrusted value safe to use as a cookie value (prevents CRLF injection and cookie splitting).
-     * Removes control characters (see {@link #safeHeaderValue(String)}) and the characters that are not
-     * allowed in a cookie value: whitespace, double quote, comma, semicolon and backslash.
-     *
-     * @param value untrusted cookie value, may be null
-     * @return the cleaned value, or null when the input is null
-     */
-    public static String safeCookieValue(String value) {
-        String cleaned = safeHeaderValue(value);
-        if (null == cleaned) {
-            return null;
-        }
-        return cleaned.replaceAll("[\\s\",;\\\\]", "");
-    }
-
 
     /**
      * Validate a request Origin header against the trusted-domain list used by {@link #checkURL(String)}.
