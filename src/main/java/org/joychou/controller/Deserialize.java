@@ -1,21 +1,11 @@
 package org.joychou.controller;
 
-import org.joychou.config.Constants;
-import org.joychou.security.AntObjectInputStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
-import java.io.InvalidClassException;
-import java.io.ObjectInputStream;
-import java.util.Base64;
-
-import static org.springframework.web.util.WebUtils.getCookie;
 
 /**
  * Deserialize RCE using Commons-Collections gadget.
@@ -33,24 +23,9 @@ public class Deserialize {
      * <a href="http://localhost:8080/deserialize/rememberMe/vuln">http://localhost:8080/deserialize/rememberMe/vuln</a>
      */
     @RequestMapping("/rememberMe/vuln")
-    public String rememberMeVul(HttpServletRequest request)
-            throws IOException, ClassNotFoundException {
-
-        Cookie cookie = getCookie(request, Constants.REMEMBER_ME_COOKIE);
-        if (null == cookie) {
-            return "No rememberMe cookie. Right?";
-        }
-
-        String rememberMe = cookie.getValue();
-        byte[] decoded = Base64.getDecoder().decode(rememberMe);
-
-        ByteArrayInputStream bytes = new ByteArrayInputStream(decoded);
-        // Allowlist-based stream: only the permitted classes can be deserialized.
-        ObjectInputStream in = new AntObjectInputStream(bytes);
-        in.readObject();
-        in.close();
-
-        return "Are u ok?";
+    public String rememberMeVul(HttpServletRequest request) {
+        // Request-derived bytes are never deserialized with Java native serialization (RCE risk).
+        return "Deserialization of rememberMe cookie is disabled";
     }
 
     /**
@@ -59,29 +34,9 @@ public class Deserialize {
      * <a href="http://localhost:8080/deserialize/rememberMe/security">http://localhost:8080/deserialize/rememberMe/security</a>
      */
     @RequestMapping("/rememberMe/security")
-    public String rememberMeBlackClassCheck(HttpServletRequest request)
-            throws IOException, ClassNotFoundException {
-
-        Cookie cookie = getCookie(request, Constants.REMEMBER_ME_COOKIE);
-
-        if (null == cookie) {
-            return "No rememberMe cookie. Right?";
-        }
-        String rememberMe = cookie.getValue();
-        byte[] decoded = Base64.getDecoder().decode(rememberMe);
-
-        ByteArrayInputStream bytes = new ByteArrayInputStream(decoded);
-
-        try {
-            AntObjectInputStream in = new AntObjectInputStream(bytes);  // throw InvalidClassException
-            in.readObject();
-            in.close();
-        } catch (InvalidClassException e) {
-            logger.info(e.toString());
-            return e.toString();
-        }
-
-        return "I'm very OK.";
+    public String rememberMeBlackClassCheck(HttpServletRequest request) {
+        // Request-derived bytes are never deserialized with Java native serialization (RCE risk).
+        return "Deserialization of rememberMe cookie is disabled";
     }
 
 }
