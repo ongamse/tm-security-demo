@@ -24,11 +24,15 @@ public class Cors {
 
     @GetMapping("/vuln/origin")
     public String vuls1(HttpServletRequest request, HttpServletResponse response) {
-        String safeOrigin = SecurityUtil.allowedOrigin(request.getHeader("origin"));
-        if (safeOrigin != null) {  // the allowlist's own constant is emitted; fail closed otherwise
-            response.setHeader("Access-Control-Allow-Origin", safeOrigin);
-            response.setHeader("Access-Control-Allow-Credentials", "true");  // allow cookie
-            response.addHeader("Vary", "Origin");
+        String origin = request.getHeader("origin");
+        // The request value is only compared; the header gets the allowlist's own constant. Fail closed otherwise.
+        for (String allowed : SecurityUtil.ALLOWED_ORIGINS) {
+            if (allowed.equals(origin)) {
+                response.setHeader("Access-Control-Allow-Origin", allowed);
+                response.setHeader("Access-Control-Allow-Credentials", "true");  // allow cookie
+                response.addHeader("Vary", "Origin");
+                break;
+            }
         }
         return info;
     }
@@ -36,10 +40,13 @@ public class Cors {
     @GetMapping("/vuln/setHeader")
     public String vuls2(HttpServletRequest request, HttpServletResponse response) {
         // No wildcard: only allowlisted origins get CORS access, and never together with credentials.
-        String safeOrigin = SecurityUtil.allowedOrigin(request.getHeader("Origin"));
-        if (safeOrigin != null) {
-            response.setHeader("Access-Control-Allow-Origin", safeOrigin);
-            response.addHeader("Vary", "Origin");
+        String origin = request.getHeader("Origin");
+        for (String allowed : SecurityUtil.ALLOWED_ORIGINS) {
+            if (allowed.equals(origin)) {
+                response.setHeader("Access-Control-Allow-Origin", allowed);
+                response.addHeader("Vary", "Origin");
+                break;
+            }
         }
         return info;
     }
@@ -117,11 +124,13 @@ public class Cors {
         if (origin != null && SecurityUtil.allowedOrigin(origin) == null) {
             return "Origin is not safe.";
         }
-        String safeOrigin = SecurityUtil.allowedOrigin(origin);
-        if (safeOrigin != null) {
-            response.setHeader("Access-Control-Allow-Origin", safeOrigin);
-            response.setHeader("Access-Control-Allow-Credentials", "true");
-            response.addHeader("Vary", "Origin");
+        for (String allowed : SecurityUtil.ALLOWED_ORIGINS) {
+            if (allowed.equals(origin)) {
+                response.setHeader("Access-Control-Allow-Origin", allowed);
+                response.setHeader("Access-Control-Allow-Credentials", "true");
+                response.addHeader("Vary", "Origin");
+                break;
+            }
         }
         return LoginUtils.getUserInfo2JsonStr(request);
     }
