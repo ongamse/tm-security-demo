@@ -7,11 +7,13 @@ import org.joychou.security.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
 import java.sql.*;
 import java.util.List;
+import java.util.regex.Pattern;
 
 
 /**
@@ -41,6 +43,36 @@ public class SQLI {
 
     @Resource
     private UserMapper userMapper;
+
+    // Strict format for a user reference supplied by the request.
+    private static final Pattern USERNAME_PATTERN = Pattern.compile("^[A-Za-z0-9_.@-]{1,64}$");
+
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    private static class InvalidReferenceException extends RuntimeException {
+        InvalidReferenceException(String message) {
+            super(message);
+        }
+    }
+
+    /**
+     * Validate a request-supplied username reference. Fail closed with HTTP 400.
+     */
+    private static String requireValidUsername(String username) {
+        if (username == null || !USERNAME_PATTERN.matcher(username).matches()) {
+            throw new InvalidReferenceException("Invalid username");
+        }
+        return username;
+    }
+
+    /**
+     * Validate a request-supplied numeric id reference. Fail closed with HTTP 400.
+     */
+    private static Integer requireValidId(Integer id) {
+        if (id == null || id < 1) {
+            throw new InvalidReferenceException("Invalid id");
+        }
+        return id;
+    }
 
 
     /**
@@ -95,6 +127,7 @@ public class SQLI {
     @RequestMapping("/jdbc/sec")
     public String jdbc_sqli_sec(@RequestParam("username") String username) {
 
+        requireValidUsername(username);
         StringBuilder result = new StringBuilder();
         try {
             Class.forName(driver);
@@ -182,7 +215,7 @@ public class SQLI {
      */
     @GetMapping("/mybatis/vuln01")
     public List<User> mybatisVuln01(@RequestParam("username") String username) {
-        return userMapper.findByUserNameVuln01(username);
+        return userMapper.findByUserNameVuln01(requireValidUsername(username));
     }
 
     /**
@@ -192,7 +225,7 @@ public class SQLI {
      */
     @GetMapping("/mybatis/vuln02")
     public List<User> mybatisVuln02(@RequestParam("username") String username) {
-        return userMapper.findByUserNameVuln02(username);
+        return userMapper.findByUserNameVuln02(requireValidUsername(username));
     }
 
     /**
@@ -212,7 +245,7 @@ public class SQLI {
      */
     @GetMapping("/mybatis/sec01")
     public User mybatisSec01(@RequestParam("username") String username) {
-        return userMapper.findByUserName(username);
+        return userMapper.findByUserName(requireValidUsername(username));
     }
 
     /**
@@ -221,7 +254,7 @@ public class SQLI {
      */
     @GetMapping("/mybatis/sec02")
     public User mybatisSec02(@RequestParam("id") Integer id) {
-        return userMapper.findById(id);
+        return userMapper.findById(requireValidId(id));
     }
 
 
