@@ -85,7 +85,8 @@ public class Rce {
             inBr.close();
             in.close();
         } catch (Exception e) {
-            return WebUtils.htmlSafeRebuild(e.toString());
+            log.error("Command execution failed", e);
+            return "Request failed";
         }
         return WebUtils.htmlSafeRebuild(sb.toString());
     }
@@ -116,7 +117,8 @@ public class Rce {
                 sb.append(tmpStr);
             }
         } catch (Exception e) {
-            return WebUtils.htmlSafeRebuild(e.toString());
+            log.error("Command execution failed", e);
+            return "Request failed";
         }
 
         return WebUtils.htmlSafeRebuild(sb.toString());

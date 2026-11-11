@@ -286,9 +286,8 @@ public class XXE {
             }
             return HtmlUtils.htmlEscape(buf.toString());
         } catch (Exception e) {
-            e.printStackTrace();
-            logger.error(e.toString());
-            return HtmlUtils.htmlEscape(e.toString());
+            logger.error("DocumentBuilder xml parse failed", e);
+            return EXCEPT;
         }
     }
 
