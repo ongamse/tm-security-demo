@@ -30,8 +30,14 @@ public class CRLFInjection {
         if (test2 != null) {
             response.setHeader("test2", test2);
         }
-        String author = request.getParameter("test3");
-        Cookie cookie = new Cookie("test3", author);
-        response.addCookie(cookie);
+        // Cookie value is a constant from the allowlist, never the raw request value.
+        String author = SecurityUtil.allowedConstant(request.getParameter("test3"), SecurityUtil.ALLOWED_HEADER_VALUES);
+        if (author != null) {
+            Cookie cookie = new Cookie("test3", author);
+            cookie.setSecure(true);
+            cookie.setHttpOnly(true);
+            cookie.setPath("/");
+            response.addCookie(cookie);
+        }
     }
 }
