@@ -27,8 +27,23 @@ public class WebUtils {
     }
 
 
+    private static final java.util.regex.Pattern JSONP_CALLBACK = java.util.regex.Pattern.compile("^[A-Za-z_$][A-Za-z0-9_$.]{0,63}$");
+
+    // Only a plain JS identifier / dotted path is accepted as the JSONP callback name.
+    public static boolean isValidJsonpCallback(String callback) {
+        return callback != null && JSONP_CALLBACK.matcher(callback).matches();
+    }
+
+    // Escape HTML-significant characters inside JSON string values (< is valid JSON).
+    public static String escapeJsonForHtml(String jsonStr) {
+        return jsonStr.replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026");
+    }
+
     public static String json2Jsonp(String callback, String jsonStr) {
-        return HtmlUtils.htmlEscape(callback) + "(" + jsonStr + ")";
+        if (!isValidJsonpCallback(callback)) {
+            return "error";
+        }
+        return HtmlUtils.htmlEscape(callback) + "(" + escapeJsonForHtml(jsonStr) + ")";
     }
 
 
