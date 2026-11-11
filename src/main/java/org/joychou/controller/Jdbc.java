@@ -22,11 +22,12 @@ public class Jdbc {
     public void postgresql(String jdbcUrlBase64) throws Exception{
         byte[] b = java.util.Base64.getDecoder().decode(jdbcUrlBase64);
         String jdbcUrl = new String(b);
-        if (!SecurityUtil.checkJdbcUrl(jdbcUrl, "jdbc:postgresql://")) {
+        String safeJdbcUrl = SecurityUtil.safeJdbcUrl(jdbcUrl, "jdbc:postgresql://");
+        if (safeJdbcUrl == null) {
             throw new IllegalArgumentException("Illegal jdbc url");
         }
         log.info("postgresql jdbc connect");
-        DriverManager.getConnection(jdbcUrl);
+        DriverManager.getConnection(safeJdbcUrl);
     }
 
     @RequestMapping("/db2")
@@ -34,10 +35,11 @@ public class Jdbc {
         Class.forName("com.ibm.db2.jcc.DB2Driver");
         byte[] b = java.util.Base64.getDecoder().decode(jdbcUrlBase64);
         String jdbcUrl = new String(b);
-        if (!SecurityUtil.checkJdbcUrl(jdbcUrl, "jdbc:db2://")) {
+        String safeJdbcUrl = SecurityUtil.safeJdbcUrl(jdbcUrl, "jdbc:db2://");
+        if (safeJdbcUrl == null) {
             throw new IllegalArgumentException("Illegal jdbc url");
         }
         log.info("db2 jdbc connect");
-        DriverManager.getConnection(jdbcUrl);
+        DriverManager.getConnection(safeJdbcUrl);
     }
 }

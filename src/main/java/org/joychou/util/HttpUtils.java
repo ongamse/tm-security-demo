@@ -48,10 +48,12 @@ public class HttpUtils {
      * @throws IOException if the url is not allowed
      */
     private static String checkedUrl(String url) throws IOException {
-        if (url == null || !SecurityUtil.isHttp(url) || !SecurityUtil.checkSSRFWithoutRedirect(url)) {
+        // request the url rebuilt from validated components, so the checked host is the fetched host
+        String safeUrl = SecurityUtil.canonicalHttpUrl(url);
+        if (safeUrl == null || !SecurityUtil.checkSSRFWithoutRedirect(safeUrl)) {
             throw new IOException("[-] SSRF check failed");
         }
-        return url;
+        return safeUrl;
     }
 
 
@@ -106,9 +108,9 @@ public class HttpUtils {
 
     public static String request(String url) {
         try {
-            checkedUrl(url);
+            String safeUrl = checkedUrl(url);
             Executor executor = Executor.newInstance(HttpClients.custom().disableRedirectHandling().build());
-            return executor.execute(Request.Get(url)).returnContent().toString();
+            return executor.execute(Request.Get(safeUrl)).returnContent().toString();
         } catch (Exception e) {
             return e.getMessage();
         }

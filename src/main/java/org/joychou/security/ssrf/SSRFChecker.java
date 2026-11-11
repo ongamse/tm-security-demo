@@ -2,7 +2,6 @@ package org.joychou.security.ssrf;
 
 import java.net.HttpURLConnection;
 import java.net.InetAddress;
-import java.net.URI;
 import java.net.URL;
 import java.util.ArrayList;
 
@@ -66,12 +65,14 @@ public class SSRFChecker {
         try {
             do {
                 // 判断当前请求的URL是否是内网ip
-                if (!SecurityUtil.isHttp(finalUrl) || isInternalIpByUrl(finalUrl)) {
-                    logger.error("[-] SSRF check failed. Dangerous url: " + finalUrl);
+                // request the url rebuilt from validated components, so the checked host is the fetched host
+                String safeUrl = SecurityUtil.canonicalHttpUrl(finalUrl);
+                if (safeUrl == null || isInternalIpByUrl(safeUrl)) {
+                    logger.error("[-] SSRF check failed. Dangerous url: " + safeUrl);
                     return false;  // 内网ip直接return，非内网ip继续判断是否有重定向
                 }
 
-                connection = (HttpURLConnection) new URL(finalUrl).openConnection();
+                connection = (HttpURLConnection) new URL(safeUrl).openConnection();
                 connection.setInstanceFollowRedirects(false);
                 connection.setUseCaches(false); // 设置为false，手动处理跳转，可以拿到每个跳转的URL
                 connection.setConnectTimeout(connectTime);
@@ -293,9 +294,8 @@ public class SSRFChecker {
             if (!SecurityUtil.isHttp(url)) {
                 return "";
             }
-            URI u = new URI(url);
-            String host = u.getHost();
-            return host == null ? "" : host;
+            // manual parse, no URI/URL object is built from the untrusted string
+            return SecurityUtil.gethost(url);
         } catch (Exception e) {
             return "";
         }

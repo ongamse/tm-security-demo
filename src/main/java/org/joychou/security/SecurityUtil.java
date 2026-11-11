@@ -8,9 +8,8 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
@@ -19,6 +18,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.regex.Pattern;
 
 
@@ -51,20 +51,240 @@ public class SecurityUtil {
     }
 
 
+    private static final String HOST_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-";
+    private static final String IPV6_CHARS = "0123456789abcdefABCDEF:.";
+    private static final String DIGIT_CHARS = "0123456789";
+    private static final String HEX_CHARS = "0123456789abcdefABCDEF";
+    private static final String HEX_UPPER = "0123456789ABCDEF";
+    private static final String DB_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-.";
+    private static final String PATH_CHARS =
+            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~!$&'()*+,;=:@/?";
+
+
     /**
-     * Get http url host.
+     * Rebuild a string from a closed alphabet. Every character of the result is the alphabet's own
+     * constant character, never the untrusted one; any character outside the alphabet rejects the input.
+     *
+     * @return the rebuilt string, or null if input is null or contains a character outside the alphabet
+     */
+    private static String constantChars(String input, String alphabet) {
+        if (input == null) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder(input.length());
+        for (int i = 0; i < input.length(); i++) {
+            char c = input.charAt(i);
+            boolean found = false;
+            for (int j = 0; j < alphabet.length(); j++) {
+                if (alphabet.charAt(j) == c) {
+                    sb.append(alphabet.charAt(j));
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                return null;
+            }
+        }
+        return sb.toString();
+    }
+
+
+    /**
+     * Parse a decimal tcp port without using the untrusted characters as the result.
+     *
+     * @return 0..65535, or -1 if the input is empty, too long, not all digits or out of range
+     */
+    private static int constantPort(String input) {
+        if (input == null || input.isEmpty() || input.length() > 5) {
+            return -1;
+        }
+        int port = 0;
+        for (int i = 0; i < input.length(); i++) {
+            char c = input.charAt(i);
+            int digit = -1;
+            for (int j = 0; j < DIGIT_CHARS.length(); j++) {
+                if (DIGIT_CHARS.charAt(j) == c) {
+                    digit = j;
+                    break;
+                }
+            }
+            if (digit < 0) {
+                return -1;
+            }
+            port = port * 10 + digit;
+        }
+        return port > 65535 ? -1 : port;
+    }
+
+
+    /**
+     * Split <code>host[:port]</code> / <code>[ipv6][:port]</code> into a canonical host (lower case, built
+     * from {@link #HOST_CHARS} / {@link #IPV6_CHARS}) and a canonical port ("" when absent).
+     *
+     * @return {host, port}, or null if the authority is malformed
+     */
+    private static String[] splitHostPort(String authority) {
+        if (authority == null || authority.isEmpty()) {
+            return null;
+        }
+        String host;
+        String portPart = "";
+        if (authority.charAt(0) == '[') {
+            int close = authority.indexOf(']');
+            if (close < 0) {
+                return null;
+            }
+            String inner = constantChars(authority.substring(1, close), IPV6_CHARS);
+            if (inner == null || inner.isEmpty()) {
+                return null;
+            }
+            String after = authority.substring(close + 1);
+            if (!after.isEmpty()) {
+                if (after.charAt(0) != ':') {
+                    return null;
+                }
+                portPart = after.substring(1);
+            }
+            host = "[" + inner.toLowerCase(Locale.ROOT) + "]";
+        } else {
+            String hostPart = authority;
+            int colon = authority.indexOf(':');
+            if (colon >= 0) {
+                hostPart = authority.substring(0, colon);
+                portPart = authority.substring(colon + 1);
+            }
+            String mapped = constantChars(hostPart, HOST_CHARS);
+            if (mapped == null || mapped.isEmpty()) {
+                return null;
+            }
+            host = mapped.toLowerCase(Locale.ROOT);
+        }
+        String port = "";
+        if (!portPart.isEmpty()) {
+            int p = constantPort(portPart);
+            if (p < 0) {
+                return null;
+            }
+            port = Integer.toString(p);
+        }
+        return new String[]{host, port};
+    }
+
+
+    /**
+     * Index of the end of the authority component that starts at <code>start</code>.
+     */
+    private static int authorityEnd(String s, int start) {
+        int end = start;
+        while (end < s.length()) {
+            char c = s.charAt(end);
+            if (c == '/' || c == '?' || c == '#') {
+                break;
+            }
+            end++;
+        }
+        return end;
+    }
+
+
+    /**
+     * Get http url host. The url is parsed by hand (no URL/URI object is built from the untrusted string).
      *
      * @param url url
-     * @return host, or empty string if the url is malformed or has no host
+     * @return host (lower case), or empty string if the url is malformed or has no host
      */
     public static String gethost(String url) {
-        try {
-            URI uri = new URI(url);
-            String host = uri.getHost();
-            return host == null ? "" : host.toLowerCase();
-        } catch (URISyntaxException | NullPointerException e) {
+        if (url == null) {
             return "";
         }
+        int sep = url.indexOf("://");
+        if (sep <= 0) {
+            return "";
+        }
+        if (constantChars(url.substring(0, sep), "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+-.") == null) {
+            return "";
+        }
+        int start = sep + 3;
+        String authority = url.substring(start, authorityEnd(url, start));
+        int at = authority.indexOf('@');
+        if (at >= 0) {
+            if (authority.indexOf('@', at + 1) >= 0) {
+                return "";
+            }
+            authority = authority.substring(at + 1);
+        }
+        String[] hostPort = splitHostPort(authority);
+        return hostPort == null ? "" : hostPort[0];
+    }
+
+
+    /**
+     * Rebuild an untrusted http(s) url from validated components: the scheme is a constant, the host and
+     * port are re-emitted from a closed alphabet / parsed integer, user info is rejected, the fragment is
+     * dropped and path/query characters are re-emitted from a closed alphabet or percent-encoded. The
+     * returned value is what should be requested, so the host that was checked is the host that is fetched.
+     *
+     * @param url untrusted url
+     * @return canonical http(s) url, or null if the url is not an acceptable http(s) url
+     */
+    public static String canonicalHttpUrl(String url) {
+        if (url == null) {
+            return null;
+        }
+        String scheme;
+        int start;
+        if (url.startsWith("https://")) {
+            scheme = "https";
+            start = 8;
+        } else if (url.startsWith("http://")) {
+            scheme = "http";
+            start = 7;
+        } else {
+            return null;
+        }
+        int end = authorityEnd(url, start);
+        String[] hostPort = splitHostPort(url.substring(start, end));
+        if (hostPort == null) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append(scheme).append("://").append(hostPort[0]);
+        if (!hostPort[1].isEmpty()) {
+            sb.append(':').append(hostPort[1]);
+        }
+        String tail = url.substring(end);
+        if (tail.isEmpty() || tail.charAt(0) == '?' || tail.charAt(0) == '#') {
+            sb.append('/');
+        }
+        int i = 0;
+        while (i < tail.length()) {
+            int cp = tail.codePointAt(i);
+            i += Character.charCount(cp);
+            if (cp == '#') {
+                break;
+            }
+            if (cp == '%') {
+                String hex = i + 2 <= tail.length() ? constantChars(tail.substring(i, i + 2), HEX_CHARS) : null;
+                if (hex != null) {
+                    sb.append('%').append(hex);
+                    i += 2;
+                } else {
+                    sb.append("%25");
+                }
+                continue;
+            }
+            String plain = cp < 128 ? constantChars(String.valueOf((char) cp), PATH_CHARS) : null;
+            if (plain != null) {
+                sb.append(plain);
+                continue;
+            }
+            byte[] bytes = new String(Character.toChars(cp)).getBytes(StandardCharsets.UTF_8);
+            for (byte b : bytes) {
+                sb.append('%').append(HEX_UPPER.charAt((b >> 4) & 0xF)).append(HEX_UPPER.charAt(b & 0xF));
+            }
+        }
+        return sb.toString();
     }
 
 
@@ -91,6 +311,41 @@ public class SecurityUtil {
         }
         String hostPort = rest.split("/", 2)[0];
         return checkSSRFByWhitehosts("https://" + hostPort + "/");
+    }
+
+
+    /**
+     * Validate an untrusted JDBC url ({@link #checkJdbcUrl(String, String)}) and rebuild it from validated
+     * components: the prefix is the caller's constant, host / db name are re-emitted from closed alphabets
+     * and the port from a parsed integer. The returned value, not the request string, is what must be
+     * passed to DriverManager.
+     *
+     * @param jdbcUrl untrusted jdbc url
+     * @param prefix  required prefix, e.g. <code>jdbc:postgresql://</code>
+     * @return the rebuilt jdbc url, or null if the url is not allowed
+     */
+    public static String safeJdbcUrl(String jdbcUrl, String prefix) {
+        if (!checkJdbcUrl(jdbcUrl, prefix)) {
+            return null;
+        }
+        String[] parts = jdbcUrl.substring(prefix.length()).split("/", 2);
+        String[] hostPort = splitHostPort(parts[0]);
+        if (hostPort == null || hostPort[0].startsWith("[")) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder(prefix);
+        sb.append(hostPort[0]);
+        if (!hostPort[1].isEmpty()) {
+            sb.append(':').append(hostPort[1]);
+        }
+        if (parts.length > 1) {
+            String db = constantChars(parts[1], DB_CHARS);
+            if (db == null) {
+                return null;
+            }
+            sb.append('/').append(db);
+        }
+        return sb.toString();
     }
 
 
