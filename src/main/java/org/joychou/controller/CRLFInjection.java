@@ -21,8 +21,15 @@ public class CRLFInjection {
     @RequestMapping("/safecode")
     @ResponseBody
     public void crlf(HttpServletRequest request, HttpServletResponse response) {
-        response.addHeader("test1", SecurityUtil.cleanCRLF(request.getParameter("test1")));
-        response.setHeader("test2", SecurityUtil.cleanCRLF(request.getParameter("test2")));
+        // Header values come from a closed set of constants; any other request value is not reflected.
+        String test1 = SecurityUtil.allowedConstant(request.getParameter("test1"), SecurityUtil.ALLOWED_HEADER_VALUES);
+        if (test1 != null) {
+            response.addHeader("test1", test1);
+        }
+        String test2 = SecurityUtil.allowedConstant(request.getParameter("test2"), SecurityUtil.ALLOWED_HEADER_VALUES);
+        if (test2 != null) {
+            response.setHeader("test2", test2);
+        }
         String author = request.getParameter("test3");
         Cookie cookie = new Cookie("test3", author);
         response.addCookie(cookie);

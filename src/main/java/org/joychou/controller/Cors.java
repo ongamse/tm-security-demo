@@ -24,9 +24,9 @@ public class Cors {
 
     @GetMapping("/vuln/origin")
     public String vuls1(HttpServletRequest request, HttpServletResponse response) {
-        String safeOrigin = SecurityUtil.checkURL(request.getHeader("origin"));
-        if (safeOrigin != null) {  // only allowlisted origins are echoed; fail closed otherwise
-            response.setHeader("Access-Control-Allow-Origin", SecurityUtil.cleanCRLF(safeOrigin));
+        String safeOrigin = SecurityUtil.allowedOrigin(request.getHeader("origin"));
+        if (safeOrigin != null) {  // the allowlist's own constant is emitted; fail closed otherwise
+            response.setHeader("Access-Control-Allow-Origin", safeOrigin);
             response.setHeader("Access-Control-Allow-Credentials", "true");  // allow cookie
             response.addHeader("Vary", "Origin");
         }
@@ -36,9 +36,9 @@ public class Cors {
     @GetMapping("/vuln/setHeader")
     public String vuls2(HttpServletRequest request, HttpServletResponse response) {
         // No wildcard: only allowlisted origins get CORS access, and never together with credentials.
-        String safeOrigin = SecurityUtil.checkURL(request.getHeader("Origin"));
+        String safeOrigin = SecurityUtil.allowedOrigin(request.getHeader("Origin"));
         if (safeOrigin != null) {
-            response.setHeader("Access-Control-Allow-Origin", SecurityUtil.cleanCRLF(safeOrigin));
+            response.setHeader("Access-Control-Allow-Origin", safeOrigin);
             response.addHeader("Vary", "Origin");
         }
         return info;
@@ -114,12 +114,12 @@ public class Cors {
 
         // 如果origin不为空并且origin不在白名单内，认定为不安全。
         // 如果origin为空，表示是同域过来的请求或者浏览器直接发起的请求。
-        if (origin != null && SecurityUtil.checkURL(origin) == null) {
+        if (origin != null && SecurityUtil.allowedOrigin(origin) == null) {
             return "Origin is not safe.";
         }
-        String safeOrigin = SecurityUtil.checkURL(origin);
+        String safeOrigin = SecurityUtil.allowedOrigin(origin);
         if (safeOrigin != null) {
-            response.setHeader("Access-Control-Allow-Origin", SecurityUtil.cleanCRLF(safeOrigin));
+            response.setHeader("Access-Control-Allow-Origin", safeOrigin);
             response.setHeader("Access-Control-Allow-Credentials", "true");
             response.addHeader("Vary", "Origin");
         }

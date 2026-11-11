@@ -707,9 +707,10 @@ public class SecurityUtil {
         if (safe == null) {
             return null;
         }
-        String path = allowedConstant(safe, REDIRECT_PATHS);
-        if (path != null) {
-            return path;
+        for (String candidate : REDIRECT_PATHS) {
+            if (candidate.equals(safe)) {
+                return candidate;
+            }
         }
         String host = gethost(safe);
         if (host.isEmpty()) {
@@ -722,6 +723,69 @@ public class SecurityUtil {
             }
         }
         return null;
+    }
+
+    /**
+     * Closed set of origins that may be granted CORS access.
+     */
+    public static final List<String> ALLOWED_ORIGINS = Collections.unmodifiableList(Arrays.asList(
+            "https://joychou.com", "https://www.joychou.com",
+            "https://joychou.org", "https://www.joychou.org",
+            "https://test.joychou.org",
+            "http://localhost", "http://localhost:8080"));
+
+    /**
+     * Map an untrusted Origin header onto the allowlist's own constant string. The request value is only
+     * compared with {@link #ALLOWED_ORIGINS}; the returned value is the matching list element.
+     *
+     * @param origin untrusted Origin header value, may be null
+     * @return the matching constant origin, or null if not allowed (emit no CORS header)
+     */
+    public static String allowedOrigin(String origin) {
+        if (origin == null) {
+            return null;
+        }
+        for (String candidate : ALLOWED_ORIGINS) {
+            if (candidate.equals(origin)) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Closed set of values that may be reflected into the demo CRLF response headers.
+     */
+    public static final List<String> ALLOWED_HEADER_VALUES = Collections.unmodifiableList(
+            Arrays.asList("test", "value1", "value2", "joychou"));
+
+    private static final String FILENAME_CHARS =
+            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-";
+
+    /**
+     * Build a download file name from the closed alphabet {@link #FILENAME_CHARS}: every output character is
+     * the alphabet's own constant, characters outside it (CR, LF, quotes, separators, non-ASCII) become '_'.
+     *
+     * @param name untrusted file name, may be null
+     * @return a header-safe file name, "download" if the input is null or empty
+     */
+    public static String headerSafeFileName(String name) {
+        if (name == null || name.isEmpty()) {
+            return "download";
+        }
+        StringBuilder sb = new StringBuilder(name.length());
+        for (int i = 0; i < name.length(); i++) {
+            char c = name.charAt(i);
+            char out = '_';
+            for (int j = 0; j < FILENAME_CHARS.length(); j++) {
+                if (FILENAME_CHARS.charAt(j) == c) {
+                    out = FILENAME_CHARS.charAt(j);
+                    break;
+                }
+            }
+            sb.append(out);
+        }
+        return sb.toString();
     }
 
     public static void main(String[] args) {
