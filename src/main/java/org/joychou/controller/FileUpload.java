@@ -1,6 +1,5 @@
 package org.joychou.controller;
 
-import com.fasterxml.uuid.Generators;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Controller;
@@ -210,7 +209,7 @@ public class FileUpload {
             return null;
         }
         String suffix = fileName.substring(fileName.lastIndexOf("."));
-        UUID uuid = Generators.timeBasedGenerator().generate();
+        UUID uuid = UUID.randomUUID();
         Path randomPath = resolveUploadPath(uuid + suffix);
         if (randomPath == null) {
             return null;
