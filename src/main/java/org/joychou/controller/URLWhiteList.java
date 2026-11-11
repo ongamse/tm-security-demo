@@ -105,14 +105,24 @@ public class URLWhiteList {
             return;
         }
 
-        URL u = new URL(url);
-        String host = u.getHost();
+        // Reject control characters / whitespace / backslashes that browsers normalize
+        // (e.g. http://evil.com\@www.joychou.org), so the host check matches the browser's view.
+        for (int i = 0; i < url.length(); i++) {
+            char c = url.charAt(i);
+            if (c <= ' ' || c == 0x7f || c == '\\') {
+                return;
+            }
+        }
+
+        // RFC 3986 parser: a malformed url yields an empty host and is rejected.
+        String host = SecurityUtil.gethost(url);
         logger.info("host:  " + host);
 
         // endsWith .
         for (String domain : domainwhitelist) {
             if (host.endsWith("." + domain)) {
                 res.sendRedirect(url);
+                return;
             }
         }
 

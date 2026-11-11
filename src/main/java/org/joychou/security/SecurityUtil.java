@@ -358,6 +358,31 @@ public class SecurityUtil {
         return value.replace("\r", "").replace("\n", "").replace("\0", "");
     }
 
+    /**
+     * Validate an untrusted redirect target. Only a same-origin relative path
+     * (single leading slash) or an absolute http(s) url accepted by {@link #checkURL(String)}
+     * is allowed. Control characters, whitespace and backslashes are rejected because
+     * browsers normalize them and can turn a "relative" value into another origin.
+     *
+     * @param url untrusted redirect target
+     * @return the url if it is safe to redirect to, otherwise null (fail closed)
+     */
+    public static String safeRedirectUrl(String url) {
+        if (url == null || url.isEmpty()) {
+            return null;
+        }
+        for (int i = 0; i < url.length(); i++) {
+            char c = url.charAt(i);
+            if (c <= ' ' || c == 0x7f || c == '\\') {
+                return null;
+            }
+        }
+        if (url.startsWith("/")) {
+            return url.startsWith("//") ? null : url;
+        }
+        return checkURL(url);
+    }
+
     public static void main(String[] args) {
     }
 
