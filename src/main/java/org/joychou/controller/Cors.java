@@ -29,7 +29,6 @@ public class Cors {
         for (String allowed : SecurityUtil.ALLOWED_ORIGINS) {
             if (allowed.equals(origin)) {
                 response.setHeader("Access-Control-Allow-Origin", allowed);
-                response.setHeader("Access-Control-Allow-Credentials", "true");  // allow cookie
                 response.addHeader("Vary", "Origin");
                 break;
             }
@@ -127,7 +126,6 @@ public class Cors {
         for (String allowed : SecurityUtil.ALLOWED_ORIGINS) {
             if (allowed.equals(origin)) {
                 response.setHeader("Access-Control-Allow-Origin", allowed);
-                response.setHeader("Access-Control-Allow-Credentials", "true");
                 response.addHeader("Vary", "Origin");
                 break;
             }

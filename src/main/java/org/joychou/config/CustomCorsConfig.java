@@ -24,8 +24,7 @@ public class CustomCorsConfig extends WebMvcRegistrationsAdapter {
                 String[] allowOrigins = {"joychou.org", "http://test.joychou.me"};
                 registry.addMapping("/cors/sec/webMvcConfigurer") // /**表示所有路由path
                         .allowedOrigins(allowOrigins)
-                        .allowedMethods("GET", "POST")
-                        .allowCredentials(true);
+                        .allowedMethods("GET", "POST");
             }
         };
     }
