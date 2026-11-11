@@ -3,7 +3,6 @@ package org.joychou.controller;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 
-import com.alibaba.fastjson.JSONPObject;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang.StringUtils;
 import org.joychou.security.SecurityUtil;
@@ -131,11 +130,10 @@ public class Jsonp {
 
         String callback = request.getParameter("fastjsonpCallback");
         if (StringUtils.isNotBlank(callback)) {
-            JSONPObject jsonpObj = new JSONPObject(callback);
-            jsonpObj.addParameter(csrfToken);
-            return jsonpObj.toString();
+            // json2Jsonp validates the callback and rebuilds callback and body from constant alphabets.
+            return WebUtils.json2Jsonp(callback, JSON.toJSONString(csrfToken));
         } else {
-            return csrfToken.toString();
+            return WebUtils.htmlSafeRebuild(String.valueOf(csrfToken));
         }
     }
 

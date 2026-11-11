@@ -2,9 +2,21 @@ package org.joychou.controller;
 
 import groovy.lang.GroovyShell;
 import lombok.extern.slf4j.Slf4j;
+import org.codehaus.groovy.ast.expr.BinaryExpression;
+import org.codehaus.groovy.ast.expr.ConstantExpression;
+import org.codehaus.groovy.ast.expr.Expression;
+import org.codehaus.groovy.ast.stmt.BlockStatement;
+import org.codehaus.groovy.ast.stmt.ExpressionStatement;
+import org.codehaus.groovy.ast.stmt.ReturnStatement;
+import org.codehaus.groovy.ast.stmt.Statement;
+import org.codehaus.groovy.control.CompilerConfiguration;
+import org.codehaus.groovy.control.customizers.SecureASTCustomizer;
+import org.codehaus.groovy.syntax.Types;
+import org.joychou.security.SecurityUtil;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.joychou.util.WebUtils;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
 
@@ -16,6 +28,10 @@ import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.sql.DriverManager;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 
 
 /**
@@ -28,13 +44,31 @@ import java.sql.DriverManager;
 @RequestMapping("/rce")
 public class Rce {
 
+    /** Closed set of Groovy scripts selectable by key; request text is never evaluated. */
+    private static final Map<String, String> GROOVY_SCRIPTS;
+
+    static {
+        Map<String, String> m = new HashMap<String, String>();
+        m.put("1+1", "1 + 1");
+        m.put("2*3", "2 * 3");
+        m.put("10-4", "10 - 4");
+        m.put("8/2", "8 / 2");
+        GROOVY_SCRIPTS = Collections.unmodifiableMap(m);
+    }
+
     @GetMapping("/runtime/exec")
     public String CommandExec(String cmd) {
         Runtime run = Runtime.getRuntime();
         StringBuilder sb = new StringBuilder();
 
+        // Allowlisted command + validated args, executed as argv (no shell, no tokenizer on raw input).
+        String[] argv = SecurityUtil.allowedCmdArgv(cmd);
+        if (argv == null) {
+            return "Bad boy. I got u.";
+        }
+
         try {
-            Process p = run.exec(cmd);
+            Process p = run.exec(argv);
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
             String tmpStr;
@@ -51,9 +85,10 @@ public class Rce {
             inBr.close();
             in.close();
         } catch (Exception e) {
-            return e.toString();
+            log.error("Command execution failed", e);
+            return "Request failed";
         }
-        return sb.toString();
+        return WebUtils.htmlSafeRebuild(sb.toString());
     }
 
 
@@ -65,8 +100,13 @@ public class Rce {
 
         StringBuilder sb = new StringBuilder();
 
+        // Allowlisted command + validated args, executed as argv (no shell).
+        String[] arrCmd = SecurityUtil.allowedCmdArgv(cmd);
+        if (arrCmd == null) {
+            return "Bad boy. I got u.";
+        }
+
         try {
-            String[] arrCmd = {"/bin/sh", "-c", cmd};
             ProcessBuilder processBuilder = new ProcessBuilder(arrCmd);
             Process p = processBuilder.start();
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
@@ -77,10 +117,11 @@ public class Rce {
                 sb.append(tmpStr);
             }
         } catch (Exception e) {
-            return e.toString();
+            log.error("Command execution failed", e);
+            return "Request failed";
         }
 
-        return sb.toString();
+        return WebUtils.htmlSafeRebuild(sb.toString());
     }
 
 
@@ -95,10 +136,15 @@ public class Rce {
     @GetMapping("/jscmd")
     public void jsEngine(String jsurl) throws Exception{
         // js nashorn javascript ecmascript
+        // Only scripts hosted on allowlisted domains may be loaded.
+        if (!SecurityUtil.checkSSRFByWhitehosts(jsurl)) {
+            throw new IllegalArgumentException("jsurl is not allowed");
+        }
         ScriptEngine engine = new ScriptEngineManager().getEngineByName("js");
         Bindings bindings = engine.getBindings(ScriptContext.ENGINE_SCOPE);
-        String cmd = String.format("load(\"%s\")", jsurl);
-        engine.eval(cmd, bindings);
+        // Pass the URL as a bound variable instead of concatenating it into script source.
+        bindings.put("jsurl", jsurl);
+        engine.eval("load(jsurl)", bindings);
     }
 
 
@@ -110,7 +156,8 @@ public class Rce {
      */
     @GetMapping("/vuln/yarm")
     public void yarm(String content) {
-        Yaml y = new Yaml();
+        // SafeConstructor only builds standard YAML types, so arbitrary class tags are rejected.
+        Yaml y = new Yaml(new SafeConstructor());
         y.load(content);
     }
 
@@ -126,8 +173,36 @@ public class Rce {
      */
     @GetMapping("groovy")
     public void groovyshell(String content) {
-        GroovyShell groovyShell = new GroovyShell();
-        groovyShell.evaluate(content);
+        // Request text is never evaluated: it only selects one of the fixed scripts below.
+        String script = null;
+        for (Map.Entry<String, String> entry : GROOVY_SCRIPTS.entrySet()) {
+            if (entry.getKey().equals(content)) {
+                script = entry.getValue();
+                break;
+            }
+        }
+        if (script == null) {
+            throw new IllegalArgumentException("content is not allowed");
+        }
+        // Restrict the script to constants and basic arithmetic: no method calls, property access,
+        // class references, closures or declarations, so the script cannot execute commands.
+        SecureASTCustomizer secure = new SecureASTCustomizer();
+        secure.setMethodDefinitionAllowed(false);
+        secure.setClosuresAllowed(false);
+        secure.setIndirectImportCheckEnabled(true);
+        secure.setImportsWhitelist(Collections.<String>emptyList());
+        secure.setStarImportsWhitelist(Collections.<String>emptyList());
+        secure.setStaticImportsWhitelist(Collections.<String>emptyList());
+        secure.setStaticStarImportsWhitelist(Collections.<String>emptyList());
+        secure.setStatementsWhitelist(Arrays.<Class<? extends Statement>>asList(
+                BlockStatement.class, ExpressionStatement.class, ReturnStatement.class));
+        secure.setExpressionsWhitelist(Arrays.<Class<? extends Expression>>asList(
+                ConstantExpression.class, BinaryExpression.class));
+        secure.setTokensWhitelist(Arrays.asList(Types.PLUS, Types.MINUS, Types.MULTIPLY, Types.DIVIDE));
+        CompilerConfiguration config = new CompilerConfiguration();
+        config.addCompilationCustomizers(secure);
+        GroovyShell groovyShell = new GroovyShell(config);
+        groovyShell.evaluate(script);
     }
 
 

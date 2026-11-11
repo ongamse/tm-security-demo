@@ -1,6 +1,7 @@
 package org.joychou.controller;
 
-import org.apache.commons.lang.StringUtils;
+import org.joychou.security.SecurityUtil;
+import org.joychou.util.WebUtils;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -8,6 +9,9 @@ import org.springframework.web.bind.annotation.ResponseBody;
 
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletResponse;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 
 
 /**
@@ -16,6 +20,12 @@ import javax.servlet.http.HttpServletResponse;
 @Controller
 @RequestMapping("/xss")
 public class XSS {
+
+    /**
+     * Closed set of values that may be stored in the demo "xss" cookie.
+     */
+    private static final List<String> ALLOWED_COOKIE_VALUES = Collections.unmodifiableList(
+            Arrays.asList("test", "hello", "joychou"));
 
     /**
      * Vuln Code.
@@ -27,7 +37,7 @@ public class XSS {
     @RequestMapping("/reflect")
     @ResponseBody
     public static String reflect(String xss) {
-        return xss;
+        return WebUtils.htmlSafeRebuild(xss);
     }
 
     /**
@@ -40,8 +50,15 @@ public class XSS {
     @RequestMapping("/stored/store")
     @ResponseBody
     public String store(String xss, HttpServletResponse response) {
-        Cookie cookie = new Cookie("xss", xss);
-        response.addCookie(cookie);
+        // Cookie value is a constant from the allowlist, never the raw request value.
+        String allowed = SecurityUtil.allowedConstant(xss, ALLOWED_COOKIE_VALUES);
+        if (allowed != null) {
+            Cookie cookie = new Cookie("xss", allowed);
+            cookie.setSecure(true);
+            cookie.setHttpOnly(true);
+            cookie.setPath("/");
+            response.addCookie(cookie);
+        }
         return "Set param into cookie";
     }
 
@@ -55,7 +72,7 @@ public class XSS {
     @RequestMapping("/stored/show")
     @ResponseBody
     public String show(@CookieValue("xss") String xss) {
-        return xss;
+        return WebUtils.htmlSafeRebuild(xss);
     }
 
     /**
@@ -65,16 +82,6 @@ public class XSS {
     @RequestMapping("/safe")
     @ResponseBody
     public static String safe(String xss) {
-        return encode(xss);
-    }
-
-    private static String encode(String origin) {
-        origin = StringUtils.replace(origin, "&", "&amp;");
-        origin = StringUtils.replace(origin, "<", "&lt;");
-        origin = StringUtils.replace(origin, ">", "&gt;");
-        origin = StringUtils.replace(origin, "\"", "&quot;");
-        origin = StringUtils.replace(origin, "'", "&#x27;");
-        origin = StringUtils.replace(origin, "/", "&#x2F;");
-        return origin;
+        return WebUtils.htmlSafeRebuild(xss);
     }
 }

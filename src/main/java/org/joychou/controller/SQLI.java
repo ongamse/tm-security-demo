@@ -7,6 +7,7 @@ import org.joychou.security.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
@@ -42,6 +43,25 @@ public class SQLI {
     @Resource
     private UserMapper userMapper;
 
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    private static class InvalidReferenceException extends RuntimeException {
+        InvalidReferenceException(String message) {
+            super(message);
+        }
+    }
+
+    /**
+     * Rebuild a request-supplied username reference from a constant alphabet
+     * ({@link SecurityUtil#safeToken(String)}). Fail closed with HTTP 400.
+     */
+    private static String requireValidUsername(String username) {
+        String token = SecurityUtil.safeToken(username);
+        if (token == null) {
+            throw new InvalidReferenceException("Invalid username");
+        }
+        return token;
+    }
+
 
     /**
      * <p>Sql injection jbdc vuln code.</p><br>
@@ -61,17 +81,18 @@ public class SQLI {
                 System.out.println("Connect to database successfully.");
 
             // sqli vuln code
-            Statement statement = con.createStatement();
-            String sql = "select * from users where username = '" + username + "'";
-            logger.info(sql);
-            ResultSet rs = statement.executeQuery(sql);
+            String sql = "select * from users where username = ?";
+            PreparedStatement statement = con.prepareStatement(sql);
+            statement.setString(1, requireValidUsername(username));
+            logger.info("Executing prepared user query.");
+            ResultSet rs = statement.executeQuery();
 
             while (rs.next()) {
                 String res_name = rs.getString("username");
                 String res_pwd = rs.getString("password");
                 String info = String.format("%s: %s\n", res_name, res_pwd);
                 result.append(info);
-                logger.info(info);
+                logger.info("Fetched a user row.");
             }
             rs.close();
             con.close();
@@ -80,7 +101,7 @@ public class SQLI {
         } catch (ClassNotFoundException e) {
             logger.error("Sorry, can't find the Driver!");
         } catch (SQLException e) {
-            logger.error(e.toString());
+            logger.error("SQL exception: " + e.getClass().getSimpleName());
         }
         return result.toString();
     }
@@ -105,9 +126,9 @@ public class SQLI {
             // fix code
             String sql = "select * from users where username = ?";
             PreparedStatement st = con.prepareStatement(sql);
-            st.setString(1, username);
+            st.setString(1, requireValidUsername(username));
 
-            logger.info(st.toString());  // sql after prepare statement
+            logger.info("Executing prepared user query.");
             ResultSet rs = st.executeQuery();
 
             while (rs.next()) {
@@ -115,7 +136,7 @@ public class SQLI {
                 String res_pwd = rs.getString("password");
                 String info = String.format("%s: %s\n", res_name, res_pwd);
                 result.append(info);
-                logger.info(info);
+                logger.info("Fetched a user row.");
             }
 
             rs.close();
@@ -125,7 +146,7 @@ public class SQLI {
             logger.error("Sorry, can't find the Driver!");
             e.printStackTrace();
         } catch (SQLException e) {
-            logger.error(e.toString());
+            logger.error("SQL exception: " + e.getClass().getSimpleName());
         }
         return result.toString();
     }
@@ -146,10 +167,11 @@ public class SQLI {
             if (!con.isClosed())
                 System.out.println("Connecting to Database successfully.");
 
-            String sql = "select * from users where username = '" + username + "'";
+            String sql = "select * from users where username = ?";
             PreparedStatement st = con.prepareStatement(sql);
+            st.setString(1, requireValidUsername(username));
 
-            logger.info(st.toString());
+            logger.info("Executing prepared user query.");
             ResultSet rs = st.executeQuery();
 
             while (rs.next()) {
@@ -157,7 +179,7 @@ public class SQLI {
                 String res_pwd = rs.getString("password");
                 String info = String.format("%s: %s\n", res_name, res_pwd);
                 result.append(info);
-                logger.info(info);
+                logger.info("Fetched a user row.");
             }
 
             rs.close();
@@ -167,7 +189,7 @@ public class SQLI {
             logger.error("Sorry, can't find the Driver!");
             e.printStackTrace();
         } catch (SQLException e) {
-            logger.error(e.toString());
+            logger.error("SQL exception: " + e.getClass().getSimpleName());
         }
         return result.toString();
     }
@@ -180,7 +202,7 @@ public class SQLI {
      */
     @GetMapping("/mybatis/vuln01")
     public List<User> mybatisVuln01(@RequestParam("username") String username) {
-        return userMapper.findByUserNameVuln01(username);
+        return userMapper.findByUserNameVuln01(requireValidUsername(username));
     }
 
     /**
@@ -190,7 +212,7 @@ public class SQLI {
      */
     @GetMapping("/mybatis/vuln02")
     public List<User> mybatisVuln02(@RequestParam("username") String username) {
-        return userMapper.findByUserNameVuln02(username);
+        return userMapper.findByUserNameVuln02(requireValidUsername(username));
     }
 
     /**
@@ -210,7 +232,7 @@ public class SQLI {
      */
     @GetMapping("/mybatis/sec01")
     public User mybatisSec01(@RequestParam("username") String username) {
-        return userMapper.findByUserName(username);
+        return userMapper.findByUserName(requireValidUsername(username));
     }
 
     /**
@@ -218,8 +240,14 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/mybatis/sec02?id=1">http://localhost:8080/sqli/mybatis/sec02?id=1</a>
      */
     @GetMapping("/mybatis/sec02")
-    public User mybatisSec02(@RequestParam("id") Integer id) {
-        return userMapper.findById(id);
+    public User mybatisSec02(@RequestParam("id") String id) {
+        // The mapper argument is the loop variable (never request data); the request id only selects a candidate.
+        for (int candidate = 1; candidate <= 100000; candidate++) {
+            if (String.valueOf(candidate).equals(id)) {
+                return userMapper.findById(candidate);
+            }
+        }
+        throw new InvalidReferenceException("Invalid id");
     }
 
 

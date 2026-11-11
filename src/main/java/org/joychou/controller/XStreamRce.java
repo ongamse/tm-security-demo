@@ -3,9 +3,9 @@ package org.joychou.controller;
 import com.thoughtworks.xstream.XStream;
 import com.thoughtworks.xstream.io.xml.DomDriver;
 import org.joychou.dao.User;
-import org.joychou.util.WebUtils;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
+
 
 import javax.servlet.http.HttpServletRequest;
 
@@ -21,11 +21,9 @@ public class XStreamRce {
      * @author JoyChou @2019-07-26
      */
     @PostMapping("/xstream")
-    public String parseXml(HttpServletRequest request) throws Exception {
-        String xml = WebUtils.getRequestBody(request);
-        XStream xstream = new XStream(new DomDriver());
-        xstream.fromXML(xml);
-        return "xstream";
+    public String parseXml(HttpServletRequest request) {
+        // Request bodies are never deserialized with XStream (RCE / XXE risk); the endpoint is disabled.
+        return "xstream deserialization of request data is disabled";
     }
 
     public static void main(String[] args) {

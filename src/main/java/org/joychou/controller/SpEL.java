@@ -1,10 +1,21 @@
 package org.joychou.controller;
 
+import org.springframework.expression.ConstructorResolver;
 import org.springframework.expression.ExpressionParser;
+import org.springframework.expression.MethodResolver;
+import org.springframework.expression.PropertyAccessor;
+import org.springframework.expression.spel.SpelEvaluationException;
+import org.springframework.expression.spel.SpelMessage;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
+import org.springframework.expression.spel.support.StandardEvaluationContext;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.util.HtmlUtils;
+
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 
 
 /**
@@ -15,6 +26,17 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 public class SpEL {
 
+    /** Closed set of SpEL expressions selectable by key; request text is never evaluated. */
+    private static final Map<String, String> ALLOWED_EXPRESSIONS;
+
+    static {
+        Map<String, String> m = new HashMap<String, String>();
+        m.put("1+1", "1 + 1");
+        m.put("2*3", "2 * 3");
+        m.put("hello", "'hello'");
+        ALLOWED_EXPRESSIONS = Collections.unmodifiableMap(m);
+    }
+
     /**
      * SpEL to RCE
      * http://localhost:8080/spel/vul/?expression=xxx.
@@ -24,8 +46,28 @@ public class SpEL {
     @GetMapping("/spel/vuln")
     public String rce(String expression) {
         ExpressionParser parser = new SpelExpressionParser();
-        // fix method: SimpleEvaluationContext
-        return parser.parseExpression(expression).getValue().toString();
+        // Restricted context (SimpleEvaluationContext is unavailable in this Spring version):
+        // no type references (T(..)/new), no method calls, no constructors, no property access.
+        StandardEvaluationContext context = new StandardEvaluationContext();
+        context.setTypeLocator(typeName -> {
+            throw new SpelEvaluationException(SpelMessage.TYPE_NOT_FOUND, typeName);
+        });
+        context.setMethodResolvers(Collections.<MethodResolver>emptyList());
+        context.setConstructorResolvers(Collections.<ConstructorResolver>emptyList());
+        context.setPropertyAccessors(Collections.<PropertyAccessor>emptyList());
+        // Request text is never parsed: it only selects one of the fixed expressions.
+        String fixedExpression = null;
+        for (Map.Entry<String, String> entry : ALLOWED_EXPRESSIONS.entrySet()) {
+            if (entry.getKey().equals(expression)) {
+                fixedExpression = entry.getValue();
+                break;
+            }
+        }
+        if (fixedExpression == null) {
+            return "Bad boy. I got u.";
+        }
+        Object value = parser.parseExpression(fixedExpression).getValue(context);
+        return HtmlUtils.htmlEscape(String.valueOf(value));
     }
 
     public static void main(String[] args) {

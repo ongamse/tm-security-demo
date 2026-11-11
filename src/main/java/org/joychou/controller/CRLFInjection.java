@@ -1,5 +1,6 @@
 package org.joychou.controller;
 
+import org.joychou.security.SecurityUtil;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseBody;
@@ -20,10 +21,23 @@ public class CRLFInjection {
     @RequestMapping("/safecode")
     @ResponseBody
     public void crlf(HttpServletRequest request, HttpServletResponse response) {
-        response.addHeader("test1", request.getParameter("test1"));
-        response.setHeader("test2", request.getParameter("test2"));
-        String author = request.getParameter("test3");
-        Cookie cookie = new Cookie("test3", author);
-        response.addCookie(cookie);
+        // Header values come from a closed set of constants; any other request value is not reflected.
+        String test1 = SecurityUtil.allowedConstant(request.getParameter("test1"), SecurityUtil.ALLOWED_HEADER_VALUES);
+        if (test1 != null) {
+            response.addHeader("test1", test1);
+        }
+        String test2 = SecurityUtil.allowedConstant(request.getParameter("test2"), SecurityUtil.ALLOWED_HEADER_VALUES);
+        if (test2 != null) {
+            response.setHeader("test2", test2);
+        }
+        // Cookie value is a constant from the allowlist, never the raw request value.
+        String author = SecurityUtil.allowedConstant(request.getParameter("test3"), SecurityUtil.ALLOWED_HEADER_VALUES);
+        if (author != null) {
+            Cookie cookie = new Cookie("test3", author);
+            cookie.setSecure(true);
+            cookie.setHttpOnly(true);
+            cookie.setPath("/");
+            response.addCookie(cookie);
+        }
     }
 }

@@ -1,21 +1,26 @@
 package org.joychou.controller;
 
-import com.fasterxml.uuid.Generators;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
+import org.springframework.web.util.HtmlUtils;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.UUID;
 
 import org.joychou.security.SecurityUtil;
@@ -58,16 +63,21 @@ public class FileUpload {
 
         try {
             // Get the file and save it somewhere
+            Path path = resolveUploadPath(file.getOriginalFilename());
+            if (path == null) {
+                redirectAttributes.addFlashAttribute("message", "upload failed: illegal file name");
+                return "redirect:/file/status";
+            }
             byte[] bytes = file.getBytes();
-            Path path = Paths.get(UPLOADED_FOLDER + file.getOriginalFilename());
-            Files.write(path, bytes);
+            Files.write(path, bytes, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING,
+                    StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS);
 
             redirectAttributes.addFlashAttribute("message",
-                    "You successfully uploaded '" + UPLOADED_FOLDER + file.getOriginalFilename() + "'");
+                    "You successfully uploaded '" + path + "'");
 
         } catch (IOException e) {
             redirectAttributes.addFlashAttribute("message", "upload failed");
-            logger.error(e.toString());
+            logger.error("File upload exception: " + e.getClass().getSimpleName());
         }
 
         return "redirect:/file/status";
@@ -86,10 +96,15 @@ public class FileUpload {
             return "Please select a file to upload";
         }
 
-        String fileName = multifile.getOriginalFilename();
+        String fileName = sanitizeFileName(multifile.getOriginalFilename());
+        Path safePath = resolveUploadPath(fileName);
+        if (safePath == null || fileName.lastIndexOf('.') < 0) {
+            logger.error("[-] Illegal file name");
+            return "Upload failed. Illeagl picture.";
+        }
         String Suffix = fileName.substring(fileName.lastIndexOf(".")); // 获取文件后缀名
         String mimeType = multifile.getContentType(); // 获取MIME类型
-        String filePath = UPLOADED_FOLDER + fileName;
+        String filePath = safePath.toString();
         File excelFile = convert(multifile);
 
 
@@ -103,7 +118,7 @@ public class FileUpload {
             }
         }
         if (!suffixFlag) {
-            logger.error("[-] Suffix error: " + Suffix);
+            logger.error("[-] Suffix error: not an allowed image suffix");
             deleteFile(filePath);
             return "Upload failed. Illeagl picture.";
         }
@@ -121,7 +136,7 @@ public class FileUpload {
         for (String blackMimeType : mimeTypeBlackList) {
             // 用contains是为了防止text/html;charset=UTF-8绕过
             if (SecurityUtil.replaceSpecialStr(mimeType).toLowerCase().contains(blackMimeType)) {
-                logger.error("[-] Mime type error: " + mimeType);
+                logger.error("[-] Mime type error: blacklisted MIME type");
                 deleteFile(filePath);
                 return "Upload failed. Illeagl picture.";
             }
@@ -141,28 +156,58 @@ public class FileUpload {
         try {
             // Get the file and save it somewhere
             byte[] bytes = multifile.getBytes();
-            Path path = Paths.get(UPLOADED_FOLDER + multifile.getOriginalFilename());
-            Files.write(path, bytes);
+            Files.write(safePath, bytes, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING,
+                    StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS);
         } catch (IOException e) {
-            logger.error(e.toString());
+            logger.error("File upload exception: " + e.getClass().getSimpleName());
             deleteFile(filePath);
             return "Upload failed";
         }
 
-        logger.info("[+] Safe file. Suffix: {}, MIME: {}", Suffix, mimeType);
-        logger.info("[+] Successfully uploaded {}", filePath);
-        return String.format("You successfully uploaded '%s'", filePath);
+        logger.info("[+] Safe file passed all upload checks.");
+        logger.info("[+] Successfully uploaded file.");
+        return String.format("You successfully uploaded '%s'", HtmlUtils.htmlEscape(filePath));
+    }
+
+    /**
+     * Strip any directory components (both / and \) from an uploaded file name.
+     *
+     * @return bare file name, or null if empty / contains NUL / is a dot segment
+     */
+    private static String sanitizeFileName(String originalName) {
+        if (originalName == null || originalName.indexOf('\0') != -1) {
+            return null;
+        }
+        String name = originalName.substring(
+                Math.max(originalName.lastIndexOf('/'), originalName.lastIndexOf('\\')) + 1);
+        if (name.isEmpty() || name.equals(".") || name.equals("..")) {
+            return null;
+        }
+        return name;
+    }
+
+    /**
+     * Resolve an uploaded file name inside UPLOADED_FOLDER; null if it would escape.
+     */
+    private static Path resolveUploadPath(String originalName) {
+        String name = sanitizeFileName(originalName);
+        return name == null ? null : SecurityUtil.resolveInBase(UPLOADED_FOLDER, name);
     }
 
     private void deleteFile(String filePath) {
-        File delFile = new File(filePath);
-        if(delFile.isFile() && delFile.exists()) {
-            if (delFile.delete()) {
-                logger.info("[+] " + filePath + " delete successfully!");
+        if (filePath == null || filePath.isEmpty()) {
+            logger.info("File delete failed!");
+            return;
+        }
+        try {
+            if (Files.deleteIfExists(Paths.get(filePath))) {
+                logger.info("[+] File deleted successfully!");
                 return;
             }
+        } catch (IOException | InvalidPathException e) {
+            logger.info("File delete exception: " + e.getClass().getSimpleName());
         }
-        logger.info(filePath + " delete failed!");
+        logger.info("File delete failed!");
     }
 
     /**
@@ -172,27 +217,35 @@ public class FileUpload {
      * https://stackoverflow.com/questions/24339990/how-to-convert-a-multipart-file-to-file
      */
     private File convert(MultipartFile multiFile) throws Exception {
-        String fileName = multiFile.getOriginalFilename();
-        String suffix = fileName.substring(fileName.lastIndexOf("."));
-        UUID uuid = Generators.timeBasedGenerator().generate();
-        randomFilePath = UPLOADED_FOLDER + uuid + suffix;
-        // 随机生成一个同后缀名的文件
-        File convFile = new File(randomFilePath);
-        boolean ret = convFile.createNewFile();
-        if (!ret) {
+        String fileName = sanitizeFileName(multiFile.getOriginalFilename());
+        if (fileName == null || fileName.lastIndexOf('.') < 0) {
             return null;
         }
-        FileOutputStream fos = new FileOutputStream(convFile);
-        fos.write(multiFile.getBytes());
-        fos.close();
-        return convFile;
+        String suffix = fileName.substring(fileName.lastIndexOf("."));
+        UUID uuid = UUID.randomUUID();
+        Path randomPath = resolveUploadPath(uuid + suffix);
+        if (randomPath == null) {
+            return null;
+        }
+        randomFilePath = randomPath.toString();
+        // 随机生成一个同后缀名的文件
+        // CREATE_NEW atomically fails if the file (or a symlink) already exists.
+        try (OutputStream out = Files.newOutputStream(randomPath,
+                StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)) {
+            out.write(multiFile.getBytes());
+        } catch (FileAlreadyExistsException e) {
+            return null;
+        }
+        return randomPath.toFile();
     }
 
     /**
      * Check if the file is a picture.
      */
     private static boolean isImage(File file) throws IOException {
-        BufferedImage bi = ImageIO.read(file);
-        return bi != null;
+        try (InputStream in = Files.newInputStream(file.toPath(), LinkOption.NOFOLLOW_LINKS)) {
+            BufferedImage bi = ImageIO.read(in);
+            return bi != null;
+        }
     }
 }
