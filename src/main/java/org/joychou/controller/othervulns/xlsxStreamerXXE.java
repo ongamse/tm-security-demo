@@ -1,16 +1,15 @@
 package org.joychou.controller.othervulns;
 
 import com.monitorjbl.xlsx.StreamingReader;
-import org.apache.poi.ss.usermodel.Workbook;
 
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.FileInputStream;
-import java.io.IOException;
 
 
 /**
@@ -33,8 +32,10 @@ public class xlsxStreamerXXE {
 
 
     @PostMapping("/readxlsx")
-    public void xllx_streamer_xxe(MultipartFile file) throws IOException {
-        StreamingReader.builder().open(file.getInputStream());
+    @ResponseBody
+    public String xllx_streamer_xxe(MultipartFile file) {
+        // Uploaded workbooks are never opened with xlsx-streamer (XXE risk); the endpoint is disabled.
+        return "xlsx parsing of uploaded files is disabled";
     }
 
 
