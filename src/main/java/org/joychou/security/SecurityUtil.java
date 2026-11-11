@@ -16,12 +16,16 @@ import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import java.util.regex.Pattern;
 
 
 public class SecurityUtil {
 
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
+    private static final List<String> NO_ARG_COMMANDS = Arrays.asList("whoami", "id", "date", "uname", "hostname", "pwd");
+    private static final List<String> ARG_COMMANDS = Arrays.asList("ls");
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
 
 
@@ -234,11 +238,42 @@ public class SecurityUtil {
 
 
     public static String cmdFilter(String input) {
-        if (!FILTER_PATTERN.matcher(input).matches()) {
+        if (input == null || !FILTER_PATTERN.matcher(input).matches()) {
             return null;
         }
 
         return input;
+    }
+
+
+    /**
+     * Parse an untrusted command line into an argv array (no shell involved) restricted to an allowlist.
+     * Commands in the first set take no arguments. Commands in the second set accept arguments
+     * that satisfy {@link #cmdFilter(String)}.
+     *
+     * @param cmd untrusted command line
+     * @return argv safe to pass to ProcessBuilder / Runtime.exec(String[]), or null if not allowed
+     */
+    public static String[] allowedCmdArgv(String cmd) {
+        if (cmd == null) {
+            return null;
+        }
+        String[] parts = cmd.trim().split("\\s+");
+        if (parts.length > 8) {
+            return null;
+        }
+        if (NO_ARG_COMMANDS.contains(parts[0])) {
+            return parts.length == 1 ? parts : null;
+        }
+        if (!ARG_COMMANDS.contains(parts[0])) {
+            return null;
+        }
+        for (int i = 1; i < parts.length; i++) {
+            if (cmdFilter(parts[i]) == null) {
+                return null;
+            }
+        }
+        return parts;
     }
 
 
