@@ -17,6 +17,9 @@ import org.jsoup.nodes.Document;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.joychou.security.SecurityUtil;
+import org.joychou.security.ssrf.SSRFChecker;
+
 import javax.imageio.ImageIO;
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -37,6 +40,8 @@ public class HttpUtils {
 
     public static String commonHttpClient(String url) {
 
+        SSRFChecker.validateUrlForSSRF(url);
+
         HttpClient client = new HttpClient();
         GetMethod method = new GetMethod(url);
 
@@ -46,7 +51,7 @@ public class HttpUtils {
             return new String(resBody);
 
         } catch (IOException e) {
-            return "Error: " + e.getMessage();
+            return "Request failed";
         } finally {
             // Release the connection.
             method.releaseConnection();
@@ -56,14 +61,17 @@ public class HttpUtils {
 
     public static String request(String url) {
         try {
+            SSRFChecker.validateUrlForSSRF(url);
             return Request.Get(url).execute().returnContent().toString();
         } catch (Exception e) {
-            return e.getMessage();
+            return "Request failed";
         }
     }
 
 
     public static String httpClient(String url) {
+
+        SSRFChecker.validateUrlForSSRF(url);
 
         StringBuilder result = new StringBuilder();
 
@@ -84,13 +92,14 @@ public class HttpUtils {
             return result.toString();
 
         } catch (Exception e) {
-            return e.getMessage();
+            return "Request failed";
         }
     }
 
 
     public static String URLConnection(String url) {
         try {
+            SSRFChecker.validateUrlForSSRF(url);
             URL u = new URL(url);
             URLConnection urlConnection = u.openConnection();
             BufferedReader in = new BufferedReader(new InputStreamReader(urlConnection.getInputStream())); //send request
@@ -103,8 +112,8 @@ public class HttpUtils {
             in.close();
             return html.toString();
         } catch (Exception e) {
-            logger.error(e.getMessage());
-            return e.getMessage();
+            logger.error("URLConnection error: {}", SecurityUtil.sanitizeLogInput(e.getMessage()));
+            return "Request failed";
         }
     }
 
@@ -115,6 +124,7 @@ public class HttpUtils {
      */
     public static String HttpURLConnection(String url) {
         try {
+            SSRFChecker.validateUrlForSSRF(url);
             URL u = new URL(url);
             URLConnection urlConnection = u.openConnection();
             HttpURLConnection conn = (HttpURLConnection) urlConnection;
@@ -131,8 +141,8 @@ public class HttpUtils {
             in.close();
             return html.toString();
         } catch (IOException e) {
-            logger.error(e.getMessage());
-            return e.getMessage();
+            logger.error("HttpURLConnection error: {}", SecurityUtil.sanitizeLogInput(e.getMessage()));
+            return "Request failed";
         }
     }
 
@@ -144,6 +154,7 @@ public class HttpUtils {
      */
     public static String Jsoup(String url) {
         try {
+            SSRFChecker.validateUrlForSSRF(url);
             Document doc = Jsoup.connect(url)
 //                    .followRedirects(false)
                     .timeout(3000)
@@ -151,7 +162,7 @@ public class HttpUtils {
                     .execute().parse();
             return doc.outerHtml();
         } catch (IOException e) {
-            return e.getMessage();
+            return "Request failed";
         }
     }
 
@@ -162,6 +173,7 @@ public class HttpUtils {
      * UserAgent is <code>okhttp/2.5.0</code>.
      */
     public static String okhttp(String url) throws IOException {
+        SSRFChecker.validateUrlForSSRF(url);
         OkHttpClient client = new OkHttpClient();
 //         client.setFollowRedirects(false);
         com.squareup.okhttp.Request ok_http = new com.squareup.okhttp.Request.Builder().url(url).build();
@@ -178,10 +190,11 @@ public class HttpUtils {
      */
     public static void imageIO(String url) {
         try {
+            SSRFChecker.validateUrlForSSRF(url);
             URL u = new URL(url);
             ImageIO.read(u); // send request
         } catch (IOException e) {
-            logger.error(e.getMessage());
+            logger.error("ImageIO error: {}", SecurityUtil.sanitizeLogInput(e.getMessage()));
         }
 
     }
@@ -195,14 +208,16 @@ public class HttpUtils {
      */
     public static void IOUtils(String url) {
         try {
+            SSRFChecker.validateUrlForSSRF(url);
             IOUtils.toByteArray(URI.create(url));
         } catch (IOException e) {
-            logger.error(e.getMessage());
+            logger.error("IOUtils error: {}", SecurityUtil.sanitizeLogInput(e.getMessage()));
         }
     }
 
 
     public static String HttpAsyncClients(String url) {
+        SSRFChecker.validateUrlForSSRF(url);
         CloseableHttpAsyncClient httpclient = HttpAsyncClients.createDefault();
         try {
             httpclient.start();
@@ -211,12 +226,12 @@ public class HttpUtils {
             HttpResponse response = future.get(6000, TimeUnit.MILLISECONDS);
             return EntityUtils.toString(response.getEntity());
         } catch (Exception e) {
-            return e.getMessage();
+            return "Request failed";
         } finally {
             try {
                 httpclient.close();
             } catch (Exception e) {
-                logger.error(e.getMessage());
+                logger.error("HttpAsyncClients close error");
             }
         }
     }

@@ -1,7 +1,11 @@
 package org.joychou.RMI;
 
+import java.io.IOException;
+import java.net.InetAddress;
+import java.net.ServerSocket;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
+import java.rmi.server.RMIServerSocketFactory;
 import java.rmi.server.UnicastRemoteObject;
 
 
@@ -15,10 +19,18 @@ public class Server implements Hello {
     public static void main(String args[]) {
 
         try {
+            // Restrict RMI registry to localhost to prevent remote exploitation
+            RMIServerSocketFactory localOnly = new RMIServerSocketFactory() {
+                @Override
+                public ServerSocket createServerSocket(int port) throws IOException {
+                    ServerSocket ss = new ServerSocket(port, 0, InetAddress.getLoopbackAddress());
+                    return ss;
+                }
+            };
             Server obj = new Server();
             Hello stub = (Hello) UnicastRemoteObject.exportObject(obj, 0);
-            LocateRegistry.createRegistry(1099);
-            Registry registry = LocateRegistry.getRegistry();
+            LocateRegistry.createRegistry(1099, null, localOnly);
+            Registry registry = LocateRegistry.getRegistry("127.0.0.1", 1099);
             registry.bind("Hello", stub);
             System.out.println("绑定1099端口成功");
         } catch (Exception e) {

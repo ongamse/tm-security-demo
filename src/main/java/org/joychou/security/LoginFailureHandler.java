@@ -1,5 +1,6 @@
 package org.joychou.security;
 
+import org.joychou.security.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
@@ -21,9 +22,7 @@ public class LoginFailureHandler implements AuthenticationFailureHandler {
                                         HttpServletResponse response, AuthenticationException exception)
                                         throws ServletException, IOException {
 
-        logger.info("Login failed. " + request.getRequestURL() +
-                " username: " + request.getParameter("username") +
-                " password: " + request.getParameter("password") );
+        logger.info("Login failed. URL: {} username: {}", SecurityUtil.sanitizeLogInput(request.getRequestURL().toString()), SecurityUtil.sanitizeLogInput(request.getParameter("username")));
 
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         response.getWriter().write("{\"code\":1, \"message\":\"Login failed.\"}");

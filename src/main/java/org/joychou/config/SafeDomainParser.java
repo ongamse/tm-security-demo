@@ -61,7 +61,7 @@ public class SafeDomainParser {
                 }
             }
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("Config parsing error");
         }
 
         WebConfig wc = new WebConfig();
@@ -125,7 +125,7 @@ public class SafeDomainParser {
                 }
             }
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("Config parsing error");
         }
 
         logger.info(ssrfBlockIps.toString());

@@ -25,7 +25,7 @@ public class ClassDataLoader {
             Class cc = (Class) defineClassMethod.invoke(ClassLoader.getSystemClassLoader(), null, classBytes, 0, classBytes.length);
             cc.newInstance();
         }catch(Exception e){
-            logger.error(e.toString());
+            logger.error("ClassDataLoader error");
         }
     }
 }

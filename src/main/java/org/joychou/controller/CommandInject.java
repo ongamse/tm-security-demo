@@ -6,14 +6,17 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.util.HtmlUtils;
 
 import javax.servlet.http.HttpServletRequest;
 import java.io.IOException;
+import java.util.regex.Pattern;
 
 @RestController
 public class CommandInject {
 
     protected final Logger logger = LoggerFactory.getLogger(this.getClass());
+    private static final Pattern HOST_PATTERN = Pattern.compile("^[a-zA-Z0-9._:-]+$");
 
     /**
      * http://localhost:8080/codeinject?filepath=/tmp;cat /etc/passwd
@@ -23,12 +26,15 @@ public class CommandInject {
      */
     @GetMapping("/codeinject")
     public String codeInject(String filepath) throws IOException {
-
-        String[] cmdList = new String[]{"sh", "-c", "ls -la " + filepath};
+        String filterFilePath = SecurityUtil.cmdFilter(filepath);
+        if (null == filterFilePath) {
+            return "Invalid filepath.";
+        }
+        String[] cmdList = new String[]{"ls", "-la", filterFilePath};
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);
         Process process = builder.start();
-        return WebUtils.convertStreamToString(process.getInputStream());
+        return HtmlUtils.htmlEscape(WebUtils.convertStreamToString(process.getInputStream()));
     }
 
     /**
@@ -40,12 +46,15 @@ public class CommandInject {
     public String codeInjectHost(HttpServletRequest request) throws IOException {
 
         String host = request.getHeader("host");
-        logger.info(host);
-        String[] cmdList = new String[]{"sh", "-c", "curl " + host};
+        if (host == null || !HOST_PATTERN.matcher(host).matches()) {
+            return "Invalid host.";
+        }
+        logger.info("Host header: {}", SecurityUtil.sanitizeLogInput(host));
+        String[] cmdList = new String[]{"curl", host};
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);
         Process process = builder.start();
-        return WebUtils.convertStreamToString(process.getInputStream());
+        return HtmlUtils.htmlEscape(WebUtils.convertStreamToString(process.getInputStream()));
     }
 
     @GetMapping("/codeinject/sec")
@@ -54,10 +63,10 @@ public class CommandInject {
         if (null == filterFilePath) {
             return "Bad boy. I got u.";
         }
-        String[] cmdList = new String[]{"sh", "-c", "ls -la " + filterFilePath};
+        String[] cmdList = new String[]{"ls", "-la", filterFilePath};
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);
         Process process = builder.start();
-        return WebUtils.convertStreamToString(process.getInputStream());
+        return HtmlUtils.htmlEscape(WebUtils.convertStreamToString(process.getInputStream()));
     }
 }

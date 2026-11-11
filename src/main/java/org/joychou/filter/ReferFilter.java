@@ -65,8 +65,7 @@ public class ReferFilter implements Filter {
         if ("GET".equals(request.getMethod()) && StringUtils.isNotBlank(reqCallback)) {
             // If the check of referer fails, a 403 forbidden error page will be returned.
             if (SecurityUtil.checkURL(refer) == null) {
-                logger.info("[-] URL: " + request.getRequestURL() + "?" + request.getQueryString() + "\t"
-                        + "Referer: " + refer);
+                logger.info("[-] URL: {}?{}\tReferer: {}", SecurityUtil.sanitizeLogInput(request.getRequestURL().toString()), SecurityUtil.sanitizeLogInput(request.getQueryString()), SecurityUtil.sanitizeLogInput(refer));
                 response.setStatus(HttpServletResponse.SC_FORBIDDEN);
                 response.getWriter().write(" Referer check error.");
                 response.flushBuffer();
