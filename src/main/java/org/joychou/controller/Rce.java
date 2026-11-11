@@ -30,6 +30,8 @@ import java.io.InputStreamReader;
 import java.sql.DriverManager;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 
 
 /**
@@ -41,6 +43,18 @@ import java.util.Collections;
 @RestController
 @RequestMapping("/rce")
 public class Rce {
+
+    /** Closed set of Groovy scripts selectable by key; request text is never evaluated. */
+    private static final Map<String, String> GROOVY_SCRIPTS;
+
+    static {
+        Map<String, String> m = new HashMap<String, String>();
+        m.put("1+1", "1 + 1");
+        m.put("2*3", "2 * 3");
+        m.put("10-4", "10 - 4");
+        m.put("8/2", "8 / 2");
+        GROOVY_SCRIPTS = Collections.unmodifiableMap(m);
+    }
 
     @GetMapping("/runtime/exec")
     public String CommandExec(String cmd) {
@@ -157,6 +171,11 @@ public class Rce {
      */
     @GetMapping("groovy")
     public void groovyshell(String content) {
+        // Request text is never evaluated: it only selects one of the fixed scripts below.
+        String script = GROOVY_SCRIPTS.get(content);
+        if (script == null) {
+            throw new IllegalArgumentException("content is not allowed");
+        }
         // Restrict the script to constants and basic arithmetic: no method calls, property access,
         // class references, closures or declarations, so the script cannot execute commands.
         SecureASTCustomizer secure = new SecureASTCustomizer();
@@ -175,7 +194,7 @@ public class Rce {
         CompilerConfiguration config = new CompilerConfiguration();
         config.addCompilationCustomizers(secure);
         GroovyShell groovyShell = new GroovyShell(config);
-        groovyShell.evaluate(content);
+        groovyShell.evaluate(script);
     }
 
 

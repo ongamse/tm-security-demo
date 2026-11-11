@@ -10,12 +10,9 @@ import org.springframework.web.util.HtmlUtils;
 
 import javax.servlet.http.HttpServletRequest;
 import java.io.IOException;
-import java.util.regex.Pattern;
 
 @RestController
 public class CommandInject {
-
-    private static final Pattern HOST_PATTERN = Pattern.compile("^[a-zA-Z0-9.-]+(:[0-9]{1,5})?$");
 
     protected final Logger logger = LoggerFactory.getLogger(this.getClass());
 
@@ -28,7 +25,8 @@ public class CommandInject {
     @GetMapping("/codeinject")
     public String codeInject(String filepath) throws IOException {
 
-        String safePath = SecurityUtil.cmdFilter(filepath);
+        // Only the constant directory from the allowlist is used, never the request string.
+        String safePath = SecurityUtil.allowedConstant(filepath, SecurityUtil.ALLOWED_DIRS);
         if (null == safePath) {
             return "Bad boy. I got u.";
         }
@@ -50,11 +48,13 @@ public class CommandInject {
 
         String host = request.getHeader("host");
         logger.info(host);
-        if (host == null || !HOST_PATTERN.matcher(host).matches()) {
+        // Only the constant host from the allowlist is used, never the request header value.
+        String safeHost = SecurityUtil.allowedConstant(host, SecurityUtil.ALLOWED_HOSTS);
+        if (safeHost == null) {
             return "Bad boy. I got u.";
         }
-        // No shell: validated host is a single argv element, "--" stops option parsing.
-        String[] cmdList = new String[]{"curl", "--", host};
+        // No shell: the constant host is a single argv element, "--" stops option parsing.
+        String[] cmdList = new String[]{"curl", "--", safeHost};
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);
         Process process = builder.start();
@@ -63,7 +63,7 @@ public class CommandInject {
 
     @GetMapping("/codeinject/sec")
     public String codeInjectSec(String filepath) throws IOException {
-        String filterFilePath = SecurityUtil.cmdFilter(filepath);
+        String filterFilePath = SecurityUtil.allowedConstant(filepath, SecurityUtil.ALLOWED_DIRS);
         if (null == filterFilePath) {
             return "Bad boy. I got u.";
         }

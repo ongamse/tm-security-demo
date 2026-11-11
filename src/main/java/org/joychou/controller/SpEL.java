@@ -14,6 +14,8 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.util.HtmlUtils;
 
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 
 
 /**
@@ -23,6 +25,17 @@ import java.util.Collections;
  */
 @RestController
 public class SpEL {
+
+    /** Closed set of SpEL expressions selectable by key; request text is never evaluated. */
+    private static final Map<String, String> ALLOWED_EXPRESSIONS;
+
+    static {
+        Map<String, String> m = new HashMap<String, String>();
+        m.put("1+1", "1 + 1");
+        m.put("2*3", "2 * 3");
+        m.put("hello", "'hello'");
+        ALLOWED_EXPRESSIONS = Collections.unmodifiableMap(m);
+    }
 
     /**
      * SpEL to RCE
@@ -42,7 +55,12 @@ public class SpEL {
         context.setMethodResolvers(Collections.<MethodResolver>emptyList());
         context.setConstructorResolvers(Collections.<ConstructorResolver>emptyList());
         context.setPropertyAccessors(Collections.<PropertyAccessor>emptyList());
-        Object value = parser.parseExpression(expression).getValue(context);
+        // Request text is never parsed: it only selects one of the fixed expressions.
+        String fixedExpression = ALLOWED_EXPRESSIONS.get(expression);
+        if (fixedExpression == null) {
+            return "Bad boy. I got u.";
+        }
+        Object value = parser.parseExpression(fixedExpression).getValue(context);
         return HtmlUtils.htmlEscape(String.valueOf(value));
     }
 

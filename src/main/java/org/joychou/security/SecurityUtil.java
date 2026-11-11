@@ -17,6 +17,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.regex.Pattern;
 
@@ -24,8 +25,18 @@ import java.util.regex.Pattern;
 public class SecurityUtil {
 
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
-    private static final List<String> NO_ARG_COMMANDS = Arrays.asList("whoami", "id", "date", "uname", "hostname", "pwd");
-    private static final List<String> ARG_COMMANDS = Arrays.asList("ls");
+    /**
+     * Closed set of commands that may be executed on behalf of a request. Callers compare the request
+     * value against these entries and execute the matching constant entry, never the request string.
+     */
+    public static final List<String[]> ALLOWED_CMDS = Collections.unmodifiableList(Arrays.asList(
+            new String[]{"whoami"},
+            new String[]{"id"},
+            new String[]{"date"},
+            new String[]{"uname"},
+            new String[]{"hostname"},
+            new String[]{"pwd"},
+            new String[]{"ls"}));
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
 
 
@@ -274,33 +285,56 @@ public class SecurityUtil {
 
 
     /**
-     * Parse an untrusted command line into an argv array (no shell involved) restricted to an allowlist.
-     * Commands in the first set take no arguments. Commands in the second set accept arguments
-     * that satisfy {@link #cmdFilter(String)}.
+     * Closed set of directories that may be listed on behalf of a request.
+     */
+    public static final List<String> ALLOWED_DIRS = Collections.unmodifiableList(
+            Arrays.asList("/tmp", "/var/tmp", "."));
+
+    /**
+     * Closed set of hosts that may be fetched on behalf of a request.
+     */
+    public static final List<String> ALLOWED_HOSTS = Collections.unmodifiableList(
+            Arrays.asList("localhost", "localhost:8080", "127.0.0.1", "127.0.0.1:8080"));
+
+    /**
+     * Look an untrusted value up in a closed set and return the matching constant entry.
+     * The returned string is the allowlist's own literal, never the untrusted input.
      *
-     * @param cmd untrusted command line
-     * @return argv safe to pass to ProcessBuilder / Runtime.exec(String[]), or null if not allowed
+     * @param input   untrusted value
+     * @param allowed closed set of constants
+     * @return the matching constant, or null if input is not in the set
+     */
+    public static String allowedConstant(String input, List<String> allowed) {
+        if (input == null) {
+            return null;
+        }
+        for (String candidate : allowed) {
+            if (candidate.equals(input)) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Map an untrusted command name onto a constant argv from {@link #ALLOWED_CMDS}.
+     * Only exact, argument-less matches are accepted; the returned array is a copy of the constant
+     * entry, never built from the untrusted input.
+     *
+     * @param cmd untrusted command
+     * @return constant argv safe to pass to ProcessBuilder / Runtime.exec(String[]), or null if not allowed
      */
     public static String[] allowedCmdArgv(String cmd) {
         if (cmd == null) {
             return null;
         }
-        String[] parts = cmd.trim().split("\\s+");
-        if (parts.length > 8) {
-            return null;
-        }
-        if (NO_ARG_COMMANDS.contains(parts[0])) {
-            return parts.length == 1 ? parts : null;
-        }
-        if (!ARG_COMMANDS.contains(parts[0])) {
-            return null;
-        }
-        for (int i = 1; i < parts.length; i++) {
-            if (cmdFilter(parts[i]) == null) {
-                return null;
+        String trimmed = cmd.trim();
+        for (String[] candidate : ALLOWED_CMDS) {
+            if (candidate[0].equals(trimmed)) {
+                return candidate.clone();
             }
         }
-        return parts;
+        return null;
     }
 
 
