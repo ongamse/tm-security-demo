@@ -3,7 +3,6 @@ package org.joychou.controller;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 
-import com.alibaba.fastjson.JSONPObject;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang.StringUtils;
 import org.joychou.security.SecurityUtil;
@@ -14,7 +13,6 @@ import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.ModelAndView;
-import org.springframework.web.util.HtmlUtils;
 import org.springframework.web.servlet.view.json.MappingJackson2JsonView;
 import org.joychou.config.WebConfig;
 import org.joychou.util.WebUtils;
@@ -132,14 +130,10 @@ public class Jsonp {
 
         String callback = request.getParameter("fastjsonpCallback");
         if (StringUtils.isNotBlank(callback)) {
-            if (!WebUtils.isValidJsonpCallback(callback)) {
-                return "error";
-            }
-            JSONPObject jsonpObj = new JSONPObject(callback);
-            jsonpObj.addParameter(csrfToken);
-            return WebUtils.escapeJsonForHtml(jsonpObj.toString());
+            // json2Jsonp validates the callback and rebuilds callback and body from constant alphabets.
+            return WebUtils.json2Jsonp(callback, JSON.toJSONString(csrfToken));
         } else {
-            return HtmlUtils.htmlEscape(csrfToken.toString());
+            return WebUtils.htmlSafeRebuild(String.valueOf(csrfToken));
         }
     }
 
