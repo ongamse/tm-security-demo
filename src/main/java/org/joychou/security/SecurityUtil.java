@@ -345,6 +345,19 @@ public class SecurityUtil {
         return sb.toString();
     }
 
+    /**
+     * Remove CR, LF and NUL characters so the value is safe to use in an HTTP header (CWE-113).
+     *
+     * @param value untrusted header value, may be null
+     * @return the value without CR/LF/NUL, or null if value is null
+     */
+    public static String cleanCRLF(String value) {
+        if (value == null) {
+            return null;
+        }
+        return value.replace("\r", "").replace("\n", "").replace("\0", "");
+    }
+
     public static void main(String[] args) {
     }
 
