@@ -66,7 +66,7 @@ public class SSRFChecker {
         try {
             do {
                 // 判断当前请求的URL是否是内网ip
-                if (isInternalIpByUrl(finalUrl)) {
+                if (!SecurityUtil.isHttp(finalUrl) || isInternalIpByUrl(finalUrl)) {
                     logger.error("[-] SSRF check failed. Dangerous url: " + finalUrl);
                     return false;  // 内网ip直接return，非内网ip继续判断是否有重定向
                 }
@@ -290,11 +290,12 @@ public class SSRFChecker {
     private static String url2host(String url) {
         try {
             // use URI instead of URL
-            URI u = new URI(url);
-            if (SecurityUtil.isHttp(url)) {
-                return u.getHost();
+            if (!SecurityUtil.isHttp(url)) {
+                return "";
             }
-            return "";
+            URI u = new URI(url);
+            String host = u.getHost();
+            return host == null ? "" : host;
         } catch (Exception e) {
             return "";
         }

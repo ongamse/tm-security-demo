@@ -36,7 +36,7 @@ public class SecurityUtil {
      * @return true or false
      */
     public static boolean isHttp(String url) {
-        return url.startsWith("http://") || url.startsWith("https://");
+        return url != null && (url.startsWith("http://") || url.startsWith("https://"));
     }
 
 
@@ -44,15 +44,42 @@ public class SecurityUtil {
      * Get http url host.
      *
      * @param url url
-     * @return host
+     * @return host, or empty string if the url is malformed or has no host
      */
     public static String gethost(String url) {
         try {
             URI uri = new URI(url);
-            return uri.getHost().toLowerCase();
-        } catch (URISyntaxException e) {
+            String host = uri.getHost();
+            return host == null ? "" : host.toLowerCase();
+        } catch (URISyntaxException | NullPointerException e) {
             return "";
         }
+    }
+
+
+    /**
+     * Validate an untrusted JDBC url before it is handed to DriverManager.
+     * The url must start with the expected prefix, must not carry driver properties
+     * (query string / semicolon / ampersand / equals / userinfo / escapes, which are used to
+     * load arbitrary classes or contact other hosts), and its host must be on the SSRF
+     * safe host list.
+     *
+     * @param jdbcUrl untrusted jdbc url
+     * @param prefix  required prefix, e.g. <code>jdbc:postgresql://</code>
+     * @return true if the url is allowed
+     */
+    public static boolean checkJdbcUrl(String jdbcUrl, String prefix) {
+        if (jdbcUrl == null || prefix == null || !jdbcUrl.startsWith(prefix)) {
+            return false;
+        }
+        String rest = jdbcUrl.substring(prefix.length());
+        for (char c : new char[]{'?', ';', '&', '=', '@', '%', '\\', ' '}) {
+            if (rest.indexOf(c) != -1) {
+                return false;
+            }
+        }
+        String hostPort = rest.split("/", 2)[0];
+        return checkSSRFByWhitehosts("https://" + hostPort + "/");
     }
 
 
