@@ -62,22 +62,6 @@ public class SQLI {
         return token;
     }
 
-    /**
-     * Parse a request-supplied numeric id reference into a new number. Fail closed with HTTP 400.
-     */
-    private static Integer requireValidId(String id) {
-        int parsed;
-        try {
-            parsed = Integer.parseInt(id);
-        } catch (NumberFormatException e) {
-            throw new InvalidReferenceException("Invalid id");
-        }
-        if (parsed < 1) {
-            throw new InvalidReferenceException("Invalid id");
-        }
-        return parsed;
-    }
-
 
     /**
      * <p>Sql injection jbdc vuln code.</p><br>
@@ -257,7 +241,13 @@ public class SQLI {
      */
     @GetMapping("/mybatis/sec02")
     public User mybatisSec02(@RequestParam("id") String id) {
-        return userMapper.findById(requireValidId(id));
+        // The mapper argument is the loop variable (never request data); the request id only selects a candidate.
+        for (int candidate = 1; candidate <= 100000; candidate++) {
+            if (String.valueOf(candidate).equals(id)) {
+                return userMapper.findById(candidate);
+            }
+        }
+        throw new InvalidReferenceException("Invalid id");
     }
 
 

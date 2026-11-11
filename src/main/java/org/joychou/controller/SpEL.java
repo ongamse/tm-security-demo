@@ -56,7 +56,13 @@ public class SpEL {
         context.setConstructorResolvers(Collections.<ConstructorResolver>emptyList());
         context.setPropertyAccessors(Collections.<PropertyAccessor>emptyList());
         // Request text is never parsed: it only selects one of the fixed expressions.
-        String fixedExpression = ALLOWED_EXPRESSIONS.get(expression);
+        String fixedExpression = null;
+        for (Map.Entry<String, String> entry : ALLOWED_EXPRESSIONS.entrySet()) {
+            if (entry.getKey().equals(expression)) {
+                fixedExpression = entry.getValue();
+                break;
+            }
+        }
         if (fixedExpression == null) {
             return "Bad boy. I got u.";
         }

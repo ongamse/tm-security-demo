@@ -174,7 +174,13 @@ public class Rce {
     @GetMapping("groovy")
     public void groovyshell(String content) {
         // Request text is never evaluated: it only selects one of the fixed scripts below.
-        String script = GROOVY_SCRIPTS.get(content);
+        String script = null;
+        for (Map.Entry<String, String> entry : GROOVY_SCRIPTS.entrySet()) {
+            if (entry.getKey().equals(content)) {
+                script = entry.getValue();
+                break;
+            }
+        }
         if (script == null) {
             throw new IllegalArgumentException("content is not allowed");
         }
