@@ -121,7 +121,8 @@ public class URLWhiteList {
         // endsWith .
         for (String domain : domainwhitelist) {
             if (host.endsWith("." + domain)) {
-                res.sendRedirect(url);
+                // Redirect to the allowlist's own constant, never the request value.
+                res.sendRedirect("https://" + domain + "/");
                 return;
             }
         }

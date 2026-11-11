@@ -30,11 +30,12 @@ public class URLRedirect {
      */
     @GetMapping("/redirect")
     public String redirect(@RequestParam("url") String url) {
-        String safeUrl = SecurityUtil.safeRedirectUrl(url);
-        if (safeUrl == null) {
+        // The target is a constant taken from the allowlist, never the request value.
+        String target = SecurityUtil.allowedRedirectTarget(url);
+        if (target == null) {
             return "redirect:/";
         }
-        return "redirect:" + safeUrl;
+        return "redirect:" + target;
     }
 
 
@@ -44,13 +45,13 @@ public class URLRedirect {
     @RequestMapping("/setHeader")
     @ResponseBody
     public static void setHeader(HttpServletRequest request, HttpServletResponse response) {
-        String safeUrl = SecurityUtil.safeRedirectUrl(request.getParameter("url"));
-        if (safeUrl == null) {
+        String target = SecurityUtil.allowedRedirectTarget(request.getParameter("url"));
+        if (target == null) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             return;
         }
         response.setStatus(HttpServletResponse.SC_MOVED_PERMANENTLY); // 301 redirect
-        response.setHeader("Location", SecurityUtil.cleanCRLF(safeUrl));
+        response.setHeader("Location", target);
     }
 
 
@@ -60,12 +61,12 @@ public class URLRedirect {
     @RequestMapping("/sendRedirect")
     @ResponseBody
     public static void sendRedirect(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        String safeUrl = SecurityUtil.safeRedirectUrl(request.getParameter("url"));
-        if (safeUrl == null) {
+        String target = SecurityUtil.allowedRedirectTarget(request.getParameter("url"));
+        if (target == null) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             return;
         }
-        response.sendRedirect(safeUrl); // 302 redirect
+        response.sendRedirect(target); // 302 redirect
     }
 
 
@@ -95,12 +96,12 @@ public class URLRedirect {
     public void sendRedirect_seccode(HttpServletRequest request, HttpServletResponse response)
             throws IOException {
         String url = request.getParameter("url");
-        String safeUrl = SecurityUtil.safeRedirectUrl(url);
-        if (safeUrl == null || SecurityUtil.checkURL(safeUrl) == null) {
+        String target = SecurityUtil.allowedRedirectTarget(url);
+        if (target == null) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             response.getWriter().write("url forbidden");
             return;
         }
-        response.sendRedirect(safeUrl);
+        response.sendRedirect(target);
     }
 }

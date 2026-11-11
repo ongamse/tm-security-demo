@@ -17,8 +17,10 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.regex.Pattern;
 
 
@@ -670,6 +672,56 @@ public class SecurityUtil {
             return url.startsWith("//") ? null : url;
         }
         return checkURL(url);
+    }
+
+    /**
+     * Closed set of same-origin paths that may be redirected to on behalf of a request.
+     */
+    public static final List<String> REDIRECT_PATHS = Collections.unmodifiableList(
+            Arrays.asList("/", "/urlRedirect/test"));
+
+    /**
+     * Closed map of allowed redirect host -> hard-coded absolute redirect url. More specific hosts come first.
+     */
+    private static final Map<String, String> REDIRECT_HOSTS;
+
+    static {
+        Map<String, String> hosts = new LinkedHashMap<>();
+        hosts.put("test.joychou.org", "https://test.joychou.org/");
+        hosts.put("joychou.org", "https://www.joychou.org/");
+        hosts.put("joychou.com", "https://www.joychou.com/");
+        hosts.put("localhost", "http://localhost:8080/");
+        REDIRECT_HOSTS = Collections.unmodifiableMap(hosts);
+    }
+
+    /**
+     * Map an untrusted redirect request onto a constant redirect target. The request value is only used to
+     * select an entry (exact path match, or host match after {@link #safeRedirectUrl(String)}); the returned
+     * string is always the allowlist's own literal, never the request value or something built from it.
+     *
+     * @param url untrusted redirect target
+     * @return constant redirect target, or null if not allowed (fail closed)
+     */
+    public static String allowedRedirectTarget(String url) {
+        String safe = safeRedirectUrl(url);
+        if (safe == null) {
+            return null;
+        }
+        String path = allowedConstant(safe, REDIRECT_PATHS);
+        if (path != null) {
+            return path;
+        }
+        String host = gethost(safe);
+        if (host.isEmpty()) {
+            return null;
+        }
+        for (Map.Entry<String, String> entry : REDIRECT_HOSTS.entrySet()) {
+            String allowedHost = entry.getKey();
+            if (host.equals(allowedHost) || host.endsWith("." + allowedHost)) {
+                return entry.getValue();
+            }
+        }
+        return null;
     }
 
     public static void main(String[] args) {
