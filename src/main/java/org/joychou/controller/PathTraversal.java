@@ -7,10 +7,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
@@ -51,11 +51,14 @@ public class PathTraversal {
             return "Bad boy. Illegal file path.";
         }
 
-        File f = safePath.toFile();
-        if (f.exists() && !f.isDirectory()) {
+        try {
             byte[] data = Files.readAllBytes(safePath);
             return new String(Base64.encodeBase64(data));
-        } else {
+        } catch (NoSuchFileException e) {
+            return "File doesn't exist or is not a file.";
+        } catch (IOException e) {
+            // e.g. the path is a directory or is unreadable
+            logger.info("Cannot read file: " + e.toString());
             return "File doesn't exist or is not a file.";
         }
     }

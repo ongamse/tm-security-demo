@@ -11,10 +11,16 @@ import org.springframework.web.util.HtmlUtils;
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.UUID;
 
 import org.joychou.security.SecurityUtil;
@@ -63,7 +69,8 @@ public class FileUpload {
                 return "redirect:/file/status";
             }
             byte[] bytes = file.getBytes();
-            Files.write(path, bytes);
+            Files.write(path, bytes, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING,
+                    StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS);
 
             redirectAttributes.addFlashAttribute("message",
                     "You successfully uploaded '" + path + "'");
@@ -149,7 +156,8 @@ public class FileUpload {
         try {
             // Get the file and save it somewhere
             byte[] bytes = multifile.getBytes();
-            Files.write(safePath, bytes);
+            Files.write(safePath, bytes, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING,
+                    StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS);
         } catch (IOException e) {
             logger.error(e.toString());
             deleteFile(filePath);
@@ -187,12 +195,17 @@ public class FileUpload {
     }
 
     private void deleteFile(String filePath) {
-        File delFile = new File(filePath);
-        if(delFile.isFile() && delFile.exists()) {
-            if (delFile.delete()) {
+        if (filePath == null || filePath.isEmpty()) {
+            logger.info(filePath + " delete failed!");
+            return;
+        }
+        try {
+            if (Files.deleteIfExists(Paths.get(filePath))) {
                 logger.info("[+] " + filePath + " delete successfully!");
                 return;
             }
+        } catch (IOException | InvalidPathException e) {
+            logger.info(e.toString());
         }
         logger.info(filePath + " delete failed!");
     }
@@ -216,22 +229,23 @@ public class FileUpload {
         }
         randomFilePath = randomPath.toString();
         // 随机生成一个同后缀名的文件
-        File convFile = randomPath.toFile();
-        boolean ret = convFile.createNewFile();
-        if (!ret) {
+        // CREATE_NEW atomically fails if the file (or a symlink) already exists.
+        try (OutputStream out = Files.newOutputStream(randomPath,
+                StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)) {
+            out.write(multiFile.getBytes());
+        } catch (FileAlreadyExistsException e) {
             return null;
         }
-        FileOutputStream fos = new FileOutputStream(convFile);
-        fos.write(multiFile.getBytes());
-        fos.close();
-        return convFile;
+        return randomPath.toFile();
     }
 
     /**
      * Check if the file is a picture.
      */
     private static boolean isImage(File file) throws IOException {
-        BufferedImage bi = ImageIO.read(file);
-        return bi != null;
+        try (InputStream in = Files.newInputStream(file.toPath(), LinkOption.NOFOLLOW_LINKS)) {
+            BufferedImage bi = ImageIO.read(in);
+            return bi != null;
+        }
     }
 }

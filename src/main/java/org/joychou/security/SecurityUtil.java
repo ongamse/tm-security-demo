@@ -12,6 +12,7 @@ import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -540,8 +541,12 @@ public class SecurityUtil {
             if (!resolved.startsWith(base) || resolved.equals(base)) {
                 return null;
             }
-            if (Files.exists(resolved) && !resolved.toRealPath().startsWith(base.toRealPath())) {
-                return null;
+            try {
+                if (!resolved.toRealPath().startsWith(base.toRealPath())) {
+                    return null;
+                }
+            } catch (NoSuchFileException e) {
+                // Target does not exist yet: lexical confinement above is sufficient.
             }
             return resolved;
         } catch (InvalidPathException | IOException e) {
