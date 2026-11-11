@@ -312,7 +312,11 @@ public class SSRF {
         if (!SecurityUtil.checkSSRFWithoutRedirect(url)) {
             return "Dangerous url";
         }
-        return HttpUtil.get(url);
+        String safeUrl = SecurityUtil.canonicalHttpUrl(url);
+        if (safeUrl == null) {
+            return "Dangerous url";
+        }
+        return HttpUtil.get(safeUrl);
     }
 
 

@@ -92,6 +92,25 @@ public class SecurityUtil {
     }
 
 
+    private static final String TOKEN_CHARS =
+            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.@-";
+
+    /**
+     * Rebuild a short identifier (e.g. a username) from a constant alphabet. The result is made only of the
+     * alphabet's own characters; any other character rejects the input.
+     *
+     * @param input untrusted identifier
+     * @return rebuilt identifier (1 to 64 characters), or null if input is null, empty, too long or has
+     * characters outside the alphabet
+     */
+    public static String safeToken(String input) {
+        if (input == null || input.isEmpty() || input.length() > 64) {
+            return null;
+        }
+        return constantChars(input, TOKEN_CHARS);
+    }
+
+
     /**
      * Parse a decimal tcp port without using the untrusted characters as the result.
      *

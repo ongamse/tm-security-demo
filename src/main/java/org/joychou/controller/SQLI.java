@@ -13,7 +13,6 @@ import org.springframework.web.bind.annotation.*;
 import javax.annotation.Resource;
 import java.sql.*;
 import java.util.List;
-import java.util.regex.Pattern;
 
 
 /**
@@ -44,9 +43,6 @@ public class SQLI {
     @Resource
     private UserMapper userMapper;
 
-    // Strict format for a user reference supplied by the request.
-    private static final Pattern USERNAME_PATTERN = Pattern.compile("^[A-Za-z0-9_.@-]{1,64}$");
-
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     private static class InvalidReferenceException extends RuntimeException {
         InvalidReferenceException(String message) {
@@ -55,23 +51,31 @@ public class SQLI {
     }
 
     /**
-     * Validate a request-supplied username reference. Fail closed with HTTP 400.
+     * Rebuild a request-supplied username reference from a constant alphabet
+     * ({@link SecurityUtil#safeToken(String)}). Fail closed with HTTP 400.
      */
     private static String requireValidUsername(String username) {
-        if (username == null || !USERNAME_PATTERN.matcher(username).matches()) {
+        String token = SecurityUtil.safeToken(username);
+        if (token == null) {
             throw new InvalidReferenceException("Invalid username");
         }
-        return username;
+        return token;
     }
 
     /**
-     * Validate a request-supplied numeric id reference. Fail closed with HTTP 400.
+     * Parse a request-supplied numeric id reference into a new number. Fail closed with HTTP 400.
      */
-    private static Integer requireValidId(Integer id) {
-        if (id == null || id < 1) {
+    private static Integer requireValidId(String id) {
+        int parsed;
+        try {
+            parsed = Integer.parseInt(id);
+        } catch (NumberFormatException e) {
             throw new InvalidReferenceException("Invalid id");
         }
-        return id;
+        if (parsed < 1) {
+            throw new InvalidReferenceException("Invalid id");
+        }
+        return parsed;
     }
 
 
@@ -95,7 +99,7 @@ public class SQLI {
             // sqli vuln code
             String sql = "select * from users where username = ?";
             PreparedStatement statement = con.prepareStatement(sql);
-            statement.setString(1, username);
+            statement.setString(1, requireValidUsername(username));
             logger.info(statement.toString());
             ResultSet rs = statement.executeQuery();
 
@@ -127,7 +131,6 @@ public class SQLI {
     @RequestMapping("/jdbc/sec")
     public String jdbc_sqli_sec(@RequestParam("username") String username) {
 
-        requireValidUsername(username);
         StringBuilder result = new StringBuilder();
         try {
             Class.forName(driver);
@@ -139,7 +142,7 @@ public class SQLI {
             // fix code
             String sql = "select * from users where username = ?";
             PreparedStatement st = con.prepareStatement(sql);
-            st.setString(1, username);
+            st.setString(1, requireValidUsername(username));
 
             logger.info(st.toString());  // sql after prepare statement
             ResultSet rs = st.executeQuery();
@@ -182,7 +185,7 @@ public class SQLI {
 
             String sql = "select * from users where username = ?";
             PreparedStatement st = con.prepareStatement(sql);
-            st.setString(1, username);
+            st.setString(1, requireValidUsername(username));
 
             logger.info(st.toString());
             ResultSet rs = st.executeQuery();
@@ -253,7 +256,7 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/mybatis/sec02?id=1">http://localhost:8080/sqli/mybatis/sec02?id=1</a>
      */
     @GetMapping("/mybatis/sec02")
-    public User mybatisSec02(@RequestParam("id") Integer id) {
+    public User mybatisSec02(@RequestParam("id") String id) {
         return userMapper.findById(requireValidId(id));
     }
 
