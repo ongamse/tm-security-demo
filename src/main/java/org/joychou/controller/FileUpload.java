@@ -77,7 +77,7 @@ public class FileUpload {
 
         } catch (IOException e) {
             redirectAttributes.addFlashAttribute("message", "upload failed");
-            logger.error(e.toString());
+            logger.error("File upload exception: " + e.getClass().getSimpleName());
         }
 
         return "redirect:/file/status";
@@ -118,7 +118,7 @@ public class FileUpload {
             }
         }
         if (!suffixFlag) {
-            logger.error("[-] Suffix error: " + Suffix);
+            logger.error("[-] Suffix error: not an allowed image suffix");
             deleteFile(filePath);
             return "Upload failed. Illeagl picture.";
         }
@@ -136,7 +136,7 @@ public class FileUpload {
         for (String blackMimeType : mimeTypeBlackList) {
             // 用contains是为了防止text/html;charset=UTF-8绕过
             if (SecurityUtil.replaceSpecialStr(mimeType).toLowerCase().contains(blackMimeType)) {
-                logger.error("[-] Mime type error: " + mimeType);
+                logger.error("[-] Mime type error: blacklisted MIME type");
                 deleteFile(filePath);
                 return "Upload failed. Illeagl picture.";
             }
@@ -159,13 +159,13 @@ public class FileUpload {
             Files.write(safePath, bytes, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING,
                     StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS);
         } catch (IOException e) {
-            logger.error(e.toString());
+            logger.error("File upload exception: " + e.getClass().getSimpleName());
             deleteFile(filePath);
             return "Upload failed";
         }
 
-        logger.info("[+] Safe file. Suffix: {}, MIME: {}", Suffix, mimeType);
-        logger.info("[+] Successfully uploaded {}", filePath);
+        logger.info("[+] Safe file passed all upload checks.");
+        logger.info("[+] Successfully uploaded file.");
         return String.format("You successfully uploaded '%s'", HtmlUtils.htmlEscape(filePath));
     }
 
@@ -196,18 +196,18 @@ public class FileUpload {
 
     private void deleteFile(String filePath) {
         if (filePath == null || filePath.isEmpty()) {
-            logger.info(filePath + " delete failed!");
+            logger.info("File delete failed!");
             return;
         }
         try {
             if (Files.deleteIfExists(Paths.get(filePath))) {
-                logger.info("[+] " + filePath + " delete successfully!");
+                logger.info("[+] File deleted successfully!");
                 return;
             }
         } catch (IOException | InvalidPathException e) {
-            logger.info(e.toString());
+            logger.info("File delete exception: " + e.getClass().getSimpleName());
         }
-        logger.info(filePath + " delete failed!");
+        logger.info("File delete failed!");
     }
 
     /**

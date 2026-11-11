@@ -506,10 +506,10 @@ public class SecurityUtil {
             try {
                 temp = URLDecoder.decode(temp, "utf-8");
             } catch (UnsupportedEncodingException e) {
-                logger.info("Unsupported encoding exception: " + filepath);
+                logger.info("Unsupported encoding exception while decoding file path.");
                 return null;
             } catch (Exception e) {
-                logger.info(e.toString());
+                logger.info("File path decode exception: " + e.getClass().getSimpleName());
                 return null;
             }
         }
@@ -550,7 +550,7 @@ public class SecurityUtil {
             }
             return resolved;
         } catch (InvalidPathException | IOException e) {
-            logger.info("Illegal file path: " + e.toString());
+            logger.info("Illegal file path: " + e.getClass().getSimpleName());
             return null;
         }
     }

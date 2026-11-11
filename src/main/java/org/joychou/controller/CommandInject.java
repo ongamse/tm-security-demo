@@ -47,7 +47,7 @@ public class CommandInject {
     public String codeInjectHost(HttpServletRequest request) throws IOException {
 
         String host = request.getHeader("host");
-        logger.info(host);
+        logger.info("codeinject host request received.");
         // Only the constant host from the allowlist is used, never the request header value.
         String safeHost = SecurityUtil.allowedConstant(host, SecurityUtil.ALLOWED_HOSTS);
         if (safeHost == null) {

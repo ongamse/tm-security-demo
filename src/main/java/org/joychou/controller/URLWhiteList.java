@@ -99,7 +99,7 @@ public class URLWhiteList {
     @GetMapping("/vuln/url_bypass")
     public void url_bypass(String url, HttpServletResponse res) throws IOException {
 
-        logger.info("url:  " + url);
+        logger.info("url_bypass request received.");
 
         if (!SecurityUtil.isHttp(url)) {
             return;
@@ -116,7 +116,7 @@ public class URLWhiteList {
 
         // RFC 3986 parser: a malformed url yields an empty host and is rejected.
         String host = SecurityUtil.gethost(url);
-        logger.info("host:  " + host);
+        logger.info("url_bypass host extracted, empty: " + host.isEmpty());
 
         // endsWith .
         for (String domain : domainwhitelist) {
