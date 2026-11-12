@@ -27,23 +27,29 @@ public class XStreamRce {
     public String parseXml(HttpServletRequest request) throws Exception {
         String xml = WebUtils.getRequestBody(request);
         // The XStream payload never needs a DTD; rejecting it blocks XXE (entities require a DOCTYPE).
-        if (xml == null || xml.contains("<!DOCTYPE")) {
+        if (xml == null || xml.length() > MAX_XML_CHARS || xml.contains("<!DOCTYPE") || xml.contains("<!ENTITY")) {
             return "invalid xml";
         }
-        XStream xstream = new XStream(new DomDriver());
-        allowOnlyKnownTypes(xstream);
-        xstream.fromXML(xml);
+        Object parsed = createSecureXStream().fromXML(xml);
+        if (!(parsed instanceof User)) {
+            return "invalid xml";
+        }
         return "xstream";
     }
 
+    private static final int MAX_XML_CHARS = 16 * 1024;
+
     /**
-     * Type allowlist: deny everything, then permit only primitives, String and the expected User type.
+     * The only place an XStream instance is created. The type allowlist is applied before the
+     * instance is returned: deny everything, then permit only primitives, String/Integer and User.
      */
-    private static void allowOnlyKnownTypes(XStream xstream) {
+    private static XStream createSecureXStream() {
+        XStream xstream = new XStream(new DomDriver());
         xstream.addPermission(NoTypePermission.NONE);
         xstream.addPermission(NullPermission.NULL);
         xstream.addPermission(PrimitiveTypePermission.PRIMITIVES);
         xstream.allowTypes(new Class[]{String.class, Integer.class, User.class});
+        return xstream;
     }
 
     public static void main(String[] args) {
@@ -51,7 +57,7 @@ public class XStreamRce {
         user.setId(0);
         user.setUsername("admin");
 
-        XStream xstream = new XStream(new DomDriver());
+        XStream xstream = createSecureXStream();
         String xml = xstream.toXML(user); // Serialize
         System.out.println(xml);
 
