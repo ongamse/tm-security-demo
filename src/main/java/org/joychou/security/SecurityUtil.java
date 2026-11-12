@@ -360,6 +360,27 @@ public class SecurityUtil {
         return sb.toString();
     }
 
+    /**
+     * Remove CR, LF and other ISO control characters so that a value can be safely
+     * placed in an HTTP response header (prevents CRLF / header injection).
+     *
+     * @param value header value, may be null
+     * @return the value without control characters, or null if value is null
+     */
+    public static String cleanHeaderValue(String value) {
+        if (value == null) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            if (!Character.isISOControl(ch)) {
+                sb.append(ch);
+            }
+        }
+        return sb.toString();
+    }
+
     public static void main(String[] args) {
     }
 
