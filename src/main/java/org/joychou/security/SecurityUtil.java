@@ -510,11 +510,15 @@ public class SecurityUtil {
      * passes {@link #checkURL(String)} (safe/block domain config). Control characters, whitespace,
      * backslashes, protocol-relative urls ("//host") and userinfo ("user@host") are rejected.
      *
+     * The returned value is never the request string itself: it is rebuilt from the parsed
+     * components (fixed scheme literal, validated host, port, raw path/query/fragment), so a
+     * caller that redirects to the return value never redirects to unparsed request data.
+     *
      * @param url the redirect target from the request, may be null
-     * @return the original url when it is safe to redirect to, otherwise null
+     * @return a freshly built url that is safe to redirect to, otherwise null
      */
     public static String getSafeRedirectUrl(String url) {
-        if (url == null || url.isEmpty()) {
+        if (url == null || url.isEmpty() || url.length() > MAX_REDIRECT_URL_LENGTH) {
             return null;
         }
         for (int i = 0; i < url.length(); i++) {
@@ -522,6 +526,9 @@ public class SecurityUtil {
             if (ch == '\\' || Character.isISOControl(ch) || Character.isWhitespace(ch)) {
                 return null;
             }
+        }
+        if (hasEncodedControlOrBackslash(url)) {
+            return null;
         }
 
         try {
@@ -531,15 +538,119 @@ public class SecurityUtil {
                 if (url.startsWith("//") || uri.getScheme() != null || uri.getRawAuthority() != null) {
                     return null;
                 }
-                return url;
+                String path = uri.getRawPath();
+                if (path == null || !path.startsWith("/") || path.startsWith("//")
+                        || decodeFully(path).startsWith("//")) {
+                    return null;
+                }
+                return appendQueryAndFragment(new StringBuilder(path), uri).toString();
             }
-            if (uri.getRawUserInfo() != null) {
+
+            String scheme = uri.getScheme();
+            if (scheme == null || uri.getRawUserInfo() != null || uri.getHost() == null) {
                 return null;
             }
+            String safeScheme;
+            if ("https".equalsIgnoreCase(scheme)) {
+                safeScheme = "https";
+            } else if ("http".equalsIgnoreCase(scheme)) {
+                safeScheme = "http";
+            } else {
+                return null;
+            }
+            String host = uri.getHost().toLowerCase();
+            if (!SAFE_HOST_PATTERN.matcher(host).matches()) {
+                return null;
+            }
+            int port = uri.getPort();
+            if (port < -1 || port > 65535) {
+                return null;
+            }
+            // Allow/block domain config (exact host or proper dot-boundary suffix).
+            if (checkURL(safeScheme + "://" + host) == null) {
+                return null;
+            }
+
+            StringBuilder sb = new StringBuilder(safeScheme).append("://").append(host);
+            if (port != -1) {
+                sb.append(':').append(port);
+            }
+            String path = uri.getRawPath();
+            if (path != null) {
+                sb.append(path);
+            }
+            return appendQueryAndFragment(sb, uri).toString();
         } catch (URISyntaxException e) {
             return null;
         }
-        return checkURL(url);
+    }
+
+    /**
+     * Same as {@link #getSafeRedirectUrl(String)} but never returns null: an invalid
+     * target falls back to the application root.
+     *
+     * @param url the redirect target from the request, may be null
+     * @return a safe redirect target, "/" when the url is not allowed
+     */
+    public static String getSafeRedirectUrlOrDefault(String url) {
+        String safe = getSafeRedirectUrl(url);
+        return safe == null ? "/" : safe;
+    }
+
+    private static final int MAX_REDIRECT_URL_LENGTH = 2048;
+    private static final Pattern SAFE_HOST_PATTERN = Pattern.compile("^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$");
+
+    private static StringBuilder appendQueryAndFragment(StringBuilder sb, URI uri) {
+        if (uri.getRawQuery() != null) {
+            sb.append('?').append(uri.getRawQuery());
+        }
+        if (uri.getRawFragment() != null) {
+            sb.append('#').append(uri.getRawFragment());
+        }
+        return sb;
+    }
+
+    /**
+     * Percent-decode repeatedly (handles double encoding such as %255c). '+' is kept as is.
+     * Returns the input unchanged text when it cannot be decoded.
+     */
+    private static String decodeFully(String value) {
+        String current = value;
+        for (int i = 0; i < 5; i++) {
+            if (current.indexOf('%') == -1) {
+                return current;
+            }
+            try {
+                String next = URLDecoder.decode(current.replace("+", "%2B"), "UTF-8");
+                if (next.equals(current)) {
+                    return current;
+                }
+                current = next;
+            } catch (UnsupportedEncodingException e) {
+                return current;
+            } catch (IllegalArgumentException e) {
+                return current;
+            }
+        }
+        return current;
+    }
+
+    private static boolean hasEncodedControlOrBackslash(String value) {
+        String decoded = decodeFully(value);
+        if (decoded.indexOf('%') != -1 && !decoded.equals(value)) {
+            // still encoded after the maximum number of rounds: too deeply nested
+            String again = decodeFully(decoded);
+            if (!again.equals(decoded)) {
+                return true;
+            }
+        }
+        for (int i = 0; i < decoded.length(); i++) {
+            char ch = decoded.charAt(i);
+            if (ch == '\\' || Character.isISOControl(ch)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public static void main(String[] args) {
