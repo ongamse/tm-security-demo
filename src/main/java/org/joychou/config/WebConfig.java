@@ -22,6 +22,7 @@ public class WebConfig {
     private static Boolean referSecEnabled = false;
     private static String businessCallback;
     private static String[] corsAllowedOrigins = new String[0];
+    private static String[] jsonpAllowedCallbacks = new String[0];
     private static ArrayList<String> safeDomains = new ArrayList<>();
     private static ArrayList<String> blockDomains = new ArrayList<>();
     private static ArrayList<String> ssrfSafeDomains = new ArrayList<>();
@@ -104,6 +105,20 @@ public class WebConfig {
 
     public static String[] getCorsAllowedOrigins() {
         return corsAllowedOrigins;
+    }
+
+
+    /**
+     * Optional explicit JSONP callback name allowlist, comma separated. Default is empty, which
+     * means only the strict callback name rule of SecurityUtil.getSafeJsonpCallback applies.
+     */
+    @Value("${joychou.security.jsonp.allowed.callbacks:}")
+    public void setJsonpAllowedCallbacks(String[] jsonpAllowedCallbacks) {
+        WebConfig.jsonpAllowedCallbacks = jsonpAllowedCallbacks == null ? new String[0] : jsonpAllowedCallbacks;
+    }
+
+    public static String[] getJsonpAllowedCallbacks() {
+        return jsonpAllowedCallbacks;
     }
 
 
