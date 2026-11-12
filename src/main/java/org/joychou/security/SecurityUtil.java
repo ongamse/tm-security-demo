@@ -208,6 +208,39 @@ public class SecurityUtil {
     }
 
 
+    private static final java.util.Set<String> ALLOWED_COMMANDS = new java.util.HashSet<String>(
+            java.util.Arrays.asList("whoami", "id", "date", "uname", "hostname", "pwd", "ls"));
+
+    private static final Pattern CMD_ARG_PATTERN = Pattern.compile("^[a-zA-Z0-9_.-]+$");
+
+    /**
+     * Parse a user supplied command line into an argv list without involving a shell.
+     * Only allowlisted program names and simple arguments (no path separators,
+     * no shell metacharacters) are accepted.
+     *
+     * @param cmd command line, whitespace separated
+     * @return argv list that can be passed to ProcessBuilder, or null if not allowed
+     */
+    public static java.util.List<String> parseAllowedCommand(String cmd) {
+        if (cmd == null || cmd.trim().isEmpty()) {
+            return null;
+        }
+        String[] parts = cmd.trim().split("\\s+");
+        if (!ALLOWED_COMMANDS.contains(parts[0])) {
+            return null;
+        }
+        java.util.List<String> argv = new ArrayList<String>();
+        argv.add(parts[0]);
+        for (int i = 1; i < parts.length; i++) {
+            if (!CMD_ARG_PATTERN.matcher(parts[i]).matches()) {
+                return null;
+            }
+            argv.add(parts[i]);
+        }
+        return argv;
+    }
+
+
     /**
      * 过滤mybatis中order by不能用#的情况。
      * 严格限制用户输入只能包含<code>a-zA-Z0-9_-.</code>字符。
