@@ -14,6 +14,7 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.regex.Pattern;
 
 
@@ -615,58 +616,52 @@ public class SecurityUtil {
     }
 
     /**
-     * Validate a CORS request Origin against the safe/block domain config ({@link #checkURL(String)}).
-     * The value must be a bare origin (scheme://host[:port]) without userinfo, path, query or
-     * fragment, and must not contain control characters.
-     *
-     * @param origin the Origin request header, may be null
-     * @return the origin when it is allowed to be echoed in Access-Control-Allow-Origin, otherwise null
+     * Server-side CORS origin allowlist (full origins, scheme://host[:port]). It is built from
+     * configuration only: the property {@code joychou.security.cors.allowed.origins} plus the
+     * exact http/https origins of the hosts in url/url_safe_domain.xml (hosts that are also
+     * block-listed are dropped). The default is an empty list.
      */
-    public static String getSafeCorsOrigin(String origin) {
-        if (origin == null || origin.isEmpty()) {
-            return null;
-        }
-        for (int i = 0; i < origin.length(); i++) {
-            char ch = origin.charAt(i);
-            if (Character.isISOControl(ch) || Character.isWhitespace(ch) || ch == '\\') {
-                return null;
+    private static List<String> corsAllowedOrigins() {
+        List<String> allowed = new ArrayList<String>();
+        String[] configured = WebConfig.getCorsAllowedOrigins();
+        if (configured != null) {
+            for (String entry : configured) {
+                if (entry != null && !entry.trim().isEmpty()) {
+                    allowed.add(entry.trim());
+                }
             }
         }
-        URI uri;
-        try {
-            uri = new URI(origin);
-            if (uri.getRawUserInfo() != null || uri.getHost() == null
-                    || uri.getRawQuery() != null || uri.getRawFragment() != null) {
-                return null;
-            }
-            String path = uri.getRawPath();
-            if (path != null && !path.isEmpty()) {
-                return null;
-            }
-        } catch (URISyntaxException e) {
-            return null;
-        }
-        if (checkURL(origin) == null) {
-            return null;
-        }
-
-        // Rebuild the origin: fixed scheme literal, the allowlist's own host string when the
-        // host is an exact allowlist entry (else the whitelist-rebuilt host), and the port.
-        String scheme = "https".equalsIgnoreCase(uri.getScheme()) ? "https" : "http";
-        String host = uri.getHost().toLowerCase();
         for (String safeDomain : WebConfig.getSafeDomains()) {
-            if (safeDomain != null && safeDomain.equalsIgnoreCase(host)) {
-                host = safeDomain.toLowerCase();
-                break;
+            if (safeDomain != null && !safeDomain.trim().isEmpty()) {
+                allowed.add("https://" + safeDomain.trim());
+                allowed.add("http://" + safeDomain.trim());
             }
         }
-        int port = uri.getPort();
-        if (port < -1 || port > 65535) {
+        return allowed;
+    }
+
+    /**
+     * Match a CORS request Origin against the fixed server-side allowlist
+     * ({@link #corsAllowedOrigins()}) by exact equality. Allowlist entries must pass the
+     * safe/block domain check ({@link #checkURL(String)}).
+     *
+     * The returned value is the allowlist ELEMENT, never the request string: a caller that
+     * writes it to Access-Control-Allow-Origin never reflects request data. Null, "null",
+     * wildcard and unknown origins return null (the caller must send no CORS headers).
+     *
+     * @param requestOrigin the Origin request header, may be null
+     * @return the matching allowlist entry, otherwise null
+     */
+    public static String matchAllowedOrigin(String requestOrigin) {
+        if (requestOrigin == null || requestOrigin.isEmpty()) {
             return null;
         }
-        String rebuilt = scheme + "://" + host + (port == -1 ? "" : ":" + port);
-        String safe = rebuildFromAlphabet(rebuilt, URL_ALPHABET);
-        return safe.equals(rebuilt) ? safe : null;
+        for (String allowed : corsAllowedOrigins()) {
+            if (allowed.equals(requestOrigin) && !"*".equals(allowed) && checkURL(allowed) != null) {
+                return allowed;
+            }
+        }
+        return null;
     }
 
     /**
