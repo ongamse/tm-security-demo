@@ -13,11 +13,8 @@ import java.net.InetAddress;
 import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
-import javax.servlet.http.HttpServletRequest;
 
 
 public class SecurityUtil {
@@ -576,17 +573,6 @@ public class SecurityUtil {
         COMMAND_TABLE = java.util.Collections.unmodifiableMap(table);
     }
 
-    /** A path token: no leading '-', no whitespace/quotes/shell metacharacters. */
-    private static final Pattern PATH_TOKEN_PATTERN = Pattern.compile("^[A-Za-z0-9._/][A-Za-z0-9._/-]{0,127}$");
-
-    /** Host (optionally with port) for the curl helper: no leading '-', no scheme, no userinfo. */
-    private static final Pattern CURL_HOST_PATTERN =
-            Pattern.compile("^[A-Za-z0-9][A-Za-z0-9.-]{0,252}(:[0-9]{1,5})?$");
-
-    private static boolean isSafePathToken(String token) {
-        return token != null && PATH_TOKEN_PATTERN.matcher(token).matches() && !token.contains("..");
-    }
-
     /**
      * Select a command from the fixed server-side table. The user string only selects a row;
      * the returned argv consists exclusively of the table's own fixed elements (no user data).
@@ -605,63 +591,6 @@ public class SecurityUtil {
             }
         }
         return null;
-    }
-
-    /**
-     * Build the argv for a directory listing of a user supplied path:
-     * fixed {@code ls -la --} followed by one validated path token.
-     *
-     * @param path user supplied path
-     * @return argv for ProcessBuilder, or null if the path is not a plain path token
-     */
-    public static java.util.List<String> buildListCommand(String path) {
-        if (!isSafePathToken(path)) {
-            return null;
-        }
-        java.util.List<String> argv = new ArrayList<String>(java.util.Arrays.asList(COMMAND_TABLE.get("ls -la")));
-        argv.add("--");
-        argv.add(path);
-        return argv;
-    }
-
-    /**
-     * Build the argv for fetching a host with curl: fixed options, http(s) only, and one
-     * validated host[:port] token after {@code --}.
-     *
-     * @param host host[:port] (e.g. from the Host header)
-     * @return argv for ProcessBuilder, or null if the host is not a plain host token
-     */
-    public static java.util.List<String> buildCurlHostCommand(String host) {
-        if (host == null || !CURL_HOST_PATTERN.matcher(host).matches() || host.contains("..")) {
-            return null;
-        }
-        return new ArrayList<String>(java.util.Arrays.asList(
-                "curl", "--proto", "=http,https", "--max-time", "10", "--", host));
-    }
-
-    /** SpEL keywords that may appear as operators/literals. */
-    private static final Pattern SPEL_KEYWORDS =
-            Pattern.compile("\\b(true|false|null|and|or|not|lt|gt|le|ge|eq|ne|div|mod)\\b");
-    private static final Pattern SPEL_STRING_LITERAL = Pattern.compile("'[^'\\\\\"]*'");
-    private static final Pattern SPEL_REMAINDER = Pattern.compile("^[0-9\\s+\\-*/%^()<>=!&|?:,{}\\[\\].]*$");
-    private static final Pattern SPEL_BAD_DOT = Pattern.compile("(?<![0-9])\\.|\\.(?![0-9])");
-
-    /**
-     * Grammar allowlist for a user supplied SpEL expression: only literals (numbers, quoted
-     * strings without escapes, true/false/null), arithmetic/comparison/logical operators,
-     * parentheses and inline list/map literals. Type references, constructors, variables,
-     * bean references and method/property navigation are rejected.
-     *
-     * @param expression the expression text
-     * @return true if the expression is within the allowed grammar
-     */
-    public static boolean isSafeSpelExpression(String expression) {
-        if (expression == null || expression.isEmpty() || expression.length() > 200) {
-            return false;
-        }
-        String rest = SPEL_STRING_LITERAL.matcher(expression).replaceAll("0");
-        rest = SPEL_KEYWORDS.matcher(rest).replaceAll(" ");
-        return SPEL_REMAINDER.matcher(rest).matches() && !SPEL_BAD_DOT.matcher(rest).find();
     }
 
 
@@ -750,6 +679,63 @@ public class SecurityUtil {
             }
         }
         return sb.toString();
+    }
+
+    /** Characters a JSONP callback name is built from: JavaScript identifier characters and '.'. */
+    private static final String JSONP_CALLBACK_ALPHABET = ALNUM_ALPHABET + "_$.";
+    private static final int MAX_JSONP_CALLBACK_LENGTH = 64;
+
+    /** Constant callback name used when the requested one is missing, malformed or not allowed. */
+    public static final String DEFAULT_JSONP_CALLBACK = "callback";
+
+    /**
+     * Resolve the callback name of a JSONP response. The result is never the request string:
+     * it is rebuilt character by character, every output character being taken from the
+     * constant {@link #JSONP_CALLBACK_ALPHABET}. A request value with any character outside the
+     * alphabet, longer than 64 characters, not starting with a letter, '_' or '$', or with a
+     * leading / trailing / doubled '.' yields {@link #DEFAULT_JSONP_CALLBACK}.
+     * When the property {@code joychou.security.jsonp.allowed.callbacks} is not empty the
+     * rebuilt name must additionally equal one of its entries.
+     *
+     * @param requested the callback request parameter, may be null
+     * @return a callback name that is safe to place in JavaScript code, never null
+     */
+    public static String getSafeJsonpCallback(String requested) {
+        if (requested == null || requested.isEmpty() || requested.length() > MAX_JSONP_CALLBACK_LENGTH) {
+            return DEFAULT_JSONP_CALLBACK;
+        }
+        StringBuilder sb = new StringBuilder(requested.length());
+        for (int i = 0; i < requested.length(); i++) {
+            int idx = JSONP_CALLBACK_ALPHABET.indexOf(requested.charAt(i));
+            if (idx < 0) {
+                return DEFAULT_JSONP_CALLBACK;
+            }
+            sb.append(JSONP_CALLBACK_ALPHABET.charAt(idx));
+        }
+        String name = sb.toString();
+        char first = name.charAt(0);
+        boolean validFirst = (first >= 'a' && first <= 'z') || (first >= 'A' && first <= 'Z')
+                || first == '_' || first == '$';
+        if (!validFirst || name.charAt(0) == '.' || name.charAt(name.length() - 1) == '.'
+                || name.contains("..")) {
+            return DEFAULT_JSONP_CALLBACK;
+        }
+        String[] allowed = WebConfig.getJsonpAllowedCallbacks();
+        if (allowed != null) {
+            boolean restricted = false;
+            for (String entry : allowed) {
+                if (entry != null && !entry.trim().isEmpty()) {
+                    restricted = true;
+                    if (entry.trim().equals(name)) {
+                        return name;
+                    }
+                }
+            }
+            if (restricted) {
+                return DEFAULT_JSONP_CALLBACK;
+            }
+        }
+        return name;
     }
 
     /** Characters that may appear verbatim in a log message (no whitespace, no control chars). */
@@ -954,67 +940,6 @@ public class SecurityUtil {
         for (int i = 0; i < decoded.length(); i++) {
             char ch = decoded.charAt(i);
             if (ch == '\\' || Character.isISOControl(ch)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static final String XFF_HEADER = "X-Forwarded-For";
-    private static final int MAX_XFF_HOPS = 32;
-
-    /**
-     * Resolve the client address of a request.
-     * <ol>
-     *   <li>The default is {@code request.getRemoteAddr()} (the TCP peer, not spoofable).</li>
-     *   <li>Only when the TCP peer is exactly one of the trusted proxies, the X-Forwarded-For
-     *       chain is walked from the right, skipping trusted proxies; the first (right-most)
-     *       untrusted hop is the client. Entries to the left of it are attacker controlled and
-     *       are never used.</li>
-     *   <li>The hop must be a syntactically valid IPv4/IPv6 literal (no host names, no DNS
-     *       lookup, no zone ids). Any malformed hop makes the method fall back to the remote
-     *       address.</li>
-     * </ol>
-     * The returned text is always rebuilt from the parsed address bytes, never copied from the
-     * request header.
-     *
-     * @param request the request
-     * @param trustedProxies literal addresses of the reverse proxies in front of the application
-     * @return the client address text, or the remote address (possibly empty) as fallback
-     */
-    public static String resolveClientIp(HttpServletRequest request, Set<String> trustedProxies) {
-        String remoteAddr = request.getRemoteAddr();
-        String fallback = remoteAddr == null ? "" : remoteAddr;
-        if (trustedProxies == null || trustedProxies.isEmpty()) {
-            return fallback;
-        }
-        String peer = normalizeIpLiteral(remoteAddr);
-        if (peer == null || !containsAddress(trustedProxies, peer)) {
-            return fallback;
-        }
-        String forwarded = request.getHeader(XFF_HEADER);
-        if (forwarded == null || forwarded.isEmpty() || forwarded.length() > 1024) {
-            return fallback;
-        }
-        String[] hops = forwarded.split(",", -1);
-        if (hops.length > MAX_XFF_HOPS) {
-            return fallback;
-        }
-        for (int i = hops.length - 1; i >= 0; i--) {
-            String hop = normalizeIpLiteral(hops[i].trim());
-            if (hop == null) {
-                return fallback;
-            }
-            if (!containsAddress(trustedProxies, hop)) {
-                return hop;
-            }
-        }
-        return fallback;
-    }
-
-    private static boolean containsAddress(Set<String> addresses, String normalized) {
-        for (String entry : addresses) {
-            if (normalized.equals(normalizeIpLiteral(entry == null ? null : entry.trim()))) {
                 return true;
             }
         }
