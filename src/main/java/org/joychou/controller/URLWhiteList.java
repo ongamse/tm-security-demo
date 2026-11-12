@@ -9,7 +9,8 @@ import org.springframework.web.bind.annotation.*;
 
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.net.URL;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -105,8 +106,19 @@ public class URLWhiteList {
             return;
         }
 
-        URL u = new URL(url);
-        String host = u.getHost();
+        // Use the same strict parser (java.net.URI) that is used for validation, so that
+        // backslash / userinfo tricks make the url invalid instead of changing the host.
+        String host;
+        try {
+            URI u = new URI(url);
+            host = u.getHost();
+            if (host == null || u.getRawUserInfo() != null) {
+                return;
+            }
+            host = host.toLowerCase();
+        } catch (URISyntaxException e) {
+            return;
+        }
         logger.info("host:  " + host);
 
         // endsWith .

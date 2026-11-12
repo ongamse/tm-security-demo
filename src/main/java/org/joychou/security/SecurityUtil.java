@@ -8,6 +8,8 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
+import java.net.Inet4Address;
+import java.net.InetAddress;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLDecoder;
@@ -147,6 +149,82 @@ public class SecurityUtil {
             return false;
         }
         return !SSRFChecker.isInternalIpByUrl(url);
+    }
+
+    /**
+     * Strict check for a user supplied URL that the server is about to request.
+     * The URL must be an absolute http/https URI without user info, and every address
+     * the host resolves to must be a public one (see {@link #isPublicHost(String)}).
+     * Callers must also disable redirect following, otherwise a redirect could lead
+     * to a target that was never validated.
+     *
+     * @param url The url that needs to check.
+     * @return Safe url returns true. Dangerous or malformed url returns false.
+     */
+    public static boolean isSafeHttpUrl(String url) {
+        if (url == null) {
+            return false;
+        }
+        try {
+            URI uri = new URI(url);
+            String scheme = uri.getScheme();
+            if (scheme == null || !("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme))) {
+                return false;
+            }
+            if (uri.getRawUserInfo() != null) {
+                return false;
+            }
+            return isPublicHost(uri.getHost());
+        } catch (URISyntaxException e) {
+            return false;
+        }
+    }
+
+
+    /**
+     * Resolve the host and make sure that none of its addresses is a loopback, link-local
+     * (cloud metadata), private, multicast, unspecified or otherwise internal address.
+     * Fails closed: any resolution or configuration error returns false.
+     *
+     * @param host host name or ip literal
+     * @return true only if every resolved address is public
+     */
+    public static boolean isPublicHost(String host) {
+        if (host == null || host.isEmpty()) {
+            return false;
+        }
+        try {
+            InetAddress[] addresses = InetAddress.getAllByName(host);
+            if (addresses.length == 0) {
+                return false;
+            }
+            for (InetAddress address : addresses) {
+                if (address.isAnyLocalAddress() || address.isLoopbackAddress()
+                        || address.isLinkLocalAddress() || address.isSiteLocalAddress()
+                        || address.isMulticastAddress()) {
+                    return false;
+                }
+                byte[] raw = address.getAddress();
+                if (address instanceof Inet4Address) {
+                    int first = raw[0] & 0xFF;
+                    int second = raw[1] & 0xFF;
+                    // 0.0.0.0/8 and carrier-grade NAT 100.64.0.0/10
+                    if (first == 0 || (first == 100 && second >= 64 && second <= 127)) {
+                        return false;
+                    }
+                    if (SSRFChecker.isInternalIp(address.getHostAddress())) {
+                        return false;
+                    }
+                } else if ((raw[0] & 0xFE) == 0xFC) {
+                    // IPv6 unique local address fc00::/7
+                    return false;
+                }
+            }
+            return true;
+        } catch (Exception e) {
+            logger.error(e.toString());
+            return false;
+        }
     }
 
     /**

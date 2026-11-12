@@ -125,10 +125,15 @@ public class SSRF {
             // download
             response.setHeader("content-disposition", "attachment;fileName=" + downLoadImgFileName);
 
-            URL u = new URL(url);
+            // Only public http(s) urls; do not follow redirects to unvalidated targets.
+            if (!SecurityUtil.isSafeHttpUrl(url)) {
+                throw new IOException("[-] SSRF check failed. Illegal url.");
+            }
+            HttpURLConnection conn = (HttpURLConnection) URI.create(url).toURL().openConnection();
+            conn.setInstanceFollowRedirects(false);
             int length;
             byte[] bytes = new byte[1024];
-            inputStream = u.openStream(); // send request
+            inputStream = conn.getInputStream(); // send request
             outputStream = response.getOutputStream();
             while ((length = inputStream.read(bytes)) > 0) {
                 outputStream.write(bytes, 0, length);
