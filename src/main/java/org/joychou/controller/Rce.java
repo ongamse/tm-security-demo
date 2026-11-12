@@ -34,7 +34,7 @@ public class Rce {
 
     private static final Pattern ARITHMETIC_PATTERN = Pattern.compile("^[0-9+\\-*/%(). ]{1,200}$");
 
-    @GetMapping("/runtime/exec")
+    @GetMapping(value = "/runtime/exec", produces = "text/plain;charset=UTF-8")
     public String CommandExec(String cmd) {
         StringBuilder sb = new StringBuilder();
 
@@ -70,7 +70,7 @@ public class Rce {
     /**
      * <a href="http://localhost:8080/rce/ProcessBuilder?cmd=whoami">POC</a>
      */
-    @GetMapping("/ProcessBuilder")
+    @GetMapping(value = "/ProcessBuilder", produces = "text/plain;charset=UTF-8")
     public String processBuilder(String cmd) {
 
         StringBuilder sb = new StringBuilder();
@@ -91,10 +91,10 @@ public class Rce {
                 sb.append(tmpStr);
             }
         } catch (Exception e) {
-            return e.toString();
+            return HtmlUtils.htmlEscape(e.toString());
         }
 
-        return sb.toString();
+        return HtmlUtils.htmlEscape(sb.toString());
     }
 
 

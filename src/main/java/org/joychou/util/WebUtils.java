@@ -28,17 +28,30 @@ public class WebUtils {
 
     // JavaScript identifier (optionally dotted) only; anything else is not a valid JSONP callback.
     private static final java.util.regex.Pattern JSONP_CALLBACK_PATTERN =
-            java.util.regex.Pattern.compile("^[a-zA-Z_$][a-zA-Z0-9_$]*(\\.[a-zA-Z_$][a-zA-Z0-9_$]*){0,4}$");
+            java.util.regex.Pattern.compile("^[A-Za-z_$][A-Za-z0-9_$.]{0,63}$");
+
+    // Constant callback used when the requested one is missing or invalid.
+    public static final String DEFAULT_JSONP_CALLBACK = "callback";
+
+    private static final com.fasterxml.jackson.databind.ObjectMapper JSONP_MAPPER =
+            new com.fasterxml.jackson.databind.ObjectMapper()
+                    .configure(com.fasterxml.jackson.core.JsonGenerator.Feature.ESCAPE_NON_ASCII, true);
 
     public static boolean isSafeJsonpCallback(String callback) {
-        return callback != null && callback.length() <= 128 && JSONP_CALLBACK_PATTERN.matcher(callback).matches();
+        return callback != null && JSONP_CALLBACK_PATTERN.matcher(callback).matches();
     }
 
-    public static String json2Jsonp(String callback, String jsonStr) {
-        if (!isSafeJsonpCallback(callback)) {
-            return "error";
+    /**
+     * Wrap an object as JSONP. The callback must pass the strict pattern, otherwise a constant
+     * callback name is used. The body is produced by Jackson, never by concatenating request data.
+     */
+    public static String toJsonp(String callback, Object data) {
+        String cb = isSafeJsonpCallback(callback) ? callback : DEFAULT_JSONP_CALLBACK;
+        try {
+            return "/**/" + cb + "(" + JSONP_MAPPER.writeValueAsString(data) + ")";
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            throw new IllegalStateException("Unable to serialize JSONP body", e);
         }
-        return callback + "(" + jsonStr + ")";
     }
 
 
