@@ -1,9 +1,7 @@
 package org.joychou.security.ssrf;
 
-import java.net.HttpURLConnection;
 import java.net.InetAddress;
 import java.net.URI;
-import java.net.URL;
 import java.util.ArrayList;
 
 import org.apache.commons.lang.StringUtils;
@@ -49,53 +47,23 @@ public class SSRFChecker {
     }
 
     /**
-     * 解析url的ip，判断ip是否是内网ip，所以TTL设置为0的情况不适用。
-     * url只允许https或者http，并且设置默认连接超时时间。
-     * 该修复方案会主动请求重定向后的链接。
+     * Pure validator: it never connects to the supplied url. The url must be an absolute
+     * http/https url without user info on an allowlisted port, and the host is resolved once
+     * with every resolved address required to be public
+     * (see {@link SecurityUtil#isSafeHttpUrl(String)}).
+     * Because nothing is requested here, redirects are not followed by the checker; the caller
+     * that later requests the url must disable redirect following (or validate every hop).
      *
-     * @param url        check的url
-     * @param checkTimes 设置重定向检测的最大次数，建议设置为10次
+     * @param url        the url to check
+     * @param checkTimes kept for API compatibility (the old implementation followed redirects)
      * @return 安全返回true，危险返回false
      */
     public static boolean checkSSRF(String url, int checkTimes) {
-
-        HttpURLConnection connection;
-        int connectTime = 5 * 1000;  // 设置连接超时时间5s
-        int i = 1;
-        String finalUrl = url;
-        try {
-            do {
-                // 判断当前请求的URL是否是内网ip
-                if (isInternalIpByUrl(finalUrl)) {
-                    logger.error("[-] SSRF check failed. Dangerous url: " + finalUrl);
-                    return false;  // 内网ip直接return，非内网ip继续判断是否有重定向
-                }
-
-                connection = (HttpURLConnection) new URL(finalUrl).openConnection();
-                connection.setInstanceFollowRedirects(false);
-                connection.setUseCaches(false); // 设置为false，手动处理跳转，可以拿到每个跳转的URL
-                connection.setConnectTimeout(connectTime);
-                //connection.setRequestMethod("GET");
-                connection.connect(); // send dns request
-                int responseCode = connection.getResponseCode(); // 发起网络请求
-                if (responseCode >= 300 && responseCode <= 307 && responseCode != 304 && responseCode != 306) {
-                    String redirectedUrl = connection.getHeaderField("Location");
-                    if (null == redirectedUrl)
-                        break;
-                    finalUrl = redirectedUrl;
-                    i += 1;  // 重定向次数加1
-                    logger.info("redirected url: " + finalUrl);
-                    if (i == checkTimes) {
-                        return false;
-                    }
-                } else
-                    break;
-            } while (connection.getResponseCode() != HttpURLConnection.HTTP_OK);
-            connection.disconnect();
-        } catch (Exception e) {
-            return true;  // 如果异常了，认为是安全的，防止是超时导致的异常而验证不成功。
+        if (!SecurityUtil.isSafeHttpUrl(url)) {
+            logger.error("[-] SSRF check failed. Illegal or internal url.");
+            return false;
         }
-        return true; // 默认返回true
+        return true;
     }
 
 

@@ -5,6 +5,8 @@ import org.joychou.security.SecurityUtil;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.net.Inet6Address;
+import java.net.InetAddress;
 import java.net.URI;
 import java.sql.DriverManager;
 
@@ -44,7 +46,7 @@ public class Jdbc {
      *
      * @param jdbcUrl url decoded from the request
      * @param prefix  allowed driver prefix, e.g. jdbc:postgresql://
-     * @return the validated url
+     * @return the validated url with the host replaced by the validated ip address
      * @throws IllegalArgumentException if the url is not allowed
      */
     private static String checkJdbcUrl(String jdbcUrl, String prefix) {
@@ -58,12 +60,20 @@ public class Jdbc {
         try {
             // strip the "jdbc:" prefix so that java.net.URI can parse host and port
             URI uri = new URI(jdbcUrl.substring("jdbc:".length()));
-            if (!SecurityUtil.isPublicHost(uri.getHost())) {
+            // Resolve once and connect to the validated address, so the driver does not resolve
+            // the name a second time (DNS rebinding).
+            InetAddress address = SecurityUtil.resolvePublicAddress(uri.getHost());
+            if (address == null || uri.getRawUserInfo() != null || uri.getPort() == 0 || uri.getPort() > 65535) {
                 throw new IllegalArgumentException("Illegal jdbc url");
             }
+            String ip = address.getHostAddress();
+            if (address instanceof Inet6Address) {
+                ip = "[" + ip + "]";
+            }
+            String rawPath = uri.getRawPath() == null ? "" : uri.getRawPath();
+            return prefix + ip + (uri.getPort() >= 0 ? ":" + uri.getPort() : "") + rawPath;
         } catch (java.net.URISyntaxException e) {
             throw new IllegalArgumentException("Illegal jdbc url");
         }
-        return jdbcUrl;
     }
 }

@@ -9,8 +9,15 @@ import org.apache.http.client.config.RequestConfig;
 import org.apache.http.client.fluent.Executor;
 import org.apache.http.client.fluent.Request;
 import org.apache.http.client.methods.HttpGet;
+import org.apache.http.config.Registry;
+import org.apache.http.config.RegistryBuilder;
+import org.apache.http.conn.DnsResolver;
+import org.apache.http.conn.socket.ConnectionSocketFactory;
+import org.apache.http.conn.socket.PlainConnectionSocketFactory;
+import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
+import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
 import org.apache.http.impl.nio.client.CloseableHttpAsyncClient;
 import org.apache.http.impl.nio.client.HttpAsyncClients;
 import org.apache.http.util.EntityUtils;
@@ -28,7 +35,9 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URL;
+import java.net.InetAddress;
 import java.net.URLConnection;
+import java.net.UnknownHostException;
 import java.util.concurrent.*;
 
 /**
@@ -53,6 +62,38 @@ public class HttpUtils {
             throw new IOException("[-] SSRF check failed. Illegal url.");
         }
         return URI.create(url);
+    }
+
+
+    /**
+     * DNS resolver for Apache HttpClient that resolves the host once, requires every resolved address
+     * to be public and hands exactly those addresses to the socket. The address that was validated is
+     * therefore the address that is connected to (DNS rebinding cannot swap it between check and use).
+     */
+    private static final DnsResolver PUBLIC_ONLY_DNS_RESOLVER = new DnsResolver() {
+        @Override
+        public InetAddress[] resolve(String host) throws UnknownHostException {
+            InetAddress[] addresses = SecurityUtil.resolvePublicAddresses(host);
+            if (addresses == null) {
+                throw new UnknownHostException("[-] SSRF check failed. Illegal host.");
+            }
+            return addresses;
+        }
+    };
+
+
+    /**
+     * Apache HttpClient that never follows redirects and only connects to validated public addresses.
+     */
+    private static CloseableHttpClient newCheckedHttpClient() {
+        Registry<ConnectionSocketFactory> registry = RegistryBuilder.<ConnectionSocketFactory>create()
+                .register("http", PlainConnectionSocketFactory.getSocketFactory())
+                .register("https", SSLConnectionSocketFactory.getSocketFactory())
+                .build();
+        return HttpClients.custom()
+                .setConnectionManager(new PoolingHttpClientConnectionManager(registry, PUBLIC_ONLY_DNS_RESOLVER))
+                .disableRedirectHandling()
+                .build();
     }
 
 
@@ -91,7 +132,7 @@ public class HttpUtils {
 
     public static String request(String url) {
         try {
-            CloseableHttpClient client = HttpClients.custom().disableRedirectHandling().build();
+            CloseableHttpClient client = newCheckedHttpClient();
             try {
                 return Executor.newInstance(client)
                         .execute(Request.Get(checkedUri(url)))
@@ -111,7 +152,7 @@ public class HttpUtils {
 
         try {
 
-            CloseableHttpClient client = HttpClients.createDefault();
+            CloseableHttpClient client = newCheckedHttpClient();
             HttpGet httpGet = new HttpGet(checkedUri(url));
             // never follow redirects to a target that was not validated
             httpGet.setConfig(RequestConfig.custom().setRedirectsEnabled(false).build());

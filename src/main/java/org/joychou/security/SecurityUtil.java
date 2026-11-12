@@ -145,16 +145,18 @@ public class SecurityUtil {
      * @return Safe url returns true. Dangerous url returns false.
      */
     public static boolean checkSSRFWithoutRedirect(String url) {
-        if(url == null) {
-            return false;
-        }
-        return !SSRFChecker.isInternalIpByUrl(url);
+        return isSafeHttpUrl(url);
     }
+
+    /** Ports a server side request may target (-1 means the default port of the scheme). */
+    private static final java.util.Set<Integer> ALLOWED_PORTS = new java.util.HashSet<Integer>(
+            java.util.Arrays.asList(-1, 80, 443, 8080, 8443));
 
     /**
      * Strict check for a user supplied URL that the server is about to request.
-     * The URL must be an absolute http/https URI without user info, and every address
-     * the host resolves to must be a public one (see {@link #isPublicHost(String)}).
+     * The URL must be an absolute http/https URI without user info, use an allowlisted port,
+     * and every address the host resolves to must be a public one
+     * (see {@link #resolvePublicAddress(String)}).
      * Callers must also disable redirect following, otherwise a redirect could lead
      * to a target that was never validated.
      *
@@ -171,10 +173,10 @@ public class SecurityUtil {
             if (scheme == null || !("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme))) {
                 return false;
             }
-            if (uri.getRawUserInfo() != null) {
+            if (uri.getRawUserInfo() != null || !ALLOWED_PORTS.contains(uri.getPort())) {
                 return false;
             }
-            return isPublicHost(uri.getHost());
+            return resolvePublicAddress(uri.getHost()) != null;
         } catch (URISyntaxException e) {
             return false;
         }
@@ -190,41 +192,128 @@ public class SecurityUtil {
      * @return true only if every resolved address is public
      */
     public static boolean isPublicHost(String host) {
-        if (host == null || host.isEmpty()) {
-            return false;
+        return resolvePublicAddress(host) != null;
+    }
+
+
+    /**
+     * Resolve the host exactly once and validate <b>every</b> returned address.
+     * The returned address is the one a caller can connect to (or write into the connection
+     * string) so that the validated address is the address that is used (no second DNS lookup,
+     * which prevents DNS rebinding). Fails closed: any resolution error returns null.
+     * Non canonical dotted numeric hosts (octal / short forms such as 012.1 or 0177.0.0.1)
+     * are rejected because different parsers disagree on their value.
+     *
+     * @param host host name or ip literal
+     * @return the first resolved address when all resolved addresses are public, otherwise null
+     */
+    public static InetAddress resolvePublicAddress(String host) {
+        InetAddress[] addresses = resolvePublicAddresses(host);
+        return addresses == null ? null : addresses[0];
+    }
+
+
+    /**
+     * Same as {@link #resolvePublicAddress(String)} but returns all validated addresses, so that
+     * a DNS resolver plugged into an HTTP client can hand exactly these addresses to the socket.
+     *
+     * @param host host name or ip literal
+     * @return all resolved addresses when every one is public, otherwise null
+     */
+    public static InetAddress[] resolvePublicAddresses(String host) {
+        if (host == null || host.isEmpty() || !isCanonicalHost(host)) {
+            return null;
         }
         try {
             InetAddress[] addresses = InetAddress.getAllByName(host);
             if (addresses.length == 0) {
-                return false;
+                return null;
             }
             for (InetAddress address : addresses) {
-                if (address.isAnyLocalAddress() || address.isLoopbackAddress()
-                        || address.isLinkLocalAddress() || address.isSiteLocalAddress()
-                        || address.isMulticastAddress()) {
-                    return false;
-                }
-                byte[] raw = address.getAddress();
-                if (address instanceof Inet4Address) {
-                    int first = raw[0] & 0xFF;
-                    int second = raw[1] & 0xFF;
-                    // 0.0.0.0/8 and carrier-grade NAT 100.64.0.0/10
-                    if (first == 0 || (first == 100 && second >= 64 && second <= 127)) {
-                        return false;
-                    }
-                    if (SSRFChecker.isInternalIp(address.getHostAddress())) {
-                        return false;
-                    }
-                } else if ((raw[0] & 0xFE) == 0xFC) {
-                    // IPv6 unique local address fc00::/7
-                    return false;
+                if (!isPublicAddress(address)) {
+                    return null;
                 }
             }
-            return true;
+            return addresses;
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("Host resolution failed: " + e.getClass().getSimpleName());
+            return null;
+        }
+    }
+
+
+    /**
+     * A host made only of digits and dots must be a canonical dotted quad (four decimal
+     * parts, 0-255, no leading zeros).
+     */
+    private static boolean isCanonicalHost(String host) {
+        boolean numeric = true;
+        for (int i = 0; i < host.length(); i++) {
+            char ch = host.charAt(i);
+            if ((ch < '0' || ch > '9') && ch != '.') {
+                numeric = false;
+                break;
+            }
+        }
+        if (!numeric) {
+            return true;
+        }
+        String[] parts = host.split("\\.", -1);
+        if (parts.length != 4) {
             return false;
         }
+        for (String part : parts) {
+            if (part.isEmpty() || part.length() > 3 || (part.length() > 1 && part.charAt(0) == '0')
+                    || Integer.parseInt(part) > 255) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+
+    private static boolean isPublicAddress(InetAddress address) {
+        if (address.isAnyLocalAddress() || address.isLoopbackAddress()
+                || address.isLinkLocalAddress() || address.isSiteLocalAddress()
+                || address.isMulticastAddress()) {
+            return false;
+        }
+        byte[] raw = address.getAddress();
+        if (address instanceof Inet4Address) {
+            int first = raw[0] & 0xFF;
+            int second = raw[1] & 0xFF;
+            int third = raw[2] & 0xFF;
+            // 0.0.0.0/8, carrier-grade NAT 100.64.0.0/10, IETF protocol 192.0.0.0/24,
+            // benchmarking 198.18.0.0/15, reserved 240.0.0.0/4 (incl. broadcast)
+            if (first == 0 || first >= 240
+                    || (first == 100 && second >= 64 && second <= 127)
+                    || (first == 192 && second == 0 && third == 0)
+                    || (first == 198 && (second == 18 || second == 19))) {
+                return false;
+            }
+            return !SSRFChecker.isInternalIp(address.getHostAddress());
+        }
+        // IPv6 unique local address fc00::/7
+        if ((raw[0] & 0xFE) == 0xFC) {
+            return false;
+        }
+        // IPv4-compatible ::a.b.c.d
+        boolean zeroPrefix = true;
+        for (int i = 0; i < 12; i++) {
+            if (raw[i] != 0) {
+                zeroPrefix = false;
+                break;
+            }
+        }
+        if (zeroPrefix) {
+            return false;
+        }
+        // 6to4 2002::/16 and NAT64 64:ff9b::/96 embed an IPv4 address
+        if ((raw[0] == 0x20 && raw[1] == 0x02)
+                || (raw[0] == 0x00 && raw[1] == 0x64 && (raw[2] & 0xFF) == 0xFF && (raw[3] & 0xFF) == 0x9B)) {
+            return false;
+        }
+        return true;
     }
 
     /**
