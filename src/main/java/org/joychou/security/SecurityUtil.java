@@ -15,7 +15,10 @@ import java.net.URISyntaxException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.regex.Pattern;
+
+import javax.servlet.http.HttpServletRequest;
 
 
 public class SecurityUtil {
@@ -819,6 +822,184 @@ public class SecurityUtil {
             }
         }
         return false;
+    }
+
+    private static final String XFF_HEADER = "X-Forwarded-For";
+    private static final int MAX_XFF_HOPS = 32;
+
+    /**
+     * Resolve the client address of a request.
+     * <ol>
+     *   <li>The default is {@code request.getRemoteAddr()} (the TCP peer, not spoofable).</li>
+     *   <li>Only when the TCP peer is exactly one of the trusted proxies, the X-Forwarded-For
+     *       chain is walked from the right, skipping trusted proxies; the first (right-most)
+     *       untrusted hop is the client. Entries to the left of it are attacker controlled and
+     *       are never used.</li>
+     *   <li>The hop must be a syntactically valid IPv4/IPv6 literal (no host names, no DNS
+     *       lookup, no zone ids). Any malformed hop makes the method fall back to the remote
+     *       address.</li>
+     * </ol>
+     * The returned text is always rebuilt from the parsed address bytes, never copied from the
+     * request header.
+     *
+     * @param request the request
+     * @param trustedProxies literal addresses of the reverse proxies in front of the application
+     * @return the client address text, or the remote address (possibly empty) as fallback
+     */
+    public static String resolveClientIp(HttpServletRequest request, Set<String> trustedProxies) {
+        String remoteAddr = request.getRemoteAddr();
+        String fallback = remoteAddr == null ? "" : remoteAddr;
+        if (trustedProxies == null || trustedProxies.isEmpty()) {
+            return fallback;
+        }
+        String peer = normalizeIpLiteral(remoteAddr);
+        if (peer == null || !containsAddress(trustedProxies, peer)) {
+            return fallback;
+        }
+        String forwarded = request.getHeader(XFF_HEADER);
+        if (forwarded == null || forwarded.isEmpty() || forwarded.length() > 1024) {
+            return fallback;
+        }
+        String[] hops = forwarded.split(",", -1);
+        if (hops.length > MAX_XFF_HOPS) {
+            return fallback;
+        }
+        for (int i = hops.length - 1; i >= 0; i--) {
+            String hop = normalizeIpLiteral(hops[i].trim());
+            if (hop == null) {
+                return fallback;
+            }
+            if (!containsAddress(trustedProxies, hop)) {
+                return hop;
+            }
+        }
+        return fallback;
+    }
+
+    private static boolean containsAddress(Set<String> addresses, String normalized) {
+        for (String entry : addresses) {
+            if (normalized.equals(normalizeIpLiteral(entry == null ? null : entry.trim()))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Parse a literal IPv4 (dotted quad) or IPv6 (hex groups, optional "::") address without
+     * any name resolution and return its canonical text, rebuilt from the address bytes.
+     *
+     * @param text candidate text, may be null
+     * @return canonical address text, or null if text is not a literal ip address
+     */
+    public static String normalizeIpLiteral(String text) {
+        if (text == null || text.isEmpty() || text.length() > 45) {
+            return null;
+        }
+        byte[] raw = text.indexOf(':') >= 0 ? parseIpv6Literal(text) : parseIpv4Literal(text);
+        if (raw == null) {
+            return null;
+        }
+        try {
+            return InetAddress.getByAddress(raw).getHostAddress();
+        } catch (java.net.UnknownHostException e) {
+            return null;
+        }
+    }
+
+    private static byte[] parseIpv4Literal(String text) {
+        String[] parts = text.split("\\.", -1);
+        if (parts.length != 4) {
+            return null;
+        }
+        byte[] raw = new byte[4];
+        for (int i = 0; i < 4; i++) {
+            String part = parts[i];
+            if (part.isEmpty() || part.length() > 3 || (part.length() > 1 && part.charAt(0) == '0')) {
+                return null;
+            }
+            int value = 0;
+            for (int j = 0; j < part.length(); j++) {
+                char ch = part.charAt(j);
+                if (ch < '0' || ch > '9') {
+                    return null;
+                }
+                value = value * 10 + (ch - '0');
+            }
+            if (value > 255) {
+                return null;
+            }
+            raw[i] = (byte) value;
+        }
+        return raw;
+    }
+
+    private static byte[] parseIpv6Literal(String text) {
+        for (int i = 0; i < text.length(); i++) {
+            char ch = text.charAt(i);
+            boolean hex = (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F');
+            if (!hex && ch != ':') {
+                return null;
+            }
+        }
+        if (text.contains(":::")) {
+            return null;
+        }
+        int gap = text.indexOf("::");
+        if (gap != text.lastIndexOf("::")) {
+            return null;
+        }
+        int[] head;
+        int[] tail;
+        if (gap < 0) {
+            head = parseHexGroups(text);
+            tail = new int[0];
+            if (head == null || head.length != 8) {
+                return null;
+            }
+        } else {
+            head = parseHexGroups(text.substring(0, gap));
+            tail = parseHexGroups(text.substring(gap + 2));
+            if (head == null || tail == null || head.length + tail.length > 7) {
+                return null;
+            }
+        }
+        byte[] raw = new byte[16];
+        for (int i = 0; i < head.length; i++) {
+            raw[2 * i] = (byte) (head[i] >> 8);
+            raw[2 * i + 1] = (byte) head[i];
+        }
+        for (int i = 0; i < tail.length; i++) {
+            int pos = 8 - tail.length + i;
+            raw[2 * pos] = (byte) (tail[i] >> 8);
+            raw[2 * pos + 1] = (byte) tail[i];
+        }
+        return raw;
+    }
+
+    /** Parse colon separated groups of 1-4 hex digits; an empty string is zero groups. */
+    private static int[] parseHexGroups(String text) {
+        if (text.isEmpty()) {
+            return new int[0];
+        }
+        String[] groups = text.split(":", -1);
+        int[] values = new int[groups.length];
+        for (int i = 0; i < groups.length; i++) {
+            String group = groups[i];
+            if (group.isEmpty() || group.length() > 4) {
+                return null;
+            }
+            int value = 0;
+            for (int j = 0; j < group.length(); j++) {
+                int digit = Character.digit(group.charAt(j), 16);
+                if (digit < 0) {
+                    return null;
+                }
+                value = value * 16 + digit;
+            }
+            values[i] = value;
+        }
+        return values;
     }
 
     public static void main(String[] args) {
