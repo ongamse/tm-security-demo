@@ -382,6 +382,40 @@ public class SecurityUtil {
     }
 
     /**
+     * Validate a CORS request Origin against the safe/block domain config ({@link #checkURL(String)}).
+     * The value must be a bare origin (scheme://host[:port]) without userinfo, path, query or
+     * fragment, and must not contain control characters.
+     *
+     * @param origin the Origin request header, may be null
+     * @return the origin when it is allowed to be echoed in Access-Control-Allow-Origin, otherwise null
+     */
+    public static String getSafeCorsOrigin(String origin) {
+        if (origin == null || origin.isEmpty()) {
+            return null;
+        }
+        for (int i = 0; i < origin.length(); i++) {
+            char ch = origin.charAt(i);
+            if (Character.isISOControl(ch) || Character.isWhitespace(ch) || ch == '\\') {
+                return null;
+            }
+        }
+        try {
+            URI uri = new URI(origin);
+            if (uri.getRawUserInfo() != null || uri.getHost() == null
+                    || uri.getRawQuery() != null || uri.getRawFragment() != null) {
+                return null;
+            }
+            String path = uri.getRawPath();
+            if (path != null && !path.isEmpty()) {
+                return null;
+            }
+        } catch (URISyntaxException e) {
+            return null;
+        }
+        return checkURL(origin);
+    }
+
+    /**
      * Validate a user supplied redirect target.
      * Allowed: a same-origin absolute path (single leading slash), or an http(s) url whose host
      * passes {@link #checkURL(String)} (safe/block domain config). Control characters, whitespace,
