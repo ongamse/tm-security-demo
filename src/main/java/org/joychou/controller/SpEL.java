@@ -1,6 +1,7 @@
 package org.joychou.controller;
 
 import org.springframework.expression.EvaluationContext;
+import org.springframework.web.util.HtmlUtils;
 import org.springframework.expression.ExpressionParser;
 import org.springframework.expression.spel.support.SimpleEvaluationContext;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
@@ -28,7 +29,7 @@ public class SpEL {
         ExpressionParser parser = new SpelExpressionParser();
         // SimpleEvaluationContext: no type references, constructors or bean references.
         EvaluationContext context = SimpleEvaluationContext.forReadOnlyDataBinding().build();
-        return String.valueOf(parser.parseExpression(expression).getValue(context));
+        return HtmlUtils.htmlEscape(String.valueOf(parser.parseExpression(expression).getValue(context)));
     }
 
     public static void main(String[] args) {
