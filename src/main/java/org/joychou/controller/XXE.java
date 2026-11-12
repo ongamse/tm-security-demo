@@ -30,7 +30,7 @@ import javax.xml.parsers.SAXParser;
 
 import org.xml.sax.helpers.DefaultHandler;
 import org.apache.commons.digester3.Digester;
-import org.jdom2.input.SAXBuilder;
+import org.jdom2.input.DOMBuilder;
 import org.joychou.util.WebUtils;
 import org.xmlbeam.annotation.XBRead;
 
@@ -86,9 +86,8 @@ public class XXE {
             String body = WebUtils.getRequestBody(request);
             logger.info(body);
 
-            SAXBuilder builder = createSaxBuilder();
             // org.jdom2.Document document
-            builder.build(new InputSource(new StringReader(body)));
+            buildJdomDocument(body);
             return "SAXBuilder xxe vuln code";
         } catch (Exception e) {
             logger.error(e.toString());
@@ -102,9 +101,8 @@ public class XXE {
             String body = WebUtils.getRequestBody(request);
             logger.info(body);
 
-            SAXBuilder builder = createSaxBuilder();
             // org.jdom2.Document document
-            builder.build(new InputSource(new StringReader(body)));
+            buildJdomDocument(body);
 
         } catch (Exception e) {
             logger.error(e.toString());
@@ -188,7 +186,7 @@ public class XXE {
             logger.info(body);
 
             Digester digester = createDigester();
-            digester.parse(new StringReader(body));  // parse xml
+            parseWithDigester(digester, body);  // parse xml with the hardened SAXParser
         } catch (Exception e) {
             logger.error(e.toString());
             return EXCEPT;
@@ -203,7 +201,7 @@ public class XXE {
             logger.info(body);
 
             Digester digester = createDigester();
-            digester.parse(new StringReader(body));  // parse xml
+            parseWithDigester(digester, body);  // parse xml with the hardened SAXParser
 
             return "Digester xxe security code";
         } catch (Exception e) {
@@ -404,16 +402,22 @@ public class XXE {
     }
 
     /**
-     * Hardened JDOM2 SAXBuilder.
+     * Parses the XML with the hardened JDK DocumentBuilder (DOCTYPE rejected, no external entities)
+     * and converts the resulting DOM to a JDOM2 document.
      */
-    private static SAXBuilder createSaxBuilder() {
-        SAXBuilder builder = new SAXBuilder();
-        builder.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-        builder.setFeature("http://xml.org/sax/features/external-general-entities", false);
-        builder.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
-        builder.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
-        builder.setExpandEntities(false);
-        return builder;
+    private static org.jdom2.Document buildJdomDocument(String xml)
+            throws ParserConfigurationException, SAXException, IOException {
+        Document w3cDocument = createDocumentBuilder(true).parse(new InputSource(new StringReader(xml)));
+        return new DOMBuilder().build(w3cDocument);
+    }
+
+    /**
+     * Feeds the Digester as the SAX handler of the hardened SAXParser, so the Digester
+     * never creates its own (unhardened) XML parser.
+     */
+    private static void parseWithDigester(Digester digester, String xml)
+            throws ParserConfigurationException, SAXException, IOException {
+        createSaxParser().parse(new InputSource(new StringReader(xml)), digester);
     }
 
     /**
