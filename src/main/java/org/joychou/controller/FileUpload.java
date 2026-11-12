@@ -94,7 +94,7 @@ public class FileUpload {
         try {
             filePath = resolveInUploadFolder(fileName).toString();
         } catch (IOException e) {
-            logger.error("[-] Illegal file name: {}", fileName);
+            logger.error("[-] Illegal file name: {}", SecurityUtil.sanitizeForLog(fileName));
             return "Upload failed. Illeagl picture.";
         }
         File excelFile = convert(multifile);
@@ -110,7 +110,7 @@ public class FileUpload {
             }
         }
         if (!suffixFlag) {
-            logger.error("[-] Suffix error: " + Suffix);
+            logger.error("[-] Suffix error: {}", SecurityUtil.sanitizeForLog(Suffix));
             deleteFile(filePath);
             return "Upload failed. Illeagl picture.";
         }
@@ -128,7 +128,7 @@ public class FileUpload {
         for (String blackMimeType : mimeTypeBlackList) {
             // 用contains是为了防止text/html;charset=UTF-8绕过
             if (SecurityUtil.replaceSpecialStr(mimeType).toLowerCase().contains(blackMimeType)) {
-                logger.error("[-] Mime type error: " + mimeType);
+                logger.error("[-] Mime type error: {}", SecurityUtil.sanitizeForLog(mimeType));
                 deleteFile(filePath);
                 return "Upload failed. Illeagl picture.";
             }
@@ -156,8 +156,9 @@ public class FileUpload {
             return "Upload failed";
         }
 
-        logger.info("[+] Safe file. Suffix: {}, MIME: {}", Suffix, mimeType);
-        logger.info("[+] Successfully uploaded {}", filePath);
+        logger.info("[+] Safe file. Suffix: {}, MIME: {}",
+                SecurityUtil.sanitizeForLog(Suffix), SecurityUtil.sanitizeForLog(mimeType));
+        logger.info("[+] Successfully uploaded {}", SecurityUtil.sanitizeForLog(filePath));
         return String.format("You successfully uploaded '%s'", HtmlUtils.htmlEscape(filePath));
     }
 
@@ -187,11 +188,11 @@ public class FileUpload {
         }
         if(delFile.isFile() && delFile.exists()) {
             if (delFile.delete()) {
-                logger.info("[+] " + filePath + " delete successfully!");
+                logger.info("[+] {} delete successfully!", SecurityUtil.sanitizeForLog(filePath));
                 return;
             }
         }
-        logger.info(filePath + " delete failed!");
+        logger.info("{} delete failed!", SecurityUtil.sanitizeForLog(filePath));
     }
 
     /**

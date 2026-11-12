@@ -573,6 +573,32 @@ public class SecurityUtil {
         return sb.toString();
     }
 
+    /** Characters that may appear verbatim in a log message (no whitespace, no control chars). */
+    private static final String LOG_VALUE_ALPHABET = ALNUM_ALPHABET + "._~:/@+,;=%-";
+    private static final int MAX_LOG_VALUE_LENGTH = 200;
+
+    /**
+     * Build a value that is safe to write to a log (prevents CRLF / log forging). The result is
+     * a new string: null becomes "null", the value is truncated to 200 characters, and every
+     * character outside [A-Za-z0-9._~:/@+,;=%-] (including space, CR, LF, tab, other control
+     * and unicode line separator characters) is replaced by '_'.
+     *
+     * @param value request derived value, may be null
+     * @return a log-safe string
+     */
+    public static String sanitizeForLog(String value) {
+        if (value == null) {
+            return "null";
+        }
+        int len = Math.min(value.length(), MAX_LOG_VALUE_LENGTH);
+        StringBuilder sb = new StringBuilder(len);
+        for (int i = 0; i < len; i++) {
+            int idx = LOG_VALUE_ALPHABET.indexOf(value.charAt(i));
+            sb.append(idx >= 0 ? LOG_VALUE_ALPHABET.charAt(idx) : '_');
+        }
+        return sb.toString();
+    }
+
     /**
      * Build a safe download file name for a Content-Disposition header. The name is rebuilt
      * from the characters [A-Za-z0-9._-] only; an empty result falls back to "download".
