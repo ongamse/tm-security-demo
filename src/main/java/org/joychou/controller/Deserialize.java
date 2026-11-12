@@ -1,7 +1,8 @@
 package org.joychou.controller;
 
 import org.joychou.config.Constants;
-import org.joychou.security.AntObjectInputStream;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.joychou.dao.User;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -9,10 +10,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.io.InvalidClassException;
-import java.io.ObjectInputStream;
 import java.util.Base64;
 
 import static org.springframework.web.util.WebUtils.getCookie;
@@ -41,15 +39,36 @@ public class Deserialize {
             return "No rememberMe cookie. Right?";
         }
 
-        String rememberMe = cookie.getValue();
-        byte[] decoded = Base64.getDecoder().decode(rememberMe);
-
-        ByteArrayInputStream bytes = new ByteArrayInputStream(decoded);
-        ObjectInputStream in = new ObjectInputStream(bytes);
-        in.readObject();
-        in.close();
+        if (readRememberMe(cookie.getValue()) == null) {
+            return INVALID_REMEMBER_ME;
+        }
 
         return "Are u ok?";
+    }
+
+    private static final String INVALID_REMEMBER_ME = "Invalid rememberMe cookie.";
+
+    // The rememberMe cookie is Base64(JSON) of a User; the JSON mapper has default typing off, so
+    // the payload can only populate the User bean and can never select an arbitrary class.
+    private static final int MAX_REMEMBER_ME_BYTES = 4096;
+    private static final ObjectMapper REMEMBER_ME_MAPPER = new ObjectMapper();
+
+    /**
+     * Decode the rememberMe cookie into a User. No Java native deserialization is used.
+     *
+     * @return the parsed User, or null when the cookie is not a valid Base64 JSON User
+     */
+    private User readRememberMe(String cookieValue) {
+        try {
+            byte[] decoded = Base64.getDecoder().decode(cookieValue);
+            if (decoded.length == 0 || decoded.length > MAX_REMEMBER_ME_BYTES) {
+                return null;
+            }
+            return REMEMBER_ME_MAPPER.readValue(decoded, User.class);
+        } catch (IllegalArgumentException | IOException e) {
+            logger.info("Rejected rememberMe cookie: " + e.getClass().getSimpleName());
+            return null;
+        }
     }
 
     /**
@@ -66,18 +85,8 @@ public class Deserialize {
         if (null == cookie) {
             return "No rememberMe cookie. Right?";
         }
-        String rememberMe = cookie.getValue();
-        byte[] decoded = Base64.getDecoder().decode(rememberMe);
-
-        ByteArrayInputStream bytes = new ByteArrayInputStream(decoded);
-
-        try {
-            AntObjectInputStream in = new AntObjectInputStream(bytes);  // throw InvalidClassException
-            in.readObject();
-            in.close();
-        } catch (InvalidClassException e) {
-            logger.info(e.toString());
-            return e.toString();
+        if (readRememberMe(cookie.getValue()) == null) {
+            return INVALID_REMEMBER_ME;
         }
 
         return "I'm very OK.";

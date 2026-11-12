@@ -7,11 +7,19 @@ import org.joychou.security.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
 import java.sql.*;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
 
 
 /**
@@ -42,6 +50,53 @@ public class SQLI {
     @Resource
     private UserMapper userMapper;
 
+    private static final Pattern USERNAME_PATTERN = Pattern.compile("^[A-Za-z0-9_.-]{1,64}$");
+
+    private static final String ADMIN_AUTHORITY = "ROLE_ADMIN";
+
+    /** Authenticated username of the caller, or null when there is no authenticated principal. */
+    private static String currentUsername() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated() || auth instanceof AnonymousAuthenticationToken) {
+            return null;
+        }
+        return auth.getName();
+    }
+
+    private static boolean isAdmin() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (currentUsername() == null) {
+            return false;
+        }
+        for (GrantedAuthority authority : auth.getAuthorities()) {
+            if (ADMIN_AUTHORITY.equals(authority.getAuthority())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** The caller may only reference its own record unless it has the ADMIN role. */
+    private static boolean mayAccess(String username) {
+        String caller = currentUsername();
+        return caller != null && (caller.equals(username) || isAdmin());
+    }
+
+    /**
+     * Validates the requested username format and binds it to the authenticated caller.
+     *
+     * @return null when the request may proceed, otherwise the error response to return.
+     */
+    private static ResponseEntity<String> guardUsername(String username) {
+        if (username == null || !USERNAME_PATTERN.matcher(username).matches()) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Bad Request");
+        }
+        if (!mayAccess(username)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body("Forbidden");
+        }
+        return null;
+    }
+
 
     /**
      * <p>Sql injection jbdc vuln code.</p><br>
@@ -49,7 +104,12 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/jdbc/vuln?username=joychou">http://localhost:8080/sqli/jdbc/vuln?username=joychou</a>
      */
     @RequestMapping("/jdbc/vuln")
-    public String jdbc_sqli_vul(@RequestParam("username") String username) {
+    public ResponseEntity<String> jdbc_sqli_vul(@RequestParam("username") String username) {
+
+        ResponseEntity<String> denied = guardUsername(username);
+        if (denied != null) {
+            return denied;
+        }
 
         StringBuilder result = new StringBuilder();
 
@@ -60,16 +120,17 @@ public class SQLI {
             if (!con.isClosed())
                 System.out.println("Connect to database successfully.");
 
-            // sqli vuln code
-            Statement statement = con.createStatement();
-            String sql = "select * from users where username = '" + username + "'";
+            // bound parameter instead of string concatenation
+            String sql = "select * from users where username = ?";
+            PreparedStatement statement = con.prepareStatement(sql);
+            statement.setString(1, username);
             logger.info(sql);
-            ResultSet rs = statement.executeQuery(sql);
+            ResultSet rs = statement.executeQuery();
 
+            // return only the username; do not expose the stored credential
             while (rs.next()) {
                 String res_name = rs.getString("username");
-                String res_pwd = rs.getString("password");
-                String info = String.format("%s: %s\n", res_name, res_pwd);
+                String info = String.format("%s\n", res_name);
                 result.append(info);
                 logger.info(info);
             }
@@ -82,7 +143,7 @@ public class SQLI {
         } catch (SQLException e) {
             logger.error(e.toString());
         }
-        return result.toString();
+        return ResponseEntity.ok(result.toString());
     }
 
 
@@ -92,7 +153,12 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/jdbc/sec?username=joychou">http://localhost:8080/sqli/jdbc/sec?username=joychou</a>
      */
     @RequestMapping("/jdbc/sec")
-    public String jdbc_sqli_sec(@RequestParam("username") String username) {
+    public ResponseEntity<String> jdbc_sqli_sec(@RequestParam("username") String username) {
+
+        ResponseEntity<String> denied = guardUsername(username);
+        if (denied != null) {
+            return denied;
+        }
 
         StringBuilder result = new StringBuilder();
         try {
@@ -110,10 +176,10 @@ public class SQLI {
             logger.info(st.toString());  // sql after prepare statement
             ResultSet rs = st.executeQuery();
 
+            // return only the username; do not expose the stored credential
             while (rs.next()) {
                 String res_name = rs.getString("username");
-                String res_pwd = rs.getString("password");
-                String info = String.format("%s: %s\n", res_name, res_pwd);
+                String info = String.format("%s\n", res_name);
                 result.append(info);
                 logger.info(info);
             }
@@ -127,7 +193,7 @@ public class SQLI {
         } catch (SQLException e) {
             logger.error(e.toString());
         }
-        return result.toString();
+        return ResponseEntity.ok(result.toString());
     }
 
 
@@ -136,7 +202,12 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/jdbc/ps/vuln?username=joychou' or 'a'='a">http://localhost:8080/sqli/jdbc/ps/vuln?username=joychou' or 'a'='a</a>
      */
     @RequestMapping("/jdbc/ps/vuln")
-    public String jdbc_ps_vuln(@RequestParam("username") String username) {
+    public ResponseEntity<String> jdbc_ps_vuln(@RequestParam("username") String username) {
+
+        ResponseEntity<String> denied = guardUsername(username);
+        if (denied != null) {
+            return denied;
+        }
 
         StringBuilder result = new StringBuilder();
         try {
@@ -146,16 +217,17 @@ public class SQLI {
             if (!con.isClosed())
                 System.out.println("Connecting to Database successfully.");
 
-            String sql = "select * from users where username = '" + username + "'";
+            String sql = "select * from users where username = ?";
             PreparedStatement st = con.prepareStatement(sql);
+            st.setString(1, username);
 
             logger.info(st.toString());
             ResultSet rs = st.executeQuery();
 
+            // return only the username; do not expose the stored credential
             while (rs.next()) {
                 String res_name = rs.getString("username");
-                String res_pwd = rs.getString("password");
-                String info = String.format("%s: %s\n", res_name, res_pwd);
+                String info = String.format("%s\n", res_name);
                 result.append(info);
                 logger.info(info);
             }
@@ -169,7 +241,7 @@ public class SQLI {
         } catch (SQLException e) {
             logger.error(e.toString());
         }
-        return result.toString();
+        return ResponseEntity.ok(result.toString());
     }
 
 
@@ -179,8 +251,12 @@ public class SQLI {
      * <p>select * from users where username = 'joychou' or '1'='1' </p>
      */
     @GetMapping("/mybatis/vuln01")
-    public List<User> mybatisVuln01(@RequestParam("username") String username) {
-        return userMapper.findByUserNameVuln01(username);
+    public ResponseEntity<?> mybatisVuln01(@RequestParam("username") String username) {
+        ResponseEntity<String> denied = guardUsername(username);
+        if (denied != null) {
+            return denied;
+        }
+        return ResponseEntity.ok(userMapper.findByUserNameVuln01(username));
     }
 
     /**
@@ -189,8 +265,24 @@ public class SQLI {
      * <p>select * from users where username like '%joychou' or '1'='1%' </p>
      */
     @GetMapping("/mybatis/vuln02")
-    public List<User> mybatisVuln02(@RequestParam("username") String username) {
-        return userMapper.findByUserNameVuln02(username);
+    public ResponseEntity<?> mybatisVuln02(@RequestParam("username") String username) {
+        ResponseEntity<String> denied = guardUsername(username);
+        if (denied != null) {
+            return denied;
+        }
+        List<User> found = userMapper.findByUserNameVuln02(username);
+        if (isAdmin()) {
+            return ResponseEntity.ok(found);
+        }
+        // the LIKE match may hit other users; a non-admin caller only gets its own record
+        String caller = currentUsername();
+        List<User> own = new ArrayList<>();
+        for (User u : found) {
+            if (caller.equals(u.getUsername())) {
+                own.add(u);
+            }
+        }
+        return ResponseEntity.ok(own);
     }
 
     /**
@@ -209,8 +301,12 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/mybatis/sec01?username=joychou">http://localhost:8080/sqli/mybatis/sec01?username=joychou</a>
      */
     @GetMapping("/mybatis/sec01")
-    public User mybatisSec01(@RequestParam("username") String username) {
-        return userMapper.findByUserName(username);
+    public ResponseEntity<?> mybatisSec01(@RequestParam("username") String username) {
+        ResponseEntity<String> denied = guardUsername(username);
+        if (denied != null) {
+            return denied;
+        }
+        return ResponseEntity.ok(userMapper.findByUserName(username));
     }
 
     /**
@@ -218,8 +314,18 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/mybatis/sec02?id=1">http://localhost:8080/sqli/mybatis/sec02?id=1</a>
      */
     @GetMapping("/mybatis/sec02")
-    public User mybatisSec02(@RequestParam("id") Integer id) {
-        return userMapper.findById(id);
+    public ResponseEntity<?> mybatisSec02(@RequestParam("id") Integer id) {
+        User found = userMapper.findById(id);
+        // the record must belong to the caller (admins may read any); unknown ids are
+        // refused the same way for non-admins so ids cannot be enumerated
+        if (found == null) {
+            return isAdmin() ? ResponseEntity.ok().build()
+                    : ResponseEntity.status(HttpStatus.FORBIDDEN).body("Forbidden");
+        }
+        if (!mayAccess(found.getUsername())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body("Forbidden");
+        }
+        return ResponseEntity.ok(found);
     }
 
 

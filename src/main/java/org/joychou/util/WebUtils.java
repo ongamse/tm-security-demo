@@ -5,7 +5,6 @@ import javax.servlet.http.HttpServletRequest;
 import java.io.*;
 
 import com.google.common.base.Preconditions;
-import org.springframework.web.util.HtmlUtils;
 
 public class WebUtils {
 
@@ -27,8 +26,22 @@ public class WebUtils {
     }
 
 
-    public static String json2Jsonp(String callback, String jsonStr) {
-        return HtmlUtils.htmlEscape(callback) + "(" + jsonStr + ")";
+    private static final com.fasterxml.jackson.databind.ObjectMapper JSONP_MAPPER =
+            new com.fasterxml.jackson.databind.ObjectMapper()
+                    .configure(com.fasterxml.jackson.core.JsonGenerator.Feature.ESCAPE_NON_ASCII, true);
+
+    /**
+     * Wrap an object as JSONP. The callback name is rebuilt from a fixed alphabet by
+     * {@link org.joychou.security.SecurityUtil#getSafeJsonpCallback(String)} (constant fallback),
+     * so the request string is never copied into the output. The body is produced by Jackson.
+     */
+    public static String toJsonp(String callback, Object data) {
+        String cb = org.joychou.security.SecurityUtil.getSafeJsonpCallback(callback);
+        try {
+            return "/**/" + cb + "(" + JSONP_MAPPER.writeValueAsString(data) + ")";
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            throw new IllegalStateException("Unable to serialize JSONP body", e);
+        }
     }
 
 

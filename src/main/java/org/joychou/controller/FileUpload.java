@@ -1,6 +1,7 @@
 package org.joychou.controller;
 
 import com.fasterxml.uuid.Generators;
+import org.springframework.web.util.HtmlUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Controller;
@@ -59,7 +60,7 @@ public class FileUpload {
         try {
             // Get the file and save it somewhere
             byte[] bytes = file.getBytes();
-            Path path = Paths.get(UPLOADED_FOLDER + file.getOriginalFilename());
+            Path path = resolveInUploadFolder(file.getOriginalFilename());
             Files.write(path, bytes);
 
             redirectAttributes.addFlashAttribute("message",
@@ -89,7 +90,13 @@ public class FileUpload {
         String fileName = multifile.getOriginalFilename();
         String Suffix = fileName.substring(fileName.lastIndexOf(".")); // 获取文件后缀名
         String mimeType = multifile.getContentType(); // 获取MIME类型
-        String filePath = UPLOADED_FOLDER + fileName;
+        String filePath;
+        try {
+            filePath = resolveInUploadFolder(fileName).toString();
+        } catch (IOException e) {
+            logger.error("[-] Illegal file name: {}", SecurityUtil.sanitizeForLog(fileName));
+            return "Upload failed. Illeagl picture.";
+        }
         File excelFile = convert(multifile);
 
 
@@ -103,7 +110,7 @@ public class FileUpload {
             }
         }
         if (!suffixFlag) {
-            logger.error("[-] Suffix error: " + Suffix);
+            logger.error("[-] Suffix error: {}", SecurityUtil.sanitizeForLog(Suffix));
             deleteFile(filePath);
             return "Upload failed. Illeagl picture.";
         }
@@ -121,7 +128,7 @@ public class FileUpload {
         for (String blackMimeType : mimeTypeBlackList) {
             // 用contains是为了防止text/html;charset=UTF-8绕过
             if (SecurityUtil.replaceSpecialStr(mimeType).toLowerCase().contains(blackMimeType)) {
-                logger.error("[-] Mime type error: " + mimeType);
+                logger.error("[-] Mime type error: {}", SecurityUtil.sanitizeForLog(mimeType));
                 deleteFile(filePath);
                 return "Upload failed. Illeagl picture.";
             }
@@ -141,7 +148,7 @@ public class FileUpload {
         try {
             // Get the file and save it somewhere
             byte[] bytes = multifile.getBytes();
-            Path path = Paths.get(UPLOADED_FOLDER + multifile.getOriginalFilename());
+            Path path = resolveInUploadFolder(multifile.getOriginalFilename());
             Files.write(path, bytes);
         } catch (IOException e) {
             logger.error(e.toString());
@@ -149,20 +156,43 @@ public class FileUpload {
             return "Upload failed";
         }
 
-        logger.info("[+] Safe file. Suffix: {}, MIME: {}", Suffix, mimeType);
-        logger.info("[+] Successfully uploaded {}", filePath);
-        return String.format("You successfully uploaded '%s'", filePath);
+        logger.info("[+] Safe file. Suffix: {}, MIME: {}",
+                SecurityUtil.sanitizeForLog(Suffix), SecurityUtil.sanitizeForLog(mimeType));
+        logger.info("[+] Successfully uploaded {}", SecurityUtil.sanitizeForLog(filePath));
+        return String.format("You successfully uploaded '%s'", HtmlUtils.htmlEscape(filePath));
+    }
+
+    /**
+     * Resolve a file name against the upload folder and make sure the result
+     * stays inside it (rejects "..", absolute paths and other escapes).
+     */
+    private static Path resolveInUploadFolder(String name) throws IOException {
+        if (name == null) {
+            throw new IOException("Illegal file name");
+        }
+        Path base = Paths.get(UPLOADED_FOLDER).toAbsolutePath().normalize();
+        Path resolved = base.resolve(name).normalize();
+        if (!resolved.startsWith(base)) {
+            throw new IOException("Illegal file path");
+        }
+        return resolved;
     }
 
     private void deleteFile(String filePath) {
-        File delFile = new File(filePath);
+        File delFile;
+        try {
+            delFile = resolveInUploadFolder(filePath).toFile();
+        } catch (IOException e) {
+            logger.info("Illegal file path, delete skipped");
+            return;
+        }
         if(delFile.isFile() && delFile.exists()) {
             if (delFile.delete()) {
-                logger.info("[+] " + filePath + " delete successfully!");
+                logger.info("[+] {} delete successfully!", SecurityUtil.sanitizeForLog(filePath));
                 return;
             }
         }
-        logger.info(filePath + " delete failed!");
+        logger.info("{} delete failed!", SecurityUtil.sanitizeForLog(filePath));
     }
 
     /**
@@ -175,7 +205,7 @@ public class FileUpload {
         String fileName = multiFile.getOriginalFilename();
         String suffix = fileName.substring(fileName.lastIndexOf("."));
         UUID uuid = Generators.timeBasedGenerator().generate();
-        randomFilePath = UPLOADED_FOLDER + uuid + suffix;
+        randomFilePath = resolveInUploadFolder(uuid + suffix).toString();
         // 随机生成一个同后缀名的文件
         File convFile = new File(randomFilePath);
         boolean ret = convFile.createNewFile();

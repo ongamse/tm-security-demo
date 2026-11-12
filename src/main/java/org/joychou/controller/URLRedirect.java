@@ -30,7 +30,8 @@ public class URLRedirect {
      */
     @GetMapping("/redirect")
     public String redirect(@RequestParam("url") String url) {
-        return "redirect:" + url;
+        // Illegal target falls back to the application root.
+        return "redirect:" + SecurityUtil.getSafeRedirectUrlOrDefault(url);
     }
 
 
@@ -40,9 +41,10 @@ public class URLRedirect {
     @RequestMapping("/setHeader")
     @ResponseBody
     public static void setHeader(HttpServletRequest request, HttpServletResponse response) {
-        String url = request.getParameter("url");
+        // Illegal target falls back to the application root.
+        String safeUrl = SecurityUtil.getSafeRedirectUrlOrDefault(request.getParameter("url"));
         response.setStatus(HttpServletResponse.SC_MOVED_PERMANENTLY); // 301 redirect
-        response.setHeader("Location", url);
+        response.setHeader("Location", safeUrl);
     }
 
 
@@ -52,8 +54,9 @@ public class URLRedirect {
     @RequestMapping("/sendRedirect")
     @ResponseBody
     public static void sendRedirect(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        String url = request.getParameter("url");
-        response.sendRedirect(url); // 302 redirect
+        // Illegal target falls back to the application root.
+        String safeUrl = SecurityUtil.getSafeRedirectUrlOrDefault(request.getParameter("url"));
+        response.sendRedirect(safeUrl); // 302 redirect
     }
 
 
@@ -82,12 +85,8 @@ public class URLRedirect {
     @ResponseBody
     public void sendRedirect_seccode(HttpServletRequest request, HttpServletResponse response)
             throws IOException {
-        String url = request.getParameter("url");
-        if (SecurityUtil.checkURL(url) == null) {
-            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-            response.getWriter().write("url forbidden");
-            return;
-        }
-        response.sendRedirect(url);
+        // Illegal target falls back to the application root.
+        String safeUrl = SecurityUtil.getSafeRedirectUrlOrDefault(request.getParameter("url"));
+        response.sendRedirect(safeUrl);
     }
 }

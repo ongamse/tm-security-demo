@@ -1,7 +1,9 @@
 package org.joychou.controller;
 
 import groovy.lang.GroovyShell;
+import org.springframework.web.util.HtmlUtils;
 import lombok.extern.slf4j.Slf4j;
+import org.joychou.security.SecurityUtil;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -16,6 +18,8 @@ import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.sql.DriverManager;
+import java.util.List;
+import java.util.regex.Pattern;
 
 
 /**
@@ -28,13 +32,19 @@ import java.sql.DriverManager;
 @RequestMapping("/rce")
 public class Rce {
 
-    @GetMapping("/runtime/exec")
+    private static final Pattern ARITHMETIC_PATTERN = Pattern.compile("^[0-9+\\-*/%(). ]{1,200}$");
+
+    @GetMapping(value = "/runtime/exec", produces = "text/plain;charset=UTF-8")
     public String CommandExec(String cmd) {
-        Runtime run = Runtime.getRuntime();
         StringBuilder sb = new StringBuilder();
 
         try {
-            Process p = run.exec(cmd);
+            // argv comes exclusively from the fixed server-side command table; no shell.
+            List<String> argv = SecurityUtil.parseAllowedCommand(cmd);
+            if (argv == null) {
+                return "Command not allowed!!";
+            }
+            Process p = new ProcessBuilder(argv).redirectErrorStream(true).start();
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
             String tmpStr;
@@ -51,23 +61,28 @@ public class Rce {
             inBr.close();
             in.close();
         } catch (Exception e) {
-            return e.toString();
+            log.error("Command exec failed", e);
+            return "Command exec failed!!";
         }
-        return sb.toString();
+        return HtmlUtils.htmlEscape(sb.toString());
     }
 
 
     /**
      * <a href="http://localhost:8080/rce/ProcessBuilder?cmd=whoami">POC</a>
      */
-    @GetMapping("/ProcessBuilder")
+    @GetMapping(value = "/ProcessBuilder", produces = "text/plain;charset=UTF-8")
     public String processBuilder(String cmd) {
 
         StringBuilder sb = new StringBuilder();
 
         try {
-            String[] arrCmd = {"/bin/sh", "-c", cmd};
-            ProcessBuilder processBuilder = new ProcessBuilder(arrCmd);
+            // No shell: allowlisted program + simple args only.
+            List<String> argv = SecurityUtil.parseAllowedCommand(cmd);
+            if (argv == null) {
+                return "Command not allowed!!";
+            }
+            ProcessBuilder processBuilder = new ProcessBuilder(argv);
             Process p = processBuilder.start();
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
@@ -77,10 +92,11 @@ public class Rce {
                 sb.append(tmpStr);
             }
         } catch (Exception e) {
-            return e.toString();
+            log.error("Command exec failed", e);
+            return "Command exec failed!!";
         }
 
-        return sb.toString();
+        return HtmlUtils.htmlEscape(sb.toString());
     }
 
 
@@ -95,10 +111,15 @@ public class Rce {
     @GetMapping("/jscmd")
     public void jsEngine(String jsurl) throws Exception{
         // js nashorn javascript ecmascript
+        // Only load scripts from allowlisted hosts; pass the URL as a binding, never
+        // concatenated into script source.
+        if (!SecurityUtil.checkSSRFByWhitehosts(jsurl)) {
+            throw new IllegalArgumentException("jsurl is not allowed");
+        }
         ScriptEngine engine = new ScriptEngineManager().getEngineByName("js");
         Bindings bindings = engine.getBindings(ScriptContext.ENGINE_SCOPE);
-        String cmd = String.format("load(\"%s\")", jsurl);
-        engine.eval(cmd, bindings);
+        bindings.put("jsurl", jsurl);
+        engine.eval("load(jsurl)", bindings);
     }
 
 
@@ -110,7 +131,8 @@ public class Rce {
      */
     @GetMapping("/vuln/yarm")
     public void yarm(String content) {
-        Yaml y = new Yaml();
+        // SafeConstructor only builds standard YAML types, blocking arbitrary class instantiation.
+        Yaml y = new Yaml(new SafeConstructor());
         y.load(content);
     }
 
@@ -126,6 +148,10 @@ public class Rce {
      */
     @GetMapping("groovy")
     public void groovyshell(String content) {
+        // Only plain arithmetic expressions are evaluated; no identifiers, quotes or method calls.
+        if (content == null || !ARITHMETIC_PATTERN.matcher(content).matches()) {
+            throw new IllegalArgumentException("content is not allowed");
+        }
         GroovyShell groovyShell = new GroovyShell();
         groovyShell.evaluate(content);
     }

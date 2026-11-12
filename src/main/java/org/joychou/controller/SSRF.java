@@ -1,6 +1,7 @@
 package org.joychou.controller;
 
 import cn.hutool.http.HttpUtil;
+import org.springframework.web.util.HtmlUtils;
 import org.joychou.security.SecurityUtil;
 import org.joychou.security.ssrf.SSRFException;
 import org.joychou.service.HttpService;
@@ -98,9 +99,9 @@ public class SSRF {
     public String request(@RequestParam String url) {
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.request(url);
+            return HtmlUtils.htmlEscape(HttpUtils.request(url));
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return HtmlUtils.htmlEscape(e.getMessage());
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -122,12 +123,19 @@ public class SSRF {
         try {
             String downLoadImgFileName = WebUtils.getNameWithoutExtension(url) + "." + WebUtils.getFileExtension(url);
             // download
-            response.setHeader("content-disposition", "attachment;fileName=" + downLoadImgFileName);
+            response.setHeader("content-disposition", "attachment;fileName=" + SecurityUtil.getSafeAttachmentFileName(downLoadImgFileName));
 
-            URL u = new URL(url);
+            // Only public http(s) urls; do not follow redirects to unvalidated targets.
+            SecurityUtil.HttpTarget target = SecurityUtil.checkHttpTarget(url);
+            if (target == null) {
+                throw new IOException("[-] SSRF check failed. Illegal url.");
+            }
+            // Request the url rebuilt from the validated components, not the request string.
+            HttpURLConnection conn = (HttpURLConnection) URI.create(target.toUriString()).toURL().openConnection();
+            conn.setInstanceFollowRedirects(false);
             int length;
             byte[] bytes = new byte[1024];
-            inputStream = u.openStream(); // send request
+            inputStream = conn.getInputStream(); // send request
             outputStream = response.getOutputStream();
             while ((length = inputStream.read(bytes)) > 0) {
                 outputStream.write(bytes, 0, length);

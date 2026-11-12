@@ -4,6 +4,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * RASP：Hook java/io/ObjectInputStream类的resolveClass方法
@@ -36,18 +39,39 @@ public class AntObjectInputStream extends ObjectInputStream {
         // Deserialize class name: org.joychou.security.AntObjectInputStream$MyObject
         logger.info("Deserialize class name: " + className);
 
-        String[] denyClasses = {"java.net.InetAddress",
-                                "org.apache.commons.collections.Transformer",
-                                "org.apache.commons.collections.functors"};
-
-        for (String denyClass : denyClasses) {
-            if (className.startsWith(denyClass)) {
-                throw new InvalidClassException("Unauthorized deserialization attempt", className);
-            }
+        // Allowlist: only these exact classes may be deserialized (array types are checked by element type).
+        String checkName = className;
+        while (checkName.startsWith("[")) {
+            checkName = checkName.substring(1);
+        }
+        if (checkName.length() == 1) {
+            // primitive array element type, e.g. "[B" -> "B"
+            return super.resolveClass(desc);
+        }
+        if (checkName.startsWith("L") && checkName.endsWith(";")) {
+            checkName = checkName.substring(1, checkName.length() - 1);
+        }
+        if (!ALLOWED_CLASSES.contains(checkName)) {
+            throw new InvalidClassException("Unauthorized deserialization attempt", className);
         }
 
         return super.resolveClass(desc);
     }
+
+    private static final Set<String> ALLOWED_CLASSES = new HashSet<String>(Arrays.asList(
+            "java.lang.String",
+            "java.lang.Number",
+            "java.lang.Integer",
+            "java.lang.Long",
+            "java.lang.Short",
+            "java.lang.Byte",
+            "java.lang.Double",
+            "java.lang.Float",
+            "java.lang.Boolean",
+            "java.lang.Character",
+            "org.joychou.dao.User",
+            "org.joychou.security.AntObjectInputStream$MyObject"
+    ));
 
     public static void main(String args[]) throws Exception{
         // 定义myObj对象
