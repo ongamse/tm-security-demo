@@ -381,6 +381,44 @@ public class SecurityUtil {
         return sb.toString();
     }
 
+    /**
+     * Validate a user supplied redirect target.
+     * Allowed: a same-origin absolute path (single leading slash), or an http(s) url whose host
+     * passes {@link #checkURL(String)} (safe/block domain config). Control characters, whitespace,
+     * backslashes, protocol-relative urls ("//host") and userinfo ("user@host") are rejected.
+     *
+     * @param url the redirect target from the request, may be null
+     * @return the original url when it is safe to redirect to, otherwise null
+     */
+    public static String getSafeRedirectUrl(String url) {
+        if (url == null || url.isEmpty()) {
+            return null;
+        }
+        for (int i = 0; i < url.length(); i++) {
+            char ch = url.charAt(i);
+            if (ch == '\\' || Character.isISOControl(ch) || Character.isWhitespace(ch)) {
+                return null;
+            }
+        }
+
+        try {
+            URI uri = new URI(url);
+            if (url.startsWith("/")) {
+                // Same-origin path only: no "//host", no scheme, no authority.
+                if (url.startsWith("//") || uri.getScheme() != null || uri.getRawAuthority() != null) {
+                    return null;
+                }
+                return url;
+            }
+            if (uri.getRawUserInfo() != null) {
+                return null;
+            }
+        } catch (URISyntaxException e) {
+            return null;
+        }
+        return checkURL(url);
+    }
+
     public static void main(String[] args) {
     }
 
