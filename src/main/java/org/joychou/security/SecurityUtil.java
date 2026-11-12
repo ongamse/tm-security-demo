@@ -10,12 +10,11 @@ import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.net.Inet4Address;
 import java.net.InetAddress;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import javax.servlet.http.HttpServletRequest;
@@ -38,19 +37,190 @@ public class SecurityUtil {
     }
 
 
+    private static final String HOST_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789.-";
+    private static final String HOST_LABEL = "[A-Z0-9]+(?:-+[A-Z0-9]+)*";
+    private static final String PATH_CHARS = "[A-Za-z0-9._~:@!$&'()*+,;=%/-]";
+    private static final String QUERY_CHARS = "[A-Za-z0-9._~:@!$&'()*+,;=%/?-]";
+
     /**
-     * Get http url host.
+     * Get http url host. The url is parsed with the strict grammar of
+     * {@link #parseHttpTarget(String)} (pure string parsing, no network access); the returned
+     * host is rebuilt from a fixed alphabet and is lower case.
      *
      * @param url url
-     * @return host
+     * @return host, or an empty string when the url is not a well formed http(s) url
      */
     public static String gethost(String url) {
-        try {
-            URI uri = new URI(url);
-            return uri.getHost().toLowerCase();
-        } catch (URISyntaxException e) {
+        if (url == null || url.length() > MAX_REDIRECT_URL_LENGTH) {
             return "";
         }
+        Matcher m = HTTP_AUTHORITY_PATTERN.matcher(url);
+        if (!m.matches()) {
+            return "";
+        }
+        String rawHost = m.group(1);
+        if (rawHost.startsWith("[")) {
+            String ip = normalizeIpLiteral(rawHost.substring(1, rawHost.length() - 1));
+            return ip == null ? "" : "[" + ip + "]";
+        }
+        return rawHost.length() > 253 ? "" : rebuildFromAlphabet(rawHost.toLowerCase(), HOST_ALPHABET);
+    }
+
+    /**
+     * Only the scheme and authority of a url are validated (host and optional port, no user info,
+     * no backslash); whatever follows the authority is not interpreted. Group 1 is the host.
+     */
+    private static final Pattern HTTP_AUTHORITY_PATTERN = Pattern.compile(
+            "https?://(\\[[0-9A-F:.]{2,45}\\]|" + HOST_LABEL + "(?:\\." + HOST_LABEL + ")*\\.?)"
+                    + "(?::[0-9]{1,5})?(?:[/?#][^\\s\\\\\\p{Cntrl}]*)?",
+            Pattern.CASE_INSENSITIVE);
+
+
+    /** A bare host name (no scheme, port or path). */
+    private static final Pattern BARE_HOST_PATTERN = Pattern.compile(HOST_LABEL + "(?:\\." + HOST_LABEL + ")*",
+            Pattern.CASE_INSENSITIVE);
+
+    /**
+     * Validate a bare host name or an IPv4 / IPv6 literal (no scheme, port, path or user info) and
+     * rebuild it from a fixed alphabet. This is pure string handling, there is no name resolution.
+     *
+     * @param host candidate host, may be null
+     * @return the lower case host (IPv6 literals canonical and without brackets), or null if malformed
+     */
+    public static String parseBareHost(String host) {
+        if (host == null || host.isEmpty() || host.length() > 253) {
+            return null;
+        }
+        if (host.indexOf(':') >= 0) {
+            return normalizeIpLiteral(host);
+        }
+        if (!BARE_HOST_PATTERN.matcher(host).matches()) {
+            return null;
+        }
+        return rebuildFromAlphabet(host.toLowerCase(), HOST_ALPHABET);
+    }
+
+
+    /**
+     * A syntactically validated http(s) url. Every component is rebuilt from a fixed
+     * alphabet (see {@link #parseHttpTarget(String)}), never copied from the request string.
+     */
+    public static final class HttpTarget {
+        private final String scheme;
+        private final String host;
+        private final int port;
+        private final String rest;
+        private final String pathAndQuery;
+
+        private HttpTarget(String scheme, String host, int port, String path, String query, String fragment) {
+            this.scheme = scheme;
+            this.host = host;
+            this.port = port;
+            this.rest = buildRest(path, query, fragment);
+            this.pathAndQuery = buildRest(path.isEmpty() ? "/" : path, query, null);
+        }
+
+        /** @return the literal "http" or "https" */
+        public String getScheme() {
+            return scheme;
+        }
+
+        /** @return lower case host name, or a bracketed canonical IPv6 literal */
+        public String getHost() {
+            return host;
+        }
+
+        /** @return the port, or -1 for the default port of the scheme */
+        public int getPort() {
+            return port;
+        }
+
+        /** @return raw path (never empty, "/" at least) followed by the raw query, no fragment */
+        public String getPathAndQuery() {
+            return pathAndQuery;
+        }
+
+        /** @return the url rebuilt from the validated components */
+        public String toUriString() {
+            StringBuilder sb = new StringBuilder(scheme).append("://").append(host);
+            if (port != -1) {
+                sb.append(':').append(port);
+            }
+            return sb.append(rest).toString();
+        }
+    }
+
+    /**
+     * scheme://host[:port][/path][?query][#fragment] with a closed character set: no user info,
+     * no backslash, no whitespace, no control or non ASCII characters.
+     * Groups: 1 scheme, 2 host, 3 port, 4 path, 5 query, 6 fragment.
+     */
+    private static final Pattern HTTP_URL_PATTERN = Pattern.compile(
+            "(https?)://(\\[[0-9A-F:.]{2,45}\\]|" + HOST_LABEL + "(?:\\." + HOST_LABEL + ")*\\.?)"
+                    + "(?::([0-9]{1,5}))?(/" + PATH_CHARS + "*)?(?:\\?(" + QUERY_CHARS + "*))?(?:#(" + QUERY_CHARS + "*))?",
+            Pattern.CASE_INSENSITIVE);
+
+    /** Same-origin reference. Groups: 1 path, 2 query, 3 fragment. */
+    private static final Pattern RELATIVE_URL_PATTERN = Pattern.compile(
+            "(/" + PATH_CHARS + "*)(?:\\?(" + QUERY_CHARS + "*))?(?:#(" + QUERY_CHARS + "*))?");
+
+    /** A '%' that is not followed by two hex digits. */
+    private static final Pattern BAD_PERCENT_PATTERN = Pattern.compile("%(?![0-9A-Fa-f]{2})");
+
+    /**
+     * Strictly parse an absolute http/https url by pure string handling (no java.net.URL / URI
+     * construction, no DNS, no network access). The result is rebuilt from the match: the scheme is
+     * a fixed literal, the host is rebuilt from {@link #HOST_ALPHABET}, the port is an int and path,
+     * query and fragment are rebuilt from the url alphabet.
+     *
+     * @param url url from any source, may be null
+     * @return the parsed target, or null when the url is not a well formed http(s) url
+     */
+    public static HttpTarget parseHttpTarget(String url) {
+        if (url == null || url.isEmpty() || url.length() > MAX_REDIRECT_URL_LENGTH
+                || BAD_PERCENT_PATTERN.matcher(url).find()) {
+            return null;
+        }
+        Matcher m = HTTP_URL_PATTERN.matcher(url);
+        if (!m.matches()) {
+            return null;
+        }
+        String scheme = "https".equalsIgnoreCase(m.group(1)) ? "https" : "http";
+        String rawHost = m.group(2);
+        String host;
+        if (rawHost.startsWith("[")) {
+            String ip = normalizeIpLiteral(rawHost.substring(1, rawHost.length() - 1));
+            if (ip == null) {
+                return null;
+            }
+            host = "[" + ip + "]";
+        } else {
+            if (rawHost.length() > 253) {
+                return null;
+            }
+            host = rebuildFromAlphabet(rawHost.toLowerCase(), HOST_ALPHABET);
+        }
+        int port = -1;
+        if (m.group(3) != null) {
+            port = Integer.parseInt(m.group(3));
+            if (port < 1 || port > 65535) {
+                return null;
+            }
+        }
+        return new HttpTarget(scheme, host, port,
+                m.group(4) == null ? "" : m.group(4), m.group(5), m.group(6));
+    }
+
+    /** Rebuild "path[?query][#fragment]" from the url alphabet. */
+    private static String buildRest(String path, String query, String fragment) {
+        StringBuilder sb = new StringBuilder(rebuildFromAlphabet(path, URL_ALPHABET));
+        if (query != null) {
+            sb.append('?').append(rebuildFromAlphabet(query, URL_ALPHABET));
+        }
+        if (fragment != null) {
+            sb.append('#').append(rebuildFromAlphabet(fragment, URL_ALPHABET));
+        }
+        return sb.toString();
     }
 
 
@@ -168,22 +338,24 @@ public class SecurityUtil {
      * @return Safe url returns true. Dangerous or malformed url returns false.
      */
     public static boolean isSafeHttpUrl(String url) {
-        if (url == null) {
-            return false;
+        return checkHttpTarget(url) != null;
+    }
+
+
+    /**
+     * Same checks as {@link #isSafeHttpUrl(String)}, but returns the parsed target. The caller
+     * must request {@link HttpTarget#toUriString()} (or its components), which is rebuilt from the
+     * validated pieces and never the original request string.
+     *
+     * @param url The url that needs to check.
+     * @return the validated target, or null when the url is dangerous or malformed
+     */
+    public static HttpTarget checkHttpTarget(String url) {
+        HttpTarget target = parseHttpTarget(url);
+        if (target == null || !ALLOWED_PORTS.contains(target.getPort())) {
+            return null;
         }
-        try {
-            URI uri = new URI(url);
-            String scheme = uri.getScheme();
-            if (scheme == null || !("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme))) {
-                return false;
-            }
-            if (uri.getRawUserInfo() != null || !ALLOWED_PORTS.contains(uri.getPort())) {
-                return false;
-            }
-            return resolvePublicAddress(uri.getHost()) != null;
-        } catch (URISyntaxException e) {
-            return false;
-        }
+        return resolvePublicAddress(target.getHost()) != null ? target : null;
     }
 
 
@@ -697,58 +869,32 @@ public class SecurityUtil {
             return null;
         }
 
-        try {
-            URI uri = new URI(url);
-            if (url.startsWith("/")) {
-                // Same-origin path only: no "//host", no scheme, no authority.
-                if (url.startsWith("//") || uri.getScheme() != null || uri.getRawAuthority() != null) {
-                    return null;
-                }
-                String path = uri.getRawPath();
-                if (path == null || !path.startsWith("/") || path.startsWith("//")
-                        || decodeFully(path).startsWith("//")) {
-                    return null;
-                }
-                return appendQueryAndFragment(new StringBuilder(path), uri).toString();
+        if (url.startsWith("/")) {
+            // Same-origin path only: no "//host", no scheme, no authority.
+            Matcher rel = RELATIVE_URL_PATTERN.matcher(url);
+            if (url.startsWith("//") || BAD_PERCENT_PATTERN.matcher(url).find() || !rel.matches()) {
+                return null;
             }
+            String path = rel.group(1);
+            if (decodeFully(path).startsWith("//")) {
+                return null;
+            }
+            return buildRest(path, rel.group(2), rel.group(3));
+        }
 
-            String scheme = uri.getScheme();
-            if (scheme == null || uri.getRawUserInfo() != null || uri.getHost() == null) {
-                return null;
-            }
-            String safeScheme;
-            if ("https".equalsIgnoreCase(scheme)) {
-                safeScheme = "https";
-            } else if ("http".equalsIgnoreCase(scheme)) {
-                safeScheme = "http";
-            } else {
-                return null;
-            }
-            String host = uri.getHost().toLowerCase();
-            if (!SAFE_HOST_PATTERN.matcher(host).matches()) {
-                return null;
-            }
-            int port = uri.getPort();
-            if (port < -1 || port > 65535) {
-                return null;
-            }
-            // Allow/block domain config (exact host or proper dot-boundary suffix).
-            if (checkURL(safeScheme + "://" + host) == null) {
-                return null;
-            }
-
-            StringBuilder sb = new StringBuilder(safeScheme).append("://").append(host);
-            if (port != -1) {
-                sb.append(':').append(port);
-            }
-            String path = uri.getRawPath();
-            if (path != null) {
-                sb.append(path);
-            }
-            return appendQueryAndFragment(sb, uri).toString();
-        } catch (URISyntaxException e) {
+        HttpTarget target = parseHttpTarget(url);
+        if (target == null) {
             return null;
         }
+        String host = target.getHost();
+        if (!SAFE_HOST_PATTERN.matcher(host).matches()) {
+            return null;
+        }
+        // Allow/block domain config (exact host or proper dot-boundary suffix).
+        if (checkURL(target.getScheme() + "://" + host) == null) {
+            return null;
+        }
+        return target.toUriString();
     }
 
     /**
@@ -770,16 +916,6 @@ public class SecurityUtil {
 
     private static final int MAX_REDIRECT_URL_LENGTH = 2048;
     private static final Pattern SAFE_HOST_PATTERN = Pattern.compile("^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$");
-
-    private static StringBuilder appendQueryAndFragment(StringBuilder sb, URI uri) {
-        if (uri.getRawQuery() != null) {
-            sb.append('?').append(uri.getRawQuery());
-        }
-        if (uri.getRawFragment() != null) {
-            sb.append('#').append(uri.getRawFragment());
-        }
-        return sb;
-    }
 
     /**
      * Percent-decode repeatedly (handles double encoding such as %255c). '+' is kept as is.

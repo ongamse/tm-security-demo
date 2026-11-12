@@ -126,10 +126,12 @@ public class SSRF {
             response.setHeader("content-disposition", "attachment;fileName=" + SecurityUtil.getSafeAttachmentFileName(downLoadImgFileName));
 
             // Only public http(s) urls; do not follow redirects to unvalidated targets.
-            if (!SecurityUtil.isSafeHttpUrl(url)) {
+            SecurityUtil.HttpTarget target = SecurityUtil.checkHttpTarget(url);
+            if (target == null) {
                 throw new IOException("[-] SSRF check failed. Illegal url.");
             }
-            HttpURLConnection conn = (HttpURLConnection) URI.create(url).toURL().openConnection();
+            // Request the url rebuilt from the validated components, not the request string.
+            HttpURLConnection conn = (HttpURLConnection) URI.create(target.toUriString()).toURL().openConnection();
             conn.setInstanceFollowRedirects(false);
             int length;
             byte[] bytes = new byte[1024];

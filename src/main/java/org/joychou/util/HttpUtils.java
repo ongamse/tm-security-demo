@@ -3,6 +3,10 @@ package org.joychou.util;
 import com.squareup.okhttp.OkHttpClient;
 import org.apache.commons.httpclient.HttpClient;
 import org.apache.commons.httpclient.methods.GetMethod;
+import org.apache.commons.httpclient.params.HttpConnectionParams;
+import org.apache.commons.httpclient.protocol.Protocol;
+import org.apache.commons.httpclient.protocol.ProtocolSocketFactory;
+import org.apache.commons.httpclient.protocol.SecureProtocolSocketFactory;
 import org.apache.commons.io.IOUtils;
 import org.apache.http.HttpResponse;
 import org.apache.http.client.config.RequestConfig;
@@ -28,6 +32,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.imageio.ImageIO;
+import javax.net.ssl.SSLParameters;
+import javax.net.ssl.SSLSocket;
+import javax.net.ssl.SSLSocketFactory;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -36,6 +43,8 @@ import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URL;
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.Socket;
 import java.net.URLConnection;
 import java.net.UnknownHostException;
 import java.util.concurrent.*;
@@ -58,10 +67,94 @@ public class HttpUtils {
      * @throws IOException if the url is not allowed
      */
     private static URI checkedUri(String url) throws IOException {
-        if (!SecurityUtil.isSafeHttpUrl(url)) {
+        return URI.create(checkedTarget(url).toUriString());
+    }
+
+
+    /**
+     * Validate a user supplied url and return the parsed target. The target is rebuilt from the
+     * validated components (see {@link SecurityUtil#checkHttpTarget(String)}), so the request is never
+     * made with the original request string.
+     *
+     * @throws IOException if the url is not allowed
+     */
+    private static SecurityUtil.HttpTarget checkedTarget(String url) throws IOException {
+        SecurityUtil.HttpTarget target = SecurityUtil.checkHttpTarget(url);
+        if (target == null) {
             throw new IOException("[-] SSRF check failed. Illegal url.");
         }
-        return URI.create(url);
+        return target;
+    }
+
+
+    /**
+     * Socket factory for commons-httpclient 3.x: resolves the host once, requires every resolved address
+     * to be public and connects to exactly that address (no second lookup by name, so DNS rebinding cannot
+     * swap the address between check and use). For https the TLS session is layered on the connected
+     * socket with the host name for SNI and endpoint (host name) verification.
+     */
+    private static class PublicOnlySocketFactory implements ProtocolSocketFactory {
+        private final boolean tls;
+
+        private PublicOnlySocketFactory(boolean tls) {
+            this.tls = tls;
+        }
+
+        @Override
+        public Socket createSocket(String host, int port, InetAddress localAddress, int localPort,
+                                   HttpConnectionParams params) throws IOException {
+            InetAddress[] addresses = SecurityUtil.resolvePublicAddresses(host);
+            if (addresses == null) {
+                throw new UnknownHostException("[-] SSRF check failed. Illegal host.");
+            }
+            Socket socket = new Socket();
+            try {
+                if (localAddress != null) {
+                    socket.bind(new InetSocketAddress(localAddress, localPort));
+                }
+                socket.connect(new InetSocketAddress(addresses[0], port),
+                        params == null ? 0 : params.getConnectionTimeout());
+                return tls ? layerTls(socket, host, port) : socket;
+            } catch (IOException e) {
+                socket.close();
+                throw e;
+            }
+        }
+
+        @Override
+        public Socket createSocket(String host, int port, InetAddress localAddress, int localPort)
+                throws IOException {
+            return createSocket(host, port, localAddress, localPort, null);
+        }
+
+        @Override
+        public Socket createSocket(String host, int port) throws IOException {
+            return createSocket(host, port, null, 0, null);
+        }
+
+        static Socket layerTls(Socket socket, String host, int port) throws IOException {
+            String sniHost = host.startsWith("[") ? host.substring(1, host.length() - 1) : host;
+            SSLSocket ssl = (SSLSocket) ((SSLSocketFactory) SSLSocketFactory.getDefault())
+                    .createSocket(socket, sniHost, port, true);
+            SSLParameters sslParameters = ssl.getSSLParameters();
+            sslParameters.setEndpointIdentificationAlgorithm("HTTPS");
+            ssl.setSSLParameters(sslParameters);
+            return ssl;
+        }
+    }
+
+
+    /** TLS variant, marked secure for commons-httpclient (Protocol.isSecure). */
+    private static final class PublicOnlySecureSocketFactory extends PublicOnlySocketFactory
+            implements SecureProtocolSocketFactory {
+        private PublicOnlySecureSocketFactory() {
+            super(true);
+        }
+
+        @Override
+        public Socket createSocket(Socket socket, String host, int port, boolean autoClose) throws IOException {
+            return layerTls(socket, host, port);
+        }
     }
 
 
@@ -113,13 +206,24 @@ public class HttpUtils {
         GetMethod method = null;
 
         try {
-            method = new GetMethod(checkedUri(url).toString());
+            SecurityUtil.HttpTarget target = checkedTarget(url);
+            boolean tls = "https".equals(target.getScheme());
+            Protocol protocol;
+            if (tls) {
+                protocol = new Protocol("https", (SecureProtocolSocketFactory) new PublicOnlySecureSocketFactory(), 443);
+            } else {
+                protocol = new Protocol("http", (ProtocolSocketFactory) new PublicOnlySocketFactory(false), 80);
+            }
+            client.getHostConfiguration().setHost(target.getHost(),
+                    target.getPort() == -1 ? protocol.getDefaultPort() : target.getPort(), protocol);
+            // Relative request uri: the connection goes to the pinned, validated host configuration.
+            method = new GetMethod(target.getPathAndQuery());
             method.setFollowRedirects(false);
             client.executeMethod(method); // send request
             byte[] resBody = method.getResponseBody();
             return new String(resBody);
 
-        } catch (IOException e) {
+        } catch (IOException | IllegalArgumentException e) {
             return "Error: " + e.getMessage();
         } finally {
             // Release the connection.
@@ -223,12 +327,27 @@ public class HttpUtils {
      */
     public static String Jsoup(String url) {
         try {
-            Document doc = Jsoup.connect(checkedUri(url).toString())
-                    .followRedirects(false)
-                    .timeout(3000)
-                    .cookie("name", "joychou") // request cookies
-                    .execute().parse();
-            return doc.outerHtml();
+            URI target = checkedUri(url);
+            // Fetch with the pinned-DNS client (validated address, no redirects) and let Jsoup only parse.
+            CloseableHttpClient client = newCheckedHttpClient();
+            try {
+                HttpGet httpGet = new HttpGet(target);
+                httpGet.setConfig(RequestConfig.custom()
+                        .setRedirectsEnabled(false)
+                        .setConnectTimeout(3000)
+                        .setSocketTimeout(3000)
+                        .build());
+                httpGet.setHeader("Cookie", "name=joychou"); // request cookies
+                HttpResponse response = client.execute(httpGet);
+                int status = response.getStatusLine().getStatusCode();
+                if (status >= 400 || response.getEntity() == null) {
+                    throw new IOException("HTTP error fetching URL. Status=" + status);
+                }
+                Document doc = Jsoup.parse(response.getEntity().getContent(), null, target.toString());
+                return doc.outerHtml();
+            } finally {
+                client.close();
+            }
         } catch (IOException e) {
             return e.getMessage();
         }
