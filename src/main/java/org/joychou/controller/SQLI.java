@@ -111,10 +111,10 @@ public class SQLI {
             logger.info(st.toString());  // sql after prepare statement
             ResultSet rs = st.executeQuery();
 
+            // return only the username; do not expose the stored credential
             while (rs.next()) {
                 String res_name = rs.getString("username");
-                String res_pwd = rs.getString("password");
-                String info = String.format("%s: %s\n", res_name, res_pwd);
+                String info = String.format("%s\n", res_name);
                 result.append(info);
                 logger.info(info);
             }
