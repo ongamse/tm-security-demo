@@ -2,6 +2,9 @@ package org.joychou.controller;
 
 import com.thoughtworks.xstream.XStream;
 import com.thoughtworks.xstream.io.xml.DomDriver;
+import com.thoughtworks.xstream.security.NoTypePermission;
+import com.thoughtworks.xstream.security.NullPermission;
+import com.thoughtworks.xstream.security.PrimitiveTypePermission;
 import org.joychou.dao.User;
 import org.joychou.util.WebUtils;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -23,9 +26,24 @@ public class XStreamRce {
     @PostMapping("/xstream")
     public String parseXml(HttpServletRequest request) throws Exception {
         String xml = WebUtils.getRequestBody(request);
+        // The XStream payload never needs a DTD; rejecting it blocks XXE (entities require a DOCTYPE).
+        if (xml == null || xml.contains("<!DOCTYPE")) {
+            return "invalid xml";
+        }
         XStream xstream = new XStream(new DomDriver());
+        allowOnlyKnownTypes(xstream);
         xstream.fromXML(xml);
         return "xstream";
+    }
+
+    /**
+     * Type allowlist: deny everything, then permit only primitives, String and the expected User type.
+     */
+    private static void allowOnlyKnownTypes(XStream xstream) {
+        xstream.addPermission(NoTypePermission.NONE);
+        xstream.addPermission(NullPermission.NULL);
+        xstream.addPermission(PrimitiveTypePermission.PRIMITIVES);
+        xstream.allowTypes(new Class[]{String.class, Integer.class, User.class});
     }
 
     public static void main(String[] args) {
