@@ -344,6 +344,9 @@ public class SecurityUtil {
      * @return illegal file path return null
      */
     public static String pathFilter(String filepath) {
+        if (filepath == null || filepath.isEmpty()) {
+            return null;
+        }
         String temp = filepath;
 
         // use while to sovle multi urlencode
@@ -359,7 +362,7 @@ public class SecurityUtil {
             }
         }
 
-        if (temp.contains("..") || temp.charAt(0) == '/') {
+        if (temp.isEmpty() || temp.contains("..") || temp.charAt(0) == '/') {
             return null;
         }
 
