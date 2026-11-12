@@ -29,9 +29,11 @@ public class IPForge {
     private String trustedProxies;
 
     // no any proxy
-    @RequestMapping("/noproxy")
-    public static String noProxy(HttpServletRequest request) {
-        return request.getRemoteAddr();
+    @RequestMapping(value = "/noproxy", produces = "text/plain;charset=UTF-8")
+    public String noProxy(HttpServletRequest request) {
+        // Canonical text rebuilt from the parsed address bytes, then HTML escaped.
+        String ip = SecurityUtil.normalizeIpLiteral(request.getRemoteAddr());
+        return HtmlUtils.htmlEscape(ip == null ? "unknown" : ip);
     }
 
 

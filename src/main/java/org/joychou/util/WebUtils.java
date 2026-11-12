@@ -26,27 +26,17 @@ public class WebUtils {
     }
 
 
-    // JavaScript identifier (optionally dotted) only; anything else is not a valid JSONP callback.
-    private static final java.util.regex.Pattern JSONP_CALLBACK_PATTERN =
-            java.util.regex.Pattern.compile("^[A-Za-z_$][A-Za-z0-9_$.]{0,63}$");
-
-    // Constant callback used when the requested one is missing or invalid.
-    public static final String DEFAULT_JSONP_CALLBACK = "callback";
-
     private static final com.fasterxml.jackson.databind.ObjectMapper JSONP_MAPPER =
             new com.fasterxml.jackson.databind.ObjectMapper()
                     .configure(com.fasterxml.jackson.core.JsonGenerator.Feature.ESCAPE_NON_ASCII, true);
 
-    public static boolean isSafeJsonpCallback(String callback) {
-        return callback != null && JSONP_CALLBACK_PATTERN.matcher(callback).matches();
-    }
-
     /**
-     * Wrap an object as JSONP. The callback must pass the strict pattern, otherwise a constant
-     * callback name is used. The body is produced by Jackson, never by concatenating request data.
+     * Wrap an object as JSONP. The callback name is rebuilt from a fixed alphabet by
+     * {@link org.joychou.security.SecurityUtil#getSafeJsonpCallback(String)} (constant fallback),
+     * so the request string is never copied into the output. The body is produced by Jackson.
      */
     public static String toJsonp(String callback, Object data) {
-        String cb = isSafeJsonpCallback(callback) ? callback : DEFAULT_JSONP_CALLBACK;
+        String cb = org.joychou.security.SecurityUtil.getSafeJsonpCallback(callback);
         try {
             return "/**/" + cb + "(" + JSONP_MAPPER.writeValueAsString(data) + ")";
         } catch (com.fasterxml.jackson.core.JsonProcessingException e) {

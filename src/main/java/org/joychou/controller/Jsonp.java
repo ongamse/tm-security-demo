@@ -48,8 +48,8 @@ public class Jsonp {
      */
     @RequestMapping(value = "/vuln/referer", produces = "application/javascript")
     public ResponseEntity<String> referer(HttpServletRequest request) {
-        String callback = request.getParameter(this.callback);
-        return javascript(WebUtils.toJsonp(callback, LoginUtils.getUserInfo(request)));
+        String cb = SecurityUtil.getSafeJsonpCallback(request.getParameter(this.callback));
+        return javascript(WebUtils.toJsonp(cb, LoginUtils.getUserInfo(request)));
     }
 
     /**
@@ -65,8 +65,8 @@ public class Jsonp {
         if (null != referer && SecurityUtil.checkURL(referer) == null) {
             return javascript("error");
         }
-        String callback = request.getParameter(this.callback);
-        return javascript(WebUtils.toJsonp(callback, LoginUtils.getUserInfo(request)));
+        String cb = SecurityUtil.getSafeJsonpCallback(request.getParameter(this.callback));
+        return javascript(WebUtils.toJsonp(cb, LoginUtils.getUserInfo(request)));
     }
 
     /**
@@ -110,8 +110,8 @@ public class Jsonp {
         if (SecurityUtil.checkURL(referer) == null) {
             return javascript("error");
         }
-        String callback = request.getParameter(this.callback);
-        return javascript(WebUtils.toJsonp(callback, LoginUtils.getUserInfo(request)));
+        String cb = SecurityUtil.getSafeJsonpCallback(request.getParameter(this.callback));
+        return javascript(WebUtils.toJsonp(cb, LoginUtils.getUserInfo(request)));
     }
 
     /**
@@ -138,10 +138,10 @@ public class Jsonp {
         tokenData.put("parameterName", csrfToken.getParameterName());
         tokenData.put("token", csrfToken.getToken());
 
-        // Callback is validated against a strict pattern inside toJsonp (constant fallback);
-        // the body is serialized by Jackson.
-        String callback = request.getParameter("fastjsonpCallback");
-        return javascript(WebUtils.toJsonp(callback, tokenData));
+        // The callback name is rebuilt from a fixed alphabet (constant fallback), never copied
+        // from the request; the body is serialized by Jackson.
+        String cb = SecurityUtil.getSafeJsonpCallback(request.getParameter("fastjsonpCallback"));
+        return javascript(WebUtils.toJsonp(cb, tokenData));
     }
 
     /**
