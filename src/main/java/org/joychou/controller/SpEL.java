@@ -13,6 +13,7 @@ import org.springframework.expression.spel.SpelEvaluationException;
 import org.springframework.expression.spel.SpelMessage;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
 import org.springframework.expression.spel.support.StandardEvaluationContext;
+import org.joychou.security.SecurityUtil;
 import org.springframework.web.util.HtmlUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -35,6 +36,10 @@ public class SpEL {
      */
     @GetMapping("/spel/vuln")
     public String rce(String expression) {
+        // Grammar allowlist before parsing: literals, operators, parentheses, inline collections.
+        if (!SecurityUtil.isSafeSpelExpression(expression)) {
+            return "Expression not allowed!!";
+        }
         ExpressionParser parser = new SpelExpressionParser();
         return HtmlUtils.htmlEscape(String.valueOf(parser.parseExpression(expression).getValue(restrictedContext())));
     }

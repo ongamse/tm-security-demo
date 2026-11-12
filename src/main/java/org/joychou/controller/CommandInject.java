@@ -10,14 +10,12 @@ import org.springframework.web.bind.annotation.RestController;
 
 import javax.servlet.http.HttpServletRequest;
 import java.io.IOException;
-import java.util.regex.Pattern;
+import java.util.List;
 
 @RestController
 public class CommandInject {
 
     protected final Logger logger = LoggerFactory.getLogger(this.getClass());
-
-    private static final Pattern HOST_PATTERN = Pattern.compile("^[a-zA-Z0-9][a-zA-Z0-9.-]*(:[0-9]{1,5})?$");
 
     /**
      * http://localhost:8080/codeinject?filepath=/tmp;cat /etc/passwd
@@ -28,12 +26,11 @@ public class CommandInject {
     @GetMapping("/codeinject")
     public String codeInject(String filepath) throws IOException {
 
-        String safePath = SecurityUtil.cmdFilter(filepath);
-        if (null == safePath) {
+        // Fixed "ls -la --" from the server-side table + one validated path token; no shell.
+        List<String> cmdList = SecurityUtil.buildListCommand(filepath);
+        if (null == cmdList) {
             return "Bad boy. I got u.";
         }
-        // No shell: argv elements are never interpreted; "--" stops option parsing.
-        String[] cmdList = new String[]{"ls", "-la", "--", safePath};
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);
         Process process = builder.start();
@@ -50,11 +47,11 @@ public class CommandInject {
 
         String host = request.getHeader("host");
         logger.info(host);
-        if (host == null || !HOST_PATTERN.matcher(host).matches()) {
+        // Fixed curl options + one validated host token after "--"; no shell.
+        List<String> cmdList = SecurityUtil.buildCurlHostCommand(host);
+        if (cmdList == null) {
             return "Bad boy. I got u.";
         }
-        // No shell: argv elements are never interpreted; "--" stops option parsing.
-        String[] cmdList = new String[]{"curl", "--", host};
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);
         Process process = builder.start();
@@ -63,11 +60,10 @@ public class CommandInject {
 
     @GetMapping("/codeinject/sec")
     public String codeInjectSec(String filepath) throws IOException {
-        String filterFilePath = SecurityUtil.cmdFilter(filepath);
-        if (null == filterFilePath) {
+        List<String> cmdList = SecurityUtil.buildListCommand(filepath);
+        if (null == cmdList) {
             return "Bad boy. I got u.";
         }
-        String[] cmdList = new String[]{"ls", "-la", "--", filterFilePath};
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);
         Process process = builder.start();

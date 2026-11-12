@@ -36,10 +36,10 @@ public class Rce {
 
     @GetMapping("/runtime/exec")
     public String CommandExec(String cmd) {
-        Runtime run = Runtime.getRuntime();
         StringBuilder sb = new StringBuilder();
 
         try {
+            // argv comes exclusively from the fixed server-side command table; no shell.
             List<String> argv = SecurityUtil.parseAllowedCommand(cmd);
             if (argv == null) {
                 return "Command not allowed!!";

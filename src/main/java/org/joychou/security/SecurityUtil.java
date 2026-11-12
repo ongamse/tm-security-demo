@@ -375,15 +375,42 @@ public class SecurityUtil {
     }
 
 
-    private static final java.util.Set<String> ALLOWED_COMMANDS = new java.util.HashSet<String>(
-            java.util.Arrays.asList("whoami", "id", "date", "uname", "hostname", "pwd", "ls"));
+    /**
+     * Fixed server-side command table: normalized command line -> fixed argv.
+     * For {@link #parseAllowedCommand(String)} user data can only select a row.
+     */
+    private static final java.util.Map<String, String[]> COMMAND_TABLE;
 
-    private static final Pattern CMD_ARG_PATTERN = Pattern.compile("^[a-zA-Z0-9_.-]+$");
+    static {
+        java.util.Map<String, String[]> table = new java.util.HashMap<String, String[]>();
+        table.put("whoami", new String[]{"whoami"});
+        table.put("id", new String[]{"id"});
+        table.put("date", new String[]{"date"});
+        table.put("uname", new String[]{"uname"});
+        table.put("uname -a", new String[]{"uname", "-a"});
+        table.put("hostname", new String[]{"hostname"});
+        table.put("pwd", new String[]{"pwd"});
+        table.put("ls", new String[]{"ls"});
+        table.put("ls -l", new String[]{"ls", "-l"});
+        table.put("ls -a", new String[]{"ls", "-a"});
+        table.put("ls -la", new String[]{"ls", "-la"});
+        COMMAND_TABLE = java.util.Collections.unmodifiableMap(table);
+    }
+
+    /** A path token: no leading '-', no whitespace/quotes/shell metacharacters. */
+    private static final Pattern PATH_TOKEN_PATTERN = Pattern.compile("^[A-Za-z0-9._/][A-Za-z0-9._/-]{0,127}$");
+
+    /** Host (optionally with port) for the curl helper: no leading '-', no scheme, no userinfo. */
+    private static final Pattern CURL_HOST_PATTERN =
+            Pattern.compile("^[A-Za-z0-9][A-Za-z0-9.-]{0,252}(:[0-9]{1,5})?$");
+
+    private static boolean isSafePathToken(String token) {
+        return token != null && PATH_TOKEN_PATTERN.matcher(token).matches() && !token.contains("..");
+    }
 
     /**
-     * Parse a user supplied command line into an argv list without involving a shell.
-     * Only allowlisted program names and simple arguments (no path separators,
-     * no shell metacharacters) are accepted.
+     * Select a command from the fixed server-side table. The user string only selects a row;
+     * the returned argv consists exclusively of the table's own fixed elements (no user data).
      *
      * @param cmd command line, whitespace separated
      * @return argv list that can be passed to ProcessBuilder, or null if not allowed
@@ -392,19 +419,70 @@ public class SecurityUtil {
         if (cmd == null || cmd.trim().isEmpty()) {
             return null;
         }
-        String[] parts = cmd.trim().split("\\s+");
-        if (!ALLOWED_COMMANDS.contains(parts[0])) {
+        String normalized = cmd.trim().replaceAll("\\s+", " ");
+        for (java.util.Map.Entry<String, String[]> entry : COMMAND_TABLE.entrySet()) {
+            if (entry.getKey().equals(normalized)) {
+                return new ArrayList<String>(java.util.Arrays.asList(entry.getValue()));
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Build the argv for a directory listing of a user supplied path:
+     * fixed {@code ls -la --} followed by one validated path token.
+     *
+     * @param path user supplied path
+     * @return argv for ProcessBuilder, or null if the path is not a plain path token
+     */
+    public static java.util.List<String> buildListCommand(String path) {
+        if (!isSafePathToken(path)) {
             return null;
         }
-        java.util.List<String> argv = new ArrayList<String>();
-        argv.add(parts[0]);
-        for (int i = 1; i < parts.length; i++) {
-            if (!CMD_ARG_PATTERN.matcher(parts[i]).matches()) {
-                return null;
-            }
-            argv.add(parts[i]);
-        }
+        java.util.List<String> argv = new ArrayList<String>(java.util.Arrays.asList(COMMAND_TABLE.get("ls -la")));
+        argv.add("--");
+        argv.add(path);
         return argv;
+    }
+
+    /**
+     * Build the argv for fetching a host with curl: fixed options, http(s) only, and one
+     * validated host[:port] token after {@code --}.
+     *
+     * @param host host[:port] (e.g. from the Host header)
+     * @return argv for ProcessBuilder, or null if the host is not a plain host token
+     */
+    public static java.util.List<String> buildCurlHostCommand(String host) {
+        if (host == null || !CURL_HOST_PATTERN.matcher(host).matches() || host.contains("..")) {
+            return null;
+        }
+        return new ArrayList<String>(java.util.Arrays.asList(
+                "curl", "--proto", "=http,https", "--max-time", "10", "--", host));
+    }
+
+    /** SpEL keywords that may appear as operators/literals. */
+    private static final Pattern SPEL_KEYWORDS =
+            Pattern.compile("\\b(true|false|null|and|or|not|lt|gt|le|ge|eq|ne|div|mod)\\b");
+    private static final Pattern SPEL_STRING_LITERAL = Pattern.compile("'[^'\\\\\"]*'");
+    private static final Pattern SPEL_REMAINDER = Pattern.compile("^[0-9\\s+\\-*/%^()<>=!&|?:,{}\\[\\].]*$");
+    private static final Pattern SPEL_BAD_DOT = Pattern.compile("(?<![0-9])\\.|\\.(?![0-9])");
+
+    /**
+     * Grammar allowlist for a user supplied SpEL expression: only literals (numbers, quoted
+     * strings without escapes, true/false/null), arithmetic/comparison/logical operators,
+     * parentheses and inline list/map literals. Type references, constructors, variables,
+     * bean references and method/property navigation are rejected.
+     *
+     * @param expression the expression text
+     * @return true if the expression is within the allowed grammar
+     */
+    public static boolean isSafeSpelExpression(String expression) {
+        if (expression == null || expression.isEmpty() || expression.length() > 200) {
+            return false;
+        }
+        String rest = SPEL_STRING_LITERAL.matcher(expression).replaceAll("0");
+        rest = SPEL_KEYWORDS.matcher(rest).replaceAll(" ");
+        return SPEL_REMAINDER.matcher(rest).matches() && !SPEL_BAD_DOT.matcher(rest).find();
     }
 
 
