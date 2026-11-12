@@ -538,14 +538,54 @@ public class SecurityUtil {
         if (value == null) {
             return null;
         }
-        StringBuilder sb = new StringBuilder(value.length());
+        // Reject (safe default: empty value) anything with control characters or non-ASCII.
         for (int i = 0; i < value.length(); i++) {
             char ch = value.charAt(i);
-            if (!Character.isISOControl(ch)) {
-                sb.append(ch);
+            if (ch < 0x20 || ch > 0x7E) {
+                return "";
+            }
+        }
+        return rebuildFromAlphabet(value, HEADER_VALUE_ALPHABET);
+    }
+
+    private static final String ALNUM_ALPHABET =
+            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    /** Characters allowed in a generic header value. */
+    private static final String HEADER_VALUE_ALPHABET = ALNUM_ALPHABET + "._~:/?#@!$&'()*+,;=%- ";
+    /** Characters allowed in a redirect url (RFC 3986 reserved + unreserved + percent). */
+    private static final String URL_ALPHABET = ALNUM_ALPHABET + "._~:/?#@!$&'()*+,;=%-";
+    /** Characters allowed in a download file name. */
+    private static final String FILE_NAME_ALPHABET = ALNUM_ALPHABET + "._-";
+
+    /**
+     * Build a new string whose every character is taken from the fixed alphabet constant
+     * (characters of the input that are not in the alphabet are dropped). The result never
+     * contains a character that is not literally part of the alphabet.
+     */
+    private static String rebuildFromAlphabet(String value, String alphabet) {
+        StringBuilder sb = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            int idx = alphabet.indexOf(value.charAt(i));
+            if (idx >= 0) {
+                sb.append(alphabet.charAt(idx));
             }
         }
         return sb.toString();
+    }
+
+    /**
+     * Build a safe download file name for a Content-Disposition header. The name is rebuilt
+     * from the characters [A-Za-z0-9._-] only; an empty result falls back to "download".
+     *
+     * @param name file name derived from user input, may be null
+     * @return a file name that is safe to place in a response header
+     */
+    public static String getSafeAttachmentFileName(String name) {
+        if (name == null) {
+            return "download";
+        }
+        String safe = rebuildFromAlphabet(name, FILE_NAME_ALPHABET);
+        return safe.isEmpty() ? "download" : safe;
     }
 
     /**
@@ -566,8 +606,9 @@ public class SecurityUtil {
                 return null;
             }
         }
+        URI uri;
         try {
-            URI uri = new URI(origin);
+            uri = new URI(origin);
             if (uri.getRawUserInfo() != null || uri.getHost() == null
                     || uri.getRawQuery() != null || uri.getRawFragment() != null) {
                 return null;
@@ -579,7 +620,27 @@ public class SecurityUtil {
         } catch (URISyntaxException e) {
             return null;
         }
-        return checkURL(origin);
+        if (checkURL(origin) == null) {
+            return null;
+        }
+
+        // Rebuild the origin: fixed scheme literal, the allowlist's own host string when the
+        // host is an exact allowlist entry (else the whitelist-rebuilt host), and the port.
+        String scheme = "https".equalsIgnoreCase(uri.getScheme()) ? "https" : "http";
+        String host = uri.getHost().toLowerCase();
+        for (String safeDomain : WebConfig.getSafeDomains()) {
+            if (safeDomain != null && safeDomain.equalsIgnoreCase(host)) {
+                host = safeDomain.toLowerCase();
+                break;
+            }
+        }
+        int port = uri.getPort();
+        if (port < -1 || port > 65535) {
+            return null;
+        }
+        String rebuilt = scheme + "://" + host + (port == -1 ? "" : ":" + port);
+        String safe = rebuildFromAlphabet(rebuilt, URL_ALPHABET);
+        return safe.equals(rebuilt) ? safe : null;
     }
 
     /**
@@ -672,7 +733,12 @@ public class SecurityUtil {
      */
     public static String getSafeRedirectUrlOrDefault(String url) {
         String safe = getSafeRedirectUrl(url);
-        return safe == null ? "/" : safe;
+        if (safe == null) {
+            return "/";
+        }
+        // Final rebuild from the fixed url alphabet; anything outside it falls back to "/".
+        String rebuilt = rebuildFromAlphabet(safe, URL_ALPHABET);
+        return rebuilt.equals(safe) ? rebuilt : "/";
     }
 
     private static final int MAX_REDIRECT_URL_LENGTH = 2048;
