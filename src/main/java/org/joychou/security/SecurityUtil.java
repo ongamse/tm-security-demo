@@ -12,12 +12,18 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 
 public class SecurityUtil {
 
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
+    private static final Pattern SHORT_FLAG_PATTERN = Pattern.compile("^-[a-zA-Z]+$");
+    private static final Set<String> CMD_ALLOWLIST = new HashSet<String>(
+            Arrays.asList("whoami", "pwd", "ls", "id", "uname", "date"));
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
 
 
@@ -205,6 +211,32 @@ public class SecurityUtil {
         }
 
         return input;
+    }
+
+
+    /**
+     * Build a shell-free argv from a user supplied command line. Only allowlisted commands
+     * are accepted; every argument must match {@link #FILTER_PATTERN} and must not look like an
+     * option (except short flags for <code>ls</code>).
+     *
+     * @param cmd user supplied command line, e.g. <code>ls -la /tmp</code>
+     * @return argv for ProcessBuilder / Runtime.exec(String[]); null if the command is not allowed
+     */
+    public static String[] cmdArgv(String cmd) {
+        if (cmd == null) {
+            return null;
+        }
+        String[] tokens = cmd.trim().split("\\s+");
+        if (tokens.length == 0 || !CMD_ALLOWLIST.contains(tokens[0])) {
+            return null;
+        }
+        for (int i = 1; i < tokens.length; i++) {
+            boolean lsFlag = "ls".equals(tokens[0]) && SHORT_FLAG_PATTERN.matcher(tokens[i]).matches();
+            if (!lsFlag && (tokens[i].startsWith("-") || cmdFilter(tokens[i]) == null)) {
+                return null;
+            }
+        }
+        return tokens;
     }
 
 
