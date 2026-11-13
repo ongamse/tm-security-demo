@@ -12,7 +12,6 @@ import org.springframework.web.util.HtmlUtils;
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
@@ -35,6 +34,7 @@ public class FileUpload {
     // Save the uploaded file to this folder
     private static final String UPLOADED_FOLDER = "/tmp/";
     private final Logger logger = LoggerFactory.getLogger(this.getClass());
+    private static final int MAX_FILE_NAME_LENGTH = 100;
     private static String randomFilePath = "";
 
     // uplaod any file
@@ -177,26 +177,38 @@ public class FileUpload {
         }
         String name = original.replace('\\', '/');
         name = name.substring(name.lastIndexOf('/') + 1);
-        if (name.isEmpty() || ".".equals(name) || "..".equals(name) || name.indexOf('\0') >= 0) {
+        if (name.isEmpty() || name.indexOf('\0') >= 0 || name.matches("\\.+")) {
             return null;
+        }
+        // Restrict to a safe character set and bound the length (keep the tail so the suffix survives).
+        name = name.replaceAll("[^A-Za-z0-9._-]", "_");
+        if (name.length() > MAX_FILE_NAME_LENGTH) {
+            name = name.substring(name.length() - MAX_FILE_NAME_LENGTH);
         }
         return name;
     }
 
     /**
-     * Resolve a plain file name inside UPLOADED_FOLDER.
+     * Resolve an untrusted file name to a path that is a direct child of the fixed
+     * server-side UPLOADED_FOLDER. Every file sink in this class must use only the
+     * Path returned here.
      *
-     * @return null if the result would not be a direct child of UPLOADED_FOLDER
+     * @return null if the name is unusable or the result would not be inside UPLOADED_FOLDER
      */
-    private static Path resolveUploadPath(String name) {
-        Path base = Paths.get(UPLOADED_FOLDER).toAbsolutePath().normalize();
-        Path resolved;
-        try {
-            resolved = base.resolve(name).normalize();
-        } catch (InvalidPathException e) {
+    private static Path resolveUploadPath(String untrustedName) {
+        String name = safeFileName(untrustedName);
+        if (name == null) {
             return null;
         }
-        if (!base.equals(resolved.getParent())) {
+        Path base;
+        Path resolved;
+        try {
+            base = Paths.get(UPLOADED_FOLDER).toRealPath();
+            resolved = base.resolve(name).normalize();
+        } catch (InvalidPathException | IOException e) {
+            return null;
+        }
+        if (!resolved.startsWith(base) || !base.equals(resolved.getParent())) {
             return null;
         }
         return resolved;
@@ -243,9 +255,7 @@ public class FileUpload {
         if (!ret) {
             return null;
         }
-        FileOutputStream fos = new FileOutputStream(convFile);
-        fos.write(multiFile.getBytes());
-        fos.close();
+        Files.write(convPath, multiFile.getBytes());
         return convFile;
     }
 
