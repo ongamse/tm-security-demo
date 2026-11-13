@@ -111,12 +111,62 @@ public class SSRFChecker {
             return true; // 异常URL当成内网IP等非法URL处理
         }
 
-        String ip = host2ip(host);
-        if (ip.equals("")) {
-            return true; // 如果域名转换为IP异常，则认为是非法URL
+        // Decide on the parsed host text first: no DNS lookup for names that are internal by definition.
+        if (isInternalHostName(host)) {
+            return true;
         }
 
-        return isInternalIp(ip);
+        // Only a host that passed the textual checks is resolved; every resolved address must be public.
+        InetAddress[] addresses = resolveAll(host);
+        if (addresses == null || addresses.length == 0) {
+            return true; // 如果域名转换为IP异常，则认为是非法URL
+        }
+        for (InetAddress address : addresses) {
+            if (address.isAnyLocalAddress() || address.isLoopbackAddress() || address.isLinkLocalAddress()
+                    || address.isSiteLocalAddress() || address.isMulticastAddress()) {
+                logger.error("[-] SSRF check failed. Internal IP: " + address.getHostAddress());
+                return true;
+            }
+            try {
+                if (isInternalIp(address.getHostAddress())) {
+                    return true;
+                }
+            } catch (Exception e) {
+                return true; // unparsable address (e.g. ipv6 for the ipv4 subnet list): fail closed
+            }
+        }
+        return false;
+    }
+
+
+    /**
+     * Textual check of the host before any DNS lookup.
+     *
+     * @return true if the host name is internal by definition
+     */
+    private static boolean isInternalHostName(String host) {
+        String h = host.toLowerCase();
+        return h.equals("localhost") || h.endsWith(".localhost")
+                || h.equals("metadata.google.internal") || h.endsWith(".internal");
+    }
+
+
+    /**
+     * Resolve a host that already passed the textual checks (octal ipv4 is converted first).
+     *
+     * @return all addresses of the host, null if it cannot be resolved
+     */
+    private static InetAddress[] resolveAll(String host) {
+        String target = host;
+        if (isOctalIP(target)) {
+            target = decimalIp;
+        }
+        try {
+            return InetAddress.getAllByName(target);
+        } catch (Exception e) {
+            logger.error("resolve exception " + e.getMessage());
+            return null;
+        }
     }
 
 
@@ -290,11 +340,16 @@ public class SSRFChecker {
     private static String url2host(String url) {
         try {
             // use URI instead of URL
-            URI u = new URI(url);
-            if (SecurityUtil.isHttp(url)) {
-                return u.getHost();
+            if (!SecurityUtil.isHttp(url)) {
+                return "";
             }
-            return "";
+            URI u = new URI(url);
+            String scheme = u.getScheme();
+            if (scheme == null || !(scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"))
+                    || u.getRawUserInfo() != null || u.getHost() == null) {
+                return "";
+            }
+            return u.getHost();
         } catch (Exception e) {
             return "";
         }

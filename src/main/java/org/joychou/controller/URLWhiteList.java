@@ -123,7 +123,7 @@ public class URLWhiteList {
 
         // endsWith .
         for (String domain : domainwhitelist) {
-            if (host.endsWith("." + domain)) {
+            if (host.equals(domain) || host.endsWith("." + domain)) {
                 // Also enforce the project-wide safe/block domain config before redirecting.
                 String safeUrl = SecurityUtil.checkURL(url);
                 if (safeUrl != null) {

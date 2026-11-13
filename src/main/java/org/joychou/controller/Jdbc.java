@@ -5,8 +5,9 @@ import org.joychou.security.SecurityUtil;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.net.URI;
 import java.sql.DriverManager;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Jdbc Attack @2023.04
@@ -26,21 +27,23 @@ public class Jdbc {
      * @throws IllegalArgumentException if the url is not allowed
      */
     private static String checkJdbcUrl(String jdbcUrl, String scheme) {
-        String prefix = "jdbc:" + scheme + "://";
-        if (jdbcUrl == null || !jdbcUrl.startsWith(prefix) || jdbcUrl.indexOf('?') != -1
-                || jdbcUrl.indexOf(';') != -1 || jdbcUrl.indexOf('\\') != -1) {
+        if (jdbcUrl == null) {
             throw new IllegalArgumentException("Illegal jdbc url");
         }
-        try {
-            URI uri = new URI(jdbcUrl.substring("jdbc:".length()));
-            String host = uri.getHost();
-            if (host == null || !SecurityUtil.checkSSRFByWhitehosts("http://" + host + "/")) {
-                throw new IllegalArgumentException("Illegal jdbc host");
-            }
-        } catch (java.net.URISyntaxException e) {
+        // Strict jdbc:<scheme>://host[:port][/db]; anything else (userinfo, properties, ?, ;, \) is rejected.
+        Matcher m = Pattern.compile("^jdbc:" + Pattern.quote(scheme)
+                + "://([A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?)(:[0-9]{1,5})?(/[A-Za-z0-9_]{1,63})?$")
+                .matcher(jdbcUrl);
+        if (!m.matches()) {
             throw new IllegalArgumentException("Illegal jdbc url");
         }
-        return jdbcUrl;
+        String host = m.group(1);
+        if (!SecurityUtil.checkSSRFByWhitehosts("http://" + host + "/")) {
+            throw new IllegalArgumentException("Illegal jdbc host");
+        }
+        // Rebuild the url only from the validated components.
+        return "jdbc:" + scheme + "://" + host + (m.group(3) == null ? "" : m.group(3))
+                + (m.group(4) == null ? "" : m.group(4));
     }
 
     /**

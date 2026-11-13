@@ -47,6 +47,9 @@ public class SecurityUtil {
     public static String gethost(String url) {
         try {
             URI uri = new URI(url);
+            if (uri.getHost() == null || uri.getRawUserInfo() != null) {
+                return "";
+            }
             return uri.getHost().toLowerCase();
         } catch (URISyntaxException e) {
             return "";
