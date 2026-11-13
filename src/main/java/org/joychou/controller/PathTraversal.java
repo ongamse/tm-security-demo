@@ -4,13 +4,16 @@ import org.apache.commons.codec.binary.Base64;
 import org.joychou.security.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.util.StreamUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
@@ -57,16 +60,21 @@ public class PathTraversal {
             logger.info("Illegal file path: {}", SecurityUtil.logSafe(imgFile));
             return "Bad boy. Illegal file path.";
         }
-        if (Files.isRegularFile(target)) {
+        // No existence/type pre-check: resolve and open the file once, and treat any
+        // failure (missing file, directory, symlink, I/O error) as a single fixed response.
+        try {
             Path realBase = base.toRealPath();
             Path realTarget = target.toRealPath();
             if (!realTarget.startsWith(realBase)) {
                 logger.info("Illegal file path: {}", SecurityUtil.logSafe(imgFile));
                 return "Bad boy. Illegal file path.";
             }
-            byte[] data = Files.readAllBytes(realTarget);
+            byte[] data;
+            try (InputStream in = Files.newInputStream(realTarget, LinkOption.NOFOLLOW_LINKS)) {
+                data = StreamUtils.copyToByteArray(in);
+            }
             return new String(Base64.encodeBase64(data));
-        } else {
+        } catch (IOException e) {
             return "File doesn't exist or is not a file.";
         }
     }
