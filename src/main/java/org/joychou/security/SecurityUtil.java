@@ -439,19 +439,9 @@ public class SecurityUtil {
         }
         boolean truncated = value.length() > maxLen;
         String s = truncated ? value.substring(0, maxLen) : value;
-        StringBuilder sb = new StringBuilder(s.length() + 3);
-        for (int i = 0; i < s.length(); i++) {
-            char ch = s.charAt(i);
-            if (ch <= 0x1F || ch == 0x7F || ch == 0x85 || ch == 0x2028 || ch == 0x2029) {
-                sb.append('_');
-            } else {
-                sb.append(ch);
-            }
-        }
-        if (truncated) {
-            sb.append("...");
-        }
-        return sb.toString();
+        // CR, LF, NEL, LS, PS and all other control characters (same set as before) become '_'.
+        String cleaned = s.replaceAll("[\\r\\n\\u0085\\u2028\\u2029\\p{Cntrl}]", "_");
+        return truncated ? cleaned + "..." : cleaned;
     }
 
     public static void main(String[] args) {

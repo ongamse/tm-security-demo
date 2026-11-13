@@ -41,7 +41,7 @@ public class PathTraversal {
 
     private String getImgBase64(String imgFile) throws IOException {
 
-        logger.info("Working directory: " + System.getProperty("user.dir"));
+        logger.info("Working directory: {}", SecurityUtil.logSafe(System.getProperty("user.dir")));
         logger.info("File path: {}", SecurityUtil.logSafe(imgFile));
 
         if (imgFile == null || imgFile.indexOf('\0') >= 0) {

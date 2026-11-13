@@ -75,7 +75,8 @@ public class FileUpload {
 
         } catch (IOException e) {
             redirectAttributes.addFlashAttribute("message", "upload failed");
-            logger.error(e.toString());
+            logger.error("File upload failed: {}: {}", e.getClass().getSimpleName(),
+                    SecurityUtil.logSafe(e.getMessage()));
         }
 
         return "redirect:/file/status";
@@ -156,7 +157,8 @@ public class FileUpload {
             byte[] bytes = multifile.getBytes();
             Files.write(targetPath, bytes);
         } catch (IOException e) {
-            logger.error(e.toString());
+            logger.error("File write failed: {}: {}", e.getClass().getSimpleName(),
+                    SecurityUtil.logSafe(e.getMessage()));
             deleteFile(filePath);
             return "Upload failed";
         }
