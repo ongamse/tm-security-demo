@@ -425,6 +425,35 @@ public class SecurityUtil {
         return sb.toString();
     }
 
+    /**
+     * Make an untrusted value safe to write to a log line (CWE-117): replaces CR, LF, other
+     * control characters and Unicode line separators with '_' and bounds the length.
+     *
+     * @param value untrusted value, may be null
+     * @return sanitized, truncated value ("null" for null)
+     */
+    public static String logSafe(String value) {
+        final int maxLen = 200;
+        if (value == null) {
+            return "null";
+        }
+        boolean truncated = value.length() > maxLen;
+        String s = truncated ? value.substring(0, maxLen) : value;
+        StringBuilder sb = new StringBuilder(s.length() + 3);
+        for (int i = 0; i < s.length(); i++) {
+            char ch = s.charAt(i);
+            if (ch <= 0x1F || ch == 0x7F || ch == 0x85 || ch == 0x2028 || ch == 0x2029) {
+                sb.append('_');
+            } else {
+                sb.append(ch);
+            }
+        }
+        if (truncated) {
+            sb.append("...");
+        }
+        return sb.toString();
+    }
+
     public static void main(String[] args) {
     }
 
