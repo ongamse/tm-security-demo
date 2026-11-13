@@ -9,8 +9,10 @@ import com.thoughtworks.xstream.security.NoTypePermission;
 import com.thoughtworks.xstream.security.NullPermission;
 import com.thoughtworks.xstream.security.PrimitiveTypePermission;
 import org.joychou.dao.User;
+import org.joychou.security.SignedPayload;
 import org.joychou.util.WebUtils;
 import org.joychou.util.XmlSecurity;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.w3c.dom.Document;
@@ -20,10 +22,15 @@ import javax.servlet.http.HttpServletRequest;
 import javax.xml.parsers.DocumentBuilderFactory;
 import java.io.InputStream;
 import java.io.Reader;
+import java.nio.charset.StandardCharsets;
 
 
 @RestController
 public class XStreamRce {
+
+    // Empty by default: with no key configured every request is rejected (fail closed).
+    @Value("${joychou.security.serial.hmac.key:}")
+    private String hmacKey;
 
     /**
      * Fix method: update xstream to 1.4.11
@@ -35,6 +42,11 @@ public class XStreamRce {
     @PostMapping("/xstream")
     public String parseXml(HttpServletRequest request) throws Exception {
         String xml = WebUtils.getRequestBody(request);
+        // Authenticate the body (HMAC-SHA256 in X-Signature header) before it reaches XStream; fail closed.
+        if (!SignedPayload.verify(xml.getBytes(StandardCharsets.UTF_8),
+                request.getHeader("X-Signature"), hmacKey)) {
+            return "Invalid signature.";
+        }
         XStream xstream = new XStream(new SecureDomDriver());
         // Deny by default; only the expected types may be unmarshalled.
         xstream.addPermission(NoTypePermission.NONE);

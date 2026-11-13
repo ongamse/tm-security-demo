@@ -25,6 +25,10 @@ public class AntObjectInputStream extends ObjectInputStream {
             "java.lang.Integer",
             "java.lang.Number"));
 
+    private static final int MAX_CLASS_DESCRIPTORS = 32;
+
+    private int classCount = 0;
+
     public AntObjectInputStream(InputStream inputStream) throws IOException {
         super(inputStream);
     }
@@ -42,6 +46,11 @@ public class AntObjectInputStream extends ObjectInputStream {
             throws IOException, ClassNotFoundException
     {
         String className = desc.getName();
+
+        // Bound the number of class descriptors a single stream may declare.
+        if (++classCount > MAX_CLASS_DESCRIPTORS) {
+            throw new InvalidClassException("Too many class descriptors", className);
+        }
 
         // Deserialize class name: org.joychou.security.AntObjectInputStream$MyObject
         logger.info("Deserialize class name: " + className);

@@ -2,8 +2,10 @@ package org.joychou.controller;
 
 import org.joychou.config.Constants;
 import org.joychou.security.AntObjectInputStream;
+import org.joychou.security.SignedPayload;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -13,7 +15,6 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InvalidClassException;
 import java.io.ObjectInputStream;
-import java.util.Base64;
 
 import static org.springframework.web.util.WebUtils.getCookie;
 
@@ -28,6 +29,10 @@ public class Deserialize {
 
     protected final Logger logger = LoggerFactory.getLogger(this.getClass());
 
+    // Empty by default: with no key configured every payload is rejected (fail closed).
+    @Value("${joychou.security.serial.hmac.key:}")
+    private String hmacKey;
+
     /**
      * java -jar ysoserial.jar CommonsCollections5 "open -a Calculator" | base64 <br>
      * <a href="http://localhost:8080/deserialize/rememberMe/vuln">http://localhost:8080/deserialize/rememberMe/vuln</a>
@@ -41,8 +46,11 @@ public class Deserialize {
             return "No rememberMe cookie. Right?";
         }
 
-        String rememberMe = cookie.getValue();
-        byte[] decoded = Base64.getDecoder().decode(rememberMe);
+        // Authenticate the payload (HMAC) before any stream is constructed; fail closed.
+        byte[] decoded = SignedPayload.verifyAndDecode(cookie.getValue(), hmacKey);
+        if (decoded == null) {
+            return "Invalid rememberMe signature.";
+        }
 
         ByteArrayInputStream bytes = new ByteArrayInputStream(decoded);
         // Allowlist-based stream: unexpected classes are rejected with InvalidClassException.
@@ -67,8 +75,11 @@ public class Deserialize {
         if (null == cookie) {
             return "No rememberMe cookie. Right?";
         }
-        String rememberMe = cookie.getValue();
-        byte[] decoded = Base64.getDecoder().decode(rememberMe);
+        // Authenticate the payload (HMAC) before any stream is constructed; fail closed.
+        byte[] decoded = SignedPayload.verifyAndDecode(cookie.getValue(), hmacKey);
+        if (decoded == null) {
+            return "Invalid rememberMe signature.";
+        }
 
         ByteArrayInputStream bytes = new ByteArrayInputStream(decoded);
 
