@@ -9,8 +9,6 @@ import org.springframework.web.util.HtmlUtils;
 
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -105,20 +103,11 @@ public class URLWhiteList {
             return;
         }
 
-        String host;
-        try {
-            URI u = new URI(url);
-            if (u.getRawUserInfo() != null) {
-                return;
-            }
-            host = u.getHost();
-        } catch (URISyntaxException e) {
+        // Parsed once in SecurityUtil (http/https, no userinfo); "" when unparsable (fail closed).
+        String host = SecurityUtil.gethost(url);
+        if (host.isEmpty()) {
             return;
         }
-        if (host == null) {
-            return;
-        }
-        host = host.toLowerCase();
         logger.info("host:  " + host);
 
         // endsWith .

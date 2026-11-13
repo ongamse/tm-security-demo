@@ -1,8 +1,8 @@
 package org.joychou.security.ssrf;
 
+import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.InetAddress;
-import java.net.URI;
 import java.net.URL;
 import java.util.ArrayList;
 
@@ -66,16 +66,20 @@ public class SSRFChecker {
         String finalUrl = url;
         try {
             do {
-                // 判断当前请求的URL是否是内网ip
-                if (isInternalIpByUrl(finalUrl)) {
+                // Every hop goes through the chokepoint: allowlisted host, public addresses only.
+                URL safeUrl;
+                try {
+                    safeUrl = SecurityUtil.requireSafeUrl(finalUrl);
+                } catch (IOException e) {
                     logger.error("[-] SSRF check failed. Dangerous url: {}", SecurityUtil.logSafe(finalUrl));
-                    return false;  // 内网ip直接return，非内网ip继续判断是否有重定向
+                    return false;  // 非法或内网地址直接return，合法地址继续判断是否有重定向
                 }
 
-                connection = (HttpURLConnection) new URL(finalUrl).openConnection();
+                connection = (HttpURLConnection) safeUrl.openConnection();
                 connection.setInstanceFollowRedirects(false);
                 connection.setUseCaches(false); // 设置为false，手动处理跳转，可以拿到每个跳转的URL
                 connection.setConnectTimeout(connectTime);
+                connection.setReadTimeout(connectTime);
                 //connection.setRequestMethod("GET");
                 connection.connect(); // send dns request
                 int responseCode = connection.getResponseCode(); // 发起网络请求
@@ -340,21 +344,11 @@ public class SSRFChecker {
      * Get host from URL which the protocol must be http:// or https:// and not be //.
      */
     private static String url2host(String url) {
-        try {
-            // use URI instead of URL
-            if (!SecurityUtil.isHttp(url)) {
-                return "";
-            }
-            URI u = new URI(url);
-            String scheme = u.getScheme();
-            if (scheme == null || !(scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"))
-                    || u.getRawUserInfo() != null || u.getHost() == null) {
-                return "";
-            }
-            return u.getHost();
-        } catch (Exception e) {
+        if (url == null || !SecurityUtil.isHttp(url)) {
             return "";
         }
+        // URI parsing (http/https only, no userinfo) is done once in SecurityUtil; fails closed with "".
+        return SecurityUtil.gethost(url);
     }
 
 }

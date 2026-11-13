@@ -5,6 +5,7 @@ import org.joychou.security.SecurityUtil;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.io.IOException;
 import java.sql.DriverManager;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -37,8 +38,15 @@ public class Jdbc {
         if (!m.matches()) {
             throw new IllegalArgumentException("Illegal jdbc url");
         }
-        String host = m.group(1);
-        if (!SecurityUtil.checkSSRFByWhitehosts("http://" + host + "/")) {
+        String candidate = m.group(1);
+        if (!SecurityUtil.checkSSRFByWhitehosts("http://" + candidate + "/")) {
+            throw new IllegalArgumentException("Illegal jdbc host");
+        }
+        // The host used for the connection comes only from the SSRF chokepoint (allowlisted, public address).
+        String host;
+        try {
+            host = SecurityUtil.requireSafeUrl("http://" + candidate + "/").getHost();
+        } catch (IOException e) {
             throw new IllegalArgumentException("Illegal jdbc host");
         }
         // Rebuild the url only from the validated components.

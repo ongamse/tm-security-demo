@@ -8,12 +8,18 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
+import java.net.Inet4Address;
+import java.net.Inet6Address;
+import java.net.InetAddress;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.net.URL;
 import java.net.URLDecoder;
+import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -45,15 +51,126 @@ public class SecurityUtil {
      * @return host
      */
     public static String gethost(String url) {
-        try {
-            URI uri = new URI(url);
-            if (uri.getHost() == null || uri.getRawUserInfo() != null) {
-                return "";
-            }
-            return uri.getHost().toLowerCase();
-        } catch (URISyntaxException e) {
+        URI uri = parseHttpUri(url);
+        if (uri == null) {
             return "";
         }
+        return uri.getHost().toLowerCase();
+    }
+
+
+    /**
+     * Parse an untrusted url once with {@link URI}. Only absolute http/https urls without userinfo and
+     * with a non-empty host are accepted.
+     *
+     * @param raw untrusted url
+     * @return the parsed URI; null (fail closed) for anything else
+     */
+    private static URI parseHttpUri(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        try {
+            URI uri = new URI(raw);
+            String scheme = uri.getScheme();
+            if (scheme == null || !("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme))
+                    || uri.getRawUserInfo() != null || uri.getHost() == null || uri.getHost().isEmpty()) {
+                return null;
+            }
+            return uri;
+        } catch (URISyntaxException e) {
+            return null;
+        }
+    }
+
+
+    private static boolean hostOnList(String host, List<String> domains) {
+        if (domains == null) {
+            return false;
+        }
+        for (String domain : domains) {
+            if (host.equals(domain) || host.endsWith("." + domain)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+
+    private static boolean isInternalAddress(InetAddress address) {
+        if (address.isAnyLocalAddress() || address.isLoopbackAddress() || address.isLinkLocalAddress()
+                || address.isSiteLocalAddress() || address.isMulticastAddress()) {
+            return true;
+        }
+        if (address instanceof Inet6Address && (address.getAddress()[0] & 0xfe) == 0xfc) {
+            return true; // unique local fc00::/7
+        }
+        if (address instanceof Inet4Address) {
+            try {
+                return SSRFChecker.isInternalIp(address.getHostAddress());
+            } catch (RuntimeException e) {
+                return true; // fail closed
+            }
+        }
+        return false;
+    }
+
+
+    /**
+     * The single chokepoint for every outbound request to an untrusted url (CWE-918).
+     * <ol>
+     *   <li>parses once with {@link URI}; http/https only, no userinfo, non-empty host;</li>
+     *   <li>port must be the default or one of 80, 443, 8080, 8443;</li>
+     *   <li>the host text must match the configured allowlist (exact or sub domain) and must not be
+     *       blocked, decided BEFORE any DNS lookup;</li>
+     *   <li>only then the host is resolved and every address must be public;</li>
+     *   <li>returns a NEW url rebuilt from scheme, validated lower case host, port, raw path and raw query.</li>
+     * </ol>
+     * Callers must obtain their url/host only from the returned object and must not follow redirects.
+     *
+     * @param raw untrusted url
+     * @return the validated url
+     * @throws IOException if the url must not be requested
+     */
+    public static URL requireSafeUrl(String raw) throws IOException {
+        URI uri = parseHttpUri(raw);
+        if (uri == null) {
+            throw new IOException("[-] SSRF check failed");
+        }
+        String scheme = uri.getScheme().toLowerCase();
+        String host = uri.getHost().toLowerCase();
+        int port = uri.getPort();
+        if (port != -1 && port != 80 && port != 443 && port != 8080 && port != 8443) {
+            throw new IOException("[-] SSRF check failed");
+        }
+
+        // Textual allowlist decision before any DNS lookup.
+        if (hostOnList(host, WebConfig.getBlockDomains()) || hostOnList(host, WebConfig.getSsrfBlockDomainsDomains())
+                || !(hostOnList(host, WebConfig.getSafeDomains()) || hostOnList(host, WebConfig.getSsrfSafeDomains()))) {
+            throw new IOException("[-] SSRF check failed");
+        }
+
+        InetAddress[] addresses;
+        try {
+            addresses = InetAddress.getAllByName(host);
+        } catch (UnknownHostException e) {
+            throw new IOException("[-] SSRF check failed");
+        }
+        if (addresses == null || addresses.length == 0) {
+            throw new IOException("[-] SSRF check failed");
+        }
+        for (InetAddress address : addresses) {
+            if (isInternalAddress(address)) {
+                throw new IOException("[-] SSRF check failed");
+            }
+        }
+
+        String path = uri.getRawPath();
+        StringBuilder file = new StringBuilder(path == null || path.isEmpty() ? "/" : path);
+        if (uri.getRawQuery() != null) {
+            file.append('?').append(uri.getRawQuery());
+        }
+        return new URL(scheme, host, port, file.toString());
     }
 
 
@@ -351,10 +468,8 @@ public class SecurityUtil {
         if (origin == null || checkURL(origin) == null) {
             return null;
         }
-        URI uri;
-        try {
-            uri = new URI(origin);
-        } catch (URISyntaxException e) {
+        URI uri = parseHttpUri(origin);
+        if (uri == null) {
             return null;
         }
         String path = uri.getRawPath();
