@@ -3,6 +3,7 @@ package org.joychou.controller.othervulns;
 import com.monitorjbl.xlsx.StreamingReader;
 import org.apache.poi.ss.usermodel.Workbook;
 
+import org.joychou.util.XmlSecurity;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -37,6 +38,8 @@ import java.util.zip.ZipInputStream;
 public class xlsxStreamerXXE {
 
 
+    private static final int MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+
     @GetMapping("/upload")
     public String index() {
         return "xxe_upload"; // return xxe_upload.html page
@@ -46,6 +49,10 @@ public class xlsxStreamerXXE {
     @PostMapping("/readxlsx")
     public void xllx_streamer_xxe(MultipartFile file) throws IOException {
         byte[] content = file.getBytes();
+        if (content.length < 4 || content.length > MAX_UPLOAD_BYTES
+                || content[0] != 'P' || content[1] != 'K') {
+            throw new IOException("Not a valid xlsx (zip) file or file too large");
+        }
         rejectXmlDoctype(content);
         StreamingReader.builder().open(new ByteArrayInputStream(content));
     }
@@ -57,10 +64,7 @@ public class xlsxStreamerXXE {
      */
     private static void rejectXmlDoctype(byte[] content) throws IOException {
         try {
-            DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
-            dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            dbf.setFeature("http://xml.org/sax/features/external-general-entities", false);
-            dbf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            DocumentBuilderFactory dbf = XmlSecurity.newDocumentBuilderFactory();
             DocumentBuilder db = dbf.newDocumentBuilder();
             try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(content))) {
                 ZipEntry entry;

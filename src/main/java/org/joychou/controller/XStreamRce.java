@@ -10,6 +10,7 @@ import com.thoughtworks.xstream.security.NullPermission;
 import com.thoughtworks.xstream.security.PrimitiveTypePermission;
 import org.joychou.dao.User;
 import org.joychou.util.WebUtils;
+import org.joychou.util.XmlSecurity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.w3c.dom.Document;
@@ -60,10 +61,7 @@ public class XStreamRce {
 
         private HierarchicalStreamReader createSecureReader(InputSource source) {
             try {
-                DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
-                dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-                dbf.setFeature("http://xml.org/sax/features/external-general-entities", false);
-                dbf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+                DocumentBuilderFactory dbf = XmlSecurity.newDocumentBuilderFactory();
                 Document document = dbf.newDocumentBuilder().parse(source);
                 return new DomReader(document, getNameCoder());
             } catch (Exception e) {
