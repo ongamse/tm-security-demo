@@ -46,13 +46,21 @@ public class Jsonp {
     public String referer(HttpServletRequest request, HttpServletResponse response) {
         setJsGuardHeaders(response);
         String callback = request.getParameter(this.callback);
-        return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
+        return toJsonp(response, callback, LoginUtils.getUserInfo2JsonStr(request));
     }
 
     // JSONP responses are script content: fixed content type, no MIME sniffing.
     private static void setJsGuardHeaders(HttpServletResponse response) {
         response.setContentType("application/javascript;charset=UTF-8");
         response.setHeader("X-Content-Type-Options", "nosniff");
+    }
+
+    // Wrap with a server-owned callback; when the callback is not allowlisted, return plain JSON.
+    private static String toJsonp(HttpServletResponse response, String callback, String jsonStr) {
+        if (WebUtils.resolveJsonpCallback(callback) == null) {
+            response.setContentType("application/json;charset=UTF-8");
+        }
+        return WebUtils.json2Jsonp(callback, jsonStr);
     }
 
     /**
@@ -70,7 +78,7 @@ public class Jsonp {
             return "error";
         }
         String callback = request.getParameter(this.callback);
-        return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
+        return toJsonp(response, callback, LoginUtils.getUserInfo2JsonStr(request));
     }
 
     /**
@@ -116,7 +124,7 @@ public class Jsonp {
             return "error";
         }
         String callback = request.getParameter(this.callback);
-        return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
+        return toJsonp(response, callback, LoginUtils.getUserInfo2JsonStr(request));
     }
 
     /**
@@ -145,12 +153,16 @@ public class Jsonp {
                 response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
                 return "invalid callback";
             }
-            JSONPObject jsonpObj = new JSONPObject(callback);
-            jsonpObj.addParameter(csrfToken);
-            return jsonpObj.toString();
-        } else {
-            return csrfToken.toString();
+            // Use the server-owned allowlist string, never the request string.
+            String safeCallback = WebUtils.resolveJsonpCallback(callback);
+            if (safeCallback != null) {
+                JSONPObject jsonpObj = new JSONPObject(safeCallback);
+                jsonpObj.addParameter(csrfToken);
+                return jsonpObj.toString();
+            }
         }
+        response.setContentType("application/json;charset=UTF-8");
+        return csrfToken.toString();
     }
 
 }

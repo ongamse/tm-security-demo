@@ -5,6 +5,10 @@ import javax.servlet.http.HttpServletRequest;
 import java.io.*;
 
 import com.google.common.base.Preconditions;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 public class WebUtils {
@@ -37,15 +41,39 @@ public class WebUtils {
         return callback != null && JSONP_CALLBACK.matcher(callback).matches();
     }
 
+    // Server-owned JSONP callback names (those used by this demo's docs and templates).
+    private static final Set<String> ALLOWED_JSONP_CALLBACKS = Collections.unmodifiableSet(
+            new LinkedHashSet<String>(Arrays.asList(
+                    "callback", "_callback", "jsonp", "cb", "handleResponse", "jQuery", "test", "aa")));
+
     /**
-     * Wrap json with a validated callback. An invalid or missing callback is never reflected:
-     * the plain JSON is returned instead.
+     * Resolve a request-supplied callback to the allowlist's own string. The request value is
+     * only used for lookup and is never written out.
+     *
+     * @return the allowlisted callback name, or null when the value is invalid or not allowlisted.
+     */
+    public static String resolveJsonpCallback(String callback) {
+        if (!isValidJsonpCallback(callback)) {
+            return null;
+        }
+        for (String allowed : ALLOWED_JSONP_CALLBACKS) {
+            if (allowed.equals(callback)) {
+                return allowed;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Wrap json with a server-owned callback name. An invalid, unknown or missing callback is
+     * never reflected: the plain JSON is returned instead.
      */
     public static String json2Jsonp(String callback, String jsonStr) {
-        if (!isValidJsonpCallback(callback)) {
+        String safeCallback = resolveJsonpCallback(callback);
+        if (safeCallback == null) {
             return jsonStr;
         }
-        return callback + "(" + jsonStr + ")";
+        return safeCallback + "(" + jsonStr + ")";
     }
 
 

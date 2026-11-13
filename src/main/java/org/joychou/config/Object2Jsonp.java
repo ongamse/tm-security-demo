@@ -2,6 +2,7 @@ package org.joychou.config;
 
 import org.apache.commons.lang.StringUtils;
 import org.joychou.security.SecurityUtil;
+import org.joychou.util.WebUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -52,7 +53,14 @@ public class Object2Jsonp extends AbstractJsonpResponseBodyAdvice {
         if ( StringUtils.isNotBlank(realJsonpFunc) ) {
             jsonpReferHandler(request, response);
         }
-        super.beforeBodyWriteInternal(bodyContainer, contentType, returnType, req, res);
+        // Do not let the superclass echo the request value: use the server-owned allowlist string.
+        // A callback that is not allowlisted is not wrapped, the body stays plain JSON.
+        String safeCallback = WebUtils.resolveJsonpCallback(realJsonpFunc);
+        if (safeCallback != null) {
+            res.getHeaders().setContentType(new MediaType("application", "javascript"));
+            response.setHeader("X-Content-Type-Options", "nosniff");
+            bodyContainer.setJsonpFunction(safeCallback);
+        }
     }
 
     /**
