@@ -73,6 +73,15 @@ public class SecurityUtil {
             "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._~!$&'()*+,;=:@%/-";
     private static final String QUERY_ALPHABET = PATH_ALPHABET + "?";
 
+    /** Characters a URL-encoded (application/x-www-form-urlencoded) header value can consist of. */
+    public static final String HEADER_VALUE_ALPHABET =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._~%+*-";
+    /** Characters allowed in a download file name. */
+    public static final String FILE_NAME_ALPHABET =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-";
+    /** Characters of a redirect url produced by {@link #safeRedirectTarget(String)}. */
+    public static final String REDIRECT_URL_ALPHABET = QUERY_ALPHABET + "#";
+
 
     /**
      * The components of an untrusted absolute http/https url that matched {@link #HTTP_URL_PATTERN}.
@@ -571,6 +580,49 @@ public class SecurityUtil {
             }
         }
         return tokens;
+    }
+
+
+    /**
+     * Turn an untrusted value into a header / cookie value that is composed only of characters of
+     * {@link #HEADER_VALUE_ALPHABET}: the value is percent-encoded (CR / LF become %0D / %0A) and then
+     * rebuilt from the server-owned alphabet constant.
+     *
+     * @param value untrusted value
+     * @return the encoded value; "" if the input is null
+     */
+    public static String encodeHeaderValue(String value) {
+        if (value == null) {
+            return "";
+        }
+        String encoded;
+        try {
+            encoded = java.net.URLEncoder.encode(value, "UTF-8");
+        } catch (java.io.UnsupportedEncodingException e) {
+            return "";
+        }
+        String rebuilt = rebuildFrom(encoded, HEADER_VALUE_ALPHABET);
+        return rebuilt == null ? "" : rebuilt;
+    }
+
+
+    /**
+     * Build a download file name only from {@link #FILE_NAME_ALPHABET}: characters outside the alphabet are
+     * replaced by the constant '_'.
+     *
+     * @param name untrusted file name
+     * @return the rebuilt file name; "download" if the input is null or empty
+     */
+    public static String safeFileName(String name) {
+        if (name == null || name.isEmpty()) {
+            return "download";
+        }
+        StringBuilder sb = new StringBuilder(name.length());
+        for (int i = 0; i < name.length(); i++) {
+            String c = rebuildFrom(String.valueOf(name.charAt(i)), FILE_NAME_ALPHABET);
+            sb.append(c == null ? "_" : c);
+        }
+        return sb.toString();
     }
 
 

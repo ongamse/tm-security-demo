@@ -123,7 +123,7 @@ public class SSRF {
         try {
             String downLoadImgFileName = WebUtils.getNameWithoutExtension(url) + "." + WebUtils.getFileExtension(url);
             // download
-            String safeFileName = SecurityUtil.headerFilter(downLoadImgFileName);
+            String safeFileName = SecurityUtil.safeFileName(SecurityUtil.headerFilter(downLoadImgFileName));
             String contentDisposition = "attachment;fileName=" + safeFileName;
             response.setHeader("content-disposition", contentDisposition);
 

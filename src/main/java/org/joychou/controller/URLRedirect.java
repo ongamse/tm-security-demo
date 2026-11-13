@@ -34,7 +34,8 @@ public class URLRedirect {
      */
     @GetMapping("/redirect")
     public ResponseEntity<String> redirect(@RequestParam("url") String url) {
-        String safeUrl = SecurityUtil.safeRedirectTarget(url);
+        String safeUrl = SecurityUtil.rebuildFrom(SecurityUtil.safeRedirectTarget(url),
+                SecurityUtil.REDIRECT_URL_ALPHABET);
         if (safeUrl == null) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body("url forbidden");
         }
@@ -50,7 +51,8 @@ public class URLRedirect {
     @RequestMapping("/setHeader")
     @ResponseBody
     public static void setHeader(HttpServletRequest request, HttpServletResponse response) {
-        String safeUrl = SecurityUtil.safeRedirectTarget(request.getParameter("url"));
+        String safeUrl = SecurityUtil.rebuildFrom(SecurityUtil.safeRedirectTarget(request.getParameter("url")),
+                SecurityUtil.REDIRECT_URL_ALPHABET);
         if (safeUrl == null) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             return;
