@@ -313,24 +313,74 @@ public class SecurityUtil {
 
 
     /**
-     * Remove CR, LF and all other ISO control characters from a value that is written into an
-     * HTTP response header, to prevent header injection / response splitting (CWE-113).
+     * Strict sanitizer for a value that is written into an HTTP response header, to prevent header
+     * injection / response splitting (CWE-113). Removes all ASCII control characters (0x00-0x1F, 0x7F)
+     * and the Unicode line separators U+0085, U+2028 and U+2029. Percent-escapes are left as is
+     * (the value is never decoded), so an encoded "%0d%0a" stays inert text.
      *
      * @param value untrusted header value
-     * @return the value without control characters; null if the input is null
+     * @return the value without control / line separator characters; "" if the input is null
      */
     public static String headerFilter(String value) {
         if (value == null) {
-            return null;
+            return "";
         }
         StringBuilder sb = new StringBuilder(value.length());
         for (int i = 0; i < value.length(); i++) {
             char ch = value.charAt(i);
-            if (!Character.isISOControl(ch)) {
+            boolean forbidden = ch <= 0x1F || ch == 0x7F
+                    || ch == 0x85 || ch == 0x2028 || ch == 0x2029;
+            if (!forbidden) {
                 sb.append(ch);
             }
         }
         return sb.toString();
+    }
+
+
+    /**
+     * Look up the allowlist entry that exactly matches the host of a request Origin and return an
+     * Origin value built from the allowlist's own host string (never the request's string).
+     * Only http/https origins without userinfo/path/query/fragment whose host exactly equals a
+     * configured safe domain (and is not blocked, see {@link #checkURL(String)}) are accepted.
+     *
+     * @param origin the request Origin header
+     * @return the allowlist-owned Origin to echo; null if the origin is not allowed
+     */
+    public static String allowedOrigin(String origin) {
+        if (origin == null || checkURL(origin) == null) {
+            return null;
+        }
+        URI uri;
+        try {
+            uri = new URI(origin);
+        } catch (URISyntaxException e) {
+            return null;
+        }
+        String path = uri.getRawPath();
+        if (uri.getRawUserInfo() != null || uri.getRawQuery() != null || uri.getRawFragment() != null
+                || (path != null && !path.isEmpty()) || uri.getHost() == null) {
+            return null;
+        }
+        String scheme;
+        if ("http".equalsIgnoreCase(uri.getScheme())) {
+            scheme = "http";
+        } else if ("https".equalsIgnoreCase(uri.getScheme())) {
+            scheme = "https";
+        } else {
+            return null;
+        }
+        String host = uri.getHost().toLowerCase();
+        for (String safeDomain : WebConfig.getSafeDomains()) {
+            if (safeDomain.equals(host)) {
+                StringBuilder allowed = new StringBuilder(scheme).append("://").append(safeDomain);
+                if (uri.getPort() != -1) {
+                    allowed.append(':').append(uri.getPort());
+                }
+                return headerFilter(allowed.toString());
+            }
+        }
+        return null;
     }
 
 

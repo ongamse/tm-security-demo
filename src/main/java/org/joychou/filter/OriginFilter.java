@@ -46,9 +46,10 @@ public class OriginFilter implements Filter {
         }
 
         // 只对通过白名单校验的origin返回cors头；origin为空表示同域请求，不需要cors头。
-        String allowedOrigin = SecurityUtil.checkURL(origin);
+        String allowedOrigin = SecurityUtil.allowedOrigin(origin);
         if (allowedOrigin != null) {
-            response.setHeader("Access-Control-Allow-Origin", SecurityUtil.headerFilter(allowedOrigin));
+            String headerValue = SecurityUtil.headerFilter(allowedOrigin);
+            response.setHeader("Access-Control-Allow-Origin", headerValue);
             response.setHeader("Access-Control-Allow-Credentials", "true");
             response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTION");
         }
