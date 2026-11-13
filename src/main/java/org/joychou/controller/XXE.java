@@ -208,8 +208,8 @@ public class XXE {
             String body = WebUtils.getRequestBody(request);
             logger.info(body);
 
-            Digester digester = new Digester();
-            digester.setXMLReader(XmlSecurity.newXMLReader());
+            // Hardened XMLReader supplied via the constructor; newXMLReader() throws if hardening fails.
+            Digester digester = new Digester(XmlSecurity.newXMLReader());
             digester.parse(new StringReader(body));  // parse xml
         } catch (Exception e) {
             logger.error(e.toString());
