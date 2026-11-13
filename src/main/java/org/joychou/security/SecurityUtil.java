@@ -111,6 +111,71 @@ public class SecurityUtil {
 
 
     /**
+     * Validate and normalize an untrusted redirect target (CWE-601).
+     * <p>
+     * Accepted: a same-site relative path starting with a single "/" (no scheme, no authority), or an
+     * absolute http(s) url without userinfo whose host passes {@link #checkURL(String)}.
+     * Rejected: null/blank, whitespace, control characters, backslashes and anything starting with "//".
+     * The returned value is rebuilt from the parsed components, never the raw input.
+     *
+     * @param raw untrusted redirect target
+     * @return the validated target to redirect to; null if it must not be redirected to
+     */
+    public static String safeRedirectTarget(String raw) {
+        if (raw == null || raw.trim().isEmpty() || raw.indexOf('\\') != -1 || raw.startsWith("//")) {
+            return null;
+        }
+        for (int i = 0; i < raw.length(); i++) {
+            char ch = raw.charAt(i);
+            if (Character.isISOControl(ch) || Character.isWhitespace(ch)) {
+                return null;
+            }
+        }
+
+        URI uri;
+        try {
+            uri = new URI(raw);
+        } catch (URISyntaxException e) {
+            return null;
+        }
+
+        StringBuilder target = new StringBuilder();
+        if (raw.startsWith("/")) {
+            // Same-site relative path only.
+            if (uri.getScheme() != null || uri.getRawAuthority() != null || uri.getHost() != null) {
+                return null;
+            }
+        } else {
+            String scheme = uri.getScheme();
+            if (scheme == null || !("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme))
+                    || uri.getRawUserInfo() != null || uri.getHost() == null
+                    || checkURL(raw) == null) {
+                return null;
+            }
+            target.append(scheme.toLowerCase()).append("://").append(uri.getHost().toLowerCase());
+            if (uri.getPort() != -1) {
+                target.append(':').append(uri.getPort());
+            }
+        }
+
+        String path = uri.getRawPath();
+        if (path != null) {
+            target.append(path);
+        }
+        if (target.length() == 0 || (target.charAt(0) == '/' && (target.length() > 1 && target.charAt(1) == '/'))) {
+            return null;
+        }
+        if (uri.getRawQuery() != null) {
+            target.append('?').append(uri.getRawQuery());
+        }
+        if (uri.getRawFragment() != null) {
+            target.append('#').append(uri.getRawFragment());
+        }
+        return target.toString();
+    }
+
+
+    /**
      * 通过自定义白名单域名处理SSRF漏洞。如果URL范围收敛，强烈建议使用该方案。
      * 这是最简单也最有效的修复方式。因为SSRF都是发起URL请求时造成，大多数场景是图片场景，一般图片的域名都是CDN或者OSS等，所以限定域名白名单即可完成SSRF漏洞修复。
      *
