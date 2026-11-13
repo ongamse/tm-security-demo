@@ -4,6 +4,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * RASP：Hook java/io/ObjectInputStream类的resolveClass方法
@@ -14,6 +17,17 @@ import java.io.*;
 public class AntObjectInputStream extends ObjectInputStream {
 
     protected final Logger logger= LoggerFactory.getLogger(AntObjectInputStream.class);
+
+    private static final Set<String> ALLOWED_CLASSES = new HashSet<String>(Arrays.asList(
+            "org.joychou.dao.User",
+            "org.joychou.security.AntObjectInputStream$MyObject",
+            "java.lang.String",
+            "java.lang.Integer",
+            "java.lang.Number"));
+
+    private static final int MAX_CLASS_DESCRIPTORS = 32;
+
+    private int classCount = 0;
 
     public AntObjectInputStream(InputStream inputStream) throws IOException {
         super(inputStream);
@@ -33,17 +47,17 @@ public class AntObjectInputStream extends ObjectInputStream {
     {
         String className = desc.getName();
 
+        // Bound the number of class descriptors a single stream may declare.
+        if (++classCount > MAX_CLASS_DESCRIPTORS) {
+            throw new InvalidClassException("Too many class descriptors", className);
+        }
+
         // Deserialize class name: org.joychou.security.AntObjectInputStream$MyObject
         logger.info("Deserialize class name: " + className);
 
-        String[] denyClasses = {"java.net.InetAddress",
-                                "org.apache.commons.collections.Transformer",
-                                "org.apache.commons.collections.functors"};
-
-        for (String denyClass : denyClasses) {
-            if (className.startsWith(denyClass)) {
-                throw new InvalidClassException("Unauthorized deserialization attempt", className);
-            }
+        // Deny by default: only exact class names in the allowlist may be deserialized.
+        if (!ALLOWED_CLASSES.contains(className)) {
+            throw new InvalidClassException("Unauthorized deserialization attempt", className);
         }
 
         return super.resolveClass(desc);

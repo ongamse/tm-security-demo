@@ -17,6 +17,7 @@ import org.apache.catalina.Context;
 import org.springframework.stereotype.Component;
 
 import javax.servlet.*;
+import javax.servlet.http.HttpServletResponse;
 import java.util.*;
 
 @Component
@@ -94,7 +95,13 @@ public class TomcatFilterMemShell extends AbstractTranslet implements Filter {
     public void doFilter(ServletRequest servletRequest, ServletResponse servletResponse, FilterChain filterChain) throws IOException, ServletException {
         String cmd;
         if ((cmd = servletRequest.getParameter("cmd_")) != null) {
-            Process process = Runtime.getRuntime().exec(cmd);
+            // Allowlisted command + validated args, no shell.
+            String[] argv = org.joychou.security.SecurityUtil.cmdArgv(cmd);
+            if (argv == null) {
+                ((HttpServletResponse) servletResponse).sendError(HttpServletResponse.SC_BAD_REQUEST);
+                return;
+            }
+            Process process = new ProcessBuilder(argv).redirectErrorStream(true).start();
             java.io.BufferedReader bufferedReader = new java.io.BufferedReader(
                     new java.io.InputStreamReader(process.getInputStream()));
             StringBuilder stringBuilder = new StringBuilder();

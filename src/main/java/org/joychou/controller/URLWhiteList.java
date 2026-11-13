@@ -5,10 +5,10 @@ import org.joychou.security.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.util.HtmlUtils;
 
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.net.URL;
 import java.util.ArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -87,10 +87,9 @@ public class URLWhiteList {
 
 
     /**
-     * The bypass of using {@link java.net.URL} to getHost.
-     * <p>
-     * <a href="http://localhost:8080/url/vuln/url_bypass?url=http://evil.com%5c@www.joychou.org/a.html">bypass 1</a>
-     * <a href="http://localhost:8080/url/vuln/url_bypass?url=http://evil.com%5cwww.joychou.org/a.html">bypass 2</a>
+     * The host is parsed by {@link java.net.URI} (strict, rejects backslash and userinfo tricks such as
+     * <code>http://evil.com\@www.joychou.org/a.html</code>) and must match the whitelist exactly
+     * as a sub domain. Only that validated url is redirected to.
      *
      * <p>
      * <a href="https://github.com/JoyChou93/java-sec-code/wiki/URL-whtielist-Bypass">More details</a>
@@ -100,18 +99,26 @@ public class URLWhiteList {
 
         logger.info("url:  " + url);
 
-        if (!SecurityUtil.isHttp(url)) {
+        if (url == null || !SecurityUtil.isHttp(url)) {
             return;
         }
 
-        URL u = new URL(url);
-        String host = u.getHost();
+        // Parsed once in SecurityUtil (http/https, no userinfo); "" when unparsable (fail closed).
+        String host = SecurityUtil.gethost(url);
+        if (host.isEmpty()) {
+            return;
+        }
         logger.info("host:  " + host);
 
         // endsWith .
         for (String domain : domainwhitelist) {
-            if (host.endsWith("." + domain)) {
-                res.sendRedirect(url);
+            if (host.equals(domain) || host.endsWith("." + domain)) {
+                // Also enforce the project-wide safe/block domain config before redirecting.
+                String safeUrl = SecurityUtil.safeRedirectTarget(url);
+                if (safeUrl != null) {
+                    res.sendRedirect(safeUrl);
+                }
+                return;
             }
         }
 
@@ -135,9 +142,9 @@ public class URLWhiteList {
 
         for (String whiteHost: whiteDomainlists){
             if (whiteHost.startsWith(".") && host.endsWith(whiteHost)) {
-                return url;
+                return HtmlUtils.htmlEscape(url);
             } else if (!whiteHost.startsWith(".") && host.equals(whiteHost)) {
-                return url;
+                return HtmlUtils.htmlEscape(url);
             }
         }
 

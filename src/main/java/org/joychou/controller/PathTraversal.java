@@ -4,13 +4,17 @@ import org.apache.commons.codec.binary.Base64;
 import org.joychou.security.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.util.StreamUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
+import java.nio.file.LinkOption;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 
 @RestController
@@ -29,7 +33,7 @@ public class PathTraversal {
     @GetMapping("/path_traversal/sec")
     public String getImageSec(String filepath) throws IOException {
         if (SecurityUtil.pathFilter(filepath) == null) {
-            logger.info("Illegal file path: " + filepath);
+            logger.info("Illegal file path rejected by filter.");
             return "Bad boy. Illegal file path.";
         }
         return getImgBase64(filepath);
@@ -37,14 +41,39 @@ public class PathTraversal {
 
     private String getImgBase64(String imgFile) throws IOException {
 
-        logger.info("Working directory: " + System.getProperty("user.dir"));
-        logger.info("File path: " + imgFile);
+        logger.info("Resolving requested image file.");
 
-        File f = new File(imgFile);
-        if (f.exists() && !f.isDirectory()) {
-            byte[] data = Files.readAllBytes(Paths.get(imgFile));
+        if (imgFile == null || imgFile.indexOf('\0') >= 0) {
+            return "File doesn't exist or is not a file.";
+        }
+
+        // Only serve files located inside the working directory.
+        Path base = Paths.get(System.getProperty("user.dir")).toAbsolutePath().normalize();
+        Path target;
+        try {
+            target = base.resolve(imgFile).normalize();
+        } catch (InvalidPathException e) {
+            return "File doesn't exist or is not a file.";
+        }
+        if (!target.startsWith(base)) {
+            logger.info("Illegal file path rejected outside working directory.");
+            return "Bad boy. Illegal file path.";
+        }
+        // No existence/type pre-check: resolve and open the file once, and treat any
+        // failure (missing file, directory, symlink, I/O error) as a single fixed response.
+        try {
+            Path realBase = base.toRealPath();
+            Path realTarget = target.toRealPath();
+            if (!realTarget.startsWith(realBase)) {
+                logger.info("Illegal file path rejected outside working directory.");
+                return "Bad boy. Illegal file path.";
+            }
+            byte[] data;
+            try (InputStream in = Files.newInputStream(realTarget, LinkOption.NOFOLLOW_LINKS)) {
+                data = StreamUtils.copyToByteArray(in);
+            }
             return new String(Base64.encodeBase64(data));
-        } else {
+        } catch (IOException e) {
             return "File doesn't exist or is not a file.";
         }
     }

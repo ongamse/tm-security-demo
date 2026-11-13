@@ -14,7 +14,7 @@
     <!--</select>-->
 
     <select id="findByUserNameVuln02" parameterType="String" resultMap="User">
-        select * from users where username like '%${_parameter}%'
+        select * from users where username like concat('%', #{_parameter}, '%')
     </select>
 
     <select id="findByUserNameVuln03" parameterType="String" resultMap="User">

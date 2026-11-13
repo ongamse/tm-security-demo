@@ -43,9 +43,24 @@ public class Jsonp {
      * http://localhost:8080/jsonp/vuln/referer?callback_=test
      */
     @RequestMapping(value = "/vuln/referer", produces = "application/javascript")
-    public String referer(HttpServletRequest request) {
+    public String referer(HttpServletRequest request, HttpServletResponse response) {
+        setJsGuardHeaders(response);
         String callback = request.getParameter(this.callback);
-        return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
+        return toJsonp(response, callback, LoginUtils.getUserInfo2JsonStr(request));
+    }
+
+    // JSONP responses are script content: fixed content type, no MIME sniffing.
+    private static void setJsGuardHeaders(HttpServletResponse response) {
+        response.setContentType("application/javascript;charset=UTF-8");
+        response.setHeader("X-Content-Type-Options", "nosniff");
+    }
+
+    // Wrap with a server-owned callback; when the callback is not allowlisted, return plain JSON.
+    private static String toJsonp(HttpServletResponse response, String callback, String jsonStr) {
+        if (WebUtils.resolveJsonpCallback(callback) == null) {
+            response.setContentType("application/json;charset=UTF-8");
+        }
+        return WebUtils.json2Jsonp(callback, jsonStr);
     }
 
     /**
@@ -55,14 +70,15 @@ public class Jsonp {
      * http://localhost:8080/jsonp/vuln/emptyReferer?callback_=test
      */
     @RequestMapping(value = "/vuln/emptyReferer", produces = "application/javascript")
-    public String emptyReferer(HttpServletRequest request) {
+    public String emptyReferer(HttpServletRequest request, HttpServletResponse response) {
+        setJsGuardHeaders(response);
         String referer = request.getHeader("referer");
 
         if (null != referer && SecurityUtil.checkURL(referer) == null) {
             return "error";
         }
         String callback = request.getParameter(this.callback);
-        return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
+        return toJsonp(response, callback, LoginUtils.getUserInfo2JsonStr(request));
     }
 
     /**
@@ -100,14 +116,15 @@ public class Jsonp {
      * http://localhost:8080/jsonp/sec?callback_=test
      */
     @RequestMapping(value = "/sec/checkReferer", produces = "application/javascript")
-    public String safecode(HttpServletRequest request) {
+    public String safecode(HttpServletRequest request, HttpServletResponse response) {
+        setJsGuardHeaders(response);
         String referer = request.getHeader("referer");
 
         if (SecurityUtil.checkURL(referer) == null) {
             return "error";
         }
         String callback = request.getParameter(this.callback);
-        return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
+        return toJsonp(response, callback, LoginUtils.getUserInfo2JsonStr(request));
     }
 
     /**
@@ -126,17 +143,26 @@ public class Jsonp {
      * fastjsonp to jsonp
      */
     @GetMapping(value = "/fastjsonp/getToken", produces = "application/javascript")
-    public String getCsrfToken2(HttpServletRequest request) {
+    public String getCsrfToken2(HttpServletRequest request, HttpServletResponse response) {
+        setJsGuardHeaders(response);
         CsrfToken csrfToken = cookieCsrfTokenRepository.loadToken(request); // get csrf token
 
         String callback = request.getParameter("fastjsonpCallback");
         if (StringUtils.isNotBlank(callback)) {
-            JSONPObject jsonpObj = new JSONPObject(callback);
-            jsonpObj.addParameter(csrfToken);
-            return jsonpObj.toString();
-        } else {
-            return csrfToken.toString();
+            if (!WebUtils.isValidJsonpCallback(callback)) {
+                response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+                return "invalid callback";
+            }
+            // Use the server-owned allowlist string, never the request string.
+            String safeCallback = WebUtils.resolveJsonpCallback(callback);
+            if (safeCallback != null) {
+                JSONPObject jsonpObj = new JSONPObject(safeCallback);
+                jsonpObj.addParameter(csrfToken);
+                return jsonpObj.toString();
+            }
         }
+        response.setContentType("application/json;charset=UTF-8");
+        return csrfToken.toString();
     }
 
 }
