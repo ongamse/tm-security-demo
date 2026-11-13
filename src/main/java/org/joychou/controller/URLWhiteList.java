@@ -124,7 +124,11 @@ public class URLWhiteList {
         // endsWith .
         for (String domain : domainwhitelist) {
             if (host.endsWith("." + domain)) {
-                res.sendRedirect(url);
+                // Also enforce the project-wide safe/block domain config before redirecting.
+                String safeUrl = SecurityUtil.checkURL(url);
+                if (safeUrl != null) {
+                    res.sendRedirect(SecurityUtil.headerFilter(safeUrl));
+                }
                 return;
             }
         }
