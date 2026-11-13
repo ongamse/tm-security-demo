@@ -155,6 +155,11 @@ public class Rce {
      */
     @GetMapping("groovy")
     public void groovyshell(String content) {
+        // Strict pre-check: plain arithmetic text only. This also rejects annotations (e.g. @ASTTest),
+        // which can run code at compile time before the AST customizer below is applied.
+        if (content == null || !content.matches("^[0-9+\\-*/().\\s]{1,200}$")) {
+            throw new IllegalArgumentException("illegal content");
+        }
         // Only constant arithmetic is accepted: no method calls, property access, imports, closures,
         // assignments or class references, so the script cannot reach Runtime/ProcessBuilder/etc.
         SecureASTCustomizer customizer = new SecureASTCustomizer();

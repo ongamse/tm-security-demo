@@ -53,8 +53,8 @@ public class CommandInject {
         if (null == host || !HOST_PATTERN.matcher(host).matches()) {
             return "Bad boy. I got u.";
         }
-        // No shell: host is a single argv element after "--".
-        String[] cmdList = new String[]{"curl", "--", host};
+        // No shell: fixed options, restricted to http(s), host is a single argv element after "--".
+        String[] cmdList = new String[]{"curl", "--proto", "=http,https", "--max-time", "5", "--", host};
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);
         Process process = builder.start();

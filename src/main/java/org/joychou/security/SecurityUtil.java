@@ -230,6 +230,10 @@ public class SecurityUtil {
         if (tokens.length == 0 || !CMD_ALLOWLIST.contains(tokens[0])) {
             return null;
         }
+        // Only ls and id take arguments; e.g. "date MMDDhhmm" would otherwise set the system clock.
+        if (tokens.length > 1 && !"ls".equals(tokens[0]) && !"id".equals(tokens[0])) {
+            return null;
+        }
         for (int i = 1; i < tokens.length; i++) {
             boolean lsFlag = "ls".equals(tokens[0]) && SHORT_FLAG_PATTERN.matcher(tokens[i]).matches();
             if (!lsFlag && (tokens[i].startsWith("-") || cmdFilter(tokens[i]) == null)) {

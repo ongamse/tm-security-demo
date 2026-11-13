@@ -34,6 +34,10 @@ public class SpEL {
      */
     @GetMapping("/spel/vuln")
     public String rce(String expression) {
+        // Only plain arithmetic is evaluated (also blocks string-repeat / array-allocation DoS).
+        if (expression == null || !expression.matches("^[0-9+\\-*/%().\\s]{1,200}$")) {
+            return "Bad boy. I got u.";
+        }
         ExpressionParser parser = new SpelExpressionParser();
         // Restricted context (works on Spring 4.3.x and 5.x, where SimpleEvaluationContext may be
         // unavailable): no type references (T()), constructors, method calls or property access.
