@@ -18,6 +18,9 @@ import java.util.regex.Pattern;
 @RequestMapping("/jdbc")
 public class Jdbc {
 
+    private static final String DB_NAME_ALPHABET =
+            "/ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_";
+
     /**
      * Only the expected jdbc scheme, no connection properties (e.g. socketFactory in CVE-2022-21724)
      * and a host that is on the SSRF host allowlist are accepted.
@@ -45,13 +48,28 @@ public class Jdbc {
         // The host used for the connection comes only from the SSRF chokepoint (allowlisted, public address).
         String host;
         try {
-            host = SecurityUtil.requireSafeUrl("http://" + candidate + "/").getHost();
+            host = SecurityUtil.requireSafeUrl("https://" + candidate + "/").getHost();
         } catch (IOException e) {
             throw new IllegalArgumentException("Illegal jdbc host");
         }
-        // Rebuild the url only from the validated components.
-        return "jdbc:" + scheme + "://" + host + (m.group(3) == null ? "" : m.group(3))
-                + (m.group(4) == null ? "" : m.group(4));
+        // Rebuild the url only from the validated components: allowlist-owned host, numeric port, db name
+        // rebuilt character by character from a closed alphabet.
+        StringBuilder safeUrl = new StringBuilder("jdbc:").append(scheme).append("://").append(host);
+        if (m.group(3) != null) {
+            int port = Integer.parseInt(m.group(3).substring(1));
+            if (port < 1 || port > 65535) {
+                throw new IllegalArgumentException("Illegal jdbc port");
+            }
+            safeUrl.append(':').append(port);
+        }
+        if (m.group(4) != null) {
+            String db = SecurityUtil.rebuildFrom(m.group(4), DB_NAME_ALPHABET);
+            if (db == null) {
+                throw new IllegalArgumentException("Illegal jdbc database");
+            }
+            safeUrl.append(db);
+        }
+        return safeUrl.toString();
     }
 
     /**
