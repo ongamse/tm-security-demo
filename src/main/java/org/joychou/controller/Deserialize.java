@@ -45,7 +45,8 @@ public class Deserialize {
         byte[] decoded = Base64.getDecoder().decode(rememberMe);
 
         ByteArrayInputStream bytes = new ByteArrayInputStream(decoded);
-        ObjectInputStream in = new ObjectInputStream(bytes);
+        // Allowlist-based stream: unexpected classes are rejected with InvalidClassException.
+        ObjectInputStream in = new AntObjectInputStream(bytes);
         in.readObject();
         in.close();
 
