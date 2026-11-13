@@ -25,6 +25,8 @@ public class Cors {
     @GetMapping("/vuln/origin")
     public String vuls1(HttpServletRequest request, HttpServletResponse response) {
         // only an origin matching an allowlist entry is emitted, using the allowlist's own string
+        // the response depends on the request Origin, so caches must key on it
+        response.addHeader("Vary", "Origin");
         String allowedOrigin = SecurityUtil.allowedOrigin(request.getHeader("origin"));
         if (allowedOrigin != null) {
             String headerValue = SecurityUtil.headerFilter(allowedOrigin);
@@ -37,6 +39,7 @@ public class Cors {
     @GetMapping("/vuln/setHeader")
     public String vuls2(HttpServletRequest request, HttpServletResponse response) {
         // 不再使用通配符*，只对白名单内的origin设置Access-Control-Allow-Origin
+        response.addHeader("Vary", "Origin");
         String allowedOrigin = SecurityUtil.allowedOrigin(request.getHeader("origin"));
         if (allowedOrigin != null) {
             String headerValue = SecurityUtil.headerFilter(allowedOrigin);
@@ -118,6 +121,7 @@ public class Cors {
         if (origin != null && SecurityUtil.checkURL(origin) == null) {
             return "Origin is not safe.";
         }
+        response.addHeader("Vary", "Origin");
         String allowedOrigin = SecurityUtil.allowedOrigin(origin);
         if (allowedOrigin != null) {
             String headerValue = SecurityUtil.headerFilter(allowedOrigin);

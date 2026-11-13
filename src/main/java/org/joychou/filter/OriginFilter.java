@@ -46,6 +46,7 @@ public class OriginFilter implements Filter {
         }
 
         // 只对通过白名单校验的origin返回cors头；origin为空表示同域请求，不需要cors头。
+        response.addHeader("Vary", "Origin");
         String allowedOrigin = SecurityUtil.allowedOrigin(origin);
         if (allowedOrigin != null) {
             String headerValue = SecurityUtil.headerFilter(allowedOrigin);
