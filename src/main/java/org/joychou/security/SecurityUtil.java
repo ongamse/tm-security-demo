@@ -68,17 +68,31 @@ public class SecurityUtil {
     private static final Pattern RELATIVE_URL_PATTERN = Pattern.compile(
             "^(/" + PATH_CHARS + ")(?:\\?(" + QUERY_CHARS + "))?(?:#(" + QUERY_CHARS + "))?$");
 
-    private static final String HOST_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789.-";
-    private static final String PATH_ALPHABET =
-            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._~!$&'()*+,;=:@%/-";
+    /**
+     * Build a closed alphabet from character ranges plus literal extra characters.
+     *
+     * @param ranges pairs of range bounds, e.g. "AZaz09" for A-Z, a-z and 0-9
+     * @param extra  additional literal characters
+     * @return the alphabet
+     */
+    public static String alphabet(String ranges, String extra) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i + 1 < ranges.length(); i += 2) {
+            for (char c = ranges.charAt(i); c <= ranges.charAt(i + 1); c++) {
+                sb.append(c);
+            }
+        }
+        return sb.append(extra).toString();
+    }
+
+    private static final String HOST_ALPHABET = alphabet("az09", ".-");
+    private static final String PATH_ALPHABET = alphabet("AZaz09", "._~!$&'()*+,;=:@%/-");
     private static final String QUERY_ALPHABET = PATH_ALPHABET + "?";
 
     /** Characters a URL-encoded (application/x-www-form-urlencoded) header value can consist of. */
-    public static final String HEADER_VALUE_ALPHABET =
-            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._~%+*-";
+    public static final String HEADER_VALUE_ALPHABET = alphabet("AZaz09", "._~%+*-");
     /** Characters allowed in a download file name. */
-    public static final String FILE_NAME_ALPHABET =
-            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-";
+    public static final String FILE_NAME_ALPHABET = alphabet("AZaz09", "._-");
     /** Characters of a redirect url produced by {@link #safeRedirectTarget(String)}. */
     public static final String REDIRECT_URL_ALPHABET = QUERY_ALPHABET + "#";
 

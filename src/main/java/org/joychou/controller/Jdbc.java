@@ -18,8 +18,7 @@ import java.util.regex.Pattern;
 @RequestMapping("/jdbc")
 public class Jdbc {
 
-    private static final String DB_NAME_ALPHABET =
-            "/ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_";
+    private static final String DB_NAME_ALPHABET = SecurityUtil.alphabet("AZaz09", "/_");
 
     /**
      * Only the expected jdbc scheme, no connection properties (e.g. socketFactory in CVE-2022-21724)
