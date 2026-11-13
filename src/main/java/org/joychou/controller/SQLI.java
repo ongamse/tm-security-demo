@@ -56,7 +56,10 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/jdbc/vuln?username=joychou">http://localhost:8080/sqli/jdbc/vuln?username=joychou</a>
      */
     @RequestMapping("/jdbc/vuln")
-    public String jdbc_sqli_vul(@RequestParam("username") String username) {
+    public String jdbc_sqli_vul(@RequestParam("username") String username, Principal principal) {
+
+        requireCurrentUser(principal, username);
+        String owner = principal.getName();
 
         StringBuilder result = new StringBuilder();
 
@@ -70,7 +73,7 @@ public class SQLI {
             // sqli vuln code
             String sql = "select * from users where username = ?";
             PreparedStatement statement = con.prepareStatement(sql);
-            statement.setString(1, username);
+            statement.setString(1, owner);
             logger.info(sql);
             ResultSet rs = statement.executeQuery();
 
@@ -146,7 +149,10 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/jdbc/ps/vuln?username=joychou' or 'a'='a">http://localhost:8080/sqli/jdbc/ps/vuln?username=joychou' or 'a'='a</a>
      */
     @RequestMapping("/jdbc/ps/vuln")
-    public String jdbc_ps_vuln(@RequestParam("username") String username) {
+    public String jdbc_ps_vuln(@RequestParam("username") String username, Principal principal) {
+
+        requireCurrentUser(principal, username);
+        String owner = principal.getName();
 
         StringBuilder result = new StringBuilder();
         try {
@@ -158,7 +164,7 @@ public class SQLI {
 
             String sql = "select * from users where username = ?";
             PreparedStatement st = con.prepareStatement(sql);
-            st.setString(1, username);
+            st.setString(1, owner);
 
             logger.info(st.toString());
             ResultSet rs = st.executeQuery();
