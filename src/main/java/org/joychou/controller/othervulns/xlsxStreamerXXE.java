@@ -9,8 +9,19 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.multipart.MultipartFile;
 
+import org.xml.sax.InputSource;
+import org.xml.sax.SAXException;
+
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
+import java.io.ByteArrayInputStream;
 import java.io.FileInputStream;
+import java.io.FilterInputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 
 /**
@@ -34,7 +45,47 @@ public class xlsxStreamerXXE {
 
     @PostMapping("/readxlsx")
     public void xllx_streamer_xxe(MultipartFile file) throws IOException {
-        StreamingReader.builder().open(file.getInputStream());
+        byte[] content = file.getBytes();
+        rejectXmlDoctype(content);
+        StreamingReader.builder().open(new ByteArrayInputStream(content));
+    }
+
+
+    /**
+     * Parse every XML part of the xlsx package with DOCTYPE and external entities disabled,
+     * so a crafted part (e.g. xl/workbook.xml) carrying a DTD is rejected before xlsx-streamer reads it.
+     */
+    private static void rejectXmlDoctype(byte[] content) throws IOException {
+        try {
+            DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+            dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            dbf.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            dbf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            DocumentBuilder db = dbf.newDocumentBuilder();
+            try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(content))) {
+                ZipEntry entry;
+                while ((entry = zis.getNextEntry()) != null) {
+                    String name = entry.getName().toLowerCase();
+                    if (name.endsWith(".xml") || name.endsWith(".rels")) {
+                        db.parse(new InputSource(new NonClosingInputStream(zis)));
+                    }
+                }
+            }
+        } catch (ParserConfigurationException | SAXException e) {
+            throw new IOException("Invalid or unsafe XML in xlsx file", e);
+        }
+    }
+
+
+    private static final class NonClosingInputStream extends FilterInputStream {
+        NonClosingInputStream(InputStream in) {
+            super(in);
+        }
+
+        @Override
+        public void close() {
+            // keep the underlying zip stream open for the next entry
+        }
     }
 
 
