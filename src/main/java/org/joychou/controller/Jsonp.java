@@ -15,7 +15,6 @@ import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.view.json.MappingJackson2JsonView;
-import org.springframework.web.util.HtmlUtils;
 import org.joychou.config.WebConfig;
 import org.joychou.util.WebUtils;
 
@@ -44,9 +43,16 @@ public class Jsonp {
      * http://localhost:8080/jsonp/vuln/referer?callback_=test
      */
     @RequestMapping(value = "/vuln/referer", produces = "application/javascript")
-    public String referer(HttpServletRequest request) {
+    public String referer(HttpServletRequest request, HttpServletResponse response) {
+        setJsGuardHeaders(response);
         String callback = request.getParameter(this.callback);
         return WebUtils.json2Jsonp(callback, LoginUtils.getUserInfo2JsonStr(request));
+    }
+
+    // JSONP responses are script content: fixed content type, no MIME sniffing.
+    private static void setJsGuardHeaders(HttpServletResponse response) {
+        response.setContentType("application/javascript;charset=UTF-8");
+        response.setHeader("X-Content-Type-Options", "nosniff");
     }
 
     /**
@@ -56,7 +62,8 @@ public class Jsonp {
      * http://localhost:8080/jsonp/vuln/emptyReferer?callback_=test
      */
     @RequestMapping(value = "/vuln/emptyReferer", produces = "application/javascript")
-    public String emptyReferer(HttpServletRequest request) {
+    public String emptyReferer(HttpServletRequest request, HttpServletResponse response) {
+        setJsGuardHeaders(response);
         String referer = request.getHeader("referer");
 
         if (null != referer && SecurityUtil.checkURL(referer) == null) {
@@ -101,7 +108,8 @@ public class Jsonp {
      * http://localhost:8080/jsonp/sec?callback_=test
      */
     @RequestMapping(value = "/sec/checkReferer", produces = "application/javascript")
-    public String safecode(HttpServletRequest request) {
+    public String safecode(HttpServletRequest request, HttpServletResponse response) {
+        setJsGuardHeaders(response);
         String referer = request.getHeader("referer");
 
         if (SecurityUtil.checkURL(referer) == null) {
@@ -127,12 +135,17 @@ public class Jsonp {
      * fastjsonp to jsonp
      */
     @GetMapping(value = "/fastjsonp/getToken", produces = "application/javascript")
-    public String getCsrfToken2(HttpServletRequest request) {
+    public String getCsrfToken2(HttpServletRequest request, HttpServletResponse response) {
+        setJsGuardHeaders(response);
         CsrfToken csrfToken = cookieCsrfTokenRepository.loadToken(request); // get csrf token
 
         String callback = request.getParameter("fastjsonpCallback");
         if (StringUtils.isNotBlank(callback)) {
-            JSONPObject jsonpObj = new JSONPObject(HtmlUtils.htmlEscape(callback));
+            if (!WebUtils.isValidJsonpCallback(callback)) {
+                response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+                return "invalid callback";
+            }
+            JSONPObject jsonpObj = new JSONPObject(callback);
             jsonpObj.addParameter(csrfToken);
             return jsonpObj.toString();
         } else {

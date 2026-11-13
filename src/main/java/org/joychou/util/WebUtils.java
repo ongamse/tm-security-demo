@@ -5,7 +5,7 @@ import javax.servlet.http.HttpServletRequest;
 import java.io.*;
 
 import com.google.common.base.Preconditions;
-import org.springframework.web.util.HtmlUtils;
+import java.util.regex.Pattern;
 
 public class WebUtils {
 
@@ -27,8 +27,25 @@ public class WebUtils {
     }
 
 
+    // Strict JavaScript identifier (optionally dotted) allowlist for JSONP callback names.
+    private static final Pattern JSONP_CALLBACK = Pattern.compile("^[A-Za-z_$][A-Za-z0-9_$.]{0,63}$");
+
+    /**
+     * @return true only if the callback is a safe JavaScript identifier / dotted path.
+     */
+    public static boolean isValidJsonpCallback(String callback) {
+        return callback != null && JSONP_CALLBACK.matcher(callback).matches();
+    }
+
+    /**
+     * Wrap json with a validated callback. An invalid or missing callback is never reflected:
+     * the plain JSON is returned instead.
+     */
     public static String json2Jsonp(String callback, String jsonStr) {
-        return HtmlUtils.htmlEscape(callback) + "(" + jsonStr + ")";
+        if (!isValidJsonpCallback(callback)) {
+            return jsonStr;
+        }
+        return callback + "(" + jsonStr + ")";
     }
 
 
