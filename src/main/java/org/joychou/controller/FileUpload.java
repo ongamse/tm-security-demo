@@ -74,8 +74,7 @@ public class FileUpload {
 
         } catch (IOException e) {
             redirectAttributes.addFlashAttribute("message", "upload failed");
-            logger.error("File upload failed: {}: {}", e.getClass().getSimpleName(),
-                    SecurityUtil.logSafe(e.getMessage()));
+            logger.error("File upload failed: {}", e.getClass().getSimpleName());
         }
 
         return "redirect:/file/status";
@@ -116,7 +115,7 @@ public class FileUpload {
             }
         }
         if (!suffixFlag) {
-            logger.error("[-] Suffix error: {}", SecurityUtil.logSafe(Suffix));
+            logger.error("[-] Suffix error: not in picture allowlist.");
             deleteFile(filePath);
             return "Upload failed. Illeagl picture.";
         }
@@ -134,7 +133,7 @@ public class FileUpload {
         for (String blackMimeType : mimeTypeBlackList) {
             // 用contains是为了防止text/html;charset=UTF-8绕过
             if (SecurityUtil.replaceSpecialStr(mimeType).toLowerCase().contains(blackMimeType)) {
-                logger.error("[-] Mime type error: {}", SecurityUtil.logSafe(mimeType));
+                logger.error("[-] Mime type error: blacklisted MIME type.");
                 deleteFile(filePath);
                 return "Upload failed. Illeagl picture.";
             }
@@ -156,14 +155,13 @@ public class FileUpload {
             byte[] bytes = multifile.getBytes();
             Files.write(targetPath, bytes);
         } catch (IOException e) {
-            logger.error("File write failed: {}: {}", e.getClass().getSimpleName(),
-                    SecurityUtil.logSafe(e.getMessage()));
+            logger.error("File write failed: {}", e.getClass().getSimpleName());
             deleteFile(filePath);
             return "Upload failed";
         }
 
-        logger.info("[+] Safe file. Suffix: {}, MIME: {}", SecurityUtil.logSafe(Suffix), SecurityUtil.logSafe(mimeType));
-        logger.info("[+] Successfully uploaded {}", SecurityUtil.logSafe(filePath));
+        logger.info("[+] Safe file. Suffix and MIME type checks passed.");
+        logger.info("[+] Successfully uploaded picture.");
         return String.format("You successfully uploaded '%s'", HtmlUtils.htmlEscape(filePath));
     }
 
@@ -219,17 +217,17 @@ public class FileUpload {
         Path base = Paths.get(UPLOADED_FOLDER).toAbsolutePath().normalize();
         Path delPath = Paths.get(filePath).toAbsolutePath().normalize();
         if (!delPath.startsWith(base)) {
-            logger.info("{} delete failed!", SecurityUtil.logSafe(filePath));
+            logger.info("File delete failed!");
             return;
         }
         File delFile = delPath.toFile();
         if(delFile.isFile() && delFile.exists()) {
             if (delFile.delete()) {
-                logger.info("[+] {} delete successfully!", SecurityUtil.logSafe(filePath));
+                logger.info("[+] File delete successfully!");
                 return;
             }
         }
-        logger.info("{} delete failed!", SecurityUtil.logSafe(filePath));
+        logger.info("File delete failed!");
     }
 
     /**
