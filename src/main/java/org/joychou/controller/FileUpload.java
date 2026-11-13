@@ -1,6 +1,5 @@
 package org.joychou.controller;
 
-import com.fasterxml.uuid.Generators;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Controller;
@@ -245,7 +244,7 @@ public class FileUpload {
             throw new IOException("Illegal file name");
         }
         String suffix = fileName.substring(fileName.lastIndexOf("."));
-        UUID uuid = Generators.timeBasedGenerator().generate();
+        UUID uuid = UUID.randomUUID();
         Path convPath = resolveUploadPath(uuid + suffix);
         if (convPath == null) {
             throw new IOException("Illegal file name");
