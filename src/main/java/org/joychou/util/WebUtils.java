@@ -2,6 +2,7 @@ package org.joychou.util;
 
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 import java.io.*;
 import java.util.regex.Pattern;
 
@@ -34,11 +35,25 @@ public class WebUtils {
         return callback != null && callback.length() <= 128 && JSONP_CALLBACK.matcher(callback).matches();
     }
 
+    /**
+     * Build a JSONP body. The callback is only used after a strict identifier-path match, the
+     * body is prefixed with "/**&#47;" (same as Spring's JSONP advice) to defeat Rosetta-Flash style
+     * abuse, and the JSON payload has line separators escaped so it stays valid JavaScript.
+     * Callers must also send {@link #setJsonpHeaders(HttpServletResponse)}.
+     */
     public static String json2Jsonp(String callback, String jsonStr) {
         if (!isValidJsonpCallback(callback)) {
             return "error";
         }
-        return callback + "(" + jsonStr + ")";
+        String safeJson = jsonStr == null ? "null"
+                : jsonStr.replace("\u2028", "\\u2028").replace("\u2029", "\\u2029");
+        return "/**/" + callback + "(" + safeJson + ");";
+    }
+
+    // Force the JSONP response to be treated as script only, never sniffed as HTML.
+    public static void setJsonpHeaders(HttpServletResponse response) {
+        response.setContentType("application/javascript;charset=UTF-8");
+        response.setHeader("X-Content-Type-Options", "nosniff");
     }
 
 
