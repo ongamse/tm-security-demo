@@ -75,7 +75,7 @@ public class FileUpload {
 
         } catch (IOException e) {
             redirectAttributes.addFlashAttribute("message", "upload failed");
-            logger.error(e.toString());
+            logger.error("File upload failed: {}", e.getClass().getSimpleName());
         }
 
         return "redirect:/file/status";
@@ -126,7 +126,7 @@ public class FileUpload {
         for (String blackMimeType : mimeTypeBlackList) {
             // 用contains是为了防止text/html;charset=UTF-8绕过
             if (SecurityUtil.replaceSpecialStr(mimeType).toLowerCase().contains(blackMimeType)) {
-                logger.error("[-] Mime type error: " + mimeType);
+                logger.error("[-] Mime type error");
                 deleteFile(excelFile);
                 return "Upload failed. Illeagl picture.";
             }
@@ -147,13 +147,12 @@ public class FileUpload {
             byte[] bytes = multifile.getBytes();
             Files.write(safePath, bytes);
         } catch (IOException e) {
-            logger.error(e.toString());
+            logger.error("[-] Saving picture failed: {}", e.getClass().getSimpleName());
             deleteFile(safePath.toFile());
             return "Upload failed";
         }
 
-        logger.info("[+] Safe file. Suffix: {}, MIME: {}", suffix, mimeType);
-        logger.info("[+] Successfully uploaded {}", filePath);
+        logger.info("[+] Safe file uploaded successfully");
         return HtmlUtils.htmlEscape(String.format("You successfully uploaded '%s'", filePath));
     }
 
