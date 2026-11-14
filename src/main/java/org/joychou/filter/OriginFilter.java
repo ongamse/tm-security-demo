@@ -45,8 +45,13 @@ public class OriginFilter implements Filter {
             return;
         }
 
-        response.setHeader("Access-Control-Allow-Origin", SecurityUtil.sanitizeHeaderValue(origin));
-        response.setHeader("Access-Control-Allow-Credentials", "true");
+        // origin is either absent (same-origin) or already validated against the safe domain allowlist
+        String allowedOrigin = SecurityUtil.checkURL(origin);
+        if (allowedOrigin != null) {
+            response.setHeader("Access-Control-Allow-Origin", SecurityUtil.sanitizeHeaderValue(allowedOrigin));
+            response.setHeader("Access-Control-Allow-Credentials", "true");
+        }
+        response.addHeader("Vary", "Origin");
         response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTION");
 
         filterChain.doFilter(req, res);
