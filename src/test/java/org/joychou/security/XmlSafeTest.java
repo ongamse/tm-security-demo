@@ -61,6 +61,55 @@ public class XmlSafeTest {
     }
 
     @Test
+    public void rebuildKeepsBenignXml() throws Exception {
+        String out = XmlSafe.rebuild("<root a=\"1\"><a>x &amp; y</a><b><![CDATA[<z>]]></b><!-- c --></root>");
+        assertTrue(out.contains("<a>x &amp; y</a>"));
+        assertTrue(out.contains("&lt;z>") || out.contains("&lt;z&gt;"));
+        assertTrue(!out.contains("<!--"));
+        XmlSafe.newDocumentBuilder(true).parse(src(out));
+        XmlSafe.newDigester().parse(new StringReader(out));
+    }
+
+    @Test(expected = IOException.class)
+    public void rebuildRejectsDoctypeAndEntity() throws IOException {
+        XmlSafe.rebuild(XXE);
+    }
+
+    @Test(expected = IOException.class)
+    public void rebuildRejectsMixedCaseDoctype() throws IOException {
+        XmlSafe.rebuild("<?xml version=\"1.0\"?><!DocType r><r/>");
+    }
+
+    @Test(expected = IOException.class)
+    public void rebuildRejectsNulPaddedDoctype() throws IOException {
+        XmlSafe.rebuild("<r/>\u0000<\u0000!\u0000E\u0000N\u0000T\u0000I\u0000T\u0000Y\u0000 x>");
+    }
+
+    @Test(expected = IOException.class)
+    public void rebuildRejectsStylesheet() throws IOException {
+        XmlSafe.rebuild("<?xml-stylesheet href=\"x.xsl\"?><r/>");
+    }
+
+    @Test(expected = IOException.class)
+    public void rebuildRejectsMalformed() throws IOException {
+        XmlSafe.rebuild("<r><a></r>");
+    }
+
+    @Test(expected = IOException.class)
+    public void rebuildRejectsEmpty() throws IOException {
+        XmlSafe.rebuild("");
+    }
+
+    @Test(expected = IOException.class)
+    public void rebuildRejectsOversize() throws IOException {
+        StringBuilder sb = new StringBuilder("<r>");
+        for (int i = 0; i <= XmlSafe.MAX_XML_CHARS; i++) {
+            sb.append('a');
+        }
+        XmlSafe.rebuild(sb.append("</r>").toString());
+    }
+
+    @Test
     public void sanitizeKeepsBenignXml() throws IOException {
         byte[] out = XmlSafe.sanitizeXml(OK.getBytes(StandardCharsets.UTF_8));
         assertTrue(new String(out, StandardCharsets.UTF_8).contains("<a>1</a>"));

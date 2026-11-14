@@ -50,7 +50,7 @@ public class XXE {
             String body = WebUtils.getRequestBody(request);
             logger.info(body);
             XMLReader xmlReader = XmlSafe.newXMLReader();
-            xmlReader.parse(new InputSource(new StringReader(body)));  // parse xml
+            xmlReader.parse(new InputSource(new StringReader(XmlSafe.rebuild(body))));  // parse xml
             return "xmlReader xxe vuln code";
         } catch (Exception e) {
             logger.error(e.toString());
@@ -66,7 +66,7 @@ public class XXE {
             logger.info(body);
 
             XMLReader xmlReader = XmlSafe.newXMLReader();
-            xmlReader.parse(new InputSource(new StringReader(body)));  // parse xml
+            xmlReader.parse(new InputSource(new StringReader(XmlSafe.rebuild(body))));  // parse xml
 
         } catch (Exception e) {
             logger.error(e.toString());
@@ -85,7 +85,7 @@ public class XXE {
 
             SAXBuilder builder = XmlSafe.newSAXBuilder();
             // org.jdom2.Document document
-            builder.build(new InputSource(new StringReader(body)));
+            builder.build(new InputSource(new StringReader(XmlSafe.rebuild(body))));
             return "SAXBuilder xxe vuln code";
         } catch (Exception e) {
             logger.error(e.toString());
@@ -101,7 +101,7 @@ public class XXE {
 
             SAXBuilder builder = XmlSafe.newSAXBuilder();
             // org.jdom2.Document document
-            builder.build(new InputSource(new StringReader(body)));
+            builder.build(new InputSource(new StringReader(XmlSafe.rebuild(body))));
 
         } catch (Exception e) {
             logger.error(e.toString());
@@ -119,7 +119,7 @@ public class XXE {
 
             SAXReader reader = XmlSafe.newSAXReader();
             // org.dom4j.Document document
-            reader.read(new InputSource(new StringReader(body)));
+            reader.read(new InputSource(new StringReader(XmlSafe.rebuild(body))));
 
         } catch (Exception e) {
             logger.error(e.toString());
@@ -137,7 +137,7 @@ public class XXE {
 
             SAXReader reader = XmlSafe.newSAXReader();
             // org.dom4j.Document document
-            reader.read(new InputSource(new StringReader(body)));
+            reader.read(new InputSource(new StringReader(XmlSafe.rebuild(body))));
         } catch (Exception e) {
             logger.error(e.toString());
             return EXCEPT;
@@ -153,7 +153,7 @@ public class XXE {
 
             SAXParserFactory spf = XmlSafe.newSAXParserFactory();
             SAXParser parser = spf.newSAXParser();
-            parser.parse(new InputSource(new StringReader(body)), new DefaultHandler());  // parse xml
+            parser.parse(new InputSource(new StringReader(XmlSafe.rebuild(body))), new DefaultHandler());  // parse xml
 
             return "SAXParser xxe vuln code";
         } catch (Exception e) {
@@ -171,7 +171,7 @@ public class XXE {
 
             SAXParserFactory spf = XmlSafe.newSAXParserFactory();
             SAXParser parser = spf.newSAXParser();
-            parser.parse(new InputSource(new StringReader(body)), new DefaultHandler());  // parse xml
+            parser.parse(new InputSource(new StringReader(XmlSafe.rebuild(body))), new DefaultHandler());  // parse xml
         } catch (Exception e) {
             logger.error(e.toString());
             return EXCEPT;
@@ -187,7 +187,7 @@ public class XXE {
             logger.info(body);
 
             Digester digester = XmlSafe.newDigester();
-            digester.parse(new StringReader(body));  // parse xml
+            digester.parse(new StringReader(XmlSafe.rebuild(body)));  // parse xml
         } catch (Exception e) {
             logger.error(e.toString());
             return EXCEPT;
@@ -202,7 +202,7 @@ public class XXE {
             logger.info(body);
 
             Digester digester = XmlSafe.newDigester();
-            digester.parse(new StringReader(body));  // parse xml
+            digester.parse(new StringReader(XmlSafe.rebuild(body)));  // parse xml
 
             return "Digester xxe security code";
         } catch (Exception e) {
@@ -248,7 +248,7 @@ public class XXE {
             logger.info(body);
 
             DocumentBuilder db = XmlSafe.newDocumentBuilder(false);
-            StringReader sr = new StringReader(body);
+            StringReader sr = new StringReader(XmlSafe.rebuild(body));
             InputSource is = new InputSource(sr);
             db.parse(is);  // parse xml
             sr.close();
@@ -267,7 +267,7 @@ public class XXE {
             logger.info(body);
 
             DocumentBuilder db = XmlSafe.newDocumentBuilder(true);  // XInclude disabled
-            StringReader sr = new StringReader(body);
+            StringReader sr = new StringReader(XmlSafe.rebuild(body));
             InputSource is = new InputSource(sr);
             Document document = db.parse(is);  // parse xml
 
@@ -289,7 +289,7 @@ public class XXE {
             String body = WebUtils.getRequestBody(request);
             logger.info(body);
             DocumentBuilder db = XmlSafe.newDocumentBuilder(true);  // XInclude disabled
-            StringReader sr = new StringReader(body);
+            StringReader sr = new StringReader(XmlSafe.rebuild(body));
             InputSource is = new InputSource(sr);
             Document document = db.parse(is);  // parse xml
 
@@ -312,7 +312,7 @@ public class XXE {
             logger.info(body);
 
             XMLReader xmlReader = XmlSafe.newXMLReader();
-            xmlReader.parse(new InputSource(new StringReader(body)));
+            xmlReader.parse(new InputSource(new StringReader(XmlSafe.rebuild(body))));
 
         } catch (Exception e) {
             logger.error(e.toString());
@@ -330,7 +330,7 @@ public class XXE {
             logger.info(body);
 
             XMLReader xmlReader = XmlSafe.newXMLReader();
-            xmlReader.parse(new InputSource(new StringReader(body)));
+            xmlReader.parse(new InputSource(new StringReader(XmlSafe.rebuild(body))));
 
         } catch (Exception e) {
             logger.error(e.toString());
@@ -348,7 +348,7 @@ public class XXE {
     public String DocumentHelper(HttpServletRequest req) {
         try {
             String body = WebUtils.getRequestBody(req);
-            XmlSafe.newSAXReader().read(new StringReader(body)); // parse xml
+            XmlSafe.newSAXReader().read(new StringReader(XmlSafe.rebuild(body))); // parse xml
         } catch (Exception e) {
             logger.error(e.toString());
             return EXCEPT;

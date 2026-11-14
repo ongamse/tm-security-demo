@@ -14,6 +14,11 @@ import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.parsers.SAXParserFactory;
 import javax.xml.stream.XMLInputFactory;
+import javax.xml.stream.XMLOutputFactory;
+import javax.xml.stream.XMLStreamConstants;
+import javax.xml.stream.XMLStreamException;
+import javax.xml.stream.XMLStreamReader;
+import javax.xml.stream.XMLStreamWriter;
 import javax.xml.transform.Transformer;
 import javax.xml.transform.TransformerFactory;
 import javax.xml.transform.dom.DOMSource;
@@ -22,8 +27,10 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.StringReader;
+import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
+import java.util.regex.Pattern;
 
 /**
  * Single place that builds every XML parser used for untrusted input.
@@ -176,6 +183,109 @@ public final class XmlSafe {
             return out.toByteArray();
         } catch (Exception e) {
             throw new IOException("Rejected unsafe or malformed XML", e);
+        }
+    }
+
+    /** Upper bound (in chars) for an untrusted XML request body handled by {@link #rebuild(String)}. */
+    public static final int MAX_XML_CHARS = 1024 * 1024;
+
+    /** Any markup declaration (DOCTYPE, ENTITY, ELEMENT, ATTLIST, NOTATION) except comments and CDATA. */
+    private static final Pattern MARKUP_DECLARATION = Pattern.compile("<!(?!--|\\[cdata\\[)");
+
+    /**
+     * Single entry point for untrusted XML text. The body is size-capped and scanned for DTD /
+     * entity declarations and stylesheet processing instructions (after stripping BOM and NULs so
+     * UTF-16 style payloads are covered), then read with the hardened StAX reader and re-serialized
+     * from its events into a fresh String. Only start/end elements, attributes and character data
+     * survive; comments, processing instructions and any DTD content are dropped. Callers must hand
+     * only the returned value to their parser.
+     *
+     * @throws IOException if the input is too large, carries a DTD / entity declaration or is not
+     *                     well-formed XML
+     */
+    public static String rebuild(String xml) throws IOException {
+        if (xml == null || xml.isEmpty()) {
+            throw new IOException("Empty XML body");
+        }
+        if (xml.length() > MAX_XML_CHARS) {
+            throw new IOException("XML body too large");
+        }
+        String probe = xml.replace("\u0000", "").replace("\uFEFF", "").toLowerCase(Locale.ROOT);
+        if (MARKUP_DECLARATION.matcher(probe).find() || probe.contains("<?xml-stylesheet")) {
+            throw new IOException("DOCTYPE / ENTITY declarations are not allowed");
+        }
+        XMLStreamReader reader = null;
+        XMLStreamWriter writer = null;
+        try {
+            XMLInputFactory xif = newXMLInputFactory();
+            xif.setProperty(XMLInputFactory.IS_NAMESPACE_AWARE, false);
+            xif.setProperty(XMLInputFactory.IS_COALESCING, true);
+            reader = xif.createXMLStreamReader(new StringReader(xml));
+            StringWriter out = new StringWriter(xml.length());
+            writer = XMLOutputFactory.newInstance().createXMLStreamWriter(out);
+            int depth = 0;
+            boolean rootSeen = false;
+            while (reader.hasNext()) {
+                int event = reader.next();
+                switch (event) {
+                    case XMLStreamConstants.START_ELEMENT:
+                        if (depth == 0 && rootSeen) {
+                            throw new IOException("Multiple root elements");
+                        }
+                        rootSeen = true;
+                        depth++;
+                        writer.writeStartElement(reader.getLocalName());
+                        for (int i = 0; i < reader.getAttributeCount(); i++) {
+                            writer.writeAttribute(reader.getAttributeName(i).getLocalPart(),
+                                    reader.getAttributeValue(i));
+                        }
+                        break;
+                    case XMLStreamConstants.END_ELEMENT:
+                        depth--;
+                        writer.writeEndElement();
+                        break;
+                    case XMLStreamConstants.CHARACTERS:
+                    case XMLStreamConstants.CDATA:
+                    case XMLStreamConstants.SPACE:
+                        if (depth > 0) {
+                            writer.writeCharacters(reader.getText());
+                        }
+                        break;
+                    default:
+                        // comments, processing instructions, DTD, entity references: dropped
+                        break;
+                }
+            }
+            if (!rootSeen) {
+                throw new IOException("No root element");
+            }
+            writer.flush();
+            return out.toString();
+        } catch (XMLStreamException | RuntimeException e) {
+            throw new IOException("Rejected unsafe or malformed XML", e);
+        } finally {
+            closeQuietly(reader);
+            closeQuietly(writer);
+        }
+    }
+
+    private static void closeQuietly(XMLStreamReader reader) {
+        if (reader != null) {
+            try {
+                reader.close();
+            } catch (XMLStreamException ignored) {
+                // nothing to do
+            }
+        }
+    }
+
+    private static void closeQuietly(XMLStreamWriter writer) {
+        if (writer != null) {
+            try {
+                writer.close();
+            } catch (XMLStreamException ignored) {
+                // nothing to do
+            }
         }
     }
 
