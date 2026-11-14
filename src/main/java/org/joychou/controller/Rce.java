@@ -1,6 +1,19 @@
 package org.joychou.controller;
 
 import groovy.lang.GroovyShell;
+import org.codehaus.groovy.ast.expr.BinaryExpression;
+import org.codehaus.groovy.ast.expr.ConstantExpression;
+import org.codehaus.groovy.ast.expr.Expression;
+import org.codehaus.groovy.ast.expr.UnaryMinusExpression;
+import org.codehaus.groovy.ast.expr.UnaryPlusExpression;
+import org.codehaus.groovy.ast.stmt.BlockStatement;
+import org.codehaus.groovy.ast.stmt.ExpressionStatement;
+import org.codehaus.groovy.ast.stmt.ReturnStatement;
+import org.codehaus.groovy.ast.stmt.Statement;
+import org.codehaus.groovy.control.CompilerConfiguration;
+import org.codehaus.groovy.control.customizers.SecureASTCustomizer;
+import org.codehaus.groovy.syntax.Types;
+import org.joychou.security.SecurityUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -16,6 +29,8 @@ import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.sql.DriverManager;
+import java.util.Arrays;
+import java.util.Collections;
 
 
 /**
@@ -30,11 +45,15 @@ public class Rce {
 
     @GetMapping("/runtime/exec")
     public String CommandExec(String cmd) {
-        Runtime run = Runtime.getRuntime();
         StringBuilder sb = new StringBuilder();
 
+        String[] argv = SecurityUtil.safeCommand(cmd);
+        if (argv == null) {
+            return "Command not allowed!!";
+        }
+
         try {
-            Process p = run.exec(cmd);
+            Process p = new ProcessBuilder(argv).start();
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
             String tmpStr;
@@ -65,8 +84,12 @@ public class Rce {
 
         StringBuilder sb = new StringBuilder();
 
+        String[] arrCmd = SecurityUtil.safeCommand(cmd);
+        if (arrCmd == null) {
+            return "Command not allowed!!";
+        }
+
         try {
-            String[] arrCmd = {"/bin/sh", "-c", cmd};
             ProcessBuilder processBuilder = new ProcessBuilder(arrCmd);
             Process p = processBuilder.start();
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
@@ -94,11 +117,16 @@ public class Rce {
      */
     @GetMapping("/jscmd")
     public void jsEngine(String jsurl) throws Exception{
+        // Only scripts hosted on allowlisted domains may be loaded (fail closed when the list is empty).
+        if (!SecurityUtil.checkSSRFByWhitehosts(jsurl)) {
+            throw new IllegalArgumentException("jsurl is not allowed");
+        }
         // js nashorn javascript ecmascript
         ScriptEngine engine = new ScriptEngineManager().getEngineByName("js");
         Bindings bindings = engine.getBindings(ScriptContext.ENGINE_SCOPE);
-        String cmd = String.format("load(\"%s\")", jsurl);
-        engine.eval(cmd, bindings);
+        // Pass the URL as a bound variable instead of concatenating it into script source.
+        bindings.put("jsurl", jsurl);
+        engine.eval("load(jsurl)", bindings);
     }
 
 
@@ -126,7 +154,27 @@ public class Rce {
      */
     @GetMapping("groovy")
     public void groovyshell(String content) {
-        GroovyShell groovyShell = new GroovyShell();
+        // Restrict scripts to literal/arithmetic expressions: no method calls, property access,
+        // closures, imports or type references.
+        SecureASTCustomizer customizer = new SecureASTCustomizer();
+        customizer.setMethodDefinitionAllowed(false);
+        customizer.setClosuresAllowed(false);
+        customizer.setPackageAllowed(false);
+        customizer.setIndirectImportCheckEnabled(true);
+        customizer.setImportsWhitelist(Collections.<String>emptyList());
+        customizer.setStarImportsWhitelist(Collections.<String>emptyList());
+        customizer.setStaticImportsWhitelist(Collections.<String>emptyList());
+        customizer.setStaticStarImportsWhitelist(Collections.<String>emptyList());
+        customizer.setStatementsWhitelist(Arrays.<Class<? extends Statement>>asList(
+                BlockStatement.class, ExpressionStatement.class, ReturnStatement.class));
+        customizer.setExpressionsWhitelist(Arrays.<Class<? extends Expression>>asList(
+                ConstantExpression.class, BinaryExpression.class, UnaryMinusExpression.class,
+                UnaryPlusExpression.class));
+        customizer.setTokensWhitelist(Arrays.asList(
+                Types.PLUS, Types.MINUS, Types.MULTIPLY, Types.DIVIDE, Types.MOD));
+        CompilerConfiguration config = new CompilerConfiguration();
+        config.addCompilationCustomizers(customizer);
+        GroovyShell groovyShell = new GroovyShell(config);
         groovyShell.evaluate(content);
     }
 
