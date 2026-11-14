@@ -25,7 +25,11 @@ public class CommandInject {
     @GetMapping("/codeinject")
     public String codeInject(String filepath) throws IOException {
 
-        String[] cmdList = new String[]{"ls", "-la", "--", filepath};
+        // The request value is only an allowlist key; the executed argv is a fixed template.
+        String[] cmdList = SecurityUtil.safeListCommand(filepath);
+        if (cmdList == null) {
+            return "Bad boy. I got u.";
+        }
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);
         Process process = builder.start();
@@ -42,7 +46,11 @@ public class CommandInject {
 
         String host = request.getHeader("host");
         logger.info(host);
-        String[] cmdList = new String[]{"curl", "--proto", "=http,https", "--", host};
+        // The Host header is only an allowlist key; the executed argv is a fixed template.
+        String[] cmdList = SecurityUtil.safeCurlCommand(host);
+        if (cmdList == null) {
+            return "Bad boy. I got u.";
+        }
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);
         Process process = builder.start();
@@ -51,11 +59,10 @@ public class CommandInject {
 
     @GetMapping("/codeinject/sec")
     public String codeInjectSec(String filepath) throws IOException {
-        String filterFilePath = SecurityUtil.cmdFilter(filepath);
-        if (null == filterFilePath) {
+        String[] cmdList = SecurityUtil.safeListCommand(filepath);
+        if (null == cmdList) {
             return "Bad boy. I got u.";
         }
-        String[] cmdList = new String[]{"ls", "-la", "--", filterFilePath};
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);
         Process process = builder.start();

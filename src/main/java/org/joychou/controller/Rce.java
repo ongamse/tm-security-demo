@@ -1,18 +1,7 @@
 package org.joychou.controller;
 
+import groovy.lang.Binding;
 import groovy.lang.GroovyShell;
-import org.codehaus.groovy.ast.expr.BinaryExpression;
-import org.codehaus.groovy.ast.expr.ConstantExpression;
-import org.codehaus.groovy.ast.expr.Expression;
-import org.codehaus.groovy.ast.expr.UnaryMinusExpression;
-import org.codehaus.groovy.ast.expr.UnaryPlusExpression;
-import org.codehaus.groovy.ast.stmt.BlockStatement;
-import org.codehaus.groovy.ast.stmt.ExpressionStatement;
-import org.codehaus.groovy.ast.stmt.ReturnStatement;
-import org.codehaus.groovy.ast.stmt.Statement;
-import org.codehaus.groovy.control.CompilerConfiguration;
-import org.codehaus.groovy.control.customizers.SecureASTCustomizer;
-import org.codehaus.groovy.syntax.Types;
 import org.joychou.security.SecurityUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -156,28 +145,12 @@ public class Rce {
      */
     @GetMapping("groovy")
     public void groovyshell(String content) {
-        // Restrict scripts to literal/arithmetic expressions: no method calls, property access,
-        // closures, imports or type references.
-        SecureASTCustomizer customizer = new SecureASTCustomizer();
-        customizer.setMethodDefinitionAllowed(false);
-        customizer.setClosuresAllowed(false);
-        customizer.setPackageAllowed(false);
-        customizer.setIndirectImportCheckEnabled(true);
-        customizer.setImportsWhitelist(Collections.<String>emptyList());
-        customizer.setStarImportsWhitelist(Collections.<String>emptyList());
-        customizer.setStaticImportsWhitelist(Collections.<String>emptyList());
-        customizer.setStaticStarImportsWhitelist(Collections.<String>emptyList());
-        customizer.setStatementsWhitelist(Arrays.<Class<? extends Statement>>asList(
-                BlockStatement.class, ExpressionStatement.class, ReturnStatement.class));
-        customizer.setExpressionsWhitelist(Arrays.<Class<? extends Expression>>asList(
-                ConstantExpression.class, BinaryExpression.class, UnaryMinusExpression.class,
-                UnaryPlusExpression.class));
-        customizer.setTokensWhitelist(Arrays.asList(
-                Types.PLUS, Types.MINUS, Types.MULTIPLY, Types.DIVIDE, Types.MOD));
-        CompilerConfiguration config = new CompilerConfiguration();
-        config.addCompilationCustomizers(customizer);
-        GroovyShell groovyShell = new GroovyShell(config);
-        groovyShell.evaluate(content);
+        // Request text is never evaluated as script source: a fixed script runs and the request
+        // value is only bound as data.
+        Binding binding = new Binding();
+        binding.setVariable("content", content == null ? "" : content);
+        GroovyShell groovyShell = new GroovyShell(binding);
+        groovyShell.evaluate("content.length()");
     }
 
 
