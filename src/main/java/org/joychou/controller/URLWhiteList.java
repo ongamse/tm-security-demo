@@ -105,14 +105,22 @@ public class URLWhiteList {
             return;
         }
 
-        URL u = new URL(url);
+        // Strict parse (rejects backslash/control chars/user-info) plus the shared safe-domain check.
+        String safeUrl = SecurityUtil.safeRedirectUrl(url);
+        if (safeUrl == null) {
+            res.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            return;
+        }
+
+        URL u = new URL(safeUrl);
         String host = u.getHost();
         logger.info("host:  " + host);
 
         // endsWith .
         for (String domain : domainwhitelist) {
             if (host.endsWith("." + domain)) {
-                res.sendRedirect(url);
+                res.sendRedirect(safeUrl);
+                return;
             }
         }
 

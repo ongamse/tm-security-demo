@@ -328,6 +328,72 @@ public class SecurityUtil {
         return sb.toString();
     }
 
+    /**
+     * Strict syntax check for an absolute http(s) url: no whitespace/control characters,
+     * no backslashes, parseable by {@link URI}, explicit host and no user-info.
+     *
+     * @param url untrusted url, may be null
+     * @return true if the url is a well-formed absolute http(s) url
+     */
+    public static boolean isSafeUrlSyntax(String url) {
+        if (url == null || containsUnsafeUrlChar(url)) {
+            return false;
+        }
+        try {
+            URI uri = new URI(url);
+            String scheme = uri.getScheme();
+            return scheme != null
+                    && (scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"))
+                    && uri.getHost() != null
+                    && !uri.getHost().isEmpty()
+                    && uri.getRawUserInfo() == null;
+        } catch (URISyntaxException e) {
+            return false;
+        }
+    }
+
+    /**
+     * Validate an untrusted redirect target. Allowed targets are either a same-site relative
+     * path (single leading slash; protocol-relative "//host" and backslash forms are rejected)
+     * or an absolute http(s) url whose host passes {@link #checkURL(String)}.
+     *
+     * @param url untrusted redirect target, may be null
+     * @return the original url when it is a safe redirect target; null otherwise
+     */
+    public static String safeRedirectUrl(String url) {
+        if (url == null || url.isEmpty() || containsUnsafeUrlChar(url)) {
+            return null;
+        }
+        if (url.startsWith("/")) {
+            if (url.startsWith("//")) {
+                return null;
+            }
+            try {
+                URI uri = new URI(url);
+                if (uri.getScheme() != null || uri.getRawAuthority() != null) {
+                    return null;
+                }
+                return url;
+            } catch (URISyntaxException e) {
+                return null;
+            }
+        }
+        if (isSafeUrlSyntax(url) && checkURL(url) != null) {
+            return url;
+        }
+        return null;
+    }
+
+    private static boolean containsUnsafeUrlChar(String url) {
+        for (int i = 0; i < url.length(); i++) {
+            char ch = url.charAt(i);
+            if (ch <= 0x20 || ch == 0x7f || ch == '\\' || Character.isISOControl(ch)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public static void main(String[] args) {
     }
 
