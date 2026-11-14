@@ -6,7 +6,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseBody;
-import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.bind.annotation.ResponseStatus;
 
 import javax.servlet.RequestDispatcher;
 import javax.servlet.http.HttpServletRequest;
@@ -34,9 +34,17 @@ public class URLRedirect {
     public String redirect(@RequestParam("url") String url) {
         String safeUrl = SecurityUtil.safeRedirectUrl(url);
         if (safeUrl == null) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "url forbidden");
+            throw new ForbiddenRedirectException();
         }
         return "redirect:" + safeUrl;
+    }
+
+    /**
+     * Rejected redirect target: mapped to HTTP 403 (Spring 4.3 compatible).
+     */
+    @ResponseStatus(value = HttpStatus.FORBIDDEN, reason = "url forbidden")
+    private static class ForbiddenRedirectException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
     }
 
 
