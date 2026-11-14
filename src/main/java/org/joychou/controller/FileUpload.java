@@ -1,6 +1,5 @@
 package org.joychou.controller;
 
-import com.fasterxml.uuid.Generators;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Controller;
@@ -18,6 +17,7 @@ import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.security.SecureRandom;
 import java.util.Locale;
 
 import org.joychou.security.SecurityUtil;
@@ -34,6 +34,9 @@ public class FileUpload {
 
     // Save the uploaded file to this folder
     private static final String UPLOADED_FOLDER = "/tmp/";
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+    private static final int NAME_RANDOM_BYTES = 16;
+    private static final char[] HEX_DIGITS = "0123456789abcdef".toCharArray();
     private final Logger logger = LoggerFactory.getLogger(this.getClass());
     private static final String[] PIC_SUFFIX_LIST = {".jpg", ".png", ".jpeg", ".gif", ".bmp", ".ico"};
     private static final String[] ANY_SUFFIX_LIST = {".jpg", ".png", ".jpeg", ".gif", ".bmp", ".ico",
@@ -177,10 +180,17 @@ public class FileUpload {
     }
 
     /**
-     * Server-generated file name: random UUID plus an allowlisted suffix.
+     * Server-generated file name: 16 random bytes from SecureRandom (hex encoded) plus an
+     * allowlisted suffix.
      */
     private static String generateStoredName(String allowedSuffix) {
-        return Generators.timeBasedGenerator().generate() + allowedSuffix;
+        byte[] random = new byte[NAME_RANDOM_BYTES];
+        SECURE_RANDOM.nextBytes(random);
+        StringBuilder sb = new StringBuilder(NAME_RANDOM_BYTES * 2 + allowedSuffix.length());
+        for (byte b : random) {
+            sb.append(HEX_DIGITS[(b >> 4) & 0x0f]).append(HEX_DIGITS[b & 0x0f]);
+        }
+        return sb.append(allowedSuffix).toString();
     }
 
     /**
@@ -208,13 +218,11 @@ public class FileUpload {
         if (delFile == null) {
             return;
         }
-        if (delFile.isFile() && delFile.exists()) {
-            if (delFile.delete()) {
-                logger.info("[+] " + delFile.getName() + " delete successfully!");
-                return;
-            }
+        try {
+            Files.deleteIfExists(delFile.toPath());
+        } catch (IOException e) {
+            logger.info("Temporary file delete failed");
         }
-        logger.info(delFile.getName() + " delete failed!");
     }
 
     /**
