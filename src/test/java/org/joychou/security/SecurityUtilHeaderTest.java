@@ -83,11 +83,29 @@ public class SecurityUtilHeaderTest {
     }
 
     @Test
-    public void safeRedirectLocationIsConstant() {
-        assertEquals("/", SecurityUtil.safeRedirectLocation("/index?a=1"));
-        assertEquals("https://www.joychou.org/", SecurityUtil.safeRedirectLocation("https://www.joychou.org/a/b?x=1"));
-        assertNull(SecurityUtil.safeRedirectLocation("https://evil.com/"));
-        assertNull(SecurityUtil.safeRedirectLocation("//evil.com"));
-        assertNull(SecurityUtil.safeRedirectLocation(null));
+    public void matchRedirectTargetIsExactConstantLookup() throws Exception {
+        Field f = WebConfig.class.getDeclaredField("redirectAllowedUrls");
+        f.setAccessible(true);
+        Object old = f.get(null);
+        f.set(null, new String[]{"/", " https://www.joychou.org/ ", "/index"});
+        try {
+            assertEquals("/", SecurityUtil.matchRedirectTarget("/"));
+            assertEquals("/index", SecurityUtil.matchRedirectTarget("/index"));
+            assertEquals("https://www.joychou.org/", SecurityUtil.matchRedirectTarget("https://www.joychou.org/"));
+            assertNull(SecurityUtil.matchRedirectTarget("/index?a=1"));
+            assertNull(SecurityUtil.matchRedirectTarget("https://www.joychou.org/a/b"));
+            assertNull(SecurityUtil.matchRedirectTarget("https://evil.com/"));
+            assertNull(SecurityUtil.matchRedirectTarget("//evil.com"));
+            assertNull(SecurityUtil.matchRedirectTarget("/\\evil.com"));
+            assertNull(SecurityUtil.matchRedirectTarget("/\r\nX-Injected: 1"));
+            assertNull(SecurityUtil.matchRedirectTarget(null));
+        } finally {
+            f.set(null, old);
+        }
+    }
+
+    @Test
+    public void matchRedirectTargetRejectsEverythingWhenUnconfigured() {
+        assertNull(SecurityUtil.matchRedirectTarget("/"));
     }
 }

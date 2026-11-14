@@ -104,8 +104,8 @@ public class URLWhiteList {
             return;
         }
 
-        // Strict parse (rejects backslash/control chars/user-info) plus the shared safe-domain check.
-        String safeUrl = SecurityUtil.safeRedirectUrl(url);
+        // Exact-match lookup in the configured redirect destinations: the request value is only a key.
+        String safeUrl = SecurityUtil.matchRedirectTarget(url);
         if (safeUrl == null) {
             res.setStatus(HttpServletResponse.SC_FORBIDDEN);
             return;

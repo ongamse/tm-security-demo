@@ -32,7 +32,8 @@ public class URLRedirect {
      */
     @GetMapping("/redirect")
     public String redirect(@RequestParam("url") String url) {
-        String safeUrl = SecurityUtil.safeRedirectUrl(url);
+        // Exact-match lookup: the redirect target is the configured constant, never the request value.
+        String safeUrl = SecurityUtil.matchRedirectTarget(url);
         if (safeUrl == null) {
             throw new ForbiddenRedirectException();
         }
@@ -55,8 +56,8 @@ public class URLRedirect {
     @ResponseBody
     public static void setHeader(HttpServletRequest request, HttpServletResponse response) {
         String url = request.getParameter("url");
-        // constant Location: "/" or an allowlisted origin constant followed by "/"
-        String location = SecurityUtil.safeRedirectLocation(url);
+        // Location is the configured constant matched by exact lookup, never the request value
+        String location = SecurityUtil.matchRedirectTarget(url);
         if (location == null) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             return;
@@ -73,7 +74,7 @@ public class URLRedirect {
     @ResponseBody
     public static void sendRedirect(HttpServletRequest request, HttpServletResponse response) throws IOException {
         String url = request.getParameter("url");
-        String safeUrl = SecurityUtil.safeRedirectUrl(url);
+        String safeUrl = SecurityUtil.matchRedirectTarget(url);
         if (safeUrl == null) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             response.getWriter().write("url forbidden");
@@ -109,7 +110,7 @@ public class URLRedirect {
     public void sendRedirect_seccode(HttpServletRequest request, HttpServletResponse response)
             throws IOException {
         String url = request.getParameter("url");
-        String safeUrl = SecurityUtil.safeRedirectUrl(url);
+        String safeUrl = SecurityUtil.matchRedirectTarget(url);
         if (safeUrl == null) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             response.getWriter().write("url forbidden");

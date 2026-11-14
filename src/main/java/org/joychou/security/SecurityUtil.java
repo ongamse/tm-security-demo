@@ -554,29 +554,26 @@ public class SecurityUtil {
     }
 
     /**
-     * Build a Location header value for a redirect from an untrusted target. The returned value
-     * is a constant: "/" for a same-site relative target, or an allowlisted origin constant
-     * (see {@link #matchAllowedOrigin(String)}) followed by "/" for an absolute url.
+     * Resolve an untrusted redirect target by exact-match lookup in the fixed list of redirect
+     * destinations read from configuration (joychou.security.redirect.allowed.urls). The request
+     * value is only used as a lookup key: the returned value is always the configured constant
+     * itself, never a request-derived string. Safe for redirect views, sendRedirect and the
+     * Location header.
      *
      * @param url untrusted redirect target, may be null
-     * @return the constant Location value, or null if the target is not allowed
+     * @return the configured destination constant equal to the request value, or null
      */
-    public static String safeRedirectLocation(String url) {
-        String safeUrl = safeRedirectUrl(url);
-        if (safeUrl == null) {
+    public static String matchRedirectTarget(String url) {
+        if (url == null) {
             return null;
         }
-        if (safeUrl.startsWith("/")) {
-            return "/";
+        for (String configured : WebConfig.getRedirectAllowedUrls()) {
+            String constant = configured == null ? "" : configured.trim();
+            if (!constant.isEmpty() && constant.equals(url)) {
+                return constant;
+            }
         }
-        ParsedUrl parsed = parseHttpUrl(safeUrl);
-        if (parsed == null) {
-            return null;
-        }
-        String origin = parsed.getScheme() + "://" + parsed.getHost()
-                + (parsed.getPort() >= 0 ? ":" + parsed.getPort() : "");
-        String allowed = matchAllowedOrigin(origin);
-        return allowed == null ? null : allowed + "/";
+        return null;
     }
 
     /**

@@ -22,6 +22,7 @@ public class WebConfig {
     private static Boolean referSecEnabled = false;
     private static String businessCallback;
     private static String[] corsAllowedOrigins = new String[0];
+    private static String[] redirectAllowedUrls = new String[0];
     private static ArrayList<String> safeDomains = new ArrayList<>();
     private static ArrayList<String> blockDomains = new ArrayList<>();
     private static ArrayList<String> ssrfSafeDomains = new ArrayList<>();
@@ -106,6 +107,22 @@ public class WebConfig {
 
     public static String[] getCorsAllowedOrigins() {
         return corsAllowedOrigins;
+    }
+
+
+    /**
+     * Fixed list of constant redirect destinations (absolute http(s) urls or same-site relative
+     * paths). A redirect request value is only ever compared against these constants.
+     *
+     * @param redirectAllowedUrls configured destination constants
+     */
+    @Value("${joychou.security.redirect.allowed.urls:}")
+    public void setRedirectAllowedUrls(String[] redirectAllowedUrls) {
+        WebConfig.redirectAllowedUrls = redirectAllowedUrls == null ? new String[0] : redirectAllowedUrls;
+    }
+
+    public static String[] getRedirectAllowedUrls() {
+        return redirectAllowedUrls;
     }
 
 
