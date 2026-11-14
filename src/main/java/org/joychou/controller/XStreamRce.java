@@ -2,6 +2,9 @@ package org.joychou.controller;
 
 import com.thoughtworks.xstream.XStream;
 import com.thoughtworks.xstream.io.xml.DomDriver;
+import com.thoughtworks.xstream.security.NoTypePermission;
+import com.thoughtworks.xstream.security.NullPermission;
+import com.thoughtworks.xstream.security.PrimitiveTypePermission;
 import com.thoughtworks.xstream.io.xml.DomReader;
 import org.joychou.dao.User;
 import org.joychou.util.WebUtils;
@@ -29,6 +32,11 @@ public class XStreamRce {
     public String parseXml(HttpServletRequest request) throws Exception {
         String xml = WebUtils.getRequestBody(request);
         XStream xstream = new XStream(new DomDriver());
+        // Deny all types by default, then allow only the expected payload types.
+        xstream.addPermission(NoTypePermission.NONE);
+        xstream.addPermission(NullPermission.NULL);
+        xstream.addPermission(PrimitiveTypePermission.PRIMITIVES);
+        xstream.allowTypes(new Class[]{User.class, String.class, Integer.class});
         // Parse with a DOCTYPE-rejecting DOM parser, so XStream never parses attacker XML itself.
         xstream.unmarshal(new DomReader(parseSecurely(xml)));
         return "xstream";
