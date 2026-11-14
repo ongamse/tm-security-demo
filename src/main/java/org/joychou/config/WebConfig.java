@@ -23,6 +23,7 @@ public class WebConfig {
     private static String businessCallback;
     private static String[] corsAllowedOrigins = new String[0];
     private static String[] redirectAllowedUrls = new String[0];
+    private static String[] jdbcAllowedUrls = new String[0];
     private static ArrayList<String> safeDomains = new ArrayList<>();
     private static ArrayList<String> blockDomains = new ArrayList<>();
     private static ArrayList<String> ssrfSafeDomains = new ArrayList<>();
@@ -123,6 +124,22 @@ public class WebConfig {
 
     public static String[] getRedirectAllowedUrls() {
         return redirectAllowedUrls;
+    }
+
+
+    /**
+     * Fixed list of constant JDBC endpoints (jdbc:&lt;subprotocol&gt;://host[:port]/database) that
+     * the jdbc endpoints may connect to. A request value is only ever compared against these constants.
+     *
+     * @param jdbcAllowedUrls configured endpoint constants
+     */
+    @Value("${joychou.security.jdbc.allowed.urls:}")
+    public void setJdbcAllowedUrls(String[] jdbcAllowedUrls) {
+        WebConfig.jdbcAllowedUrls = jdbcAllowedUrls == null ? new String[0] : jdbcAllowedUrls;
+    }
+
+    public static String[] getJdbcAllowedUrls() {
+        return jdbcAllowedUrls;
     }
 
 

@@ -55,4 +55,15 @@ public class SecurityUtilUrlTest {
         assertNull(SecurityUtil.safeJdbcUrl("jdbc:postgresql://example.com/db?socketFactory=x", "postgresql"));
         assertNull(SecurityUtil.safeJdbcUrl("jdbc:db2://example.com/db", "postgresql"));
     }
+
+    @Test
+    public void matchJdbcUrlOnlyReturnsConfiguredConstants() {
+        assertNull(SecurityUtil.matchJdbcUrl(null, "postgresql"));
+        assertNull(SecurityUtil.matchJdbcUrl("jdbc:postgresql://127.0.0.1/db", "postgresql"));
+        assertNull(SecurityUtil.matchJdbcUrl("jdbc:postgresql://example.com/db?socketFactory=x", "postgresql"));
+        assertNull(SecurityUtil.matchJdbcUrl("jdbc:db2://example.com/db", "postgresql"));
+        // Nothing configured in a plain unit test: no request value is ever echoed back.
+        new org.joychou.config.WebConfig().setJdbcAllowedUrls(new String[0]);
+        assertNull(SecurityUtil.matchJdbcUrl("jdbc:postgresql://example.com/db", "postgresql"));
+    }
 }

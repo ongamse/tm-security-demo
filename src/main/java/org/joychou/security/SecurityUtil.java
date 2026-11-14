@@ -188,7 +188,7 @@ public class SecurityUtil {
             }
             return null;
         } catch (NullPointerException e) {
-            logger.error(e.toString());
+            logger.error("checkURL exception: {}", e.getClass().getSimpleName());
             return null;
         }
     }
@@ -323,10 +323,10 @@ public class SecurityUtil {
             try {
                 temp = URLDecoder.decode(temp, "utf-8");
             } catch (UnsupportedEncodingException e) {
-                logger.info("Unsupported encoding exception: " + filepath);
+                logger.info("Unsupported encoding exception.");
                 return null;
             } catch (Exception e) {
-                logger.info(e.toString());
+                logger.info("pathFilter decode exception: {}", e.getClass().getSimpleName());
                 return null;
             }
         }
@@ -570,6 +570,30 @@ public class SecurityUtil {
         for (String configured : WebConfig.getRedirectAllowedUrls()) {
             String constant = configured == null ? "" : configured.trim();
             if (!constant.isEmpty() && constant.equals(url)) {
+                return constant;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Resolve an untrusted JDBC url by exact-match lookup in the fixed list of JDBC endpoints read
+     * from configuration (joychou.security.jdbc.allowed.urls). The request value is first validated
+     * with {@link #safeJdbcUrl(String, String)} and then only used as a lookup key: the returned
+     * value is always the configured constant itself, never a request-derived string.
+     *
+     * @param jdbcUrl     untrusted jdbc url, may be null
+     * @param subprotocol expected subprotocol, e.g. "postgresql" or "db2"
+     * @return the configured endpoint constant equal to the request value, or null
+     */
+    public static String matchJdbcUrl(String jdbcUrl, String subprotocol) {
+        if (jdbcUrl == null || subprotocol == null || safeJdbcUrl(jdbcUrl, subprotocol) == null) {
+            return null;
+        }
+        String prefix = "jdbc:" + subprotocol + "://";
+        for (String configured : WebConfig.getJdbcAllowedUrls()) {
+            String constant = configured == null ? "" : configured.trim();
+            if (constant.startsWith(prefix) && constant.equals(jdbcUrl)) {
                 return constant;
             }
         }

@@ -23,11 +23,12 @@ public class Jdbc {
         byte[] b = java.util.Base64.getDecoder().decode(jdbcUrlBase64);
         String jdbcUrl = new String(b);
         log.info("postgresql jdbc url received, length: {}", jdbcUrl.length());
-        String safeUrl = SecurityUtil.safeJdbcUrl(jdbcUrl, "postgresql");
-        if (safeUrl == null) {
+        // The request value is only a lookup key; the connection uses the configured constant.
+        String allowedUrl = SecurityUtil.matchJdbcUrl(jdbcUrl, "postgresql");
+        if (allowedUrl == null) {
             throw new IllegalArgumentException("Illegal jdbc url");
         }
-        DriverManager.getConnection(safeUrl);
+        DriverManager.getConnection(allowedUrl);
     }
 
     @RequestMapping("/db2")
@@ -36,10 +37,11 @@ public class Jdbc {
         byte[] b = java.util.Base64.getDecoder().decode(jdbcUrlBase64);
         String jdbcUrl = new String(b);
         log.info("db2 jdbc url received, length: {}", jdbcUrl.length());
-        String safeUrl = SecurityUtil.safeJdbcUrl(jdbcUrl, "db2");
-        if (safeUrl == null) {
+        // The request value is only a lookup key; the connection uses the configured constant.
+        String allowedUrl = SecurityUtil.matchJdbcUrl(jdbcUrl, "db2");
+        if (allowedUrl == null) {
             throw new IllegalArgumentException("Illegal jdbc url");
         }
-        DriverManager.getConnection(safeUrl);
+        DriverManager.getConnection(allowedUrl);
     }
 }
