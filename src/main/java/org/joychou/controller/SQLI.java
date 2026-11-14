@@ -9,8 +9,14 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
+
 import javax.annotation.Resource;
 import java.sql.*;
+import java.util.ArrayList;
 import java.util.List;
 
 
@@ -41,6 +47,36 @@ public class SQLI {
 
     @Resource
     private UserMapper userMapper;
+
+
+    /**
+     * Object-level authorization: a caller may only reference their own user record,
+     * unless they hold ROLE_ADMIN. Fails closed with {@link AccessDeniedException}
+     * (translated to 403 by Spring Security's exception handling).
+     */
+    private static boolean isAdmin(Authentication auth) {
+        for (GrantedAuthority authority : auth.getAuthorities()) {
+            if ("ROLE_ADMIN".equals(authority.getAuthority())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static Authentication currentAuthentication() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated()) {
+            throw new AccessDeniedException("Access denied");
+        }
+        return auth;
+    }
+
+    private static void requireSelfOrAdmin(String username) {
+        Authentication auth = currentAuthentication();
+        if (!isAdmin(auth) && !auth.getName().equals(username)) {
+            throw new AccessDeniedException("Access denied");
+        }
+    }
 
 
     /**
@@ -95,6 +131,7 @@ public class SQLI {
     @RequestMapping("/jdbc/sec")
     public String jdbc_sqli_sec(@RequestParam("username") String username) {
 
+        requireSelfOrAdmin(username);
         StringBuilder result = new StringBuilder();
         try {
             Class.forName(driver);
@@ -182,6 +219,7 @@ public class SQLI {
      */
     @GetMapping("/mybatis/vuln01")
     public List<User> mybatisVuln01(@RequestParam("username") String username) {
+        requireSelfOrAdmin(username);
         return userMapper.findByUserNameVuln01(username);
     }
 
@@ -192,7 +230,20 @@ public class SQLI {
      */
     @GetMapping("/mybatis/vuln02")
     public List<User> mybatisVuln02(@RequestParam("username") String username) {
-        return userMapper.findByUserNameVuln02(username);
+        requireSelfOrAdmin(username);
+        List<User> users = userMapper.findByUserNameVuln02(username);
+        Authentication auth = currentAuthentication();
+        if (isAdmin(auth) || users == null) {
+            return users;
+        }
+        // LIKE match may return other users' rows; keep only the caller's own record.
+        List<User> own = new ArrayList<>();
+        for (User u : users) {
+            if (auth.getName().equals(u.getUsername())) {
+                own.add(u);
+            }
+        }
+        return own;
     }
 
     /**
@@ -212,6 +263,7 @@ public class SQLI {
      */
     @GetMapping("/mybatis/sec01")
     public User mybatisSec01(@RequestParam("username") String username) {
+        requireSelfOrAdmin(username);
         return userMapper.findByUserName(username);
     }
 
@@ -221,7 +273,11 @@ public class SQLI {
      */
     @GetMapping("/mybatis/sec02")
     public User mybatisSec02(@RequestParam("id") Integer id) {
-        return userMapper.findById(id);
+        User found = userMapper.findById(id);
+        if (found != null) {
+            requireSelfOrAdmin(found.getUsername());
+        }
+        return found;
     }
 
 
