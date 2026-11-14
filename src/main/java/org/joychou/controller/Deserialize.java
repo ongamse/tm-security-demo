@@ -1,7 +1,9 @@
 package org.joychou.controller;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.joychou.config.Constants;
-import org.joychou.security.AntObjectInputStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -9,15 +11,15 @@ import org.springframework.web.bind.annotation.RestController;
 
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.io.InvalidClassException;
+import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 
 import static org.springframework.web.util.WebUtils.getCookie;
 
 /**
- * Deserialize RCE using Commons-Collections gadget.
+ * The rememberMe cookie carries Base64(JSON), parsed into a fixed data-only DTO.
+ * Java object deserialization of request data is never performed.
  *
  * @author JoyChou @2018-06-14
  */
@@ -27,57 +29,81 @@ public class Deserialize {
 
     protected final Logger logger = LoggerFactory.getLogger(this.getClass());
 
+    /** Maximum accepted size of the decoded cookie payload. */
+    private static final int MAX_PAYLOAD_BYTES = 4096;
+
+    /** No default typing is enabled, so only the fixed DTO type can ever be instantiated. */
+    private static final ObjectMapper MAPPER = new ObjectMapper()
+            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, true);
+
     /**
-     * java -jar ysoserial.jar CommonsCollections5 "open -a Calculator" | base64 <br>
+     * Data-only remember-me payload.
+     */
+    @JsonIgnoreProperties(ignoreUnknown = false)
+    public static class RememberMeData {
+        private String name;
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(String name) {
+            this.name = name;
+        }
+    }
+
+    /**
+     * Decode Base64 JSON into the fixed DTO. Throws IllegalArgumentException (bad Base64)
+     * or IOException (bad JSON / unknown fields) on malformed input.
+     */
+    static RememberMeData parseRememberMe(String cookieValue) throws IOException {
+        byte[] decoded = Base64.getDecoder().decode(cookieValue);
+        if (decoded.length > MAX_PAYLOAD_BYTES) {
+            throw new IllegalArgumentException("rememberMe payload too large");
+        }
+        return MAPPER.readValue(new String(decoded, StandardCharsets.UTF_8), RememberMeData.class);
+    }
+
+    /**
+     * Example cookie: rememberMe=base64({"name":"joychou"}) <br>
      * <a href="http://localhost:8080/deserialize/rememberMe/vuln">http://localhost:8080/deserialize/rememberMe/vuln</a>
      */
     @RequestMapping("/rememberMe/vuln")
-    public String rememberMeVul(HttpServletRequest request)
-            throws IOException, ClassNotFoundException {
+    public String rememberMeVul(HttpServletRequest request) {
 
         Cookie cookie = getCookie(request, Constants.REMEMBER_ME_COOKIE);
         if (null == cookie) {
             return "No rememberMe cookie. Right?";
         }
 
-        String rememberMe = cookie.getValue();
-        byte[] decoded = Base64.getDecoder().decode(rememberMe);
-
-        ByteArrayInputStream bytes = new ByteArrayInputStream(decoded);
-        // Class allowlist via resolveClass; unauthorized classes raise InvalidClassException.
-        AntObjectInputStream in = new AntObjectInputStream(bytes);
-        in.readObject();
-        in.close();
+        try {
+            parseRememberMe(cookie.getValue());
+        } catch (IOException | IllegalArgumentException e) {
+            logger.info("Invalid rememberMe cookie: " + e.getClass().getSimpleName());
+            return "Invalid rememberMe cookie.";
+        }
 
         return "Are u ok?";
     }
 
     /**
-     * Check deserialize class using black list. <br>
-     * Or update commons-collections to 3.2.2 or above.Serialization support for org.apache.commons.collections.functors.InvokerTransformer is disabled for security reasons.To enable it set system property 'org.apache.commons.collections.enableUnsafeSerialization' to 'true',but you must ensure that your application does not de-serialize objects from untrusted sources.<br>
+     * Same data-only parsing; malformed input is rejected with a generic message. <br>
      * <a href="http://localhost:8080/deserialize/rememberMe/security">http://localhost:8080/deserialize/rememberMe/security</a>
      */
     @RequestMapping("/rememberMe/security")
-    public String rememberMeBlackClassCheck(HttpServletRequest request)
-            throws IOException, ClassNotFoundException {
+    public String rememberMeBlackClassCheck(HttpServletRequest request) {
 
         Cookie cookie = getCookie(request, Constants.REMEMBER_ME_COOKIE);
 
         if (null == cookie) {
             return "No rememberMe cookie. Right?";
         }
-        String rememberMe = cookie.getValue();
-        byte[] decoded = Base64.getDecoder().decode(rememberMe);
-
-        ByteArrayInputStream bytes = new ByteArrayInputStream(decoded);
 
         try {
-            AntObjectInputStream in = new AntObjectInputStream(bytes);  // throw InvalidClassException
-            in.readObject();
-            in.close();
-        } catch (InvalidClassException e) {
-            logger.info(e.toString());
-            return e.toString();
+            parseRememberMe(cookie.getValue());
+        } catch (IOException | IllegalArgumentException e) {
+            logger.info("Invalid rememberMe cookie: " + e.getClass().getSimpleName());
+            return "Invalid rememberMe cookie.";
         }
 
         return "I'm very OK.";
