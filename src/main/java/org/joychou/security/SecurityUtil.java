@@ -21,8 +21,6 @@ import java.util.regex.Pattern;
 public class SecurityUtil {
 
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
-    private static final Set<String> ALLOWED_COMMANDS = new HashSet<>(
-            Arrays.asList("whoami", "id", "date", "hostname", "uname", "pwd", "uptime"));
     private static final Pattern JDBC_URL_PATTERN = Pattern.compile(
             "^jdbc:([a-z0-9]+)://([A-Za-z0-9.-]+)(?::([0-9]{1,5}))?/([A-Za-z0-9_.-]+)$");
 
@@ -349,27 +347,87 @@ public class SecurityUtil {
 
 
     /**
-     * Parse a user supplied command line into an argv array for a no-shell spawn
-     * (ProcessBuilder / Runtime.exec(String[])). The executable must be in a fixed
-     * allowlist and every argument must match {@link #FILTER_PATTERN}.
+     * Map a user supplied command token to a fixed argv template for a no-shell spawn
+     * (ProcessBuilder / Runtime.exec(String[])). The request value is only used as a
+     * lookup key; the returned argv consists solely of compile-time constants.
      *
-     * @param cmd user supplied command line, e.g. "whoami" or "uname -a"
-     * @return argv array, or null if the command is not allowed
+     * @param cmd user supplied command key, e.g. "whoami" or "uname -a"
+     * @return fixed argv array, or null if the command is not allowed
      */
     public static String[] safeCommand(String cmd) {
-        if (cmd == null || cmd.trim().isEmpty()) {
+        if (cmd == null) {
             return null;
         }
-        String[] argv = cmd.trim().split("\\s+");
-        if (!ALLOWED_COMMANDS.contains(argv[0])) {
-            return null;
-        }
-        for (int i = 1; i < argv.length; i++) {
-            if (!FILTER_PATTERN.matcher(argv[i]).matches()) {
+        switch (cmd.trim().replaceAll("\\s+", " ")) {
+            case "whoami":
+                return new String[]{"whoami"};
+            case "id":
+                return new String[]{"id"};
+            case "date":
+                return new String[]{"date"};
+            case "hostname":
+                return new String[]{"hostname"};
+            case "uname":
+                return new String[]{"uname"};
+            case "uname -a":
+                return new String[]{"uname", "-a"};
+            case "pwd":
+                return new String[]{"pwd"};
+            case "uptime":
+                return new String[]{"uptime"};
+            default:
                 return null;
-            }
         }
-        return argv;
+    }
+
+
+    /**
+     * Map a user supplied directory key to a fixed "ls" argv. Only allowlisted
+     * directories are accepted; the request value is never part of the argv.
+     *
+     * @param path requested directory
+     * @return fixed argv array, or null if the directory is not allowed
+     */
+    public static String[] safeListCommand(String path) {
+        if (path == null) {
+            return null;
+        }
+        switch (path) {
+            case "/tmp":
+                return new String[]{"ls", "-la", "--", "/tmp"};
+            case "/var/tmp":
+                return new String[]{"ls", "-la", "--", "/var/tmp"};
+            case "/usr/share":
+                return new String[]{"ls", "-la", "--", "/usr/share"};
+            default:
+                return null;
+        }
+    }
+
+
+    /**
+     * Map a user supplied host (e.g. the Host header) to a fixed "curl" argv. Only
+     * allowlisted local hosts are accepted; the request value is never part of the argv.
+     *
+     * @param host requested host
+     * @return fixed argv array, or null if the host is not allowed
+     */
+    public static String[] safeCurlCommand(String host) {
+        if (host == null) {
+            return null;
+        }
+        switch (host.trim().toLowerCase(Locale.ROOT)) {
+            case "localhost":
+                return new String[]{"curl", "--proto", "=http,https", "--", "http://localhost/"};
+            case "localhost:8080":
+                return new String[]{"curl", "--proto", "=http,https", "--", "http://localhost:8080/"};
+            case "127.0.0.1":
+                return new String[]{"curl", "--proto", "=http,https", "--", "http://127.0.0.1/"};
+            case "127.0.0.1:8080":
+                return new String[]{"curl", "--proto", "=http,https", "--", "http://127.0.0.1:8080/"};
+            default:
+                return null;
+        }
     }
 
 
