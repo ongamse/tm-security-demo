@@ -5,6 +5,7 @@ import org.apache.velocity.VelocityContext;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.util.HtmlUtils;
 
 import org.apache.velocity.app.Velocity;
 
@@ -14,14 +15,14 @@ import java.io.StringWriter;
 @RequestMapping("/ssti")
 public class SSTI {
 
+    /** Fixed template source; request data must never be concatenated into it. */
+    private static final String FIXED_TEMPLATE = "$author, $address, $phone: $input";
+
     /**
-     * SSTI of Java velocity. The latest Velocity version still has this problem.
-     * Fix method: Avoid to use Velocity.evaluate method.
-     * <p>
-     * http://localhost:8080/ssti/velocity?template=%23set($e=%22e%22);$e.getClass().forName(%22java.lang.Runtime%22).getMethod(%22getRuntime%22,null).invoke(null,null).exec(%22open%20-a%20Calculator%22)
-     * Open a calculator in MacOS.
+     * Velocity rendering with a fixed template. The request parameter is bound
+     * as an HTML-escaped context variable and is never evaluated as template source.
      *
-     * @param template exp
+     * @param template user-supplied text (treated as data only)
      */
     @GetMapping("/velocity")
     public void velocity(String template) {
@@ -32,8 +33,10 @@ public class SSTI {
         context.put("author", "Elliot A.");
         context.put("address", "217 E Broadway");
         context.put("phone", "555-1337");
+        // Request data is only ever bound as an escaped context variable; it is never template source.
+        context.put("input", template == null ? "" : HtmlUtils.htmlEscape(template));
 
         StringWriter swOut = new StringWriter();
-        Velocity.evaluate(context, swOut, "test", template);
+        Velocity.evaluate(context, swOut, "test", FIXED_TEMPLATE);
     }
 }
