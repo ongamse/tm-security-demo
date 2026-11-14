@@ -92,21 +92,24 @@ public class HttpUtils {
 
 
     /**
-     * Allow only http/https urls whose host does not resolve to an internal address.
+     * Allow only well-formed http/https urls whose host does not resolve to an internal address.
+     * The returned URL is rebuilt from the validated components; callers must use it instead of
+     * the raw input.
      *
      * @throws IOException if the url is not allowed
      */
-    private static void checkOutboundUrl(String url) throws IOException {
-        if (url == null || !SecurityUtil.isHttp(url) || !SecurityUtil.checkSSRFWithoutRedirect(url)) {
+    private static URL checkOutboundUrl(String url) throws IOException {
+        URL checked = SecurityUtil.safeOutboundUrl(url);
+        if (checked == null) {
             throw new IOException("[-] SSRF check failed");
         }
+        return checked;
     }
 
 
     public static String URLConnection(String url) {
         try {
-            checkOutboundUrl(url);
-            URL u = new URL(url);
+            URL u = checkOutboundUrl(url);
             URLConnection urlConnection = u.openConnection();
             if (urlConnection instanceof HttpURLConnection) {
                 ((HttpURLConnection) urlConnection).setInstanceFollowRedirects(false);
@@ -133,8 +136,7 @@ public class HttpUtils {
      */
     public static String HttpURLConnection(String url) {
         try {
-            checkOutboundUrl(url);
-            URL u = new URL(url);
+            URL u = checkOutboundUrl(url);
             URLConnection urlConnection = u.openConnection();
             HttpURLConnection conn = (HttpURLConnection) urlConnection;
             conn.setInstanceFollowRedirects(false);
@@ -197,7 +199,7 @@ public class HttpUtils {
      */
     public static void imageIO(String url) {
         try {
-            URL u = new URL(url);
+            URL u = checkOutboundUrl(url);
             ImageIO.read(u); // send request
         } catch (IOException e) {
             logger.error(e.getMessage());
@@ -224,9 +226,9 @@ public class HttpUtils {
     public static String HttpAsyncClients(String url) {
         CloseableHttpAsyncClient httpclient = HttpAsyncClients.createDefault();
         try {
-            checkOutboundUrl(url);
+            URL checked = checkOutboundUrl(url);
             httpclient.start();
-            final HttpGet request = new HttpGet(url);
+            final HttpGet request = new HttpGet(checked.toURI());
             request.setConfig(RequestConfig.custom().setRedirectsEnabled(false).build());
             Future<HttpResponse> future = httpclient.execute(request, null);
             HttpResponse response = future.get(6000, TimeUnit.MILLISECONDS);

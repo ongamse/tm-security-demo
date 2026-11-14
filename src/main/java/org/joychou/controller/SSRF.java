@@ -126,12 +126,12 @@ public class SSRF {
             response.setHeader("content-disposition", "attachment;fileName=" + SecurityUtil.sanitizeHeaderValue(downLoadImgFileName));
 
             // Only http/https and never an internal address (also re-checked by the socket hook on redirects).
-            if (!SecurityUtil.isHttp(url) || !SecurityUtil.checkSSRFWithoutRedirect(url)) {
-                logger.error("[-] SSRF check failed: " + url);
+            URL u = SecurityUtil.safeOutboundUrl(url);
+            if (u == null) {
+                logger.error("[-] SSRF check failed");
                 return;
             }
             SecurityUtil.startSSRFHook();
-            URL u = new URL(url);
             int length;
             byte[] bytes = new byte[1024];
             inputStream = u.openStream(); // send request

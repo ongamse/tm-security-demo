@@ -8,12 +8,11 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -25,7 +24,18 @@ public class SecurityUtil {
     private static final Set<String> ALLOWED_COMMANDS = new HashSet<>(
             Arrays.asList("whoami", "id", "date", "hostname", "uname", "pwd", "uptime"));
     private static final Pattern JDBC_URL_PATTERN = Pattern.compile(
-            "^jdbc:([a-z0-9]+)://([A-Za-z0-9.-]+)(?::[0-9]{1,5})?/[A-Za-z0-9_.-]+$");
+            "^jdbc:([a-z0-9]+)://([A-Za-z0-9.-]+)(?::([0-9]{1,5}))?/([A-Za-z0-9_.-]+)$");
+
+    /** Characters allowed after the authority of an http(s) url (path, query and fragment). */
+    private static final String URL_TAIL_CHARS =
+            "[A-Za-z0-9._~!$&'()*+,;=:@%/?#-]*";
+    /** Strict absolute http(s) url: explicit host (name or bracketed IPv6), optional port, no user-info. */
+    private static final Pattern HTTP_URL_PATTERN = Pattern.compile(
+            "^(https?)://(\\[[0-9A-Fa-f:.]+\\]|[A-Za-z0-9][A-Za-z0-9.-]*)(?::([0-9]{1,5}))?([/?#]"
+                    + URL_TAIL_CHARS + ")?$", Pattern.CASE_INSENSITIVE);
+    /** Same-site relative path: single leading slash, no authority, no backslash. */
+    private static final Pattern RELATIVE_PATH_PATTERN = Pattern.compile(
+            "^/(?!/)[A-Za-z0-9._~!$&'()*+,;=:@%/?#-]*$");
     private static Logger logger =LoggerFactory.getLogger(SecurityUtil.class);
 
 
@@ -47,12 +57,87 @@ public class SecurityUtil {
      * @return host
      */
     public static String gethost(String url) {
-        try {
-            URI uri = new URI(url);
-            return uri.getHost().toLowerCase();
-        } catch (URISyntaxException e) {
-            return "";
+        ParsedUrl parsed = parseHttpUrl(url);
+        return parsed == null ? "" : parsed.getHost();
+    }
+
+
+    /**
+     * The single place where an untrusted absolute http(s) url string is parsed. The result
+     * carries the individual components so that callers can build outgoing urls from them
+     * instead of passing the raw input on.
+     */
+    public static final class ParsedUrl {
+        private final String scheme;
+        private final String host;
+        private final int port;
+        private final String file;
+
+        private ParsedUrl(String scheme, String host, int port, String file) {
+            this.scheme = scheme;
+            this.host = host;
+            this.port = port;
+            this.file = file;
         }
+
+        /** @return "http" or "https" */
+        public String getScheme() {
+            return scheme;
+        }
+
+        /** @return lower-case host name, IPv4 literal or bracketed IPv6 literal */
+        public String getHost() {
+            return host;
+        }
+
+        /** @return explicit port, or -1 for the scheme default */
+        public int getPort() {
+            return port;
+        }
+
+        /** @return path and query (fragment removed); may be empty */
+        public String getFile() {
+            return file;
+        }
+    }
+
+
+    /**
+     * Strictly parse an absolute http(s) url: no whitespace/control characters, no backslashes,
+     * no user-info, explicit host, valid port.
+     *
+     * @param url untrusted url, may be null
+     * @return the parsed components or null if the url is not a well-formed http(s) url
+     */
+    public static ParsedUrl parseHttpUrl(String url) {
+        if (url == null || url.length() > 2048 || containsUnsafeUrlChar(url)) {
+            return null;
+        }
+        Matcher m = HTTP_URL_PATTERN.matcher(url);
+        if (!m.matches()) {
+            return null;
+        }
+        String scheme = "https".equalsIgnoreCase(m.group(1)) ? "https" : "http";
+        String host = m.group(2).toLowerCase(Locale.ROOT);
+        if (host.length() > 253 || host.contains("..")) {
+            return null;
+        }
+        int port = -1;
+        if (m.group(3) != null) {
+            port = Integer.parseInt(m.group(3));
+            if (port < 1 || port > 65535) {
+                return null;
+            }
+        }
+        String file = m.group(4) == null ? "" : m.group(4);
+        int fragment = file.indexOf('#');
+        if (fragment >= 0) {
+            file = file.substring(0, fragment);
+        }
+        if (file.startsWith("?")) {
+            file = "/" + file;
+        }
+        return new ParsedUrl(scheme, host, port, file);
     }
 
 
@@ -154,7 +239,19 @@ public class SecurityUtil {
         if(url == null) {
             return false;
         }
-        return !SSRFChecker.isInternalIpByUrl(url);
+        return SSRFChecker.safeUrl(url) != null;
+    }
+
+    /**
+     * Single choke point for outbound http(s) requests built from untrusted input. The url is
+     * parsed once ({@link #parseHttpUrl(String)}), the host is resolved and must not be internal,
+     * and the returned url is assembled from the validated components.
+     *
+     * @param url untrusted url, may be null
+     * @return the rebuilt url, or null if it is not an allowed outbound target
+     */
+    public static java.net.URL safeOutboundUrl(String url) {
+        return SSRFChecker.safeUrl(url);
     }
 
     /**
@@ -175,10 +272,20 @@ public class SecurityUtil {
         if (!m.matches() || !subprotocol.equals(m.group(1))) {
             return null;
         }
-        if (!checkSSRFWithoutRedirect("http://" + m.group(2))) {
+        String host = SSRFChecker.safeHost(m.group(2));
+        if (host == null) {
             return null;
         }
-        return jdbcUrl;
+        String port = "";
+        if (m.group(3) != null) {
+            int p = Integer.parseInt(m.group(3));
+            if (p < 1 || p > 65535) {
+                return null;
+            }
+            port = ":" + p;
+        }
+        // Rebuilt from the validated components, not from the raw input.
+        return "jdbc:" + subprotocol + "://" + host + port + "/" + m.group(4);
     }
 
 
@@ -330,26 +437,13 @@ public class SecurityUtil {
 
     /**
      * Strict syntax check for an absolute http(s) url: no whitespace/control characters,
-     * no backslashes, parseable by {@link URI}, explicit host and no user-info.
+     * no backslashes, parsed by {@link #parseHttpUrl(String)}, explicit host and no user-info.
      *
      * @param url untrusted url, may be null
      * @return true if the url is a well-formed absolute http(s) url
      */
     public static boolean isSafeUrlSyntax(String url) {
-        if (url == null || containsUnsafeUrlChar(url)) {
-            return false;
-        }
-        try {
-            URI uri = new URI(url);
-            String scheme = uri.getScheme();
-            return scheme != null
-                    && (scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"))
-                    && uri.getHost() != null
-                    && !uri.getHost().isEmpty()
-                    && uri.getRawUserInfo() == null;
-        } catch (URISyntaxException e) {
-            return false;
-        }
+        return parseHttpUrl(url) != null;
     }
 
     /**
@@ -365,18 +459,7 @@ public class SecurityUtil {
             return null;
         }
         if (url.startsWith("/")) {
-            if (url.startsWith("//")) {
-                return null;
-            }
-            try {
-                URI uri = new URI(url);
-                if (uri.getScheme() != null || uri.getRawAuthority() != null) {
-                    return null;
-                }
-                return url;
-            } catch (URISyntaxException e) {
-                return null;
-            }
+            return RELATIVE_PATH_PATTERN.matcher(url).matches() ? url : null;
         }
         if (isSafeUrlSyntax(url) && checkURL(url) != null) {
             return url;
