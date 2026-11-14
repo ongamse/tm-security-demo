@@ -51,6 +51,7 @@ public class Object2Jsonp extends AbstractJsonpResponseBodyAdvice {
         // 如果url带callback，且校验不安全后
         if ( StringUtils.isNotBlank(realJsonpFunc) ) {
             jsonpReferHandler(request, response);
+            response.setHeader("X-Content-Type-Options", "nosniff");
         }
         super.beforeBodyWriteInternal(bodyContainer, contentType, returnType, req, res);
     }

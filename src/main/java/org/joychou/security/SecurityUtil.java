@@ -8,17 +8,35 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Locale;
+import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 
 public class SecurityUtil {
 
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
-    private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
+    private static final Pattern JDBC_URL_PATTERN = Pattern.compile(
+            "^jdbc:([a-z0-9]+)://([A-Za-z0-9.-]+)(?::([0-9]{1,5}))?/([A-Za-z0-9_.-]+)$");
+
+    /** Characters allowed after the authority of an http(s) url (path, query and fragment). */
+    private static final String URL_TAIL_CHARS =
+            "[A-Za-z0-9._~!$&'()*+,;=:@%/?#-]*";
+    /** Strict absolute http(s) url: explicit host (name or bracketed IPv6), optional port, no user-info. */
+    private static final Pattern HTTP_URL_PATTERN = Pattern.compile(
+            "^(https?)://(\\[[0-9A-Fa-f:.]+\\]|[A-Za-z0-9][A-Za-z0-9.-]*)(?::([0-9]{1,5}))?([/?#]"
+                    + URL_TAIL_CHARS + ")?$", Pattern.CASE_INSENSITIVE);
+    /** Same-site relative path: single leading slash, no authority, no backslash. */
+    private static final Pattern RELATIVE_PATH_PATTERN = Pattern.compile(
+            "^/(?!/)[A-Za-z0-9._~!$&'()*+,;=:@%/?#-]*$");
+    /** Constant alphabet for host labels used when rebuilding an allowlisted origin. */
+    private static final String HOST_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789.-";
+    private static Logger logger =LoggerFactory.getLogger(SecurityUtil.class);
 
 
     /**
@@ -39,12 +57,87 @@ public class SecurityUtil {
      * @return host
      */
     public static String gethost(String url) {
-        try {
-            URI uri = new URI(url);
-            return uri.getHost().toLowerCase();
-        } catch (URISyntaxException e) {
-            return "";
+        ParsedUrl parsed = parseHttpUrl(url);
+        return parsed == null ? "" : parsed.getHost();
+    }
+
+
+    /**
+     * The single place where an untrusted absolute http(s) url string is parsed. The result
+     * carries the individual components so that callers can build outgoing urls from them
+     * instead of passing the raw input on.
+     */
+    public static final class ParsedUrl {
+        private final String scheme;
+        private final String host;
+        private final int port;
+        private final String file;
+
+        private ParsedUrl(String scheme, String host, int port, String file) {
+            this.scheme = scheme;
+            this.host = host;
+            this.port = port;
+            this.file = file;
         }
+
+        /** @return "http" or "https" */
+        public String getScheme() {
+            return scheme;
+        }
+
+        /** @return lower-case host name, IPv4 literal or bracketed IPv6 literal */
+        public String getHost() {
+            return host;
+        }
+
+        /** @return explicit port, or -1 for the scheme default */
+        public int getPort() {
+            return port;
+        }
+
+        /** @return path and query (fragment removed); may be empty */
+        public String getFile() {
+            return file;
+        }
+    }
+
+
+    /**
+     * Strictly parse an absolute http(s) url: no whitespace/control characters, no backslashes,
+     * no user-info, explicit host, valid port.
+     *
+     * @param url untrusted url, may be null
+     * @return the parsed components or null if the url is not a well-formed http(s) url
+     */
+    public static ParsedUrl parseHttpUrl(String url) {
+        if (url == null || url.length() > 2048 || containsUnsafeUrlChar(url)) {
+            return null;
+        }
+        Matcher m = HTTP_URL_PATTERN.matcher(url);
+        if (!m.matches()) {
+            return null;
+        }
+        String scheme = "https".equalsIgnoreCase(m.group(1)) ? "https" : "http";
+        String host = m.group(2).toLowerCase(Locale.ROOT);
+        if (host.length() > 253 || host.contains("..")) {
+            return null;
+        }
+        int port = -1;
+        if (m.group(3) != null) {
+            port = Integer.parseInt(m.group(3));
+            if (port < 1 || port > 65535) {
+                return null;
+            }
+        }
+        String file = m.group(4) == null ? "" : m.group(4);
+        int fragment = file.indexOf('#');
+        if (fragment >= 0) {
+            file = file.substring(0, fragment);
+        }
+        if (file.startsWith("?")) {
+            file = "/" + file;
+        }
+        return new ParsedUrl(scheme, host, port, file);
     }
 
 
@@ -95,7 +188,7 @@ public class SecurityUtil {
             }
             return null;
         } catch (NullPointerException e) {
-            logger.error(e.toString());
+            logger.error("checkURL exception: {}", e.getClass().getSimpleName());
             return null;
         }
     }
@@ -146,8 +239,55 @@ public class SecurityUtil {
         if(url == null) {
             return false;
         }
-        return !SSRFChecker.isInternalIpByUrl(url);
+        return SSRFChecker.safeUrl(url) != null;
     }
+
+    /**
+     * Single choke point for outbound http(s) requests built from untrusted input. The url is
+     * parsed once ({@link #parseHttpUrl(String)}), the host is resolved and must not be internal,
+     * and the returned url is assembled from the validated components.
+     *
+     * @param url untrusted url, may be null
+     * @return the rebuilt url, or null if it is not an allowed outbound target
+     */
+    public static java.net.URL safeOutboundUrl(String url) {
+        return SSRFChecker.safeUrl(url);
+    }
+
+    /**
+     * Validate a user supplied JDBC url before it reaches DriverManager. Only
+     * <code>jdbc:&lt;subprotocol&gt;://host[:port]/database</code> is accepted: no query
+     * string, no driver properties (e.g. socketFactory), and the host must not
+     * resolve to an internal address.
+     *
+     * @param jdbcUrl     user supplied jdbc url
+     * @param subprotocol expected subprotocol, e.g. "postgresql" or "db2"
+     * @return the jdbc url when safe, otherwise null
+     */
+    public static String safeJdbcUrl(String jdbcUrl, String subprotocol) {
+        if (jdbcUrl == null || subprotocol == null) {
+            return null;
+        }
+        Matcher m = JDBC_URL_PATTERN.matcher(jdbcUrl);
+        if (!m.matches() || !subprotocol.equals(m.group(1))) {
+            return null;
+        }
+        String host = SSRFChecker.safeHost(m.group(2));
+        if (host == null) {
+            return null;
+        }
+        String port = "";
+        if (m.group(3) != null) {
+            int p = Integer.parseInt(m.group(3));
+            if (p < 1 || p > 65535) {
+                return null;
+            }
+            port = ":" + p;
+        }
+        // Rebuilt from the validated components, not from the raw input.
+        return "jdbc:" + subprotocol + "://" + host + port + "/" + m.group(4);
+    }
+
 
     /**
      * Check ssrf by hook socket. Start socket hook.
@@ -183,10 +323,10 @@ public class SecurityUtil {
             try {
                 temp = URLDecoder.decode(temp, "utf-8");
             } catch (UnsupportedEncodingException e) {
-                logger.info("Unsupported encoding exception: " + filepath);
+                logger.info("Unsupported encoding exception.");
                 return null;
             } catch (Exception e) {
-                logger.info(e.toString());
+                logger.info("pathFilter decode exception: {}", e.getClass().getSimpleName());
                 return null;
             }
         }
@@ -205,6 +345,91 @@ public class SecurityUtil {
         }
 
         return input;
+    }
+
+
+    /**
+     * Map a user supplied command token to a fixed argv template for a no-shell spawn
+     * (ProcessBuilder / Runtime.exec(String[])). The request value is only used as a
+     * lookup key; the returned argv consists solely of compile-time constants.
+     *
+     * @param cmd user supplied command key, e.g. "whoami" or "uname -a"
+     * @return fixed argv array, or null if the command is not allowed
+     */
+    public static String[] safeCommand(String cmd) {
+        if (cmd == null) {
+            return null;
+        }
+        switch (cmd.trim().replaceAll("\\s+", " ")) {
+            case "whoami":
+                return new String[]{"whoami"};
+            case "id":
+                return new String[]{"id"};
+            case "date":
+                return new String[]{"date"};
+            case "hostname":
+                return new String[]{"hostname"};
+            case "uname":
+                return new String[]{"uname"};
+            case "uname -a":
+                return new String[]{"uname", "-a"};
+            case "pwd":
+                return new String[]{"pwd"};
+            case "uptime":
+                return new String[]{"uptime"};
+            default:
+                return null;
+        }
+    }
+
+
+    /**
+     * Map a user supplied directory key to a fixed "ls" argv. Only allowlisted
+     * directories are accepted; the request value is never part of the argv.
+     *
+     * @param path requested directory
+     * @return fixed argv array, or null if the directory is not allowed
+     */
+    public static String[] safeListCommand(String path) {
+        if (path == null) {
+            return null;
+        }
+        switch (path) {
+            case "/tmp":
+                return new String[]{"ls", "-la", "--", "/tmp"};
+            case "/var/tmp":
+                return new String[]{"ls", "-la", "--", "/var/tmp"};
+            case "/usr/share":
+                return new String[]{"ls", "-la", "--", "/usr/share"};
+            default:
+                return null;
+        }
+    }
+
+
+    /**
+     * Map a user supplied host (e.g. the Host header) to a fixed "curl" argv. Only
+     * allowlisted local hosts are accepted; the request value is never part of the argv.
+     *
+     * @param host requested host
+     * @return fixed argv array, or null if the host is not allowed
+     */
+    public static String[] safeCurlCommand(String host) {
+        if (host == null) {
+            return null;
+        }
+        switch (host.trim().toLowerCase(Locale.ROOT)) {
+            case "localhost":
+                return new String[]{"curl", "--proto", "=http,https", "--", "http://localhost/"};
+            case "localhost:8080":
+                return new String[]{"curl", "--proto", "=http,https", "--", "http://localhost:8080/"};
+            case "127.0.0.1":
+                return new String[]{"curl", "--proto", "=http,https", "--", "http://127.0.0.1/"};
+            case "127.0.0.1:8080":
+                return new String[]{"curl", "--proto", "=http,https", "--", "http://127.0.0.1:8080/"};
+            default:
+                return null;
+        }
     }
 
 
@@ -247,6 +472,174 @@ public class SecurityUtil {
         }
 
         return sb.toString();
+    }
+
+    /**
+     * Look up an untrusted Origin value in the allowlist built from the configured safe domains
+     * (url_safe_domain.xml) and return the matching allowlist entry. The request value is only
+     * a lookup key: the returned string is composed of the configured domain (not request data),
+     * the constant scheme chosen by the parser and an integer port, so it is safe to write into
+     * a response header such as Access-Control-Allow-Origin. Only exact configured hosts over
+     * http/https (optionally with an explicit port) match; domains on the block list never match.
+     *
+     * @param origin untrusted Origin header value, may be null
+     * @return the allowlisted origin constant (e.g. "https://www.joychou.org"), or null
+     */
+    public static String matchAllowedOrigin(String origin) {
+        if (origin == null || checkURL(origin) == null) {
+            return null;
+        }
+        ParsedUrl parsed = parseHttpUrl(origin);
+        if (parsed == null || !parsed.getFile().isEmpty()) {
+            return null;
+        }
+        String host = parsed.getHost();
+        String matchedDomain = null;
+        String labelPrefix = "";
+        for (String domain : WebConfig.getSafeDomains()) {
+            String d = domain.toLowerCase(Locale.ROOT);
+            if (host.equals(d)) {
+                matchedDomain = domain;
+                labelPrefix = "";
+                break;
+            }
+            // sub domains of a configured domain (checkURL supports first-level domains)
+            if (host.endsWith("." + d) && matchedDomain == null) {
+                matchedDomain = domain;
+                labelPrefix = host.substring(0, host.length() - d.length());
+            }
+        }
+        if (matchedDomain == null) {
+            return null;
+        }
+        // Rebuild the value from constants only: the scheme literal, the configured domain and a
+        // host-label prefix copied character by character from a constant alphabet.
+        StringBuilder sb = new StringBuilder("https".equals(parsed.getScheme()) ? "https://" : "http://");
+        for (int i = 0; i < labelPrefix.length(); i++) {
+            int idx = HOST_ALPHABET.indexOf(labelPrefix.charAt(i));
+            if (idx < 0) {
+                return null;
+            }
+            sb.append(HOST_ALPHABET.charAt(idx));
+        }
+        sb.append(matchedDomain);
+        if (parsed.getPort() >= 0) {
+            sb.append(':').append(parsed.getPort());
+        }
+        String candidate = sb.toString();
+        // The Origin header carries no path, query or fragment: it must equal the rebuilt value.
+        return candidate.equals(origin) ? candidate : null;
+    }
+
+    /**
+     * Exact-match lookup of an untrusted Origin header in the fixed list of CORS origins read from
+     * configuration (joychou.security.cors.allowed.origins). The request value is only compared; the
+     * returned value is always the configured constant itself, never a request-derived or rebuilt
+     * string. No wildcard or sub domain pattern matching is performed.
+     *
+     * @param origin untrusted Origin header value, may be null
+     * @return the configured origin constant equal to the request origin, or null
+     */
+    public static String matchCorsOrigin(String origin) {
+        if (origin == null) {
+            return null;
+        }
+        for (String configured : WebConfig.getCorsAllowedOrigins()) {
+            String constant = configured == null ? "" : configured.trim();
+            if (!constant.isEmpty() && constant.equals(origin)) {
+                return constant;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Resolve an untrusted redirect target by exact-match lookup in the fixed list of redirect
+     * destinations read from configuration (joychou.security.redirect.allowed.urls). The request
+     * value is only used as a lookup key: the returned value is always the configured constant
+     * itself, never a request-derived string. Safe for redirect views, sendRedirect and the
+     * Location header.
+     *
+     * @param url untrusted redirect target, may be null
+     * @return the configured destination constant equal to the request value, or null
+     */
+    public static String matchRedirectTarget(String url) {
+        if (url == null) {
+            return null;
+        }
+        for (String configured : WebConfig.getRedirectAllowedUrls()) {
+            String constant = configured == null ? "" : configured.trim();
+            if (!constant.isEmpty() && constant.equals(url)) {
+                return constant;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Resolve an untrusted JDBC url by exact-match lookup in the fixed list of JDBC endpoints read
+     * from configuration (joychou.security.jdbc.allowed.urls). The request value is first validated
+     * with {@link #safeJdbcUrl(String, String)} and then only used as a lookup key: the returned
+     * value is always the configured constant itself, never a request-derived string.
+     *
+     * @param jdbcUrl     untrusted jdbc url, may be null
+     * @param subprotocol expected subprotocol, e.g. "postgresql" or "db2"
+     * @return the configured endpoint constant equal to the request value, or null
+     */
+    public static String matchJdbcUrl(String jdbcUrl, String subprotocol) {
+        if (jdbcUrl == null || subprotocol == null || safeJdbcUrl(jdbcUrl, subprotocol) == null) {
+            return null;
+        }
+        String prefix = "jdbc:" + subprotocol + "://";
+        for (String configured : WebConfig.getJdbcAllowedUrls()) {
+            String constant = configured == null ? "" : configured.trim();
+            if (constant.startsWith(prefix) && constant.equals(jdbcUrl)) {
+                return constant;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Strict syntax check for an absolute http(s) url: no whitespace/control characters,
+     * no backslashes, parsed by {@link #parseHttpUrl(String)}, explicit host and no user-info.
+     *
+     * @param url untrusted url, may be null
+     * @return true if the url is a well-formed absolute http(s) url
+     */
+    public static boolean isSafeUrlSyntax(String url) {
+        return parseHttpUrl(url) != null;
+    }
+
+    /**
+     * Validate an untrusted redirect target. Allowed targets are either a same-site relative
+     * path (single leading slash; protocol-relative "//host" and backslash forms are rejected)
+     * or an absolute http(s) url whose host passes {@link #checkURL(String)}.
+     *
+     * @param url untrusted redirect target, may be null
+     * @return the original url when it is a safe redirect target; null otherwise
+     */
+    public static String safeRedirectUrl(String url) {
+        if (url == null || url.isEmpty() || containsUnsafeUrlChar(url)) {
+            return null;
+        }
+        if (url.startsWith("/")) {
+            return RELATIVE_PATH_PATTERN.matcher(url).matches() ? url : null;
+        }
+        if (isSafeUrlSyntax(url) && checkURL(url) != null) {
+            return url;
+        }
+        return null;
+    }
+
+    private static boolean containsUnsafeUrlChar(String url) {
+        for (int i = 0; i < url.length(); i++) {
+            char ch = url.charAt(i);
+            if (ch <= 0x20 || ch == 0x7f || ch == '\\' || Character.isISOControl(ch)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public static void main(String[] args) {

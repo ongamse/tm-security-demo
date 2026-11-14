@@ -9,8 +9,14 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
+
 import javax.annotation.Resource;
 import java.sql.*;
+import java.util.ArrayList;
 import java.util.List;
 
 
@@ -44,6 +50,59 @@ public class SQLI {
 
 
     /**
+     * Object-level authorization: a caller may only reference their own user record,
+     * unless they hold ROLE_ADMIN. Fails closed with {@link AccessDeniedException}
+     * (translated to 403 by Spring Security's exception handling).
+     */
+    private static boolean isAdmin(Authentication auth) {
+        for (GrantedAuthority authority : auth.getAuthorities()) {
+            if ("ROLE_ADMIN".equals(authority.getAuthority())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static Authentication currentAuthentication() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated()) {
+            throw new AccessDeniedException("Access denied");
+        }
+        return auth;
+    }
+
+    private static void requireSelfOrAdmin(String username) {
+        Authentication auth = currentAuthentication();
+        if (!isAdmin(auth) && !auth.getName().equals(username)) {
+            throw new AccessDeniedException("Access denied");
+        }
+    }
+
+
+    /**
+     * Resolves which user record a request may read, using only server-side identity.
+     * A caller referencing their own name (or no name) gets the authenticated principal's
+     * name. An admin referencing another user selects that user via the parameterised
+     * mapper, and the loaded record's username is used. Anyone else is denied.
+     *
+     * @return the server-side username to query, or null when an admin asked for a
+     * user that does not exist
+     */
+    String resolveAuthorizedUsername(String requested) {
+        Authentication auth = currentAuthentication();
+        String principalName = auth.getName();
+        if (requested == null || requested.equals(principalName)) {
+            return principalName;
+        }
+        if (!isAdmin(auth)) {
+            throw new AccessDeniedException("Access denied");
+        }
+        User loaded = userMapper.findByUserName(requested);
+        return loaded == null ? null : loaded.getUsername();
+    }
+
+
+    /**
      * <p>Sql injection jbdc vuln code.</p><br>
      *
      * <a href="http://localhost:8080/sqli/jdbc/vuln?username=joychou">http://localhost:8080/sqli/jdbc/vuln?username=joychou</a>
@@ -51,6 +110,10 @@ public class SQLI {
     @RequestMapping("/jdbc/vuln")
     public String jdbc_sqli_vul(@RequestParam("username") String username) {
 
+        String targetUser = resolveAuthorizedUsername(username);
+        if (targetUser == null) {
+            return "";
+        }
         StringBuilder result = new StringBuilder();
 
         try {
@@ -60,19 +123,22 @@ public class SQLI {
             if (!con.isClosed())
                 System.out.println("Connect to database successfully.");
 
-            // sqli vuln code
-            Statement statement = con.createStatement();
-            String sql = "select * from users where username = '" + username + "'";
-            logger.info(sql);
-            ResultSet rs = statement.executeQuery(sql);
+            // bind the user input as a parameter
+            String sql = "select * from users where username = ?";
+            PreparedStatement statement = con.prepareStatement(sql);
+            statement.setString(1, targetUser);
+            logger.info("Executing parameterised user lookup");
+            ResultSet rs = statement.executeQuery();
 
+            int rows = 0;
             while (rs.next()) {
                 String res_name = rs.getString("username");
                 String res_pwd = rs.getString("password");
                 String info = String.format("%s: %s\n", res_name, res_pwd);
                 result.append(info);
-                logger.info(info);
+                rows++;
             }
+            logger.info("User lookup returned {} row(s)", rows);
             rs.close();
             con.close();
 
@@ -94,6 +160,7 @@ public class SQLI {
     @RequestMapping("/jdbc/sec")
     public String jdbc_sqli_sec(@RequestParam("username") String username) {
 
+        requireSelfOrAdmin(username);
         StringBuilder result = new StringBuilder();
         try {
             Class.forName(driver);
@@ -138,6 +205,10 @@ public class SQLI {
     @RequestMapping("/jdbc/ps/vuln")
     public String jdbc_ps_vuln(@RequestParam("username") String username) {
 
+        String targetUser = resolveAuthorizedUsername(username);
+        if (targetUser == null) {
+            return "";
+        }
         StringBuilder result = new StringBuilder();
         try {
             Class.forName(driver);
@@ -146,8 +217,9 @@ public class SQLI {
             if (!con.isClosed())
                 System.out.println("Connecting to Database successfully.");
 
-            String sql = "select * from users where username = '" + username + "'";
+            String sql = "select * from users where username = ?";
             PreparedStatement st = con.prepareStatement(sql);
+            st.setString(1, targetUser);
 
             logger.info(st.toString());
             ResultSet rs = st.executeQuery();
@@ -180,6 +252,7 @@ public class SQLI {
      */
     @GetMapping("/mybatis/vuln01")
     public List<User> mybatisVuln01(@RequestParam("username") String username) {
+        requireSelfOrAdmin(username);
         return userMapper.findByUserNameVuln01(username);
     }
 
@@ -190,7 +263,20 @@ public class SQLI {
      */
     @GetMapping("/mybatis/vuln02")
     public List<User> mybatisVuln02(@RequestParam("username") String username) {
-        return userMapper.findByUserNameVuln02(username);
+        requireSelfOrAdmin(username);
+        List<User> users = userMapper.findByUserNameVuln02(username);
+        Authentication auth = currentAuthentication();
+        if (isAdmin(auth) || users == null) {
+            return users;
+        }
+        // LIKE match may return other users' rows; keep only the caller's own record.
+        List<User> own = new ArrayList<>();
+        for (User u : users) {
+            if (auth.getName().equals(u.getUsername())) {
+                own.add(u);
+            }
+        }
+        return own;
     }
 
     /**
@@ -210,6 +296,7 @@ public class SQLI {
      */
     @GetMapping("/mybatis/sec01")
     public User mybatisSec01(@RequestParam("username") String username) {
+        requireSelfOrAdmin(username);
         return userMapper.findByUserName(username);
     }
 
@@ -219,7 +306,11 @@ public class SQLI {
      */
     @GetMapping("/mybatis/sec02")
     public User mybatisSec02(@RequestParam("id") Integer id) {
-        return userMapper.findById(id);
+        User found = userMapper.findById(id);
+        if (found != null) {
+            requireSelfOrAdmin(found.getUsername());
+        }
+        return found;
     }
 
 

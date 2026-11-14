@@ -45,8 +45,19 @@ public class OriginFilter implements Filter {
             return;
         }
 
-        response.setHeader("Access-Control-Allow-Origin", origin);
-        response.setHeader("Access-Control-Allow-Credentials", "true");
+        // origin is either absent (same-origin) or must exactly equal a configured constant origin
+        String allowedOrigin = SecurityUtil.matchCorsOrigin(origin);
+        if (origin != null && allowedOrigin == null) {
+            logger.error("[-] Origin is not in the configured cors origins.");
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            response.getWriter().println("Invaid cors config by joychou.");
+            return;
+        }
+        if (allowedOrigin != null) {
+            response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
+            response.setHeader("Access-Control-Allow-Credentials", "true");
+        }
+        response.addHeader("Vary", "Origin");
         response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTION");
 
         filterChain.doFilter(req, res);

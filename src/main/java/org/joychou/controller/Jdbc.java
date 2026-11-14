@@ -1,6 +1,7 @@
 package org.joychou.controller;
 
 import lombok.extern.slf4j.Slf4j;
+import org.joychou.security.SecurityUtil;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -21,8 +22,13 @@ public class Jdbc {
     public void postgresql(String jdbcUrlBase64) throws Exception{
         byte[] b = java.util.Base64.getDecoder().decode(jdbcUrlBase64);
         String jdbcUrl = new String(b);
-        log.info(jdbcUrl);
-        DriverManager.getConnection(jdbcUrl);
+        log.info("postgresql jdbc url received, length: {}", jdbcUrl.length());
+        // The request value is only a lookup key; the connection uses the configured constant.
+        String allowedUrl = SecurityUtil.matchJdbcUrl(jdbcUrl, "postgresql");
+        if (allowedUrl == null) {
+            throw new IllegalArgumentException("Illegal jdbc url");
+        }
+        DriverManager.getConnection(allowedUrl);
     }
 
     @RequestMapping("/db2")
@@ -30,7 +36,12 @@ public class Jdbc {
         Class.forName("com.ibm.db2.jcc.DB2Driver");
         byte[] b = java.util.Base64.getDecoder().decode(jdbcUrlBase64);
         String jdbcUrl = new String(b);
-        log.info(jdbcUrl);
-        DriverManager.getConnection(jdbcUrl);
+        log.info("db2 jdbc url received, length: {}", jdbcUrl.length());
+        // The request value is only a lookup key; the connection uses the configured constant.
+        String allowedUrl = SecurityUtil.matchJdbcUrl(jdbcUrl, "db2");
+        if (allowedUrl == null) {
+            throw new IllegalArgumentException("Illegal jdbc url");
+        }
+        DriverManager.getConnection(allowedUrl);
     }
 }

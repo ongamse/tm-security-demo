@@ -5,6 +5,7 @@ import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseBody;
+import org.springframework.web.util.HtmlUtils;
 
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletResponse;
@@ -24,10 +25,10 @@ public class XSS {
      *
      * @param xss unescape string
      */
-    @RequestMapping("/reflect")
+    @RequestMapping(value = "/reflect", produces = "text/plain;charset=UTF-8")
     @ResponseBody
     public static String reflect(String xss) {
-        return xss;
+        return HtmlUtils.htmlEscape(xss);
     }
 
     /**
@@ -52,10 +53,10 @@ public class XSS {
      *
      * @param xss unescape string
      */
-    @RequestMapping("/stored/show")
+    @RequestMapping(value = "/stored/show", produces = "text/plain;charset=UTF-8")
     @ResponseBody
     public String show(@CookieValue("xss") String xss) {
-        return xss;
+        return HtmlUtils.htmlEscape(xss);
     }
 
     /**

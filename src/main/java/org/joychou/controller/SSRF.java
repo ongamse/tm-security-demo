@@ -5,12 +5,12 @@ import org.joychou.security.SecurityUtil;
 import org.joychou.security.ssrf.SSRFException;
 import org.joychou.service.HttpService;
 import org.joychou.util.HttpUtils;
-import org.joychou.util.WebUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.util.HtmlUtils;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletResponse;
@@ -98,9 +98,9 @@ public class SSRF {
     public String request(@RequestParam String url) {
         try {
             SecurityUtil.startSSRFHook();
-            return HttpUtils.request(url);
+            return HtmlUtils.htmlEscape(String.valueOf(HttpUtils.request(url)));
         } catch (SSRFException | IOException e) {
-            return e.getMessage();
+            return HtmlUtils.htmlEscape(String.valueOf(e.getMessage()));
         } finally {
             SecurityUtil.stopSSRFHook();
         }
@@ -120,11 +120,16 @@ public class SSRF {
         InputStream inputStream = null;
         OutputStream outputStream = null;
         try {
-            String downLoadImgFileName = WebUtils.getNameWithoutExtension(url) + "." + WebUtils.getFileExtension(url);
-            // download
-            response.setHeader("content-disposition", "attachment;fileName=" + downLoadImgFileName);
+            // download (fixed file name: the request url is never copied into a response header)
+            response.setHeader("content-disposition", "attachment;fileName=download");
 
-            URL u = new URL(url);
+            // Only http/https and never an internal address (also re-checked by the socket hook on redirects).
+            URL u = SecurityUtil.safeOutboundUrl(url);
+            if (u == null) {
+                logger.error("[-] SSRF check failed");
+                return;
+            }
+            SecurityUtil.startSSRFHook();
             int length;
             byte[] bytes = new byte[1024];
             inputStream = u.openStream(); // send request
@@ -134,8 +139,9 @@ public class SSRF {
             }
 
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("openStream failed: {}", e.getClass().getName());
         } finally {
+            SecurityUtil.stopSSRFHook();
             if (inputStream != null) {
                 inputStream.close();
             }

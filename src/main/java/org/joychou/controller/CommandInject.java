@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.util.HtmlUtils;
 
 import javax.servlet.http.HttpServletRequest;
 import java.io.IOException;
@@ -24,11 +25,15 @@ public class CommandInject {
     @GetMapping("/codeinject")
     public String codeInject(String filepath) throws IOException {
 
-        String[] cmdList = new String[]{"sh", "-c", "ls -la " + filepath};
+        // The request value is only an allowlist key; the executed argv is a fixed template.
+        String[] cmdList = SecurityUtil.safeListCommand(filepath);
+        if (cmdList == null) {
+            return "Bad boy. I got u.";
+        }
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);
         Process process = builder.start();
-        return WebUtils.convertStreamToString(process.getInputStream());
+        return HtmlUtils.htmlEscape(WebUtils.convertStreamToString(process.getInputStream()));
     }
 
     /**
@@ -41,23 +46,26 @@ public class CommandInject {
 
         String host = request.getHeader("host");
         logger.info(host);
-        String[] cmdList = new String[]{"sh", "-c", "curl " + host};
+        // The Host header is only an allowlist key; the executed argv is a fixed template.
+        String[] cmdList = SecurityUtil.safeCurlCommand(host);
+        if (cmdList == null) {
+            return "Bad boy. I got u.";
+        }
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);
         Process process = builder.start();
-        return WebUtils.convertStreamToString(process.getInputStream());
+        return HtmlUtils.htmlEscape(WebUtils.convertStreamToString(process.getInputStream()));
     }
 
     @GetMapping("/codeinject/sec")
     public String codeInjectSec(String filepath) throws IOException {
-        String filterFilePath = SecurityUtil.cmdFilter(filepath);
-        if (null == filterFilePath) {
+        String[] cmdList = SecurityUtil.safeListCommand(filepath);
+        if (null == cmdList) {
             return "Bad boy. I got u.";
         }
-        String[] cmdList = new String[]{"sh", "-c", "ls -la " + filterFilePath};
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);
         Process process = builder.start();
-        return WebUtils.convertStreamToString(process.getInputStream());
+        return HtmlUtils.htmlEscape(WebUtils.convertStreamToString(process.getInputStream()));
     }
 }

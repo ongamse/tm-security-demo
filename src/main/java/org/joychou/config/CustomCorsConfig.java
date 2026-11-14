@@ -21,9 +21,10 @@ public class CustomCorsConfig extends WebMvcRegistrationsAdapter {
             @Override
             public void addCorsMappings(CorsRegistry registry) {
                 // 为了支持一级域名，重写了checkOrigin
-                //String[] allowOrigins = {"joychou.org", "http://test.joychou.me"};
+                // The registry defaults to allowing every origin; clear it so that only
+                // CustomCorsProcessor (safe domain allowlist via SecurityUtil.checkURL) can allow an origin.
                 registry.addMapping("/cors/sec/webMvcConfigurer") // /**表示所有路由path
-                        //.allowedOrigins(allowOrigins)
+                        .allowedOrigins(new String[0])
                         .allowedMethods("GET", "POST")
                         .allowCredentials(true);
             }
