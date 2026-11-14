@@ -532,6 +532,28 @@ public class SecurityUtil {
     }
 
     /**
+     * Exact-match lookup of an untrusted Origin header in the fixed list of CORS origins read from
+     * configuration (joychou.security.cors.allowed.origins). The request value is only compared; the
+     * returned value is always the configured constant itself, never a request-derived or rebuilt
+     * string. No wildcard or sub domain pattern matching is performed.
+     *
+     * @param origin untrusted Origin header value, may be null
+     * @return the configured origin constant equal to the request origin, or null
+     */
+    public static String matchCorsOrigin(String origin) {
+        if (origin == null) {
+            return null;
+        }
+        for (String configured : WebConfig.getCorsAllowedOrigins()) {
+            String constant = configured == null ? "" : configured.trim();
+            if (!constant.isEmpty() && constant.equals(origin)) {
+                return constant;
+            }
+        }
+        return null;
+    }
+
+    /**
      * Build a Location header value for a redirect from an untrusted target. The returned value
      * is a constant: "/" for a same-site relative target, or an allowlisted origin constant
      * (see {@link #matchAllowedOrigin(String)}) followed by "/" for an absolute url.

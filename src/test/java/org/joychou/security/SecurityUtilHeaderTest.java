@@ -57,6 +57,32 @@ public class SecurityUtilHeaderTest {
     }
 
     @Test
+    public void matchCorsOriginIsExactConstantLookup() throws Exception {
+        Field f = WebConfig.class.getDeclaredField("corsAllowedOrigins");
+        f.setAccessible(true);
+        Object old = f.get(null);
+        f.set(null, new String[]{"https://joychou.org", " http://localhost:8080 "});
+        try {
+            assertEquals("https://joychou.org", SecurityUtil.matchCorsOrigin("https://joychou.org"));
+            assertEquals("http://localhost:8080", SecurityUtil.matchCorsOrigin("http://localhost:8080"));
+            assertNull(SecurityUtil.matchCorsOrigin(null));
+            assertNull(SecurityUtil.matchCorsOrigin("null"));
+            assertNull(SecurityUtil.matchCorsOrigin("*"));
+            assertNull(SecurityUtil.matchCorsOrigin("https://www.joychou.org"));
+            assertNull(SecurityUtil.matchCorsOrigin("https://sub.joychou.org"));
+            assertNull(SecurityUtil.matchCorsOrigin("https://joychou.org.evil.com"));
+            assertNull(SecurityUtil.matchCorsOrigin("https://joychou.org\r\nX-Injected: 1"));
+        } finally {
+            f.set(null, old);
+        }
+    }
+
+    @Test
+    public void matchCorsOriginRejectsEverythingWhenUnconfigured() {
+        assertNull(SecurityUtil.matchCorsOrigin("https://joychou.org"));
+    }
+
+    @Test
     public void safeRedirectLocationIsConstant() {
         assertEquals("/", SecurityUtil.safeRedirectLocation("/index?a=1"));
         assertEquals("https://www.joychou.org/", SecurityUtil.safeRedirectLocation("https://www.joychou.org/a/b?x=1"));

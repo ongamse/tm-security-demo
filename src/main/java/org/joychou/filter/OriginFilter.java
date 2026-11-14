@@ -45,8 +45,14 @@ public class OriginFilter implements Filter {
             return;
         }
 
-        // origin is either absent (same-origin) or already validated against the safe domain allowlist
-        String allowedOrigin = SecurityUtil.matchAllowedOrigin(origin);
+        // origin is either absent (same-origin) or must exactly equal a configured constant origin
+        String allowedOrigin = SecurityUtil.matchCorsOrigin(origin);
+        if (origin != null && allowedOrigin == null) {
+            logger.error("[-] Origin is not in the configured cors origins.");
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            response.getWriter().println("Invaid cors config by joychou.");
+            return;
+        }
         if (allowedOrigin != null) {
             response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
             response.setHeader("Access-Control-Allow-Credentials", "true");
