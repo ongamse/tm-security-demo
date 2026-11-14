@@ -7,10 +7,14 @@ import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
+import java.nio.file.LinkOption;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
@@ -54,21 +58,28 @@ public class PathTraversal {
                 logger.info("Illegal file path rejected: outside working directory");
                 return "Bad boy. Illegal file path.";
             }
-            if (Files.exists(target)) {
-                target = target.toRealPath();
-                if (!target.startsWith(base)) {
-                    logger.info("Illegal file path rejected: resolves outside working directory");
-                    return "Bad boy. Illegal file path.";
-                }
+            // Resolves symlinks; throws NoSuchFileException if the file is missing.
+            target = target.toRealPath();
+            if (!target.startsWith(base)) {
+                logger.info("Illegal file path rejected: resolves outside working directory");
+                return "Bad boy. Illegal file path.";
             }
-        } catch (InvalidPathException e) {
+        } catch (InvalidPathException | NoSuchFileException e) {
             return "File doesn't exist or is not a file.";
         }
 
-        if (Files.isRegularFile(target)) {
-            byte[] data = Files.readAllBytes(target);
-            return new String(Base64.encodeBase64(data));
-        } else {
+        // Single open+read of the contained path; failure (missing file, directory,
+        // unreadable) is handled from this one operation instead of a prior check.
+        try (InputStream in = Files.newInputStream(target, LinkOption.NOFOLLOW_LINKS)) {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) != -1) {
+                out.write(buf, 0, n);
+            }
+            return new String(Base64.encodeBase64(out.toByteArray()));
+        } catch (IOException e) {
+            logger.info("File could not be read: {}", e.getClass().getSimpleName());
             return "File doesn't exist or is not a file.";
         }
     }
