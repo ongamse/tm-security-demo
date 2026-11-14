@@ -22,7 +22,7 @@ public class Jdbc {
     public void postgresql(String jdbcUrlBase64) throws Exception{
         byte[] b = java.util.Base64.getDecoder().decode(jdbcUrlBase64);
         String jdbcUrl = new String(b);
-        log.info(jdbcUrl);
+        log.info("postgresql jdbc url received, length: {}", jdbcUrl.length());
         String safeUrl = SecurityUtil.safeJdbcUrl(jdbcUrl, "postgresql");
         if (safeUrl == null) {
             throw new IllegalArgumentException("Illegal jdbc url");
@@ -35,7 +35,7 @@ public class Jdbc {
         Class.forName("com.ibm.db2.jcc.DB2Driver");
         byte[] b = java.util.Base64.getDecoder().decode(jdbcUrlBase64);
         String jdbcUrl = new String(b);
-        log.info(jdbcUrl);
+        log.info("db2 jdbc url received, length: {}", jdbcUrl.length());
         String safeUrl = SecurityUtil.safeJdbcUrl(jdbcUrl, "db2");
         if (safeUrl == null) {
             throw new IllegalArgumentException("Illegal jdbc url");

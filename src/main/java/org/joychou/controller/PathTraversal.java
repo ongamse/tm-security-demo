@@ -30,7 +30,7 @@ public class PathTraversal {
     @GetMapping("/path_traversal/sec")
     public String getImageSec(String filepath) throws IOException {
         if (SecurityUtil.pathFilter(filepath) == null) {
-            logger.info("Illegal file path: " + filepath);
+            logger.info("Illegal file path rejected by filter");
             return "Bad boy. Illegal file path.";
         }
         return getImgBase64(filepath);
@@ -39,7 +39,7 @@ public class PathTraversal {
     private String getImgBase64(String imgFile) throws IOException {
 
         logger.info("Working directory: " + System.getProperty("user.dir"));
-        logger.info("File path: " + imgFile);
+        logger.info("File path requested, length: {}", imgFile == null ? 0 : imgFile.length());
 
         if (imgFile == null || imgFile.isEmpty()) {
             return "File doesn't exist or is not a file.";
@@ -51,13 +51,13 @@ public class PathTraversal {
         try {
             target = base.resolve(imgFile).normalize();
             if (!target.startsWith(base)) {
-                logger.info("Illegal file path: " + imgFile);
+                logger.info("Illegal file path rejected: outside working directory");
                 return "Bad boy. Illegal file path.";
             }
             if (Files.exists(target)) {
                 target = target.toRealPath();
                 if (!target.startsWith(base)) {
-                    logger.info("Illegal file path: " + imgFile);
+                    logger.info("Illegal file path rejected: resolves outside working directory");
                     return "Bad boy. Illegal file path.";
                 }
             }

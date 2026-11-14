@@ -127,16 +127,18 @@ public class SQLI {
             String sql = "select * from users where username = ?";
             PreparedStatement statement = con.prepareStatement(sql);
             statement.setString(1, targetUser);
-            logger.info(statement.toString());
+            logger.info("Executing parameterised user lookup");
             ResultSet rs = statement.executeQuery();
 
+            int rows = 0;
             while (rs.next()) {
                 String res_name = rs.getString("username");
                 String res_pwd = rs.getString("password");
                 String info = String.format("%s: %s\n", res_name, res_pwd);
                 result.append(info);
-                logger.info(info);
+                rows++;
             }
+            logger.info("User lookup returned {} row(s)", rows);
             rs.close();
             con.close();
 

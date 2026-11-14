@@ -139,7 +139,7 @@ public class SSRF {
             }
 
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("openStream failed: {}", e.getClass().getName());
         } finally {
             SecurityUtil.stopSSRFHook();
             if (inputStream != null) {
