@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 
@@ -23,6 +24,8 @@ public class SecurityUtil {
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
     private static final Set<String> ALLOWED_COMMANDS = new HashSet<>(
             Arrays.asList("whoami", "id", "date", "hostname", "uname", "pwd", "uptime"));
+    private static final Pattern JDBC_URL_PATTERN = Pattern.compile(
+            "^jdbc:([a-z0-9]+)://([A-Za-z0-9.-]+)(?::[0-9]{1,5})?/[A-Za-z0-9_.-]+$");
     private static Logger logger =LoggerFactory.getLogger(SecurityUtil.class);
 
 
@@ -153,6 +156,31 @@ public class SecurityUtil {
         }
         return !SSRFChecker.isInternalIpByUrl(url);
     }
+
+    /**
+     * Validate a user supplied JDBC url before it reaches DriverManager. Only
+     * <code>jdbc:&lt;subprotocol&gt;://host[:port]/database</code> is accepted: no query
+     * string, no driver properties (e.g. socketFactory), and the host must not
+     * resolve to an internal address.
+     *
+     * @param jdbcUrl     user supplied jdbc url
+     * @param subprotocol expected subprotocol, e.g. "postgresql" or "db2"
+     * @return the jdbc url when safe, otherwise null
+     */
+    public static String safeJdbcUrl(String jdbcUrl, String subprotocol) {
+        if (jdbcUrl == null || subprotocol == null) {
+            return null;
+        }
+        Matcher m = JDBC_URL_PATTERN.matcher(jdbcUrl);
+        if (!m.matches() || !subprotocol.equals(m.group(1))) {
+            return null;
+        }
+        if (!checkSSRFWithoutRedirect("http://" + m.group(2))) {
+            return null;
+        }
+        return jdbcUrl;
+    }
+
 
     /**
      * Check ssrf by hook socket. Start socket hook.

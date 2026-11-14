@@ -6,7 +6,9 @@ import org.apache.commons.httpclient.methods.GetMethod;
 import org.apache.commons.io.IOUtils;
 import org.apache.http.HttpResponse;
 import org.apache.http.client.fluent.Request;
+import org.apache.http.client.config.RequestConfig;
 import org.apache.http.client.methods.HttpGet;
+import org.joychou.security.SecurityUtil;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
 import org.apache.http.impl.nio.client.CloseableHttpAsyncClient;
@@ -89,10 +91,26 @@ public class HttpUtils {
     }
 
 
+    /**
+     * Allow only http/https urls whose host does not resolve to an internal address.
+     *
+     * @throws IOException if the url is not allowed
+     */
+    private static void checkOutboundUrl(String url) throws IOException {
+        if (url == null || !SecurityUtil.isHttp(url) || !SecurityUtil.checkSSRFWithoutRedirect(url)) {
+            throw new IOException("[-] SSRF check failed");
+        }
+    }
+
+
     public static String URLConnection(String url) {
         try {
+            checkOutboundUrl(url);
             URL u = new URL(url);
             URLConnection urlConnection = u.openConnection();
+            if (urlConnection instanceof HttpURLConnection) {
+                ((HttpURLConnection) urlConnection).setInstanceFollowRedirects(false);
+            }
             BufferedReader in = new BufferedReader(new InputStreamReader(urlConnection.getInputStream())); //send request
             String inputLine;
             StringBuilder html = new StringBuilder();
@@ -115,10 +133,11 @@ public class HttpUtils {
      */
     public static String HttpURLConnection(String url) {
         try {
+            checkOutboundUrl(url);
             URL u = new URL(url);
             URLConnection urlConnection = u.openConnection();
             HttpURLConnection conn = (HttpURLConnection) urlConnection;
-//             conn.setInstanceFollowRedirects(false);
+            conn.setInstanceFollowRedirects(false);
 //             Many HttpURLConnection methods can send http request, such as getResponseCode, getHeaderField
             InputStream is = conn.getInputStream();  // send request
             BufferedReader in = new BufferedReader(new InputStreamReader(is));
@@ -205,8 +224,10 @@ public class HttpUtils {
     public static String HttpAsyncClients(String url) {
         CloseableHttpAsyncClient httpclient = HttpAsyncClients.createDefault();
         try {
+            checkOutboundUrl(url);
             httpclient.start();
             final HttpGet request = new HttpGet(url);
+            request.setConfig(RequestConfig.custom().setRedirectsEnabled(false).build());
             Future<HttpResponse> future = httpclient.execute(request, null);
             HttpResponse response = future.get(6000, TimeUnit.MILLISECONDS);
             return EntityUtils.toString(response.getEntity());

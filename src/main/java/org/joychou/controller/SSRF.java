@@ -125,6 +125,12 @@ public class SSRF {
             // download
             response.setHeader("content-disposition", "attachment;fileName=" + downLoadImgFileName);
 
+            // Only http/https and never an internal address (also re-checked by the socket hook on redirects).
+            if (!SecurityUtil.isHttp(url) || !SecurityUtil.checkSSRFWithoutRedirect(url)) {
+                logger.error("[-] SSRF check failed: " + url);
+                return;
+            }
+            SecurityUtil.startSSRFHook();
             URL u = new URL(url);
             int length;
             byte[] bytes = new byte[1024];
@@ -137,6 +143,7 @@ public class SSRF {
         } catch (Exception e) {
             logger.error(e.toString());
         } finally {
+            SecurityUtil.stopSSRFHook();
             if (inputStream != null) {
                 inputStream.close();
             }

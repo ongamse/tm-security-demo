@@ -1,6 +1,7 @@
 package org.joychou.controller;
 
 import lombok.extern.slf4j.Slf4j;
+import org.joychou.security.SecurityUtil;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -22,7 +23,11 @@ public class Jdbc {
         byte[] b = java.util.Base64.getDecoder().decode(jdbcUrlBase64);
         String jdbcUrl = new String(b);
         log.info(jdbcUrl);
-        DriverManager.getConnection(jdbcUrl);
+        String safeUrl = SecurityUtil.safeJdbcUrl(jdbcUrl, "postgresql");
+        if (safeUrl == null) {
+            throw new IllegalArgumentException("Illegal jdbc url");
+        }
+        DriverManager.getConnection(safeUrl);
     }
 
     @RequestMapping("/db2")
@@ -31,6 +36,10 @@ public class Jdbc {
         byte[] b = java.util.Base64.getDecoder().decode(jdbcUrlBase64);
         String jdbcUrl = new String(b);
         log.info(jdbcUrl);
-        DriverManager.getConnection(jdbcUrl);
+        String safeUrl = SecurityUtil.safeJdbcUrl(jdbcUrl, "db2");
+        if (safeUrl == null) {
+            throw new IllegalArgumentException("Illegal jdbc url");
+        }
+        DriverManager.getConnection(safeUrl);
     }
 }
