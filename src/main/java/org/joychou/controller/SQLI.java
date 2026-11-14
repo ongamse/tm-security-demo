@@ -80,6 +80,29 @@ public class SQLI {
 
 
     /**
+     * Resolves which user record a request may read, using only server-side identity.
+     * A caller referencing their own name (or no name) gets the authenticated principal's
+     * name. An admin referencing another user selects that user via the parameterised
+     * mapper, and the loaded record's username is used. Anyone else is denied.
+     *
+     * @return the server-side username to query, or null when an admin asked for a
+     * user that does not exist
+     */
+    String resolveAuthorizedUsername(String requested) {
+        Authentication auth = currentAuthentication();
+        String principalName = auth.getName();
+        if (requested == null || requested.equals(principalName)) {
+            return principalName;
+        }
+        if (!isAdmin(auth)) {
+            throw new AccessDeniedException("Access denied");
+        }
+        User loaded = userMapper.findByUserName(requested);
+        return loaded == null ? null : loaded.getUsername();
+    }
+
+
+    /**
      * <p>Sql injection jbdc vuln code.</p><br>
      *
      * <a href="http://localhost:8080/sqli/jdbc/vuln?username=joychou">http://localhost:8080/sqli/jdbc/vuln?username=joychou</a>
@@ -87,6 +110,10 @@ public class SQLI {
     @RequestMapping("/jdbc/vuln")
     public String jdbc_sqli_vul(@RequestParam("username") String username) {
 
+        String targetUser = resolveAuthorizedUsername(username);
+        if (targetUser == null) {
+            return "";
+        }
         StringBuilder result = new StringBuilder();
 
         try {
@@ -99,7 +126,7 @@ public class SQLI {
             // bind the user input as a parameter
             String sql = "select * from users where username = ?";
             PreparedStatement statement = con.prepareStatement(sql);
-            statement.setString(1, username);
+            statement.setString(1, targetUser);
             logger.info(statement.toString());
             ResultSet rs = statement.executeQuery();
 
@@ -176,6 +203,10 @@ public class SQLI {
     @RequestMapping("/jdbc/ps/vuln")
     public String jdbc_ps_vuln(@RequestParam("username") String username) {
 
+        String targetUser = resolveAuthorizedUsername(username);
+        if (targetUser == null) {
+            return "";
+        }
         StringBuilder result = new StringBuilder();
         try {
             Class.forName(driver);
@@ -186,7 +217,7 @@ public class SQLI {
 
             String sql = "select * from users where username = ?";
             PreparedStatement st = con.prepareStatement(sql);
-            st.setString(1, username);
+            st.setString(1, targetUser);
 
             logger.info(st.toString());
             ResultSet rs = st.executeQuery();
