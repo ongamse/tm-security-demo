@@ -26,9 +26,9 @@ public class Cors {
     public String vuls1(HttpServletRequest request, HttpServletResponse response) {
         String origin = request.getHeader("origin");
         // only echo the origin (and allow cookies) when it is in the safe domain allowlist
-        String allowedOrigin = SecurityUtil.checkURL(origin);
+        String allowedOrigin = SecurityUtil.matchAllowedOrigin(origin);
         if (allowedOrigin != null) {
-            response.setHeader("Access-Control-Allow-Origin", SecurityUtil.sanitizeHeaderValue(allowedOrigin));
+            response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
             response.setHeader("Access-Control-Allow-Credentials", "true");  // allow cookie
         }
         response.addHeader("Vary", "Origin");
@@ -38,9 +38,9 @@ public class Cors {
     @GetMapping("/vuln/setHeader")
     public String vuls2(HttpServletRequest request, HttpServletResponse response) {
         // no wildcard: only allowlisted origins are allowed, and without credentials
-        String allowedOrigin = SecurityUtil.checkURL(request.getHeader("Origin"));
+        String allowedOrigin = SecurityUtil.matchAllowedOrigin(request.getHeader("Origin"));
         if (allowedOrigin != null) {
-            response.setHeader("Access-Control-Allow-Origin", SecurityUtil.sanitizeHeaderValue(allowedOrigin));
+            response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
         }
         response.addHeader("Vary", "Origin");
         return info;
@@ -119,9 +119,9 @@ public class Cors {
         if (origin != null && SecurityUtil.checkURL(origin) == null) {
             return "Origin is not safe.";
         }
-        String allowedOrigin = SecurityUtil.checkURL(origin);
+        String allowedOrigin = SecurityUtil.matchAllowedOrigin(origin);
         if (allowedOrigin != null) {
-            response.setHeader("Access-Control-Allow-Origin", SecurityUtil.sanitizeHeaderValue(allowedOrigin));
+            response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
             response.setHeader("Access-Control-Allow-Credentials", "true");
         }
         response.addHeader("Vary", "Origin");

@@ -5,7 +5,6 @@ import org.joychou.security.SecurityUtil;
 import org.joychou.security.ssrf.SSRFException;
 import org.joychou.service.HttpService;
 import org.joychou.util.HttpUtils;
-import org.joychou.util.WebUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
@@ -121,9 +120,8 @@ public class SSRF {
         InputStream inputStream = null;
         OutputStream outputStream = null;
         try {
-            String downLoadImgFileName = WebUtils.getNameWithoutExtension(url) + "." + WebUtils.getFileExtension(url);
-            // download
-            response.setHeader("content-disposition", "attachment;fileName=" + SecurityUtil.sanitizeHeaderValue(downLoadImgFileName));
+            // download (fixed file name: the request url is never copied into a response header)
+            response.setHeader("content-disposition", "attachment;fileName=download");
 
             // Only http/https and never an internal address (also re-checked by the socket hook on redirects).
             URL u = SecurityUtil.safeOutboundUrl(url);

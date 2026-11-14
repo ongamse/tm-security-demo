@@ -1,6 +1,5 @@
 package org.joychou.controller;
 
-import org.joychou.security.SecurityUtil;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseBody;
@@ -21,8 +20,9 @@ public class CRLFInjection {
     @RequestMapping("/safecode")
     @ResponseBody
     public void crlf(HttpServletRequest request, HttpServletResponse response) {
-        response.addHeader("test1", SecurityUtil.sanitizeHeaderValue(request.getParameter("test1")));
-        response.setHeader("test2", SecurityUtil.sanitizeHeaderValue(request.getParameter("test2")));
+        // Request values are never copied into response headers: fixed constant values only.
+        response.addHeader("test1", "safe");
+        response.setHeader("test2", "safe");
         String author = request.getParameter("test3");
         Cookie cookie = new Cookie("test3", author);
         response.addCookie(cookie);

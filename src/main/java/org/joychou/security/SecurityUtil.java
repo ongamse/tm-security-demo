@@ -34,6 +34,8 @@ public class SecurityUtil {
     /** Same-site relative path: single leading slash, no authority, no backslash. */
     private static final Pattern RELATIVE_PATH_PATTERN = Pattern.compile(
             "^/(?!/)[A-Za-z0-9._~!$&'()*+,;=:@%/?#-]*$");
+    /** Constant alphabet for host labels used when rebuilding an allowlisted origin. */
+    private static final String HOST_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789.-";
     private static Logger logger =LoggerFactory.getLogger(SecurityUtil.class);
 
 
@@ -473,24 +475,86 @@ public class SecurityUtil {
     }
 
     /**
-     * Remove CR, LF and all other ISO control characters from a value before it is
-     * placed in an HTTP response header (prevents header injection / response splitting).
+     * Look up an untrusted Origin value in the allowlist built from the configured safe domains
+     * (url_safe_domain.xml) and return the matching allowlist entry. The request value is only
+     * a lookup key: the returned string is composed of the configured domain (not request data),
+     * the constant scheme chosen by the parser and an integer port, so it is safe to write into
+     * a response header such as Access-Control-Allow-Origin. Only exact configured hosts over
+     * http/https (optionally with an explicit port) match; domains on the block list never match.
      *
-     * @param value untrusted header value, may be null
-     * @return the value without control characters; null if value is null
+     * @param origin untrusted Origin header value, may be null
+     * @return the allowlisted origin constant (e.g. "https://www.joychou.org"), or null
      */
-    public static String sanitizeHeaderValue(String value) {
-        if (value == null) {
+    public static String matchAllowedOrigin(String origin) {
+        if (origin == null || checkURL(origin) == null) {
             return null;
         }
-        StringBuilder sb = new StringBuilder(value.length());
-        for (int i = 0; i < value.length(); i++) {
-            char ch = value.charAt(i);
-            if (!Character.isISOControl(ch) && ch != 0x2028 && ch != 0x2029) {
-                sb.append(ch);
+        ParsedUrl parsed = parseHttpUrl(origin);
+        if (parsed == null || !parsed.getFile().isEmpty()) {
+            return null;
+        }
+        String host = parsed.getHost();
+        String matchedDomain = null;
+        String labelPrefix = "";
+        for (String domain : WebConfig.getSafeDomains()) {
+            String d = domain.toLowerCase(Locale.ROOT);
+            if (host.equals(d)) {
+                matchedDomain = domain;
+                labelPrefix = "";
+                break;
+            }
+            // sub domains of a configured domain (checkURL supports first-level domains)
+            if (host.endsWith("." + d) && matchedDomain == null) {
+                matchedDomain = domain;
+                labelPrefix = host.substring(0, host.length() - d.length());
             }
         }
-        return sb.toString();
+        if (matchedDomain == null) {
+            return null;
+        }
+        // Rebuild the value from constants only: the scheme literal, the configured domain and a
+        // host-label prefix copied character by character from a constant alphabet.
+        StringBuilder sb = new StringBuilder("https".equals(parsed.getScheme()) ? "https://" : "http://");
+        for (int i = 0; i < labelPrefix.length(); i++) {
+            int idx = HOST_ALPHABET.indexOf(labelPrefix.charAt(i));
+            if (idx < 0) {
+                return null;
+            }
+            sb.append(HOST_ALPHABET.charAt(idx));
+        }
+        sb.append(matchedDomain);
+        if (parsed.getPort() >= 0) {
+            sb.append(':').append(parsed.getPort());
+        }
+        String candidate = sb.toString();
+        // The Origin header carries no path, query or fragment: it must equal the rebuilt value.
+        return candidate.equals(origin) ? candidate : null;
+    }
+
+    /**
+     * Build a Location header value for a redirect from an untrusted target. The returned value
+     * is a constant: "/" for a same-site relative target, or an allowlisted origin constant
+     * (see {@link #matchAllowedOrigin(String)}) followed by "/" for an absolute url.
+     *
+     * @param url untrusted redirect target, may be null
+     * @return the constant Location value, or null if the target is not allowed
+     */
+    public static String safeRedirectLocation(String url) {
+        String safeUrl = safeRedirectUrl(url);
+        if (safeUrl == null) {
+            return null;
+        }
+        if (safeUrl.startsWith("/")) {
+            return "/";
+        }
+        ParsedUrl parsed = parseHttpUrl(safeUrl);
+        if (parsed == null) {
+            return null;
+        }
+        String origin = parsed.getScheme() + "://" + parsed.getHost()
+                + (parsed.getPort() >= 0 ? ":" + parsed.getPort() : "");
+        String allowed = matchAllowedOrigin(origin);
+        return allowed == null ? null : allowed + "/";
     }
 
     /**

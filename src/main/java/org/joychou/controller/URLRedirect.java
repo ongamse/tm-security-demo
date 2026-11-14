@@ -55,13 +55,14 @@ public class URLRedirect {
     @ResponseBody
     public static void setHeader(HttpServletRequest request, HttpServletResponse response) {
         String url = request.getParameter("url");
-        String safeUrl = SecurityUtil.safeRedirectUrl(url);
-        if (safeUrl == null) {
+        // constant Location: "/" or an allowlisted origin constant followed by "/"
+        String location = SecurityUtil.safeRedirectLocation(url);
+        if (location == null) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             return;
         }
         response.setStatus(HttpServletResponse.SC_MOVED_PERMANENTLY); // 301 redirect
-        response.setHeader("Location", SecurityUtil.sanitizeHeaderValue(safeUrl));
+        response.setHeader("Location", location);
     }
 
 
