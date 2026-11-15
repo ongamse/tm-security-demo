@@ -2,16 +2,6 @@ package org.joychou.controller;
 
 import org.springframework.web.util.HtmlUtils;
 import groovy.lang.GroovyShell;
-import org.codehaus.groovy.ast.expr.BinaryExpression;
-import org.codehaus.groovy.ast.expr.ConstantExpression;
-import org.codehaus.groovy.ast.expr.Expression;
-import org.codehaus.groovy.ast.stmt.BlockStatement;
-import org.codehaus.groovy.ast.stmt.ExpressionStatement;
-import org.codehaus.groovy.ast.stmt.ReturnStatement;
-import org.codehaus.groovy.ast.stmt.Statement;
-import org.codehaus.groovy.control.CompilerConfiguration;
-import org.codehaus.groovy.control.customizers.SecureASTCustomizer;
-import org.codehaus.groovy.syntax.Types;
 import org.joychou.security.SecurityUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -27,8 +17,9 @@ import javax.script.ScriptEngineManager;
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
-import java.util.ArrayList;
-import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 import java.sql.DriverManager;
 
 
@@ -156,25 +147,25 @@ public class Rce {
      */
     @GetMapping("groovy")
     public void groovyshell(String content) {
-        // Compile-time allowlist: only constants and arithmetic; no method calls,
-        // property access, variables, closures or imports.
-        SecureASTCustomizer secure = new SecureASTCustomizer();
-        secure.setClosuresAllowed(false);
-        secure.setImportsWhitelist(new ArrayList<String>());
-        secure.setStarImportsWhitelist(new ArrayList<String>());
-        secure.setStaticImportsWhitelist(new ArrayList<String>());
-        secure.setStaticStarImportsWhitelist(new ArrayList<String>());
-        secure.setIndirectImportCheckEnabled(true);
-        secure.setStatementsWhitelist(Arrays.<Class<? extends Statement>>asList(
-                BlockStatement.class, ExpressionStatement.class, ReturnStatement.class));
-        secure.setExpressionsWhitelist(Arrays.<Class<? extends Expression>>asList(
-                ConstantExpression.class, BinaryExpression.class));
-        secure.setTokensWhitelist(Arrays.asList(
-                Types.PLUS, Types.MINUS, Types.MULTIPLY, Types.DIVIDE, Types.MOD));
-        CompilerConfiguration config = new CompilerConfiguration();
-        config.addCompilationCustomizers(secure);
-        GroovyShell groovyShell = new GroovyShell(config);
-        groovyShell.evaluate(content);
+        // The request value is only a lookup key into fixed server-side scripts;
+        // it is never compiled or evaluated as Groovy source.
+        String script = content == null ? null : FIXED_GROOVY_SCRIPTS.get(content);
+        if (script == null) {
+            throw new IllegalArgumentException("content not allowed");
+        }
+        new GroovyShell().evaluate(script);
+    }
+
+    private static final Map<String, String> FIXED_GROOVY_SCRIPTS;
+
+    static {
+        Map<String, String> m = new HashMap<String, String>();
+        m.put("add", "1 + 1");
+        m.put("sub", "2 - 1");
+        m.put("mul", "2 * 2");
+        m.put("div", "4 / 2");
+        m.put("mod", "5 % 2");
+        FIXED_GROOVY_SCRIPTS = Collections.unmodifiableMap(m);
     }
 
 
