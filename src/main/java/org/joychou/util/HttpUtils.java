@@ -15,7 +15,7 @@ import org.apache.http.impl.nio.client.CloseableHttpAsyncClient;
 import org.apache.http.impl.nio.client.HttpAsyncClients;
 import org.apache.http.util.EntityUtils;
 import org.joychou.security.SecurityUtil;
-import org.jsoup.Jsoup;
+import org.jsoup.helper.HttpConnection;
 import org.jsoup.nodes.Document;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,7 +26,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
-import java.net.URL;
 import java.net.URLConnection;
 import java.util.concurrent.*;
 
@@ -46,23 +45,30 @@ public class HttpUtils {
      * @throws IOException if the url is not allowed
      */
     public static HttpURLConnection openSafeConnection(String url) throws IOException {
-        if (!SecurityUtil.checkSSRFResolved(url)) {
-            throw new IOException("[-] SSRF check failed. Illegal url.");
-        }
-        HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
-        conn.setInstanceFollowRedirects(false);
-        return conn;
+        // The connection is made to the url re-built from the validated components (see SecurityUtil.safeTarget).
+        return SecurityUtil.openConnection(SecurityUtil.safeTarget(url));
     }
 
 
     public static String commonHttpClient(String url) {
 
-        if (!SecurityUtil.checkSSRFResolved(url)) {
+        SecurityUtil.SafeTarget target;
+        try {
+            target = SecurityUtil.safeTarget(url);
+        } catch (IOException e) {
             return "Error: [-] SSRF check failed. Illegal url.";
         }
         HttpClient client = new HttpClient();
-        GetMethod method = new GetMethod(url);
+        GetMethod method;
+        try {
+            method = new GetMethod(target.getClientUrl().toExternalForm());
+        } catch (IOException e) {
+            return "Error: [-] SSRF check failed. Illegal url.";
+        }
         method.setFollowRedirects(false);
+        if (!target.isHttps()) {
+            method.setRequestHeader("Host", target.getHostHeader());
+        }
 
         try {
             client.executeMethod(method); // send request
@@ -80,11 +86,13 @@ public class HttpUtils {
 
     public static String request(String url) {
         try {
-            if (!SecurityUtil.checkSSRFResolved(url)) {
-                return "[-] SSRF check failed. Illegal url.";
-            }
+            SecurityUtil.SafeTarget target = SecurityUtil.safeTarget(url);
             CloseableHttpClient client = HttpClients.custom().disableRedirectHandling().build();
-            return Executor.newInstance(client).execute(Request.Get(url)).returnContent().toString();
+            Request req = Request.Get(target.getClientUrl().toURI());
+            if (!target.isHttps()) {
+                req.addHeader("Host", target.getHostHeader());
+            }
+            return Executor.newInstance(client).execute(req).returnContent().toString();
         } catch (Exception e) {
             return e.getMessage();
         }
@@ -97,11 +105,12 @@ public class HttpUtils {
 
         try {
 
-            if (!SecurityUtil.checkSSRFResolved(url)) {
-                return "[-] SSRF check failed. Illegal url.";
-            }
+            SecurityUtil.SafeTarget target = SecurityUtil.safeTarget(url);
             CloseableHttpClient client = HttpClients.createDefault();
-            HttpGet httpGet = new HttpGet(url);
+            HttpGet httpGet = new HttpGet(target.getClientUrl().toURI());
+            if (!target.isHttps()) {
+                httpGet.setHeader("Host", target.getHostHeader());
+            }
             // set redirect enable false
             httpGet.setConfig(RequestConfig.custom().setRedirectsEnabled(false).build());
             HttpResponse httpResponse = client.execute(httpGet); // send request
@@ -171,12 +180,11 @@ public class HttpUtils {
      */
     public static String Jsoup(String url) {
         try {
-            if (!SecurityUtil.checkSSRFResolved(url)) {
-                return "[-] SSRF check failed. Illegal url.";
-            }
-            Document doc = Jsoup.connect(url)
+            SecurityUtil.SafeTarget target = SecurityUtil.safeTarget(url);
+            Document doc = HttpConnection.connect(target.getClientUrl())
                     .followRedirects(false)
                     .timeout(3000)
+                    .header("Host", target.getHostHeader())
                     .cookie("name", "joychou") // request cookies
                     .execute().parse();
             return doc.outerHtml();
@@ -192,13 +200,16 @@ public class HttpUtils {
      * UserAgent is <code>okhttp/2.5.0</code>.
      */
     public static String okhttp(String url) throws IOException {
-        if (!SecurityUtil.checkSSRFResolved(url)) {
-            throw new IOException("[-] SSRF check failed. Illegal url.");
-        }
+        SecurityUtil.SafeTarget target = SecurityUtil.safeTarget(url);
         OkHttpClient client = new OkHttpClient();
         client.setFollowRedirects(false);
         client.setFollowSslRedirects(false);
-        com.squareup.okhttp.Request ok_http = new com.squareup.okhttp.Request.Builder().url(url).build();
+        com.squareup.okhttp.Request.Builder builder = new com.squareup.okhttp.Request.Builder()
+                .url(target.getClientUrl());
+        if (!target.isHttps()) {
+            builder.header("Host", target.getHostHeader());
+        }
+        com.squareup.okhttp.Request ok_http = builder.build();
         return client.newCall(ok_http).execute().body().string();
     }
 
@@ -243,7 +254,10 @@ public class HttpUtils {
 
 
     public static String HttpAsyncClients(String url) {
-        if (!SecurityUtil.checkSSRFResolved(url)) {
+        SecurityUtil.SafeTarget target;
+        try {
+            target = SecurityUtil.safeTarget(url);
+        } catch (IOException e) {
             return "[-] SSRF check failed. Illegal url.";
         }
         CloseableHttpAsyncClient httpclient = HttpAsyncClients.custom()
@@ -251,7 +265,10 @@ public class HttpUtils {
                 .build();
         try {
             httpclient.start();
-            final HttpGet request = new HttpGet(url);
+            final HttpGet request = new HttpGet(target.getClientUrl().toURI());
+            if (!target.isHttps()) {
+                request.setHeader("Host", target.getHostHeader());
+            }
             Future<HttpResponse> future = httpclient.execute(request, null);
             HttpResponse response = future.get(6000, TimeUnit.MILLISECONDS);
             return EntityUtils.toString(response.getEntity());

@@ -1,24 +1,30 @@
 package org.joychou.security;
 
 import org.joychou.config.WebConfig;
+import org.joychou.security.ssrf.PinnedSslSocketFactory;
 import org.joychou.security.ssrf.SSRFChecker;
 import org.joychou.security.ssrf.SocketHook;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.net.ssl.HttpsURLConnection;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
+import java.net.HttpURLConnection;
 import java.net.Inet4Address;
 import java.net.Inet6Address;
 import java.net.InetAddress;
+import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLDecoder;
+import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -100,7 +106,8 @@ public class SecurityUtil {
     public static String gethost(String url) {
         try {
             URI uri = new URI(url);
-            return uri.getHost().toLowerCase();
+            String host = uri.getHost();
+            return host == null ? "" : host.toLowerCase();
         } catch (URISyntaxException e) {
             return "";
         }
@@ -271,36 +278,242 @@ public class SecurityUtil {
      * @return Safe url returns true. Dangerous url returns false.
      */
     public static boolean checkSSRFResolved(String url) {
-        if (url == null || !isHttp(url)) {
-            return false;
-        }
         try {
-            String host = new URI(url).getHost();
-            if (host == null || host.isEmpty()) {
-                return false;
-            }
-            // The URI and URL parsers must agree on the host, otherwise the check and the request differ.
-            if (!host.equalsIgnoreCase(new URL(url).getHost())) {
-                return false;
-            }
-            for (InetAddress addr : InetAddress.getAllByName(host)) {
-                if (addr.isAnyLocalAddress() || addr.isLoopbackAddress() || addr.isLinkLocalAddress()
-                        || addr.isSiteLocalAddress() || addr.isMulticastAddress()) {
-                    return false;
-                }
-                if (addr instanceof Inet6Address && (addr.getAddress()[0] & 0xfe) == 0xfc) {
-                    return false; // unique local fc00::/7
-                }
-                if (addr instanceof Inet4Address && SSRFChecker.isInternalIp(addr.getHostAddress())) {
-                    return false;
-                }
-            }
+            safeTarget(url);
             return true;
-        } catch (Exception e) {
+        } catch (IOException e) {
             logger.error("SSRF check failed: " + e.toString());
             return false;
         }
     }
+
+
+    // Host name: dot separated LDH labels. Anything else (userinfo, %-escapes, backslash, unicode...) is rejected.
+    private static final Pattern HOST_PATTERN = Pattern.compile(
+            "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$");
+    private static final Pattern NUMERIC_HOST = Pattern.compile("^[0-9.]+$");
+    // Only canonical dotted-quad IPv4 (no octal / hex / short forms that parsers read differently).
+    private static final Pattern STRICT_IPV4 = Pattern.compile(
+            "^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])$");
+    private static final Pattern IPV6_LITERAL = Pattern.compile("^\\[[0-9a-f:.]{2,45}\\]$");
+
+
+    /**
+     * A validated outbound destination. Every component was re-built from the parsed and validated
+     * pieces of the user url, and the resolved address is pinned so the connection cannot be
+     * re-resolved (DNS rebinding) to another address after validation.
+     */
+    public static final class SafeTarget {
+        private final String scheme;
+        private final String host;
+        private final int port;
+        private final String file;
+        private final InetAddress[] addresses;
+        private final InetAddress address;
+
+        private SafeTarget(String scheme, String host, int port, String file, InetAddress[] addresses) {
+            this.scheme = scheme;
+            this.host = host;
+            this.port = port;
+            this.file = file;
+            this.addresses = addresses.clone();
+            this.address = addresses[0];
+        }
+
+        /** All validated addresses of the host (every one of them is public). */
+        public InetAddress[] getAddresses() {
+            return addresses.clone();
+        }
+
+        public boolean isHttps() {
+            return "https".equals(scheme);
+        }
+
+        /** Validated canonical (lower case) host of the original url. */
+        public String getHost() {
+            return host;
+        }
+
+        public InetAddress getAddress() {
+            return address;
+        }
+
+        public String getScheme() {
+            return scheme;
+        }
+
+        /** Explicit port, or -1 for the scheme default. */
+        public int getPort() {
+            return port;
+        }
+
+        /** Validated path and query (always starts with a slash). */
+        public String getFile() {
+            return file;
+        }
+
+        /** The pinned literal IP, bracketed for IPv6, as used in {@link #getUrl()}. */
+        public String getPinnedHost() {
+            String ip = address.getHostAddress();
+            if (address instanceof Inet6Address) {
+                int scope = ip.indexOf('%');
+                return "[" + (scope >= 0 ? ip.substring(0, scope) : ip) + "]";
+            }
+            return ip;
+        }
+
+        /** Value for the Host header when connecting to the pinned IP. */
+        public String getHostHeader() {
+            boolean defaultPort = port == -1 || (port == 80 && !isHttps()) || (port == 443 && isHttps());
+            return defaultPort ? host : host + ":" + port;
+        }
+
+        /** Url that connects to the pinned literal IP (scheme, ip, port, path and query only). */
+        public URL getUrl() throws MalformedURLException {
+            return new URL(scheme, getPinnedHost(), port, file);
+        }
+
+        /** Url re-built from the validated canonical host name (for clients that pin the address themselves). */
+        public URL getCanonicalUrl() throws MalformedURLException {
+            return new URL(scheme, host, port, file);
+        }
+
+        /**
+         * Url for third-party http clients that cannot pin the address. http targets use the pinned IP
+         * (send {@link #getHostHeader()} as Host header). https targets keep the validated host name so
+         * the TLS certificate can be verified by the client; redirects must stay disabled.
+         */
+        public URL getClientUrl() throws MalformedURLException {
+            return isHttps() ? getCanonicalUrl() : getUrl();
+        }
+    }
+
+
+    private static boolean isHttpAllowed() {
+        String v = System.getProperty("ssrf.allow.http");
+        if (v == null) {
+            v = System.getenv("SSRF_ALLOW_HTTP");
+        }
+        return v == null || Boolean.parseBoolean(v.trim());
+    }
+
+
+    private static String canonicalHost(String host) {
+        if (host == null || host.isEmpty() || host.length() > 253) {
+            return null;
+        }
+        String h = host.toLowerCase(Locale.ROOT);
+        if (h.startsWith("[")) {
+            return IPV6_LITERAL.matcher(h).matches() ? h : null;
+        }
+        if (NUMERIC_HOST.matcher(h).matches()) {
+            return STRICT_IPV4.matcher(h).matches() ? h : null;
+        }
+        return HOST_PATTERN.matcher(h).matches() ? h : null;
+    }
+
+
+    public static boolean isPublicAddress(InetAddress addr) {
+        if (addr.isAnyLocalAddress() || addr.isLoopbackAddress() || addr.isLinkLocalAddress()
+                || addr.isSiteLocalAddress() || addr.isMulticastAddress()) {
+            return false; // also covers cloud metadata 169.254.169.254
+        }
+        if (addr instanceof Inet6Address && (addr.getAddress()[0] & 0xfe) == 0xfc) {
+            return false; // unique local fc00::/7
+        }
+        return !(addr instanceof Inet4Address && SSRFChecker.isInternalIp(addr.getHostAddress()));
+    }
+
+
+    /**
+     * The single SSRF gate for outbound requests. Parses the user url to a {@link URI}, requires
+     * http/https (https only when <code>-Dssrf.allow.http=false</code> or env <code>SSRF_ALLOW_HTTP=false</code>),
+     * no userinfo, a strictly valid host, resolves every A/AAAA address and rejects loopback,
+     * link-local (cloud metadata), site-local, unique-local, multicast, wildcard and configured
+     * blocked subnets. The returned target is re-built from the validated components and pins
+     * the resolved address. Fails closed.
+     *
+     * @param url user supplied url
+     * @return the validated target
+     * @throws IOException if the url is not allowed
+     */
+    public static SafeTarget safeTarget(String url) throws IOException {
+        if (url == null) {
+            throw new IOException("[-] SSRF check failed. Illegal url.");
+        }
+        try {
+            URI uri = new URI(url);
+            String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
+            boolean https = "https".equals(scheme);
+            if (!https && !("http".equals(scheme) && isHttpAllowed())) {
+                throw new IOException("[-] SSRF check failed. Illegal scheme.");
+            }
+            if (uri.getRawUserInfo() != null) {
+                throw new IOException("[-] SSRF check failed. Userinfo not allowed.");
+            }
+            String host = canonicalHost(uri.getHost());
+            if (host == null) {
+                throw new IOException("[-] SSRF check failed. Illegal host.");
+            }
+            int port = uri.getPort();
+            if (port != -1 && (port < 1 || port > 65535)) {
+                throw new IOException("[-] SSRF check failed. Illegal port.");
+            }
+
+            InetAddress[] addrs = InetAddress.getAllByName(host);
+            for (InetAddress addr : addrs) {
+                if (!isPublicAddress(addr)) {
+                    throw new IOException("[-] SSRF check failed. Internal address.");
+                }
+            }
+
+            String path = uri.getRawPath();
+            String file = (path == null || path.isEmpty()) ? "/" : path;
+            if (uri.getRawQuery() != null) {
+                file = file + "?" + uri.getRawQuery();
+            }
+            return new SafeTarget(scheme, host, port, file, addrs);
+        } catch (URISyntaxException | UnknownHostException e) {
+            throw new IOException("[-] SSRF check failed. " + e.getClass().getSimpleName());
+        }
+    }
+
+
+    /**
+     * Convenience wrapper over {@link #safeTarget(String)}.
+     *
+     * @return the re-built url (pinned literal IP) for the validated user url
+     * @throws IOException if the url is not allowed
+     */
+    public static URL safeUrl(String url) throws IOException {
+        return safeTarget(url).getUrl();
+    }
+
+
+    /**
+     * Open an unconnected HttpURLConnection for a validated target. Redirects are disabled (each hop
+     * must be passed through {@link #safeTarget(String)} again by the caller).
+     * <ul>
+     *   <li>https: the url is re-built from the validated canonical host; the TLS socket factory
+     *       re-checks the address that was actually connected to (DNS rebinding) before any byte is
+     *       sent, and the certificate is verified against the host name as usual.</li>
+     *   <li>http: the url is re-built with the pinned literal IP. The JDK drops a restricted Host header,
+     *       so name based virtual hosting is not available over plain http; set
+     *       <code>SSRF_ALLOW_HTTP=false</code> to allow https only.</li>
+     * </ul>
+     */
+    public static HttpURLConnection openConnection(SafeTarget target) throws IOException {
+        HttpURLConnection conn = (HttpURLConnection) (target.isHttps() ? target.getCanonicalUrl() : target.getUrl())
+                .openConnection();
+        conn.setInstanceFollowRedirects(false);
+        if (conn instanceof HttpsURLConnection) {
+            ((HttpsURLConnection) conn).setSSLSocketFactory(new PinnedSslSocketFactory());
+        } else {
+            conn.setRequestProperty("Host", target.getHostHeader());
+        }
+        return conn;
+    }
+
 
     /**
      * Check ssrf by hook socket. Start socket hook.

@@ -28,7 +28,7 @@ public class Jdbc {
     private static String validateJdbcUrl(String jdbcUrl) {
         Matcher m = JDBC_URL.matcher(jdbcUrl);
         if (!m.matches() || !SecurityUtil.checkSSRFResolved(
-                "http://" + m.group(1) + (m.group(2) == null ? "" : m.group(2)))) {
+                "https://" + m.group(1) + (m.group(2) == null ? "" : m.group(2)))) {
             throw new IllegalArgumentException("Illegal jdbc url");
         }
         return jdbcUrl;

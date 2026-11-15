@@ -9,7 +9,6 @@ import org.springframework.web.bind.annotation.*;
 
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.net.URL;
 import java.util.ArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -105,8 +104,8 @@ public class URLWhiteList {
             return;
         }
 
-        URL u = new URL(url);
-        String host = u.getHost();
+        // Parse once through the validated URI based helper; mismatching or unparsable urls give an empty host.
+        String host = SecurityUtil.gethost(url);
         logger.info("host:  " + host);
 
         // endsWith .

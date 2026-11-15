@@ -1,9 +1,8 @@
 package org.joychou.security.ssrf;
 
+import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.InetAddress;
-import java.net.URI;
-import java.net.URL;
 import java.util.ArrayList;
 
 import org.apache.commons.lang.StringUtils;
@@ -66,13 +65,16 @@ public class SSRFChecker {
         try {
             do {
                 // 判断当前请求的URL是否是内网ip
-                if (isInternalIpByUrl(finalUrl) || !SecurityUtil.checkSSRFResolved(finalUrl)) {
+                SecurityUtil.SafeTarget target;
+                try {
+                    target = SecurityUtil.safeTarget(finalUrl);
+                } catch (IOException e) {
                     logger.error("[-] SSRF check failed. Dangerous url: " + finalUrl);
                     return false;  // 内网ip直接return，非内网ip继续判断是否有重定向
                 }
 
-                connection = (HttpURLConnection) new URL(finalUrl).openConnection();
-                connection.setInstanceFollowRedirects(false);
+                // Connect to the url re-built from the validated components; redirects are disabled.
+                connection = SecurityUtil.openConnection(target);
                 connection.setUseCaches(false); // 设置为false，手动处理跳转，可以拿到每个跳转的URL
                 connection.setConnectTimeout(connectTime);
                 //connection.setRequestMethod("GET");
@@ -106,17 +108,14 @@ public class SSRFChecker {
      */
     public static boolean isInternalIpByUrl(String url) {
 
-        String host = url2host(url);
-        if (host.equals("")) {
+        try {
+            // Parsing, scheme/host validation and resolution are done once in SecurityUtil.safeTarget,
+            // which rejects loopback/link-local/site-local/blocked-subnet addresses.
+            SecurityUtil.safeTarget(url);
+            return false;
+        } catch (IOException e) {
             return true; // 异常URL当成内网IP等非法URL处理
         }
-
-        String ip = host2ip(host);
-        if (ip.equals("")) {
-            return true; // 如果域名转换为IP异常，则认为是非法URL
-        }
-
-        return isInternalIp(ip);
     }
 
 
@@ -282,22 +281,6 @@ public class SSRFChecker {
             }
         }
         return true;
-    }
-
-    /**
-     * Get host from URL which the protocol must be http:// or https:// and not be //.
-     */
-    private static String url2host(String url) {
-        try {
-            // use URI instead of URL
-            URI u = new URI(url);
-            if (SecurityUtil.isHttp(url)) {
-                return u.getHost();
-            }
-            return "";
-        } catch (Exception e) {
-            return "";
-        }
     }
 
 }
