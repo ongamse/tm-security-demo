@@ -31,6 +31,7 @@ import org.xml.sax.helpers.DefaultHandler;
 import org.apache.commons.digester3.Digester;
 import org.jdom2.input.SAXBuilder;
 import org.joychou.util.WebUtils;
+import org.joychou.util.XmlUtils;
 import org.xmlbeam.annotation.XBRead;
 
 /**
@@ -94,14 +95,10 @@ public class XXE {
             String body = WebUtils.getRequestBody(request);
             logger.info(body);
 
-            SAXBuilder builder = new SAXBuilder();
-            builder.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            builder.setFeature("http://xml.org/sax/features/external-general-entities", false);
-            builder.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
-            builder.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
-            builder.setExpandEntities(false);
+            String safeBody = XmlUtils.sanitizeXml(body);
+            SAXBuilder builder = XmlUtils.newSecureSaxBuilder();
             // org.jdom2.Document document
-            builder.build(new InputSource(new StringReader(body)));
+            builder.build(new StringReader(safeBody));
             return "SAXBuilder xxe vuln code";
         } catch (Exception e) {
             logger.error(e.toString());
@@ -115,14 +112,10 @@ public class XXE {
             String body = WebUtils.getRequestBody(request);
             logger.info(body);
 
-            SAXBuilder builder = new SAXBuilder();
-            builder.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            builder.setFeature("http://xml.org/sax/features/external-general-entities", false);
-            builder.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
-            builder.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
-            builder.setExpandEntities(false);
+            String safeBody = XmlUtils.sanitizeXml(body);
+            SAXBuilder builder = XmlUtils.newSecureSaxBuilder();
             // org.jdom2.Document document
-            builder.build(new InputSource(new StringReader(body)));
+            builder.build(new StringReader(safeBody));
 
         } catch (Exception e) {
             logger.error(e.toString());
@@ -217,12 +210,9 @@ public class XXE {
             String body = WebUtils.getRequestBody(request);
             logger.info(body);
 
-            Digester digester = new Digester();
-            digester.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            digester.setFeature("http://xml.org/sax/features/external-general-entities", false);
-            digester.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
-            digester.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
-            digester.parse(new StringReader(body));  // parse xml
+            String safeBody = XmlUtils.sanitizeXml(body);
+            Digester digester = XmlUtils.newSecureDigester();
+            digester.parse(new StringReader(safeBody));  // parse xml
         } catch (Exception e) {
             logger.error(e.toString());
             return EXCEPT;
@@ -236,12 +226,9 @@ public class XXE {
             String body = WebUtils.getRequestBody(request);
             logger.info(body);
 
-            Digester digester = new Digester();
-            digester.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            digester.setFeature("http://xml.org/sax/features/external-general-entities", false);
-            digester.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
-            digester.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
-            digester.parse(new StringReader(body));  // parse xml
+            String safeBody = XmlUtils.sanitizeXml(body);
+            Digester digester = XmlUtils.newSecureDigester();
+            digester.parse(new StringReader(safeBody));  // parse xml
 
             return "Digester xxe security code";
         } catch (Exception e) {
