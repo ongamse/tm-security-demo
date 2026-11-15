@@ -1,7 +1,6 @@
 package org.joychou.controller;
 
 import org.springframework.web.util.HtmlUtils;
-import com.fasterxml.uuid.Generators;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Controller;
@@ -18,6 +17,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
+import java.security.SecureRandom;
 import java.util.regex.Pattern;
 
 import org.joychou.security.SecurityUtil;
@@ -35,7 +35,8 @@ public class FileUpload {
     // Save the uploaded file to this folder
     private static final String UPLOADED_FOLDER = "/tmp/";
     private final Logger logger = LoggerFactory.getLogger(this.getClass());
-    private static final Pattern SAFE_SUFFIX = Pattern.compile("^(\\.[A-Za-z0-9]{1,10})?$");
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+    private static final Pattern SAFE_SUFFIX =Pattern.compile("^(\\.[A-Za-z0-9]{1,10})?$");
 
     // uplaod any file
     @GetMapping("/any")
@@ -130,7 +131,7 @@ public class FileUpload {
             return "Upload failed. Illeagl picture.";
         }
 
-        // The stored file name is server generated (UUID + allowlisted suffix).
+        // The stored file name is server generated (SecureRandom hex + allowlisted suffix).
         Path path;
         try {
             path = newUploadPath(Suffix);
@@ -164,13 +165,27 @@ public class FileUpload {
     }
 
     /**
+     * Unpredictable file name: 16 bytes from SecureRandom, hex encoded (32 chars).
+     */
+    private static String randomName() {
+        byte[] buf = new byte[16];
+        SECURE_RANDOM.nextBytes(buf);
+        StringBuilder sb = new StringBuilder(buf.length * 2);
+        for (byte b : buf) {
+            sb.append(Character.forDigit((b >> 4) & 0xF, 16));
+            sb.append(Character.forDigit(b & 0xF, 16));
+        }
+        return sb.toString();
+    }
+
+    /**
      * Build a path inside the upload folder from a server generated name only
-     * (UUID + allowlisted extension) and verify containment before returning it.
+     * (SecureRandom hex + allowlisted extension) and verify containment before returning it.
      */
     private static Path newUploadPath(String safeSuffix) throws IOException {
         String suffix = SAFE_SUFFIX.matcher(safeSuffix).matches() ? safeSuffix : "";
         Path root = Paths.get(UPLOADED_FOLDER).toRealPath();
-        Path resolved = root.resolve(Generators.timeBasedGenerator().generate() + suffix).normalize();
+        Path resolved = root.resolve(randomName() + suffix).normalize();
         if (!resolved.startsWith(root) || !root.equals(resolved.getParent())) {
             throw new IOException("Illegal file path");
         }
