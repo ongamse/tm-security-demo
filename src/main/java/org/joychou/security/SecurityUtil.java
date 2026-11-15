@@ -673,6 +673,115 @@ public class SecurityUtil {
     }
 
 
+    // Whitelist for values written to a response header (RFC 3986 reserved + unreserved + '%').
+    private static final Pattern HEADER_VALUE_PATTERN = Pattern.compile(
+            "^[A-Za-z0-9._~:/?#\\[\\]@!$&'()*+,;=%-]{0,2048}$");
+    private static final String HEADER_VALUE_CHARS =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._~:/?#[]@!$&'()*+,;=%-";
+
+
+    /**
+     * Strictly validate a value that will be written to an HTTP response header and return a value
+     * that is re-built character by character from a fixed whitelist. The raw value must match the
+     * whitelist, and neither it nor its (repeatedly) url decoded form may contain CR, LF or any
+     * other control character, so encoded line breaks (%0d, %0a, %250d ...) are rejected too.
+     * Fails closed: nothing is written when the value is not acceptable.
+     *
+     * @param value untrusted header value, may be null
+     * @return the re-built value, or null if the value is null or not acceptable
+     */
+    public static String safeHeaderValue(String value) {
+        if (value == null || !HEADER_VALUE_PATTERN.matcher(value).matches()) {
+            return null;
+        }
+        String decoded = value;
+        for (int i = 0; i < 4 && decoded.indexOf('%') != -1; i++) {
+            try {
+                decoded = URLDecoder.decode(decoded, "UTF-8");
+            } catch (UnsupportedEncodingException | IllegalArgumentException e) {
+                return null;
+            }
+            if (hasLineBreakOrControl(decoded)) {
+                return null;
+            }
+        }
+        if (hasLineBreakOrControl(decoded)) {
+            return null;
+        }
+        StringBuilder rebuilt = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            int idx = HEADER_VALUE_CHARS.indexOf(value.charAt(i));
+            if (idx < 0) {
+                return null;
+            }
+            rebuilt.append(HEADER_VALUE_CHARS.charAt(idx));
+        }
+        return rebuilt.toString();
+    }
+
+
+    private static boolean hasLineBreakOrControl(String s) {
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            int type = Character.getType(c);
+            if (Character.isISOControl(c) || type == Character.LINE_SEPARATOR
+                    || type == Character.PARAGRAPH_SEPARATOR) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+
+    /**
+     * Map a request Origin to the value allowed in Access-Control-Allow-Origin. Only a bare origin
+     * (scheme://host[:port], no userinfo/path/query) whose host is on the configured safe domain list
+     * (url_safe_domain.xml) and not on the block list is accepted. The result is re-built from a
+     * fixed scheme constant, the allowlist entry (or the strictly validated sub domain) and the
+     * numeric port; the raw Origin string is never returned.
+     *
+     * @param origin the Origin request header value, may be null
+     * @return the origin to reflect, or null when no CORS header should be written
+     */
+    public static String corsOrigin(String origin) {
+        if (origin == null || origin.isEmpty() || origin.length() > 2048) {
+            return null;
+        }
+        try {
+            URI uri = new URI(origin);
+            String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
+            String sch;
+            if ("https".equals(scheme)) {
+                sch = "https";
+            } else if ("http".equals(scheme)) {
+                sch = "http";
+            } else {
+                return null;
+            }
+            String path = uri.getRawPath();
+            if (uri.getRawUserInfo() != null || uri.getRawQuery() != null || uri.getRawFragment() != null
+                    || (path != null && !path.isEmpty())) {
+                return null;
+            }
+            int port = uri.getPort();
+            if (port != -1 && (port < 1 || port > 65535)) {
+                return null;
+            }
+            String host = canonicalHost(uri.getHost());
+            if (host == null) {
+                return null;
+            }
+            String allowedHost = allowedRedirectHost(host);
+            if (allowedHost == null) {
+                return null;
+            }
+            return port == -1 ? sch + "://" + allowedHost : sch + "://" + allowedHost + ":" + port;
+        } catch (URISyntaxException e) {
+            return null;
+        }
+    }
+
+
     /**
      * Parse a user supplied command line into an argv array for a no-shell process API.
      * The executable must be in a small allowlist and every argument must match the

@@ -27,8 +27,10 @@ public class Cors {
         String origin = request.getHeader("origin");
         // Only echo an origin that is on the allowlist; credentials are never combined with an unvalidated origin.
         response.addHeader("Vary", "Origin");
-        if (origin != null && SecurityUtil.checkURL(origin) != null) {
-            response.setHeader("Access-Control-Allow-Origin", SecurityUtil.headerValueFilter(origin));
+        // Only the allowlist-derived origin is reflected, never the raw Origin header.
+        String allowedOrigin = SecurityUtil.corsOrigin(origin);
+        if (allowedOrigin != null) {
+            response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
             response.setHeader("Access-Control-Allow-Credentials", "true");  // allow cookie
         }
         return info;
@@ -39,8 +41,9 @@ public class Cors {
         // No wildcard: only allow origins that are on the allowlist.
         String origin = request.getHeader("origin");
         response.addHeader("Vary", "Origin");
-        if (origin != null && SecurityUtil.checkURL(origin) != null) {
-            response.setHeader("Access-Control-Allow-Origin", SecurityUtil.headerValueFilter(origin));
+        String allowedOrigin = SecurityUtil.corsOrigin(origin);
+        if (allowedOrigin != null) {
+            response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
         }
         return info;
     }
@@ -115,13 +118,14 @@ public class Cors {
 
         // 如果origin不为空并且origin不在白名单内，认定为不安全。
         // 如果origin为空，表示是同域过来的请求或者浏览器直接发起的请求。
-        if (origin != null && SecurityUtil.checkURL(origin) == null) {
+        String allowedOrigin = SecurityUtil.corsOrigin(origin);
+        if (origin != null && allowedOrigin == null) {
             return "Origin is not safe.";
         }
         response.addHeader("Vary", "Origin");
-        if (origin != null) {
-            // origin has passed the allowlist check above
-            response.setHeader("Access-Control-Allow-Origin", SecurityUtil.headerValueFilter(origin));
+        if (allowedOrigin != null) {
+            // allowlist-derived origin, not the raw request header
+            response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
             response.setHeader("Access-Control-Allow-Credentials", "true");
         }
         return LoginUtils.getUserInfo2JsonStr(request);
