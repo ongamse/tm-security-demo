@@ -111,6 +111,59 @@ public class SecurityUtil {
 
 
     /**
+     * Validate a redirect destination. Only relative same-site paths (single leading slash) or
+     * absolute http/https urls whose host passes {@link #checkURL(String)} are accepted.
+     * Scheme-relative urls (//host), backslashes, control characters, other schemes and
+     * encoded variants of those are rejected.
+     *
+     * @param url the redirect target supplied by the client
+     * @return the original url if it is safe to redirect to; otherwise null
+     */
+    public static String checkRedirectURL(String url) {
+        if (url == null || url.isEmpty()) {
+            return null;
+        }
+
+        // Check the raw value and its decoded form (also decode twice to catch double encoding).
+        String decoded = url;
+        for (int i = 0; i < 2; i++) {
+            if (!isPlainRedirectString(decoded)) {
+                return null;
+            }
+            try {
+                decoded = URLDecoder.decode(decoded, "UTF-8");
+            } catch (UnsupportedEncodingException | IllegalArgumentException e) {
+                return null;
+            }
+        }
+        if (!isPlainRedirectString(decoded)) {
+            return null;
+        }
+
+        if (url.startsWith("/")) {
+            // Same-site path only: reject "//host" and its decoded variants.
+            if (url.startsWith("//") || decoded.startsWith("//")) {
+                return null;
+            }
+            return url;
+        }
+
+        return checkURL(url);
+    }
+
+
+    private static boolean isPlainRedirectString(String s) {
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '\\' || c <= 0x20 || c == 0x7f) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+
+    /**
      * 通过自定义白名单域名处理SSRF漏洞。如果URL范围收敛，强烈建议使用该方案。
      * 这是最简单也最有效的修复方式。因为SSRF都是发起URL请求时造成，大多数场景是图片场景，一般图片的域名都是CDN或者OSS等，所以限定域名白名单即可完成SSRF漏洞修复。
      *

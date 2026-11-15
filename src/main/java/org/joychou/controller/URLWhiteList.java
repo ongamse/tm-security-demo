@@ -112,7 +112,15 @@ public class URLWhiteList {
         // endsWith .
         for (String domain : domainwhitelist) {
             if (host.endsWith("." + domain)) {
-                res.sendRedirect(url);
+                // Reject backslash/encoded/control-char bypasses and non-allowlisted hosts
+                // that java.net.URL and browsers parse differently.
+                String safeUrl = SecurityUtil.checkRedirectURL(url);
+                if (safeUrl == null) {
+                    res.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                    return;
+                }
+                res.sendRedirect(safeUrl);
+                return;
             }
         }
 
