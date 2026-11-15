@@ -7,6 +7,7 @@ import com.thoughtworks.xstream.security.NullPermission;
 import com.thoughtworks.xstream.security.PrimitiveTypePermission;
 import org.joychou.dao.User;
 import org.joychou.util.WebUtils;
+import org.joychou.util.XmlUtils;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -25,7 +26,8 @@ public class XStreamRce {
      */
     @PostMapping("/xstream")
     public String parseXml(HttpServletRequest request) throws Exception {
-        String xml = WebUtils.getRequestBody(request);
+        // Reject DOCTYPE / external entities before the DomDriver ever sees the document.
+        String xml = XmlUtils.sanitizeXml(WebUtils.getRequestBody(request));
         XStream xstream = newSecureXStream();
         xstream.fromXML(xml);
         return "xstream";
