@@ -34,28 +34,56 @@ public class WebUtils {
         return callback != null && JSONP_CALLBACK.matcher(callback).matches();
     }
 
-    // Escape characters that could break out of a script/HTML context inside JSON text.
+    /**
+     * Rebuild a validated callback name character by character, appending only
+     * characters from [A-Za-z0-9_$.]. The returned string is a new value that never
+     * contains anything outside the identifier allowlist. Throws if the callback is invalid.
+     */
+    public static String rebuildJsonpCallback(String callback) {
+        if (!isValidJsonpCallback(callback)) {
+            throw new IllegalArgumentException("invalid jsonp callback");
+        }
+        StringBuilder sb = new StringBuilder(callback.length());
+        for (int i = 0; i < callback.length(); i++) {
+            char c = callback.charAt(i);
+            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+                    || c == '_' || c == '$' || c == '.') {
+                sb.append(c);
+            }
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Escape JSON text for embedding in a script/HTML context. Characters that could
+     * break out of the context (&lt;, &gt;, &amp;, quote-less control chars, U+2028/9,
+     * and any non-ASCII-printable char) are emitted as \\uXXXX escapes, which are
+     * valid inside JSON strings.
+     */
     public static String escapeJsonForScript(String jsonStr) {
         if (jsonStr == null) {
             return "";
         }
-        return jsonStr.replace("<", "\\u003c")
-                .replace(">", "\\u003e")
-                .replace("&", "\\u0026")
-                .replace(String.valueOf((char) 0x2028), "\\u2028")
-                .replace(String.valueOf((char) 0x2029), "\\u2029");
+        StringBuilder sb = new StringBuilder(jsonStr.length() + 16);
+        for (int i = 0; i < jsonStr.length(); i++) {
+            char c = jsonStr.charAt(i);
+            if (c == '<' || c == '>' || c == '&' || c == '\'' || c < 0x20 || c > 0x7e) {
+                sb.append(String.format("\\u%04x", (int) c));
+            } else {
+                sb.append(c);
+            }
+        }
+        return sb.toString();
     }
 
     /**
-     * Build a JSONP body. The callback must match a strict identifier regex,
-     * otherwise IllegalArgumentException is thrown. The "/**&#47;" prefix prevents
-     * Rosetta Flash style content sniffing.
+     * Build a JSONP body. The callback must match a strict identifier regex and is
+     * rebuilt character by character, otherwise IllegalArgumentException is thrown.
+     * The "/**&#47;" prefix prevents Rosetta Flash style content sniffing.
      */
     public static String json2Jsonp(String callback, String jsonStr) {
-        if (!isValidJsonpCallback(callback)) {
-            throw new IllegalArgumentException("invalid jsonp callback");
-        }
-        return "/**/" + callback + "(" + escapeJsonForScript(jsonStr) + ")";
+        String safeCallback = rebuildJsonpCallback(callback);
+        return "/**/" + safeCallback + "(" + escapeJsonForScript(jsonStr) + ")";
     }
 
 
