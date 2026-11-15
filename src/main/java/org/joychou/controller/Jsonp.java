@@ -21,6 +21,7 @@ import org.joychou.util.WebUtils;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.security.Principal;
 
 
@@ -161,7 +162,11 @@ public class Jsonp {
     private static void writeBody(String escapedBody, HttpServletResponse response) throws IOException {
         response.setContentType("application/javascript;charset=UTF-8");
         response.setHeader("X-Content-Type-Options", "nosniff");
-        response.getWriter().write(escapedBody);
+        // Body is already restricted to ASCII-printable chars (callback allowlisted and rebuilt,
+        // JSON escaped via WebUtils.escapeJsonForScript); write raw bytes, not an HTML-aware Writer.
+        byte[] bytes = escapedBody.getBytes(StandardCharsets.UTF_8);
+        response.setContentLength(bytes.length);
+        response.getOutputStream().write(bytes);
     }
 
     private static void rejectCallback(HttpServletResponse response) throws IOException {
