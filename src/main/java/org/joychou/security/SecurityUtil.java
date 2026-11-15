@@ -259,6 +259,32 @@ public class SecurityUtil {
 
 
     /**
+     * Remove CR, LF and all other ISO control characters from a value that is written into
+     * an HTTP response header, so attacker-controlled data cannot split the response
+     * (CRLF / header injection).
+     *
+     * @param value header value, may be null
+     * @return the value without control characters, or null if value is null
+     */
+    public static String headerValueFilter(String value) {
+        if (value == null) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            int type = Character.getType(ch);
+            // drops CR, LF, NUL and other ISO controls plus Unicode line/paragraph separators
+            if (!Character.isISOControl(ch) && type != Character.LINE_SEPARATOR
+                    && type != Character.PARAGRAPH_SEPARATOR) {
+                sb.append(ch);
+            }
+        }
+        return sb.toString();
+    }
+
+
+    /**
      * Parse a user supplied command line into an argv array for a no-shell process API.
      * The executable must be in a small allowlist and every argument must match the
      * same strict character set as {@link #cmdFilter(String)}.
