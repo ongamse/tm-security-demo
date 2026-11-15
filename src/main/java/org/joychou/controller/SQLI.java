@@ -138,7 +138,7 @@ public class SQLI {
             String sql = "select * from users where username = ?";
             PreparedStatement statement = con.prepareStatement(sql);
             statement.setString(1, effectiveUsername);
-            logger.info("jdbc/vuln query for user {}", sanitizeForLog(effectiveUsername));
+            logger.info("jdbc/vuln executing parameterized user query");
             ResultSet rs = statement.executeQuery();
 
             while (rs.next()) {
@@ -154,7 +154,7 @@ public class SQLI {
         } catch (ClassNotFoundException e) {
             logger.error("Sorry, can't find the Driver!");
         } catch (SQLException e) {
-            logger.error(e.toString());
+            logger.error("SQL error: {}", e.getClass().getSimpleName());
         }
         return result.toString();
     }
@@ -182,14 +182,14 @@ public class SQLI {
             PreparedStatement st = con.prepareStatement(sql);
             st.setString(1, username);
 
-            logger.info(st.toString());  // sql after prepare statement
+            logger.info("jdbc/sec executing parameterized user query");
             ResultSet rs = st.executeQuery();
 
             while (rs.next()) {
                 // never return the password column to the client
                 String res_name = rs.getString("username");
                 result.append(String.format("%s\n", res_name));
-                logger.info("found user {}", res_name);
+                logger.info("found user {}", sanitizeForLog(res_name));
             }
 
             rs.close();
@@ -199,7 +199,7 @@ public class SQLI {
             logger.error("Sorry, can't find the Driver!");
             e.printStackTrace();
         } catch (SQLException e) {
-            logger.error(e.toString());
+            logger.error("SQL error: {}", e.getClass().getSimpleName());
         }
         return result.toString();
     }
@@ -229,7 +229,7 @@ public class SQLI {
             PreparedStatement st = con.prepareStatement(sql);
             st.setString(1, effectiveUsername);
 
-            logger.info("jdbc/ps/vuln query for user {}", sanitizeForLog(effectiveUsername));
+            logger.info("jdbc/ps/vuln executing parameterized user query");
             ResultSet rs = st.executeQuery();
 
             while (rs.next()) {
@@ -246,7 +246,7 @@ public class SQLI {
             logger.error("Sorry, can't find the Driver!");
             e.printStackTrace();
         } catch (SQLException e) {
-            logger.error(e.toString());
+            logger.error("SQL error: {}", e.getClass().getSimpleName());
         }
         return result.toString();
     }
