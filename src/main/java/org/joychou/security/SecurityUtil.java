@@ -6,6 +6,7 @@ import org.joychou.security.ssrf.SSRFChecker;
 import org.joychou.security.ssrf.SocketHook;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.web.util.UriComponentsBuilder;
 
 import javax.net.ssl.HttpsURLConnection;
 import java.io.IOException;
@@ -197,15 +198,87 @@ public class SecurityUtil {
             return null;
         }
 
-        if (url.startsWith("/")) {
-            // Same-site path only: reject "//host" and its decoded variants.
-            if (url.startsWith("//") || decoded.startsWith("//")) {
+        try {
+            URI uri = new URI(url);
+            String rawPath = uri.getRawPath();
+
+            if (uri.getScheme() == null) {
+                // Same-site path only: single leading slash, no authority, never "//host" or "/\host".
+                if (uri.getRawAuthority() != null || rawPath == null || !rawPath.startsWith("/")
+                        || rawPath.startsWith("//") || decoded.startsWith("//")) {
+                    return null;
+                }
+                // Re-built from the validated path/query components, not the request string.
+                return UriComponentsBuilder.newInstance()
+                        .path(rawPath)
+                        .query(uri.getRawQuery())
+                        .fragment(uri.getRawFragment())
+                        .build(true)
+                        .toUriString();
+            }
+
+            String scheme = uri.getScheme().toLowerCase(Locale.ROOT);
+            if (!"http".equals(scheme) && !"https".equals(scheme)) {
                 return null;
             }
-            return url;
+            if (uri.getRawUserInfo() != null) {
+                return null;
+            }
+            int port = uri.getPort();
+            if (port != -1 && (port < 1 || port > 65535)) {
+                return null;
+            }
+            String host = canonicalHost(uri.getHost());
+            if (host == null) {
+                return null;
+            }
+            String safeHost = allowedRedirectHost(host);
+            if (safeHost == null) {
+                return null;
+            }
+            // Re-built from the allowlist host and the validated URI components.
+            return UriComponentsBuilder.newInstance()
+                    .scheme("https".equals(scheme) ? "https" : "http")
+                    .host(safeHost)
+                    .port(port)
+                    .path(rawPath)
+                    .query(uri.getRawQuery())
+                    .fragment(uri.getRawFragment())
+                    .build(true)
+                    .toUriString();
+        } catch (URISyntaxException | IllegalArgumentException e) {
+            return null;
         }
+    }
 
-        return checkURL(url);
+
+    /**
+     * Look the host up in the configured safe/block domain lists (url_safe_domain.xml).
+     *
+     * @param host validated lower case host
+     * @return the configured allowlist entry when the host equals it, the validated host when it is a
+     *         sub domain of an entry, or null when it is blocked or not allowlisted
+     */
+    private static String allowedRedirectHost(String host) {
+        ArrayList<String> safeDomains = WebConfig.getSafeDomains();
+        ArrayList<String> blockDomains = WebConfig.getBlockDomains();
+
+        for (String blockDomain : blockDomains) {
+            if (host.equals(blockDomain) || host.endsWith("." + blockDomain)) {
+                return null;
+            }
+        }
+        for (String safeDomain : safeDomains) {
+            if (host.equals(safeDomain)) {
+                return safeDomain;
+            }
+        }
+        for (String safeDomain : safeDomains) {
+            if (host.endsWith("." + safeDomain)) {
+                return host;
+            }
+        }
+        return null;
     }
 
 
