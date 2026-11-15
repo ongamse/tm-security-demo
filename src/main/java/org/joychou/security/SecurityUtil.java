@@ -16,8 +16,6 @@ import java.net.Inet4Address;
 import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.MalformedURLException;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
@@ -106,13 +104,206 @@ public class SecurityUtil {
      * @return host
      */
     public static String gethost(String url) {
-        try {
-            URI uri = new URI(url);
-            String host = uri.getHost();
-            return host == null ? "" : host.toLowerCase();
-        } catch (URISyntaxException e) {
-            return "";
+        UrlParts parts = parseUrl(url);
+        return parts == null || parts.host == null ? "" : parts.host;
+    }
+
+
+    // Fixed alphabets. A URL string is never handed to java.net.URI/URL/InetAddress: it is parsed by
+    // plain string code and every component is re-built character by character by indexing into one of
+    // these constants (a char that is not in the alphabet rejects the whole url), so the values used by
+    // the sinks below are server-owned strings.
+    private static final String ALPHA_LOWER = "abcdefghijklmnopqrstuvwxyz";
+    private static final String ALPHA_UPPER = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    private static final String ALPHA_DIGITS = "0123456789";
+    private static final String ALPHA_HEX = "0123456789abcdefABCDEF";
+    private static final String ALPHA_SCHEME = ALPHA_LOWER + ALPHA_UPPER + ALPHA_DIGITS + "+-.";
+    private static final String ALPHA_HOST = ALPHA_LOWER + ALPHA_UPPER + ALPHA_DIGITS + "-.";
+    private static final String ALPHA_IPV6 = "[]" + ALPHA_DIGITS + "abcdefABCDEF:.";
+    // unreserved + the sub-delims, ':' '@' (pchar) and '/' '?'; '%' is handled separately (needs two hex digits).
+    private static final String ALPHA_COMPONENT = ALPHA_LOWER + ALPHA_UPPER + ALPHA_DIGITS + "-._~!$&'()*+,;=:@/?";
+
+
+    /**
+     * The parts of a url, each re-built from a fixed alphabet (see above). Never null-safe to use
+     * unchecked: host is null when the authority is missing or not a strictly valid host.
+     */
+    private static final class UrlParts {
+        String scheme;        // lower case, null when the reference has no scheme
+        boolean hasAuthority;
+        boolean userInfo;
+        String host;          // lower case canonical host (IPv6 in brackets), null when absent or invalid
+        int port = -1;        // -1 when absent
+        String path = "";
+        String query;         // null when absent
+        String fragment;      // null when absent
+    }
+
+
+    private static String rebuild(String s, String alphabet) {
+        StringBuilder sb = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            int idx = alphabet.indexOf(s.charAt(i));
+            if (idx < 0) {
+                return null;
+            }
+            sb.append(alphabet.charAt(idx));
         }
+        return sb.toString();
+    }
+
+
+    /** Re-build a path / query / fragment: whitelist chars and well formed %XX escapes only. */
+    private static String rebuildComponent(String s) {
+        StringBuilder sb = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '%') {
+                if (i + 2 >= s.length()) {
+                    return null;
+                }
+                int h1 = ALPHA_HEX.indexOf(s.charAt(i + 1));
+                int h2 = ALPHA_HEX.indexOf(s.charAt(i + 2));
+                if (h1 < 0 || h2 < 0) {
+                    return null;
+                }
+                sb.append('%').append(ALPHA_HEX.charAt(h1)).append(ALPHA_HEX.charAt(h2));
+                i += 2;
+                continue;
+            }
+            int idx = ALPHA_COMPONENT.indexOf(c);
+            if (idx < 0) {
+                return null;
+            }
+            sb.append(ALPHA_COMPONENT.charAt(idx));
+        }
+        return sb.toString();
+    }
+
+
+    /**
+     * Pure string parser for an RFC 3986 reference (scheme, authority, path, query, fragment). Rejects
+     * (returns null) anything outside the whitelist alphabets: control characters, spaces, backslashes,
+     * non ASCII, unwise characters, malformed %-escapes, more than one '@', a bad port.
+     */
+    private static UrlParts parseUrl(String url) {
+        if (url == null || url.isEmpty() || url.length() > 8192) {
+            return null;
+        }
+        UrlParts p = new UrlParts();
+        String rest = url;
+
+        int delim = -1;
+        for (int i = 0; i < url.length(); i++) {
+            char c = url.charAt(i);
+            if (c == ':' || c == '/' || c == '?' || c == '#') {
+                delim = i;
+                break;
+            }
+        }
+        if (delim >= 0 && url.charAt(delim) == ':') {
+            String scheme = delim == 0 ? null : rebuild(url.substring(0, delim), ALPHA_SCHEME);
+            if (scheme == null || ALPHA_LOWER.indexOf(Character.toLowerCase(scheme.charAt(0))) < 0) {
+                return null;
+            }
+            p.scheme = scheme.toLowerCase(Locale.ROOT);
+            rest = url.substring(delim + 1);
+        }
+
+        int hash = rest.indexOf('#');
+        String fragment = null;
+        if (hash >= 0) {
+            fragment = rest.substring(hash + 1);
+            rest = rest.substring(0, hash);
+            if (fragment.indexOf('#') >= 0) {
+                return null;
+            }
+        }
+        int qm = rest.indexOf('?');
+        String query = null;
+        if (qm >= 0) {
+            query = rest.substring(qm + 1);
+            rest = rest.substring(0, qm);
+        }
+
+        String authority = null;
+        if (rest.startsWith("//")) {
+            int slash = rest.indexOf('/', 2);
+            authority = slash < 0 ? rest.substring(2) : rest.substring(2, slash);
+            rest = slash < 0 ? "" : rest.substring(slash);
+        }
+
+        String path = rebuildComponent(rest);
+        if (path == null) {
+            return null;
+        }
+        p.path = path;
+        if (query != null) {
+            p.query = rebuildComponent(query);
+            if (p.query == null) {
+                return null;
+            }
+        }
+        if (fragment != null) {
+            p.fragment = rebuildComponent(fragment);
+            if (p.fragment == null) {
+                return null;
+            }
+        }
+
+        if (authority != null) {
+            p.hasAuthority = true;
+            parseAuthority(authority, p);
+        }
+        return p;
+    }
+
+
+    /** Fills host / port / userInfo; leaves host null when the authority is not a valid server authority. */
+    private static void parseAuthority(String authority, UrlParts p) {
+        String hostPort = authority;
+        int at = authority.indexOf('@');
+        if (at >= 0) {
+            if (at != authority.lastIndexOf('@')) {
+                return;
+            }
+            p.userInfo = true;
+            if (rebuildComponent(authority.substring(0, at)) == null) {
+                return;
+            }
+            hostPort = authority.substring(at + 1);
+        }
+
+        String rawHost;
+        String rawPort = "";
+        if (hostPort.startsWith("[")) {
+            int end = hostPort.indexOf(']');
+            if (end < 0) {
+                return;
+            }
+            rawHost = hostPort.substring(0, end + 1);
+            String after = hostPort.substring(end + 1);
+            if (!after.isEmpty()) {
+                if (after.charAt(0) != ':') {
+                    return;
+                }
+                rawPort = after.substring(1);
+            }
+        } else {
+            int colon = hostPort.lastIndexOf(':');
+            rawHost = colon < 0 ? hostPort : hostPort.substring(0, colon);
+            rawPort = colon < 0 ? "" : hostPort.substring(colon + 1);
+        }
+
+        String cleanPort = rebuild(rawPort, ALPHA_DIGITS);
+        if (cleanPort == null || cleanPort.length() > 9) {
+            return;
+        }
+        int port = cleanPort.isEmpty() ? -1 : Integer.parseInt(cleanPort);
+
+        String cleanHost = rebuild(rawHost, rawHost.startsWith("[") ? ALPHA_IPV6 : ALPHA_HOST);
+        p.host = cleanHost == null ? null : canonicalHost(cleanHost);
+        p.port = port;
     }
 
 
@@ -200,36 +391,40 @@ public class SecurityUtil {
         }
 
         try {
-            URI uri = new URI(url);
-            String rawPath = uri.getRawPath();
+            // Pure string parse; every component is re-built from a fixed alphabet (see parseUrl).
+            UrlParts uri = parseUrl(url);
+            if (uri == null) {
+                return null;
+            }
+            String rawPath = uri.path;
 
-            if (uri.getScheme() == null) {
+            if (uri.scheme == null) {
                 // Same-site path only: single leading slash, no authority, never "//host" or "/\host".
-                if (uri.getRawAuthority() != null || rawPath == null || !rawPath.startsWith("/")
+                if (uri.hasAuthority || !rawPath.startsWith("/")
                         || rawPath.startsWith("//") || decoded.startsWith("//")) {
                     return null;
                 }
                 // Re-built from the validated path/query components, not the request string.
                 return UriComponentsBuilder.newInstance()
                         .path(rawPath)
-                        .query(uri.getRawQuery())
-                        .fragment(uri.getRawFragment())
+                        .query(uri.query)
+                        .fragment(uri.fragment)
                         .build(true)
                         .toUriString();
             }
 
-            String scheme = uri.getScheme().toLowerCase(Locale.ROOT);
+            String scheme = uri.scheme;
             if (!"http".equals(scheme) && !"https".equals(scheme)) {
                 return null;
             }
-            if (uri.getRawUserInfo() != null) {
+            if (uri.userInfo) {
                 return null;
             }
-            int port = uri.getPort();
+            int port = uri.port;
             if (port != -1 && (port < 1 || port > 65535)) {
                 return null;
             }
-            String host = canonicalHost(uri.getHost());
+            String host = uri.host;
             if (host == null) {
                 return null;
             }
@@ -243,11 +438,11 @@ public class SecurityUtil {
                     .host(safeHost)
                     .port(port)
                     .path(rawPath)
-                    .query(uri.getRawQuery())
-                    .fragment(uri.getRawFragment())
+                    .query(uri.query)
+                    .fragment(uri.fragment)
                     .build(true)
                     .toUriString();
-        } catch (URISyntaxException | IllegalArgumentException e) {
+        } catch (IllegalArgumentException e) {
             return null;
         }
     }
@@ -479,13 +674,14 @@ public class SecurityUtil {
             return null;
         }
         String h = host.toLowerCase(Locale.ROOT);
+        // Valid hosts are returned re-built from the fixed host alphabets, not as the input string.
         if (h.startsWith("[")) {
-            return IPV6_LITERAL.matcher(h).matches() ? h : null;
+            return IPV6_LITERAL.matcher(h).matches() ? rebuild(h, ALPHA_IPV6) : null;
         }
         if (NUMERIC_HOST.matcher(h).matches()) {
-            return STRICT_IPV4.matcher(h).matches() ? h : null;
+            return STRICT_IPV4.matcher(h).matches() ? rebuild(h, ALPHA_HOST) : null;
         }
-        return HOST_PATTERN.matcher(h).matches() ? h : null;
+        return HOST_PATTERN.matcher(h).matches() ? rebuild(h, ALPHA_HOST) : null;
     }
 
 
@@ -502,7 +698,7 @@ public class SecurityUtil {
 
 
     /**
-     * The single SSRF gate for outbound requests. Parses the user url to a {@link URI}, requires
+     * The single SSRF gate for outbound requests. Parses the user url with a pure string parser (see parseUrl), requires
      * http/https (https only when <code>-Dssrf.allow.http=false</code> or env <code>SSRF_ALLOW_HTTP=false</code>),
      * no userinfo, a strictly valid host, resolves every A/AAAA address and rejects loopback,
      * link-local (cloud metadata), site-local, unique-local, multicast, wildcard and configured
@@ -518,35 +714,45 @@ public class SecurityUtil {
             throw new IOException("[-] SSRF check failed. Illegal url.");
         }
         try {
-            URI uri = new URI(url);
-            String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
+            // Pure string parse; scheme/host/port/path/query are re-built from fixed alphabets (parseUrl),
+            // so nothing below hands the request string itself to java.net.
+            UrlParts uri = parseUrl(url);
+            if (uri == null) {
+                throw new IOException("[-] SSRF check failed. Illegal url.");
+            }
+            String scheme = uri.scheme == null ? "" : uri.scheme;
             boolean https = "https".equals(scheme);
             if (!https && !("http".equals(scheme) && isHttpAllowed())) {
                 throw new IOException("[-] SSRF check failed. Illegal scheme.");
             }
-            if (uri.getRawUserInfo() != null) {
+            if (!uri.hasAuthority || uri.userInfo) {
                 throw new IOException("[-] SSRF check failed. Userinfo not allowed.");
             }
-            String host = canonicalHost(uri.getHost());
+            String host = uri.host;
             if (host == null) {
                 throw new IOException("[-] SSRF check failed. Illegal host.");
             }
-            int port = uri.getPort();
+            int port = uri.port;
             if (port != -1 && (port < 1 || port > 65535)) {
                 throw new IOException("[-] SSRF check failed. Illegal port.");
             }
 
             InetAddress[] addrs = InetAddress.getAllByName(host);
+            if (addrs.length == 0) {
+                throw new IOException("[-] SSRF check failed. Unresolvable host.");
+            }
             for (InetAddress addr : addrs) {
                 if (!isPublicAddress(addr)) {
                     throw new IOException("[-] SSRF check failed. Internal address.");
                 }
             }
 
-            String path = uri.getRawPath();
-            String file = (path == null || path.isEmpty()) ? "/" : path;
-            if (uri.getRawQuery() != null) {
-                file = file + "?" + uri.getRawQuery();
+            String file = uri.path.isEmpty() ? "/" : uri.path;
+            if (!file.startsWith("/")) {
+                throw new IOException("[-] SSRF check failed. Illegal path.");
+            }
+            if (uri.query != null) {
+                file = file + "?" + uri.query;
             }
             // Host header value: an IPv6 literal comes from the resolved address, a host name is
             // URL-encoded (a no-op for valid LDH labels, but CR/LF can never survive) and the port is an int.
@@ -565,7 +771,7 @@ public class SecurityUtil {
             }
             String hostHeader = defaultPort ? hostPart : hostPart + ":" + Integer.toString(port);
             return new SafeTarget(https ? "https" : "http", host, port, file, addrs, hostHeader);
-        } catch (URISyntaxException | UnknownHostException e) {
+        } catch (UnknownHostException e) {
             throw new IOException("[-] SSRF check failed. " + e.getClass().getSimpleName());
         }
     }
