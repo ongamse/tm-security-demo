@@ -1,5 +1,6 @@
 package org.joychou.controller;
 
+import org.springframework.web.util.HtmlUtils;
 import org.springframework.expression.ConstructorResolver;
 import org.springframework.expression.EvaluationException;
 import org.springframework.expression.ExpressionParser;
@@ -45,7 +46,7 @@ public class SpEL {
                 throw new SpelEvaluationException(SpelMessage.TYPE_NOT_FOUND, typeName);
             }
         });
-        return String.valueOf(parser.parseExpression(expression).getValue(context));
+        return HtmlUtils.htmlEscape(String.valueOf(parser.parseExpression(expression).getValue(context)));
     }
 
     public static void main(String[] args) {
