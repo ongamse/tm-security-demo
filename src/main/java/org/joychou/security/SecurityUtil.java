@@ -20,6 +20,7 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLDecoder;
+import java.net.URLEncoder;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -383,12 +384,15 @@ public class SecurityUtil {
         private final String file;
         private final InetAddress[] addresses;
         private final InetAddress address;
+        private final String hostHeader;
 
-        private SafeTarget(String scheme, String host, int port, String file, InetAddress[] addresses) {
+        private SafeTarget(String scheme, String host, int port, String file, InetAddress[] addresses,
+                           String hostHeader) {
             this.scheme = scheme;
             this.host = host;
             this.port = port;
             this.file = file;
+            this.hostHeader = hostHeader;
             this.addresses = addresses.clone();
             this.address = addresses[0];
         }
@@ -437,8 +441,7 @@ public class SecurityUtil {
 
         /** Value for the Host header when connecting to the pinned IP. */
         public String getHostHeader() {
-            boolean defaultPort = port == -1 || (port == 80 && !isHttps()) || (port == 443 && isHttps());
-            return defaultPort ? host : host + ":" + port;
+            return hostHeader;
         }
 
         /** Url that connects to the pinned literal IP (scheme, ip, port, path and query only). */
@@ -453,7 +456,7 @@ public class SecurityUtil {
 
         /**
          * Url for third-party http clients that cannot pin the address. http targets use the pinned IP
-         * (send {@link #getHostHeader()} as Host header). https targets keep the validated host name so
+         * (the client derives the Host header from the url). https targets keep the validated host name so
          * the TLS certificate can be verified by the client; redirects must stay disabled.
          */
         public URL getClientUrl() throws MalformedURLException {
@@ -545,7 +548,23 @@ public class SecurityUtil {
             if (uri.getRawQuery() != null) {
                 file = file + "?" + uri.getRawQuery();
             }
-            return new SafeTarget(scheme, host, port, file, addrs);
+            // Host header value: an IPv6 literal comes from the resolved address, a host name is
+            // URL-encoded (a no-op for valid LDH labels, but CR/LF can never survive) and the port is an int.
+            boolean defaultPort = port == -1 || (port == 80 && !https) || (port == 443 && https);
+            String hostPart;
+            if (host.startsWith("[")) {
+                String ip = addrs[0].getHostAddress();
+                int scope = ip.indexOf('%');
+                hostPart = "[" + (scope >= 0 ? ip.substring(0, scope) : ip) + "]";
+            } else {
+                try {
+                    hostPart = URLEncoder.encode(host, "UTF-8");
+                } catch (UnsupportedEncodingException e) {
+                    throw new IOException("[-] SSRF check failed. Illegal host.");
+                }
+            }
+            String hostHeader = defaultPort ? hostPart : hostPart + ":" + Integer.toString(port);
+            return new SafeTarget(https ? "https" : "http", host, port, file, addrs, hostHeader);
         } catch (URISyntaxException | UnknownHostException e) {
             throw new IOException("[-] SSRF check failed. " + e.getClass().getSimpleName());
         }
@@ -570,8 +589,8 @@ public class SecurityUtil {
      *   <li>https: the url is re-built from the validated canonical host; the TLS socket factory
      *       re-checks the address that was actually connected to (DNS rebinding) before any byte is
      *       sent, and the certificate is verified against the host name as usual.</li>
-     *   <li>http: the url is re-built with the pinned literal IP. The JDK drops a restricted Host header,
-     *       so name based virtual hosting is not available over plain http; set
+     *   <li>http: the url is re-built with the pinned literal IP and the JDK derives the Host header from
+     *       it, so name based virtual hosting is not available over plain http; set
      *       <code>SSRF_ALLOW_HTTP=false</code> to allow https only.</li>
      * </ul>
      */
@@ -581,8 +600,6 @@ public class SecurityUtil {
         conn.setInstanceFollowRedirects(false);
         if (conn instanceof HttpsURLConnection) {
             ((HttpsURLConnection) conn).setSSLSocketFactory(new PinnedSslSocketFactory());
-        } else {
-            conn.setRequestProperty("Host", target.getHostHeader());
         }
         return conn;
     }
@@ -673,11 +690,8 @@ public class SecurityUtil {
     }
 
 
-    // Whitelist for values written to a response header (RFC 3986 reserved + unreserved + '%').
-    private static final Pattern HEADER_VALUE_PATTERN = Pattern.compile(
-            "^[A-Za-z0-9._~:/?#\\[\\]@!$&'()*+,;=%-]{0,2048}$");
-    private static final String HEADER_VALUE_CHARS =
-            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._~:/?#[]@!$&'()*+,;=%-";
+    // RFC 3986 reserved characters (and '%') that stay readable after URL-encoding a header value.
+    private static final String HEADER_RESTORE_CHARS = ":/?#[]@!$&'()*,;=%";
 
 
     /**
@@ -691,7 +705,7 @@ public class SecurityUtil {
      * @return the re-built value, or null if the value is null or not acceptable
      */
     public static String safeHeaderValue(String value) {
-        if (value == null || !HEADER_VALUE_PATTERN.matcher(value).matches()) {
+        if (value == null || value.length() > 2048) {
             return null;
         }
         String decoded = value;
@@ -708,15 +722,22 @@ public class SecurityUtil {
         if (hasLineBreakOrControl(decoded)) {
             return null;
         }
-        StringBuilder rebuilt = new StringBuilder(value.length());
-        for (int i = 0; i < value.length(); i++) {
-            int idx = HEADER_VALUE_CHARS.indexOf(value.charAt(i));
-            if (idx < 0) {
-                return null;
-            }
-            rebuilt.append(HEADER_VALUE_CHARS.charAt(idx));
+        // URL-encode the value (CR/LF/control chars and everything outside the unreserved set become %XX),
+        // then restore only the RFC 3986 reserved characters that are legal in a URL / file name header value.
+        String encoded;
+        try {
+            encoded = URLEncoder.encode(value, "UTF-8");
+        } catch (UnsupportedEncodingException e) {
+            return null;
         }
-        return rebuilt.toString();
+        encoded = encoded.replace("+", "%20");
+        for (int i = 0; i < HEADER_RESTORE_CHARS.length(); i++) {
+            char c = HEADER_RESTORE_CHARS.charAt(i);
+            // '%' is restored last (existing %XX escapes stay as they were); a raw CR/LF/control char
+            // is never restored because it is not in HEADER_RESTORE_CHARS.
+            encoded = encoded.replace(String.format("%%%02X", (int) c), String.valueOf(c));
+        }
+        return encoded;
     }
 
 
@@ -734,11 +755,10 @@ public class SecurityUtil {
 
 
     /**
-     * Map a request Origin to the value allowed in Access-Control-Allow-Origin. Only a bare origin
-     * (scheme://host[:port], no userinfo/path/query) whose host is on the configured safe domain list
-     * (url_safe_domain.xml) and not on the block list is accepted. The result is re-built from a
-     * fixed scheme constant, the allowlist entry (or the strictly validated sub domain) and the
-     * numeric port; the raw Origin string is never returned.
+     * Map a request Origin to the value allowed in Access-Control-Allow-Origin. The lower cased request
+     * Origin is only a lookup key in a fixed server-side map (http/https x configured safe domain from
+     * url_safe_domain.xml, minus the block list, with the default port or 8080/8443); the returned
+     * String is the map's constant value, never a string derived from the request.
      *
      * @param origin the Origin request header value, may be null
      * @return the origin to reflect, or null when no CORS header should be written
@@ -747,38 +767,60 @@ public class SecurityUtil {
         if (origin == null || origin.isEmpty() || origin.length() > 2048) {
             return null;
         }
-        try {
-            URI uri = new URI(origin);
-            String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
-            String sch;
-            if ("https".equals(scheme)) {
-                sch = "https";
-            } else if ("http".equals(scheme)) {
-                sch = "http";
-            } else {
-                return null;
+        // The request value is only a lookup key; the returned String is a server-owned constant.
+        return currentCorsOrigins().get(origin.toLowerCase(Locale.ROOT));
+    }
+
+
+    // Ports (besides the scheme default) that are allowed for the configured safe domains.
+    private static final int[] CORS_EXTRA_PORTS = {8080, 8443};
+    private static volatile ArrayList<String> corsSafeDomainsSource;
+    private static volatile ArrayList<String> corsBlockDomainsSource;
+    private static volatile Map<String, String> corsOriginMap = new HashMap<String, String>();
+
+
+    /**
+     * Fixed allowlist of origins (lower case key -> constant value) built from the configured safe
+     * domains (url_safe_domain.xml) minus the block list. Rebuilt only when the configuration changes.
+     */
+    private static Map<String, String> currentCorsOrigins() {
+        ArrayList<String> safe = WebConfig.getSafeDomains();
+        ArrayList<String> block = WebConfig.getBlockDomains();
+        if (safe != corsSafeDomainsSource || block != corsBlockDomainsSource) {
+            synchronized (SecurityUtil.class) {
+                if (safe != corsSafeDomainsSource || block != corsBlockDomainsSource) {
+                    Map<String, String> map = new HashMap<String, String>();
+                    for (String domain : safe) {
+                        if (domain == null || canonicalHost(domain) == null) {
+                            continue;
+                        }
+                        boolean blocked = false;
+                        for (String b : block) {
+                            if (domain.equals(b) || domain.endsWith("." + b)) {
+                                blocked = true;
+                                break;
+                            }
+                        }
+                        if (blocked) {
+                            continue;
+                        }
+                        String d = domain.toLowerCase(Locale.ROOT);
+                        for (String sch : new String[]{"http", "https"}) {
+                            String base = sch + "://" + d;
+                            map.put(base, base);
+                            for (int p : CORS_EXTRA_PORTS) {
+                                String withPort = base + ":" + p;
+                                map.put(withPort, withPort);
+                            }
+                        }
+                    }
+                    corsOriginMap = map;
+                    corsSafeDomainsSource = safe;
+                    corsBlockDomainsSource = block;
+                }
             }
-            String path = uri.getRawPath();
-            if (uri.getRawUserInfo() != null || uri.getRawQuery() != null || uri.getRawFragment() != null
-                    || (path != null && !path.isEmpty())) {
-                return null;
-            }
-            int port = uri.getPort();
-            if (port != -1 && (port < 1 || port > 65535)) {
-                return null;
-            }
-            String host = canonicalHost(uri.getHost());
-            if (host == null) {
-                return null;
-            }
-            String allowedHost = allowedRedirectHost(host);
-            if (allowedHost == null) {
-                return null;
-            }
-            return port == -1 ? sch + "://" + allowedHost : sch + "://" + allowedHost + ":" + port;
-        } catch (URISyntaxException e) {
-            return null;
         }
+        return corsOriginMap;
     }
 
 

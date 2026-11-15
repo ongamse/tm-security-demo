@@ -61,14 +61,13 @@ public class HttpUtils {
         HttpClient client = new HttpClient();
         GetMethod method;
         try {
+            // http connects to the pinned literal IP and the client derives the Host header itself;
+            // no header is written from request data (name based virtual hosting needs https).
             method = new GetMethod(target.getClientUrl().toExternalForm());
         } catch (IOException e) {
             return "Error: [-] SSRF check failed. Illegal url.";
         }
         method.setFollowRedirects(false);
-        if (!target.isHttps()) {
-            method.setRequestHeader("Host", target.getHostHeader());
-        }
 
         try {
             client.executeMethod(method); // send request
@@ -89,9 +88,6 @@ public class HttpUtils {
             SecurityUtil.SafeTarget target = SecurityUtil.safeTarget(url);
             CloseableHttpClient client = HttpClients.custom().disableRedirectHandling().build();
             Request req = Request.Get(target.getClientUrl().toURI());
-            if (!target.isHttps()) {
-                req.addHeader("Host", target.getHostHeader());
-            }
             return Executor.newInstance(client).execute(req).returnContent().toString();
         } catch (Exception e) {
             return e.getMessage();
@@ -107,10 +103,8 @@ public class HttpUtils {
 
             SecurityUtil.SafeTarget target = SecurityUtil.safeTarget(url);
             CloseableHttpClient client = HttpClients.createDefault();
+            // The client derives the Host header from the (pinned) url; no header is set from request data.
             HttpGet httpGet = new HttpGet(target.getClientUrl().toURI());
-            if (!target.isHttps()) {
-                httpGet.setHeader("Host", target.getHostHeader());
-            }
             // set redirect enable false
             httpGet.setConfig(RequestConfig.custom().setRedirectsEnabled(false).build());
             HttpResponse httpResponse = client.execute(httpGet); // send request
@@ -184,7 +178,6 @@ public class HttpUtils {
             Document doc = HttpConnection.connect(target.getClientUrl())
                     .followRedirects(false)
                     .timeout(3000)
-                    .header("Host", target.getHostHeader())
                     .cookie("name", "joychou") // request cookies
                     .execute().parse();
             return doc.outerHtml();
@@ -204,12 +197,10 @@ public class HttpUtils {
         OkHttpClient client = new OkHttpClient();
         client.setFollowRedirects(false);
         client.setFollowSslRedirects(false);
-        com.squareup.okhttp.Request.Builder builder = new com.squareup.okhttp.Request.Builder()
-                .url(target.getClientUrl());
-        if (!target.isHttps()) {
-            builder.header("Host", target.getHostHeader());
-        }
-        com.squareup.okhttp.Request ok_http = builder.build();
+        // okhttp derives the Host header from the (pinned) url; no header is set from request data.
+        com.squareup.okhttp.Request ok_http = new com.squareup.okhttp.Request.Builder()
+                .url(target.getClientUrl())
+                .build();
         return client.newCall(ok_http).execute().body().string();
     }
 
@@ -265,10 +256,8 @@ public class HttpUtils {
                 .build();
         try {
             httpclient.start();
+            // The client derives the Host header from the (pinned) url; no header is set from request data.
             final HttpGet request = new HttpGet(target.getClientUrl().toURI());
-            if (!target.isHttps()) {
-                request.setHeader("Host", target.getHostHeader());
-            }
             Future<HttpResponse> future = httpclient.execute(request, null);
             HttpResponse response = future.get(6000, TimeUnit.MILLISECONDS);
             return EntityUtils.toString(response.getEntity());
