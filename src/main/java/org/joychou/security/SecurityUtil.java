@@ -17,7 +17,9 @@ import java.net.URL;
 import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -27,7 +29,55 @@ public class SecurityUtil {
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
     private static final Set<String> ALLOWED_COMMANDS = new HashSet<String>(
             Arrays.asList("whoami", "id", "pwd", "uname", "ls", "uptime"));
+    // Request value -> fixed server-side argv. The request value is only ever a lookup key.
+    private static final Map<String, String[]> FIXED_COMMANDS = new HashMap<String, String[]>();
+    // Request value -> fixed server-side directory constant.
+    private static final Map<String, String> FIXED_DIRS = new HashMap<String, String>();
+    static {
+        FIXED_COMMANDS.put("whoami", new String[]{"whoami"});
+        FIXED_COMMANDS.put("id", new String[]{"id"});
+        FIXED_COMMANDS.put("pwd", new String[]{"pwd"});
+        FIXED_COMMANDS.put("uname", new String[]{"uname"});
+        FIXED_COMMANDS.put("uname -a", new String[]{"uname", "-a"});
+        FIXED_COMMANDS.put("uptime", new String[]{"uptime"});
+        FIXED_COMMANDS.put("ls", new String[]{"ls"});
+        FIXED_COMMANDS.put("ls -la", new String[]{"ls", "-la"});
+
+        FIXED_DIRS.put("/tmp", "/tmp");
+        FIXED_DIRS.put("/var/log", "/var/log");
+        FIXED_DIRS.put("/usr", "/usr");
+        FIXED_DIRS.put(".", ".");
+    }
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
+
+
+    /**
+     * Map a request value to a fixed server-side argv (no user-derived elements).
+     *
+     * @param key request value, used only as a lookup key
+     * @return a copy of the fixed argv, or null if the key is unknown
+     */
+    public static String[] fixedCommand(String key) {
+        if (key == null) {
+            return null;
+        }
+        String[] fixed = FIXED_COMMANDS.get(key.trim());
+        return fixed == null ? null : fixed.clone();
+    }
+
+
+    /**
+     * Map a request value to a fixed server-side directory constant.
+     *
+     * @param key request value, used only as a lookup key
+     * @return the fixed directory, or null if the key is unknown
+     */
+    public static String fixedDir(String key) {
+        if (key == null) {
+            return null;
+        }
+        return FIXED_DIRS.get(key);
+    }
 
 
     /**

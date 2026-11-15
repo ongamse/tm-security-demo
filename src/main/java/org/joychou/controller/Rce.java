@@ -46,8 +46,8 @@ public class Rce {
     public String CommandExec(String cmd) {
         StringBuilder sb = new StringBuilder();
 
-        // Allowlisted executable + validated args, no shell.
-        String[] argv = SecurityUtil.safeCommand(cmd);
+        // Request value is only a lookup key into fixed server-side argv; no shell.
+        String[] argv = SecurityUtil.fixedCommand(cmd);
         if (argv == null) {
             return "Bad boy. I got u.";
         }
@@ -84,8 +84,8 @@ public class Rce {
 
         StringBuilder sb = new StringBuilder();
 
-        // Allowlisted executable + validated args, no shell.
-        String[] arrCmd = SecurityUtil.safeCommand(cmd);
+        // Request value is only a lookup key into fixed server-side argv; no shell.
+        String[] arrCmd = SecurityUtil.fixedCommand(cmd);
         if (arrCmd == null) {
             return "Bad boy. I got u.";
         }
@@ -118,17 +118,16 @@ public class Rce {
      */
     @GetMapping("/jscmd")
     public void jsEngine(String jsurl) throws Exception{
-        // Only load scripts from allowlisted http(s) hosts; reject chars that could break out of the string literal.
-        if (jsurl == null || jsurl.indexOf('"') >= 0 || jsurl.indexOf('\\') >= 0
-                || jsurl.indexOf('\n') >= 0 || jsurl.indexOf('\r') >= 0
-                || !SecurityUtil.checkSSRFByWhitehosts(jsurl)) {
+        // Only load scripts from allowlisted http(s) hosts.
+        if (jsurl == null || !SecurityUtil.checkSSRFByWhitehosts(jsurl)) {
             throw new IllegalArgumentException("jsurl not allowed");
         }
         // js nashorn javascript ecmascript
         ScriptEngine engine = new ScriptEngineManager().getEngineByName("js");
         Bindings bindings = engine.getBindings(ScriptContext.ENGINE_SCOPE);
-        String cmd = String.format("load(\"%s\")", jsurl);
-        engine.eval(cmd, bindings);
+        // Fixed script; the request value is passed only as a binding, never concatenated into script text.
+        bindings.put("jsurl", jsurl);
+        engine.eval("load(jsurl)", bindings);
     }
 
 
