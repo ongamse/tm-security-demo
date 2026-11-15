@@ -61,6 +61,34 @@ public class SQLI {
     }
 
     /**
+     * Derives the username used for the data sink from the authenticated principal, never from the
+     * request parameter. A non-admin asking for someone else's record gets AccessDeniedException (403)
+     * before anything reaches JDBC. For an admin the requested reference is resolved through a
+     * server-side lookup and the stored username is returned; null means "no such record".
+     */
+    private String resolveEffectiveUsername(Authentication authentication, String requested) {
+        checkOwnerOrAdmin(authentication, requested);
+        boolean isAdmin = authentication.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()));
+        if (!isAdmin) {
+            return authentication.getName();
+        }
+        User found = userMapper.findByUserName(requested);
+        return found == null ? null : found.getUsername();
+    }
+
+    /**
+     * Neutralises CR/LF and other control characters and bounds the length before a value is logged.
+     */
+    static String sanitizeForLog(String value) {
+        if (value == null) {
+            return "null";
+        }
+        String cleaned = value.replaceAll("[\\r\\n\\p{Cntrl}]", "_");
+        return cleaned.length() > 100 ? cleaned.substring(0, 100) + "..." : cleaned;
+    }
+
+    /**
      * Copy of the record without the password column, so it is never returned to the client.
      */
     static User toPublicView(User src) {
@@ -90,9 +118,14 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/jdbc/vuln?username=joychou">http://localhost:8080/sqli/jdbc/vuln?username=joychou</a>
      */
     @RequestMapping("/jdbc/vuln")
-    public String jdbc_sqli_vul(@RequestParam("username") String username) {
+    public String jdbc_sqli_vul(@RequestParam("username") String username, Authentication authentication) {
 
         StringBuilder result = new StringBuilder();
+        // 403 before the JDBC call; the sink only ever sees the server-side derived value
+        String effectiveUsername = resolveEffectiveUsername(authentication, username);
+        if (effectiveUsername == null) {
+            return result.toString();
+        }
 
         try {
             Class.forName(driver);
@@ -104,16 +137,15 @@ public class SQLI {
             // bind the user input instead of concatenating it into the SQL
             String sql = "select * from users where username = ?";
             PreparedStatement statement = con.prepareStatement(sql);
-            statement.setString(1, username);
-            logger.info(statement.toString());
+            statement.setString(1, effectiveUsername);
+            logger.info("jdbc/vuln query for user {}", sanitizeForLog(effectiveUsername));
             ResultSet rs = statement.executeQuery();
 
             while (rs.next()) {
+                // never return the password column to the client
                 String res_name = rs.getString("username");
-                String res_pwd = rs.getString("password");
-                String info = String.format("%s: %s\n", res_name, res_pwd);
-                result.append(info);
-                logger.info(info);
+                result.append(String.format("%s\n", res_name));
+                logger.info("found user {}", sanitizeForLog(res_name));
             }
             rs.close();
             con.close();
@@ -178,9 +210,14 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/jdbc/ps/vuln?username=joychou' or 'a'='a">http://localhost:8080/sqli/jdbc/ps/vuln?username=joychou' or 'a'='a</a>
      */
     @RequestMapping("/jdbc/ps/vuln")
-    public String jdbc_ps_vuln(@RequestParam("username") String username) {
+    public String jdbc_ps_vuln(@RequestParam("username") String username, Authentication authentication) {
 
         StringBuilder result = new StringBuilder();
+        // 403 before the JDBC call; the sink only ever sees the server-side derived value
+        String effectiveUsername = resolveEffectiveUsername(authentication, username);
+        if (effectiveUsername == null) {
+            return result.toString();
+        }
         try {
             Class.forName(driver);
             Connection con = DriverManager.getConnection(url, user, password);
@@ -190,17 +227,16 @@ public class SQLI {
 
             String sql = "select * from users where username = ?";
             PreparedStatement st = con.prepareStatement(sql);
-            st.setString(1, username);
+            st.setString(1, effectiveUsername);
 
-            logger.info(st.toString());
+            logger.info("jdbc/ps/vuln query for user {}", sanitizeForLog(effectiveUsername));
             ResultSet rs = st.executeQuery();
 
             while (rs.next()) {
+                // never return the password column to the client
                 String res_name = rs.getString("username");
-                String res_pwd = rs.getString("password");
-                String info = String.format("%s: %s\n", res_name, res_pwd);
-                result.append(info);
-                logger.info(info);
+                result.append(String.format("%s\n", res_name));
+                logger.info("found user {}", sanitizeForLog(res_name));
             }
 
             rs.close();
