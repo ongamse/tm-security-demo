@@ -7,10 +7,17 @@ import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.io.File;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.channels.Channels;
+import java.nio.channels.SeekableByteChannel;
+import java.nio.file.NoSuchFileException;
+import java.nio.file.StandardOpenOption;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 
 @RestController
@@ -40,11 +47,37 @@ public class PathTraversal {
         logger.info("Working directory: " + System.getProperty("user.dir"));
         logger.info("File path: " + imgFile);
 
-        File f = new File(imgFile);
-        if (f.exists() && !f.isDirectory()) {
-            byte[] data = Files.readAllBytes(Paths.get(imgFile));
-            return new String(Base64.encodeBase64(data));
-        } else {
+        if (imgFile == null || imgFile.indexOf('\0') != -1) {
+            return "File doesn't exist or is not a file.";
+        }
+
+        // Confine reads to the working directory; resolve symlinks and ".." before checking.
+        Path baseDir = Paths.get(System.getProperty("user.dir")).toRealPath();
+        Path target;
+        try {
+            // toRealPath resolves symlinks and ".." and fails if the file is missing,
+            // so no separate exists() check is needed.
+            target = baseDir.resolve(imgFile).normalize().toRealPath();
+        } catch (InvalidPathException | NoSuchFileException e) {
+            return "File doesn't exist or is not a file.";
+        }
+        if (!target.startsWith(baseDir)) {
+            logger.info("Path escapes the base directory");
+            return "Bad boy. Illegal file path.";
+        }
+
+        // Open the validated path directly and read from the handle (no check-then-read gap).
+        try (SeekableByteChannel ch = Files.newByteChannel(target, StandardOpenOption.READ);
+             InputStream in = Channels.newInputStream(ch)) {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) != -1) {
+                out.write(buf, 0, n);
+            }
+            return new String(Base64.encodeBase64(out.toByteArray()));
+        } catch (IOException e) {
+            // e.g. target is a directory or cannot be read
             return "File doesn't exist or is not a file.";
         }
     }

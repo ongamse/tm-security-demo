@@ -1,30 +1,17 @@
 package org.joychou.RMI;
 
-import java.rmi.registry.LocateRegistry;
-import java.rmi.registry.Registry;
-import java.rmi.server.UnicastRemoteObject;
 
-
-
+/**
+ * Hello implementation kept for API compatibility. It intentionally does not start an RMI
+ * registry or export remote objects, so the application opens no RMI network listener.
+ */
 public class Server implements Hello {
 
     public String sayHello() {
         return "Hello Word!";
     }
 
-    public static void main(String args[]) {
-
-        try {
-            Server obj = new Server();
-            Hello stub = (Hello) UnicastRemoteObject.exportObject(obj, 0);
-            LocateRegistry.createRegistry(1099);
-            Registry registry = LocateRegistry.getRegistry();
-            registry.bind("Hello", stub);
-            System.out.println("绑定1099端口成功");
-        } catch (Exception e) {
-            System.err.println("Server exception: " + e.toString());
-            e.printStackTrace();
-        }
+    public static void main(String[] args) {
+        System.err.println("RMI registry startup is disabled; no remote objects are exported.");
     }
 }
-

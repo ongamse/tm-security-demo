@@ -7,10 +7,13 @@ import org.joychou.security.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
 import java.sql.*;
+import java.util.ArrayList;
 import java.util.List;
 
 
@@ -42,6 +45,72 @@ public class SQLI {
     @Resource
     private UserMapper userMapper;
 
+    /**
+     * Only the authenticated owner of a record (or an admin) may look it up by a
+     * client-supplied reference. Fails closed (AccessDeniedException, rendered as 403 by Spring Security).
+     */
+    static void checkOwnerOrAdmin(Authentication authentication, String username) {
+        if (authentication == null || !authentication.isAuthenticated() || username == null) {
+            throw new AccessDeniedException("Access denied");
+        }
+        boolean isAdmin = authentication.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()));
+        if (!isAdmin && !username.equals(authentication.getName())) {
+            throw new AccessDeniedException("Access denied");
+        }
+    }
+
+    /**
+     * Derives the username used for the data sink from the authenticated principal, never from the
+     * request parameter. A non-admin asking for someone else's record gets AccessDeniedException (403)
+     * before anything reaches JDBC. For an admin the requested reference is resolved through a
+     * server-side lookup and the stored username is returned; null means "no such record".
+     */
+    private String resolveEffectiveUsername(Authentication authentication, String requested) {
+        checkOwnerOrAdmin(authentication, requested);
+        boolean isAdmin = authentication.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()));
+        if (!isAdmin) {
+            return authentication.getName();
+        }
+        User found = userMapper.findByUserName(requested);
+        return found == null ? null : found.getUsername();
+    }
+
+    /**
+     * Neutralises CR/LF and other control characters and bounds the length before a value is logged.
+     */
+    static String sanitizeForLog(String value) {
+        if (value == null) {
+            return "null";
+        }
+        String cleaned = value.replaceAll("[\\r\\n\\p{Cntrl}]", "_");
+        return cleaned.length() > 100 ? cleaned.substring(0, 100) + "..." : cleaned;
+    }
+
+    /**
+     * Copy of the record without the password column, so it is never returned to the client.
+     */
+    static User toPublicView(User src) {
+        if (src == null) {
+            return null;
+        }
+        User dst = new User();
+        dst.setId(src.getId());
+        dst.setUsername(src.getUsername());
+        return dst;
+    }
+
+    private static List<User> toPublicView(List<User> src) {
+        List<User> out = new ArrayList<>();
+        if (src != null) {
+            for (User u : src) {
+                out.add(toPublicView(u));
+            }
+        }
+        return out;
+    }
+
 
     /**
      * <p>Sql injection jbdc vuln code.</p><br>
@@ -49,9 +118,14 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/jdbc/vuln?username=joychou">http://localhost:8080/sqli/jdbc/vuln?username=joychou</a>
      */
     @RequestMapping("/jdbc/vuln")
-    public String jdbc_sqli_vul(@RequestParam("username") String username) {
+    public String jdbc_sqli_vul(@RequestParam("username") String username, Authentication authentication) {
 
         StringBuilder result = new StringBuilder();
+        // 403 before the JDBC call; the sink only ever sees the server-side derived value
+        String effectiveUsername = resolveEffectiveUsername(authentication, username);
+        if (effectiveUsername == null) {
+            return result.toString();
+        }
 
         try {
             Class.forName(driver);
@@ -60,18 +134,18 @@ public class SQLI {
             if (!con.isClosed())
                 System.out.println("Connect to database successfully.");
 
-            // sqli vuln code
-            Statement statement = con.createStatement();
-            String sql = "select * from users where username = '" + username + "'";
-            logger.info(sql);
-            ResultSet rs = statement.executeQuery(sql);
+            // bind the user input instead of concatenating it into the SQL
+            String sql = "select * from users where username = ?";
+            PreparedStatement statement = con.prepareStatement(sql);
+            statement.setString(1, effectiveUsername);
+            logger.info("jdbc/vuln executing parameterized user query");
+            ResultSet rs = statement.executeQuery();
 
             while (rs.next()) {
+                // never return the password column to the client
                 String res_name = rs.getString("username");
-                String res_pwd = rs.getString("password");
-                String info = String.format("%s: %s\n", res_name, res_pwd);
-                result.append(info);
-                logger.info(info);
+                result.append(String.format("%s\n", res_name));
+                logger.info("found user {}", sanitizeForLog(res_name));
             }
             rs.close();
             con.close();
@@ -80,7 +154,7 @@ public class SQLI {
         } catch (ClassNotFoundException e) {
             logger.error("Sorry, can't find the Driver!");
         } catch (SQLException e) {
-            logger.error(e.toString());
+            logger.error("SQL error: {}", e.getClass().getSimpleName());
         }
         return result.toString();
     }
@@ -92,8 +166,9 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/jdbc/sec?username=joychou">http://localhost:8080/sqli/jdbc/sec?username=joychou</a>
      */
     @RequestMapping("/jdbc/sec")
-    public String jdbc_sqli_sec(@RequestParam("username") String username) {
+    public String jdbc_sqli_sec(@RequestParam("username") String username, Authentication authentication) {
 
+        checkOwnerOrAdmin(authentication, username);
         StringBuilder result = new StringBuilder();
         try {
             Class.forName(driver);
@@ -107,15 +182,14 @@ public class SQLI {
             PreparedStatement st = con.prepareStatement(sql);
             st.setString(1, username);
 
-            logger.info(st.toString());  // sql after prepare statement
+            logger.info("jdbc/sec executing parameterized user query");
             ResultSet rs = st.executeQuery();
 
             while (rs.next()) {
+                // never return the password column to the client
                 String res_name = rs.getString("username");
-                String res_pwd = rs.getString("password");
-                String info = String.format("%s: %s\n", res_name, res_pwd);
-                result.append(info);
-                logger.info(info);
+                result.append(String.format("%s\n", res_name));
+                logger.info("found user {}", sanitizeForLog(res_name));
             }
 
             rs.close();
@@ -125,7 +199,7 @@ public class SQLI {
             logger.error("Sorry, can't find the Driver!");
             e.printStackTrace();
         } catch (SQLException e) {
-            logger.error(e.toString());
+            logger.error("SQL error: {}", e.getClass().getSimpleName());
         }
         return result.toString();
     }
@@ -136,9 +210,14 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/jdbc/ps/vuln?username=joychou' or 'a'='a">http://localhost:8080/sqli/jdbc/ps/vuln?username=joychou' or 'a'='a</a>
      */
     @RequestMapping("/jdbc/ps/vuln")
-    public String jdbc_ps_vuln(@RequestParam("username") String username) {
+    public String jdbc_ps_vuln(@RequestParam("username") String username, Authentication authentication) {
 
         StringBuilder result = new StringBuilder();
+        // 403 before the JDBC call; the sink only ever sees the server-side derived value
+        String effectiveUsername = resolveEffectiveUsername(authentication, username);
+        if (effectiveUsername == null) {
+            return result.toString();
+        }
         try {
             Class.forName(driver);
             Connection con = DriverManager.getConnection(url, user, password);
@@ -146,18 +225,18 @@ public class SQLI {
             if (!con.isClosed())
                 System.out.println("Connecting to Database successfully.");
 
-            String sql = "select * from users where username = '" + username + "'";
+            String sql = "select * from users where username = ?";
             PreparedStatement st = con.prepareStatement(sql);
+            st.setString(1, effectiveUsername);
 
-            logger.info(st.toString());
+            logger.info("jdbc/ps/vuln executing parameterized user query");
             ResultSet rs = st.executeQuery();
 
             while (rs.next()) {
+                // never return the password column to the client
                 String res_name = rs.getString("username");
-                String res_pwd = rs.getString("password");
-                String info = String.format("%s: %s\n", res_name, res_pwd);
-                result.append(info);
-                logger.info(info);
+                result.append(String.format("%s\n", res_name));
+                logger.info("found user {}", sanitizeForLog(res_name));
             }
 
             rs.close();
@@ -167,7 +246,7 @@ public class SQLI {
             logger.error("Sorry, can't find the Driver!");
             e.printStackTrace();
         } catch (SQLException e) {
-            logger.error(e.toString());
+            logger.error("SQL error: {}", e.getClass().getSimpleName());
         }
         return result.toString();
     }
@@ -179,8 +258,9 @@ public class SQLI {
      * <p>select * from users where username = 'joychou' or '1'='1' </p>
      */
     @GetMapping("/mybatis/vuln01")
-    public List<User> mybatisVuln01(@RequestParam("username") String username) {
-        return userMapper.findByUserNameVuln01(username);
+    public List<User> mybatisVuln01(@RequestParam("username") String username, Authentication authentication) {
+        checkOwnerOrAdmin(authentication, username);
+        return toPublicView(userMapper.findByUserNameVuln01(username));
     }
 
     /**
@@ -189,8 +269,22 @@ public class SQLI {
      * <p>select * from users where username like '%joychou' or '1'='1%' </p>
      */
     @GetMapping("/mybatis/vuln02")
-    public List<User> mybatisVuln02(@RequestParam("username") String username) {
-        return userMapper.findByUserNameVuln02(username);
+    public List<User> mybatisVuln02(@RequestParam("username") String username, Authentication authentication) {
+        checkOwnerOrAdmin(authentication, username);
+        // the query is a LIKE match, so non-admins must only receive their own record
+        List<User> matches = userMapper.findByUserNameVuln02(username);
+        List<User> visible = new ArrayList<>();
+        if (matches != null) {
+            for (User u : matches) {
+                try {
+                    checkOwnerOrAdmin(authentication, u.getUsername());
+                    visible.add(u);
+                } catch (AccessDeniedException e) {
+                    // skip records the caller does not own
+                }
+            }
+        }
+        return toPublicView(visible);
     }
 
     /**
@@ -209,8 +303,9 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/mybatis/sec01?username=joychou">http://localhost:8080/sqli/mybatis/sec01?username=joychou</a>
      */
     @GetMapping("/mybatis/sec01")
-    public User mybatisSec01(@RequestParam("username") String username) {
-        return userMapper.findByUserName(username);
+    public User mybatisSec01(@RequestParam("username") String username, Authentication authentication) {
+        checkOwnerOrAdmin(authentication, username);
+        return toPublicView(userMapper.findByUserName(username));
     }
 
     /**
@@ -218,8 +313,12 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/mybatis/sec02?id=1">http://localhost:8080/sqli/mybatis/sec02?id=1</a>
      */
     @GetMapping("/mybatis/sec02")
-    public User mybatisSec02(@RequestParam("id") Integer id) {
-        return userMapper.findById(id);
+    public User mybatisSec02(@RequestParam("id") Integer id, Authentication authentication) {
+        User found = userMapper.findById(id);
+        if (found != null) {
+            checkOwnerOrAdmin(authentication, found.getUsername());
+        }
+        return toPublicView(found);
     }
 
 

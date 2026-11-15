@@ -1,6 +1,6 @@
 package org.joychou.controller;
 
-import com.fasterxml.uuid.Generators;
+import org.springframework.web.util.HtmlUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Controller;
@@ -10,13 +10,15 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
-import java.io.File;
-import java.io.FileOutputStream;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.UUID;
+import java.nio.file.StandardOpenOption;
+import java.security.SecureRandom;
+import java.util.regex.Pattern;
 
 import org.joychou.security.SecurityUtil;
 
@@ -33,7 +35,8 @@ public class FileUpload {
     // Save the uploaded file to this folder
     private static final String UPLOADED_FOLDER = "/tmp/";
     private final Logger logger = LoggerFactory.getLogger(this.getClass());
-    private static String randomFilePath = "";
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+    private static final Pattern SAFE_SUFFIX =Pattern.compile("^(\\.[A-Za-z0-9]{1,10})?$");
 
     // uplaod any file
     @GetMapping("/any")
@@ -57,13 +60,13 @@ public class FileUpload {
         }
 
         try {
-            // Get the file and save it somewhere
+            // Get the file and save it somewhere. The file name is server generated.
             byte[] bytes = file.getBytes();
-            Path path = Paths.get(UPLOADED_FOLDER + file.getOriginalFilename());
-            Files.write(path, bytes);
+            Path path = newUploadPath(extensionOf(file.getOriginalFilename()));
+            Files.write(path, bytes, StandardOpenOption.CREATE_NEW);
 
             redirectAttributes.addFlashAttribute("message",
-                    "You successfully uploaded '" + UPLOADED_FOLDER + file.getOriginalFilename() + "'");
+                    "You successfully uploaded '" + path + "'");
 
         } catch (IOException e) {
             redirectAttributes.addFlashAttribute("message", "upload failed");
@@ -87,11 +90,8 @@ public class FileUpload {
         }
 
         String fileName = multifile.getOriginalFilename();
-        String Suffix = fileName.substring(fileName.lastIndexOf(".")); // 获取文件后缀名
+        String Suffix = extensionOf(fileName); // 获取文件后缀名 (empty when missing or unsafe)
         String mimeType = multifile.getContentType(); // 获取MIME类型
-        String filePath = UPLOADED_FOLDER + fileName;
-        File excelFile = convert(multifile);
-
 
         // 判断文件后缀名是否在白名单内  校验1
         String[] picSuffixList = {".jpg", ".png", ".jpeg", ".gif", ".bmp", ".ico"};
@@ -104,10 +104,8 @@ public class FileUpload {
         }
         if (!suffixFlag) {
             logger.error("[-] Suffix error: " + Suffix);
-            deleteFile(filePath);
             return "Upload failed. Illeagl picture.";
         }
-
 
         // 判断MIME类型是否在黑名单内 校验2
         String[] mimeTypeBlackList = {
@@ -122,77 +120,85 @@ public class FileUpload {
             // 用contains是为了防止text/html;charset=UTF-8绕过
             if (SecurityUtil.replaceSpecialStr(mimeType).toLowerCase().contains(blackMimeType)) {
                 logger.error("[-] Mime type error: " + mimeType);
-                deleteFile(filePath);
                 return "Upload failed. Illeagl picture.";
             }
         }
 
         // 判断文件内容是否是图片 校验3
-        boolean isImageFlag = isImage(excelFile);
-        deleteFile(randomFilePath);
-
-        if (!isImageFlag) {
+        byte[] bytes = multifile.getBytes();
+        if (!isImage(bytes)) {
             logger.error("[-] File is not Image");
-            deleteFile(filePath);
             return "Upload failed. Illeagl picture.";
         }
 
-
+        // The stored file name is server generated (SecureRandom hex + allowlisted suffix).
+        Path path;
         try {
-            // Get the file and save it somewhere
-            byte[] bytes = multifile.getBytes();
-            Path path = Paths.get(UPLOADED_FOLDER + multifile.getOriginalFilename());
-            Files.write(path, bytes);
+            path = newUploadPath(Suffix);
+            Files.write(path, bytes, StandardOpenOption.CREATE_NEW);
         } catch (IOException e) {
             logger.error(e.toString());
-            deleteFile(filePath);
             return "Upload failed";
         }
+        String filePath = path.toString();
 
         logger.info("[+] Safe file. Suffix: {}, MIME: {}", Suffix, mimeType);
         logger.info("[+] Successfully uploaded {}", filePath);
-        return String.format("You successfully uploaded '%s'", filePath);
-    }
-
-    private void deleteFile(String filePath) {
-        File delFile = new File(filePath);
-        if(delFile.isFile() && delFile.exists()) {
-            if (delFile.delete()) {
-                logger.info("[+] " + filePath + " delete successfully!");
-                return;
-            }
-        }
-        logger.info(filePath + " delete failed!");
+        return String.format("You successfully uploaded '%s'", HtmlUtils.htmlEscape(filePath));
     }
 
     /**
-     * 为了使用ImageIO.read()
-     *
-     * 不建议使用transferTo，因为原始的MultipartFile会被覆盖
-     * https://stackoverflow.com/questions/24339990/how-to-convert-a-multipart-file-to-file
+     * Extract a safe file extension (including the dot) from a client supplied file name.
+     * Returns an empty string when there is none or it is not a short alphanumeric suffix.
+     * Only the extension is ever taken from client input, never any path component.
      */
-    private File convert(MultipartFile multiFile) throws Exception {
-        String fileName = multiFile.getOriginalFilename();
-        String suffix = fileName.substring(fileName.lastIndexOf("."));
-        UUID uuid = Generators.timeBasedGenerator().generate();
-        randomFilePath = UPLOADED_FOLDER + uuid + suffix;
-        // 随机生成一个同后缀名的文件
-        File convFile = new File(randomFilePath);
-        boolean ret = convFile.createNewFile();
-        if (!ret) {
-            return null;
+    private static String extensionOf(String originalName) {
+        if (originalName == null) {
+            return "";
         }
-        FileOutputStream fos = new FileOutputStream(convFile);
-        fos.write(multiFile.getBytes());
-        fos.close();
-        return convFile;
+        int idx = originalName.lastIndexOf('.');
+        if (idx < 0) {
+            return "";
+        }
+        String ext = originalName.substring(idx);
+        return SAFE_SUFFIX.matcher(ext).matches() ? ext : "";
     }
 
     /**
-     * Check if the file is a picture.
+     * Unpredictable file name: 16 bytes from SecureRandom, hex encoded (32 chars).
      */
-    private static boolean isImage(File file) throws IOException {
-        BufferedImage bi = ImageIO.read(file);
-        return bi != null;
+    private static String randomName() {
+        byte[] buf = new byte[16];
+        SECURE_RANDOM.nextBytes(buf);
+        StringBuilder sb = new StringBuilder(buf.length * 2);
+        for (byte b : buf) {
+            sb.append(Character.forDigit((b >> 4) & 0xF, 16));
+            sb.append(Character.forDigit(b & 0xF, 16));
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Build a path inside the upload folder from a server generated name only
+     * (SecureRandom hex + allowlisted extension) and verify containment before returning it.
+     */
+    private static Path newUploadPath(String safeSuffix) throws IOException {
+        String suffix = SAFE_SUFFIX.matcher(safeSuffix).matches() ? safeSuffix : "";
+        Path root = Paths.get(UPLOADED_FOLDER).toRealPath();
+        Path resolved = root.resolve(randomName() + suffix).normalize();
+        if (!resolved.startsWith(root) || !root.equals(resolved.getParent())) {
+            throw new IOException("Illegal file path");
+        }
+        return resolved;
+    }
+
+    /**
+     * Check if the content is a picture. Works on in-memory bytes so no file is opened.
+     */
+    private static boolean isImage(byte[] content) throws IOException {
+        try (InputStream in = new ByteArrayInputStream(content)) {
+            BufferedImage bi = ImageIO.read(in);
+            return bi != null;
+        }
     }
 }

@@ -30,7 +30,12 @@ public class URLRedirect {
      */
     @GetMapping("/redirect")
     public String redirect(@RequestParam("url") String url) {
-        return "redirect:" + url;
+        String safeUrl = SecurityUtil.checkRedirectURL(url);
+        if (safeUrl == null) {
+            // Rejected destination: fall back to the site root instead of redirecting off-site.
+            return "redirect:/";
+        }
+        return "redirect:" + safeUrl;
     }
 
 
@@ -39,8 +44,13 @@ public class URLRedirect {
      */
     @RequestMapping("/setHeader")
     @ResponseBody
-    public static void setHeader(HttpServletRequest request, HttpServletResponse response) {
-        String url = request.getParameter("url");
+    public static void setHeader(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        String url = SecurityUtil.safeHeaderValue(SecurityUtil.checkRedirectURL(request.getParameter("url")));
+        if (url == null) {
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            response.getWriter().write("url forbidden");
+            return;
+        }
         response.setStatus(HttpServletResponse.SC_MOVED_PERMANENTLY); // 301 redirect
         response.setHeader("Location", url);
     }
@@ -52,7 +62,12 @@ public class URLRedirect {
     @RequestMapping("/sendRedirect")
     @ResponseBody
     public static void sendRedirect(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        String url = request.getParameter("url");
+        String url = SecurityUtil.checkRedirectURL(request.getParameter("url"));
+        if (url == null) {
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            response.getWriter().write("url forbidden");
+            return;
+        }
         response.sendRedirect(url); // 302 redirect
     }
 
@@ -83,7 +98,8 @@ public class URLRedirect {
     public void sendRedirect_seccode(HttpServletRequest request, HttpServletResponse response)
             throws IOException {
         String url = request.getParameter("url");
-        if (SecurityUtil.checkURL(url) == null) {
+        url = SecurityUtil.checkRedirectURL(url);
+        if (url == null) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             response.getWriter().write("url forbidden");
             return;

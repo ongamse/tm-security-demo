@@ -1,6 +1,8 @@
 package org.joychou.controller;
 
+import org.springframework.web.util.HtmlUtils;
 import groovy.lang.GroovyShell;
+import org.joychou.security.SecurityUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -15,6 +17,9 @@ import javax.script.ScriptEngineManager;
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 import java.sql.DriverManager;
 
 
@@ -30,11 +35,16 @@ public class Rce {
 
     @GetMapping("/runtime/exec")
     public String CommandExec(String cmd) {
-        Runtime run = Runtime.getRuntime();
         StringBuilder sb = new StringBuilder();
 
+        // Request value is only a lookup key into fixed server-side argv; no shell.
+        String[] argv = SecurityUtil.fixedCommand(cmd);
+        if (argv == null) {
+            return "Bad boy. I got u.";
+        }
+
         try {
-            Process p = run.exec(cmd);
+            Process p = new ProcessBuilder(argv).start();
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
             String tmpStr;
@@ -51,9 +61,9 @@ public class Rce {
             inBr.close();
             in.close();
         } catch (Exception e) {
-            return e.toString();
+            return HtmlUtils.htmlEscape(e.toString());
         }
-        return sb.toString();
+        return HtmlUtils.htmlEscape(sb.toString());
     }
 
 
@@ -65,8 +75,13 @@ public class Rce {
 
         StringBuilder sb = new StringBuilder();
 
+        // Request value is only a lookup key into fixed server-side argv; no shell.
+        String[] arrCmd = SecurityUtil.fixedCommand(cmd);
+        if (arrCmd == null) {
+            return "Bad boy. I got u.";
+        }
+
         try {
-            String[] arrCmd = {"/bin/sh", "-c", cmd};
             ProcessBuilder processBuilder = new ProcessBuilder(arrCmd);
             Process p = processBuilder.start();
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
@@ -94,11 +109,16 @@ public class Rce {
      */
     @GetMapping("/jscmd")
     public void jsEngine(String jsurl) throws Exception{
+        // Only load scripts from allowlisted http(s) hosts.
+        if (jsurl == null || !SecurityUtil.checkSSRFByWhitehosts(jsurl)) {
+            throw new IllegalArgumentException("jsurl not allowed");
+        }
         // js nashorn javascript ecmascript
         ScriptEngine engine = new ScriptEngineManager().getEngineByName("js");
         Bindings bindings = engine.getBindings(ScriptContext.ENGINE_SCOPE);
-        String cmd = String.format("load(\"%s\")", jsurl);
-        engine.eval(cmd, bindings);
+        // Fixed script; the request value is passed only as a binding, never concatenated into script text.
+        bindings.put("jsurl", jsurl);
+        engine.eval("load(jsurl)", bindings);
     }
 
 
@@ -110,7 +130,8 @@ public class Rce {
      */
     @GetMapping("/vuln/yarm")
     public void yarm(String content) {
-        Yaml y = new Yaml();
+        // SafeConstructor only builds standard YAML types; arbitrary class tags are rejected.
+        Yaml y = new Yaml(new SafeConstructor());
         y.load(content);
     }
 
@@ -126,8 +147,25 @@ public class Rce {
      */
     @GetMapping("groovy")
     public void groovyshell(String content) {
-        GroovyShell groovyShell = new GroovyShell();
-        groovyShell.evaluate(content);
+        // The request value is only a lookup key into fixed server-side scripts;
+        // it is never compiled or evaluated as Groovy source.
+        String script = content == null ? null : FIXED_GROOVY_SCRIPTS.get(content);
+        if (script == null) {
+            throw new IllegalArgumentException("content not allowed");
+        }
+        new GroovyShell().evaluate(script);
+    }
+
+    private static final Map<String, String> FIXED_GROOVY_SCRIPTS;
+
+    static {
+        Map<String, String> m = new HashMap<String, String>();
+        m.put("add", "1 + 1");
+        m.put("sub", "2 - 1");
+        m.put("mul", "2 * 2");
+        m.put("div", "4 / 2");
+        m.put("mod", "5 % 2");
+        FIXED_GROOVY_SCRIPTS = Collections.unmodifiableMap(m);
     }
 
 

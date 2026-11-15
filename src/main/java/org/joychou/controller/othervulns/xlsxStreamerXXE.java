@@ -9,8 +9,13 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.multipart.MultipartFile;
 
+import org.joychou.util.XmlUtils;
+
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 
 
 /**
@@ -34,7 +39,23 @@ public class xlsxStreamerXXE {
 
     @PostMapping("/readxlsx")
     public void xllx_streamer_xxe(MultipartFile file) throws IOException {
-        StreamingReader.builder().open(file.getInputStream());
+        // xlsx-streamer 2.0.0 parses the workbook XML parts with an unhardened parser.
+        // Reject any part that declares a DOCTYPE/external entity before handing the file over.
+        // Read the upload once, validate it, and hand the very same validated bytes to the reader.
+        byte[] checked = XmlUtils.rejectXmlWithDoctype(readAll(file.getInputStream()));
+        StreamingReader.builder().open(new ByteArrayInputStream(checked));
+    }
+
+
+    private static byte[] readAll(InputStream in) throws IOException {
+        try (InputStream is = in; ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = is.read(buf)) != -1) {
+                out.write(buf, 0, n);
+            }
+            return out.toByteArray();
+        }
     }
 
 
