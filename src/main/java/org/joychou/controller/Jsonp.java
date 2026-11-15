@@ -156,7 +156,8 @@ public class Jsonp {
             rejectCallback(response);
             return;
         }
-        writeBody(WebUtils.json2Jsonp(callback, json), response);
+        String safeCb = WebUtils.rebuildJsonpCallback(callback);
+        writeBody(WebUtils.json2Jsonp(safeCb, json), response);
     }
 
     private static void writeBody(String escapedBody, HttpServletResponse response) throws IOException {
@@ -170,8 +171,8 @@ public class Jsonp {
     }
 
     private static void rejectCallback(HttpServletResponse response) throws IOException {
-        response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
-        writeBody("/* invalid callback */", response);
+        // Constant message only; nothing request-derived is written to the response.
+        response.sendError(HttpServletResponse.SC_BAD_REQUEST, "invalid callback");
     }
 
 }
