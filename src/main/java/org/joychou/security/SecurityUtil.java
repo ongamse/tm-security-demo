@@ -8,8 +8,12 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
+import java.net.Inet4Address;
+import java.net.Inet6Address;
+import java.net.InetAddress;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.net.URL;
 import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -152,6 +156,47 @@ public class SecurityUtil {
             return false;
         }
         return !SSRFChecker.isInternalIpByUrl(url);
+    }
+
+    /**
+     * Validate an outbound request URL: only http/https, a parseable host, and every address
+     * the host resolves to must be public (not loopback, link-local/metadata, site-local,
+     * unique-local, multicast, wildcard, or inside the configured blocked subnets).
+     * Fails closed. Redirects must be validated again by the caller on every hop.
+     *
+     * @param url The url that needs to check.
+     * @return Safe url returns true. Dangerous url returns false.
+     */
+    public static boolean checkSSRFResolved(String url) {
+        if (url == null || !isHttp(url)) {
+            return false;
+        }
+        try {
+            String host = new URI(url).getHost();
+            if (host == null || host.isEmpty()) {
+                return false;
+            }
+            // The URI and URL parsers must agree on the host, otherwise the check and the request differ.
+            if (!host.equalsIgnoreCase(new URL(url).getHost())) {
+                return false;
+            }
+            for (InetAddress addr : InetAddress.getAllByName(host)) {
+                if (addr.isAnyLocalAddress() || addr.isLoopbackAddress() || addr.isLinkLocalAddress()
+                        || addr.isSiteLocalAddress() || addr.isMulticastAddress()) {
+                    return false;
+                }
+                if (addr instanceof Inet6Address && (addr.getAddress()[0] & 0xfe) == 0xfc) {
+                    return false; // unique local fc00::/7
+                }
+                if (addr instanceof Inet4Address && SSRFChecker.isInternalIp(addr.getHostAddress())) {
+                    return false;
+                }
+            }
+            return true;
+        } catch (Exception e) {
+            logger.error("SSRF check failed: " + e.toString());
+            return false;
+        }
     }
 
     /**
