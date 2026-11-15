@@ -9,8 +9,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
-import java.io.IOException;
-import java.io.InvalidClassException;
 
 import static org.springframework.web.util.WebUtils.getCookie;
 
@@ -30,8 +28,7 @@ public class Deserialize {
      * <a href="http://localhost:8080/deserialize/rememberMe/vuln">http://localhost:8080/deserialize/rememberMe/vuln</a>
      */
     @RequestMapping("/rememberMe/vuln")
-    public String rememberMeVul(HttpServletRequest request)
-            throws IOException, ClassNotFoundException {
+    public String rememberMeVul(HttpServletRequest request) {
 
         Cookie cookie = getCookie(request, Constants.REMEMBER_ME_COOKIE);
         if (null == cookie) {
@@ -39,14 +36,11 @@ public class Deserialize {
         }
 
         try {
-            // HMAC verified first, then allowlist deserialization of authenticated bytes only.
+            // HMAC verified first, then strict plain-text parse (no Java deserialization).
             RememberMeCodec.readVerified(cookie.getValue());
         } catch (SecurityException e) {
             logger.info(e.toString());
             return "Invalid rememberMe cookie";
-        } catch (InvalidClassException e) {
-            logger.info(e.toString());
-            return e.toString();
         }
 
         return "Are u ok?";
@@ -58,8 +52,7 @@ public class Deserialize {
      * <a href="http://localhost:8080/deserialize/rememberMe/security">http://localhost:8080/deserialize/rememberMe/security</a>
      */
     @RequestMapping("/rememberMe/security")
-    public String rememberMeBlackClassCheck(HttpServletRequest request)
-            throws IOException, ClassNotFoundException {
+    public String rememberMeBlackClassCheck(HttpServletRequest request) {
 
         Cookie cookie = getCookie(request, Constants.REMEMBER_ME_COOKIE);
 
@@ -67,14 +60,11 @@ public class Deserialize {
             return "No rememberMe cookie. Right?";
         }
         try {
-            // HMAC verified first, then allowlist deserialization (throws InvalidClassException).
+            // HMAC verified first, then strict plain-text parse (no Java deserialization).
             RememberMeCodec.readVerified(cookie.getValue());
         } catch (SecurityException e) {
             logger.info(e.toString());
             return "Invalid rememberMe cookie";
-        } catch (InvalidClassException e) {
-            logger.info(e.toString());
-            return e.toString();
         }
 
         return "I'm very OK.";
