@@ -88,13 +88,9 @@ public final class XmlUtils {
      * Digester with DOCTYPE / external entities disabled.
      */
     public static Digester newSecureDigester() throws ParserConfigurationException, SAXException {
-        Digester digester = new Digester();
-        digester.setFeature(DISALLOW_DOCTYPE, true);
-        digester.setFeature(EXTERNAL_GENERAL, false);
-        digester.setFeature(EXTERNAL_PARAMETER, false);
-        digester.setFeature(LOAD_EXTERNAL_DTD, false);
-        digester.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
-        return digester;
+        // Bind the Digester to an already-hardened SAXParser (DOCTYPE, external entities/DTD, XInclude all
+        // disabled, JAXP external access denied) so it can never fall back to its own default factory.
+        return new Digester(newSecureSaxParser());
     }
 
     /**

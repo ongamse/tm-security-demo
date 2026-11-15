@@ -213,7 +213,7 @@ public class XXE {
 
             String safeBody = XmlUtils.sanitizeXml(body);
             Digester digester = XmlUtils.newSecureDigester();
-            digester.parse(new StringReader(safeBody));  // parse xml
+            digester.parse(new InputSource(new StringReader(safeBody)));  // parse xml
         } catch (Exception e) {
             logger.error(e.toString());
             return EXCEPT;
@@ -229,7 +229,7 @@ public class XXE {
 
             String safeBody = XmlUtils.sanitizeXml(body);
             Digester digester = XmlUtils.newSecureDigester();
-            digester.parse(new StringReader(safeBody));  // parse xml
+            digester.parse(new InputSource(new StringReader(safeBody)));  // parse xml
 
             return "Digester xxe security code";
         } catch (Exception e) {
