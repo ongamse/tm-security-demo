@@ -12,12 +12,17 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 
 public class SecurityUtil {
 
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
+    private static final Set<String> ALLOWED_COMMANDS = new HashSet<String>(
+            Arrays.asList("whoami", "id", "pwd", "uname", "ls", "uptime"));
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
 
 
@@ -205,6 +210,31 @@ public class SecurityUtil {
         }
 
         return input;
+    }
+
+
+    /**
+     * Parse a user supplied command line into an argv array for a no-shell process API.
+     * The executable must be in a small allowlist and every argument must match the
+     * same strict character set as {@link #cmdFilter(String)}.
+     *
+     * @param cmdLine whitespace separated command line, e.g. "ls -la /tmp"
+     * @return argv array, or null if the command or any argument is not allowed
+     */
+    public static String[] safeCommand(String cmdLine) {
+        if (cmdLine == null) {
+            return null;
+        }
+        String[] argv = cmdLine.trim().split("\\s+");
+        if (argv.length == 0 || !ALLOWED_COMMANDS.contains(argv[0])) {
+            return null;
+        }
+        for (int i = 1; i < argv.length; i++) {
+            if (cmdFilter(argv[i]) == null) {
+                return null;
+            }
+        }
+        return argv;
     }
 
 
