@@ -215,6 +215,27 @@ public class SecurityUtil {
     }
 
 
+    /**
+     * Check that a value is safe to place into an HTTP response header (prevents CRLF / header
+     * injection). Control characters (CR, LF, NUL, ...) and DEL are rejected; horizontal tab is allowed.
+     *
+     * @param value the value that will be written to a response header
+     * @return true if the value is null or contains no control characters
+     */
+    public static boolean isSafeHeaderValue(String value) {
+        if (value == null) {
+            return true;
+        }
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            if ((ch < 0x20 && ch != '\t') || ch == 0x7f) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+
     public static String cmdFilter(String input) {
         if (!FILTER_PATTERN.matcher(input).matches()) {
             return null;
