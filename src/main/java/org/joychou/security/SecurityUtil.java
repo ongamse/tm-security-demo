@@ -286,6 +286,33 @@ public class SecurityUtil {
     }
 
 
+    /**
+     * Validate a request Origin header against the url safe-domain list ({@link #checkURL(String)}).
+     * Only a bare origin (scheme://host[:port]) that is safe for a response header is accepted, so the
+     * returned value may be echoed in Access-Control-Allow-Origin.
+     *
+     * @param origin the Origin request header value
+     * @return the origin if it is allowlisted; otherwise null
+     */
+    public static String checkOrigin(String origin) {
+        if (origin == null || origin.isEmpty() || !isSafeHeaderValue(origin)) {
+            return null;
+        }
+        try {
+            URI uri = new URI(origin);
+            boolean bareOrigin = uri.getRawUserInfo() == null && uri.getRawQuery() == null
+                    && uri.getRawFragment() == null
+                    && (uri.getRawPath() == null || uri.getRawPath().isEmpty());
+            if (!bareOrigin) {
+                return null;
+            }
+        } catch (URISyntaxException e) {
+            return null;
+        }
+        return checkURL(origin);
+    }
+
+
     public static String cmdFilter(String input) {
         if (!FILTER_PATTERN.matcher(input).matches()) {
             return null;
