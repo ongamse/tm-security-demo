@@ -8,7 +8,7 @@ package org.joychou.security.ssrf;
  */
 public class SSRFException extends RuntimeException {
 
-    SSRFException(String s) {
+    public SSRFException(String s) {
         super(s);
     }
 

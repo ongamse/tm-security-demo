@@ -8,8 +8,10 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
+import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.net.URL;
 import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -46,8 +48,17 @@ public class SecurityUtil {
     public static String gethost(String url) {
         try {
             URI uri = new URI(url);
-            return uri.getHost().toLowerCase();
-        } catch (URISyntaxException e) {
+            String host = uri.getHost();
+            if (host == null || host.isEmpty()) {
+                return "";
+            }
+            // Reject URLs that java.net.URI and java.net.URL parse differently, because the
+            // host checked here must be the host the HTTP client will connect to.
+            if (!host.equalsIgnoreCase(new URL(url).getHost())) {
+                return "";
+            }
+            return host.toLowerCase();
+        } catch (URISyntaxException | MalformedURLException e) {
             return "";
         }
     }

@@ -2,8 +2,8 @@ package org.joychou.security.ssrf;
 
 import java.net.HttpURLConnection;
 import java.net.InetAddress;
-import java.net.URI;
 import java.net.URL;
+import java.net.URLConnection;
 import java.util.ArrayList;
 
 import org.apache.commons.lang.StringUtils;
@@ -71,7 +71,7 @@ public class SSRFChecker {
                     return false;  // 内网ip直接return，非内网ip继续判断是否有重定向
                 }
 
-                connection = (HttpURLConnection) new URL(finalUrl).openConnection();
+                connection = (HttpURLConnection) validateUrl(finalUrl).openConnection();
                 connection.setInstanceFollowRedirects(false);
                 connection.setUseCaches(false); // 设置为false，手动处理跳转，可以拿到每个跳转的URL
                 connection.setConnectTimeout(connectTime);
@@ -92,6 +92,9 @@ public class SSRFChecker {
                     break;
             } while (connection.getResponseCode() != HttpURLConnection.HTTP_OK);
             connection.disconnect();
+        } catch (SSRFException e) {
+            logger.error("[-] SSRF check failed. Dangerous url: " + finalUrl);
+            return false;  // not http/https or internal ip (e.g. a redirect target) is never safe
         } catch (Exception e) {
             return true;  // 如果异常了，认为是安全的，防止是超时导致的异常而验证不成功。
         }
@@ -107,16 +110,99 @@ public class SSRFChecker {
     public static boolean isInternalIpByUrl(String url) {
 
         String host = url2host(url);
-        if (host.equals("")) {
+        if (host == null || host.equals("")) {
             return true; // 异常URL当成内网IP等非法URL处理
         }
 
-        String ip = host2ip(host);
-        if (ip.equals("")) {
+        // Convert octal ip to decimal ip first, then resolve every address of the host.
+        String target = host;
+        if (isOctalIP(host)) {
+            target = decimalIp;
+        }
+
+        InetAddress[] addresses;
+        try {
+            addresses = InetAddress.getAllByName(target); // send dns request
+        } catch (Exception e) {
+            logger.error("isInternalIpByUrl exception " + e.getMessage());
             return true; // 如果域名转换为IP异常，则认为是非法URL
         }
 
-        return isInternalIp(ip);
+        for (InetAddress address : addresses) {
+            if (isInternalAddress(address)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+
+    /**
+     * Check a resolved address: loopback, any-local, link-local (including the 169.254.169.254
+     * metadata address), site-local, multicast, IPv6 unique-local, carrier-grade NAT, and the
+     * configured blocked subnets.
+     *
+     * @return true if the address is internal or otherwise not allowed
+     */
+    public static boolean isInternalAddress(InetAddress address) {
+        if (address == null) {
+            return true;
+        }
+        if (address.isAnyLocalAddress() || address.isLoopbackAddress() || address.isLinkLocalAddress()
+                || address.isSiteLocalAddress() || address.isMulticastAddress()) {
+            logger.error("[-] SSRF check failed. Internal IP: " + address.getHostAddress());
+            return true;
+        }
+        byte[] raw = address.getAddress();
+        if (raw.length == 16 && (raw[0] & 0xFE) == 0xFC) {
+            return true; // IPv6 unique local fc00::/7
+        }
+        if (raw.length == 4 && (raw[0] & 0xFF) == 100 && (raw[1] & 0xC0) == 64) {
+            return true; // 100.64.0.0/10 carrier-grade NAT
+        }
+        if (raw.length == 4) {
+            return isInternalIp(address.getHostAddress());
+        }
+        return false;
+    }
+
+
+    /**
+     * Validate an untrusted URL before any outbound request: only http/https with a well-formed
+     * host that resolves exclusively to non-internal addresses.
+     *
+     * @param url untrusted url
+     * @return the validated URL
+     * @throws SSRFException if the url is not allowed
+     */
+    public static URL validateUrl(String url) {
+        if (url == null || !SecurityUtil.isHttp(url)) {
+            throw new SSRFException("[-] SSRF check failed. Only http and https are allowed.");
+        }
+        if (isInternalIpByUrl(url)) {
+            throw new SSRFException("[-] SSRF check failed. Dangerous url.");
+        }
+        try {
+            return new URL(url);
+        } catch (java.net.MalformedURLException e) {
+            throw new SSRFException("[-] SSRF check failed. Malformed url.");
+        }
+    }
+
+
+    /**
+     * Validate the url and open a connection that does not follow redirects, so a validated
+     * public host cannot bounce the request to an internal address.
+     *
+     * @throws SSRFException if the url is not allowed
+     * @throws java.io.IOException if the connection cannot be opened
+     */
+    public static URLConnection openNoRedirect(String url) throws java.io.IOException {
+        URLConnection connection = validateUrl(url).openConnection();
+        if (connection instanceof HttpURLConnection) {
+            ((HttpURLConnection) connection).setInstanceFollowRedirects(false);
+        }
+        return connection;
     }
 
 
@@ -289,10 +375,9 @@ public class SSRFChecker {
      */
     private static String url2host(String url) {
         try {
-            // use URI instead of URL
-            URI u = new URI(url);
+            // gethost parses with URI and rejects URLs that java.net.URL would parse differently
             if (SecurityUtil.isHttp(url)) {
-                return u.getHost();
+                return SecurityUtil.gethost(url);
             }
             return "";
         } catch (Exception e) {
