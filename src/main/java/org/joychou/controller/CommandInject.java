@@ -47,7 +47,7 @@ public class CommandInject {
     public String codeInjectHost(HttpServletRequest request) throws IOException {
 
         String host = request.getHeader("host");
-        logger.info(host);
+        logger.info("codeinject host request received");
         // Host header is attacker-controlled: it is only used to select an entry of the configured
         // SSRF safe-domain list; the URL passed to curl is built from the configured entry itself.
         String safeHost = null;
@@ -63,7 +63,7 @@ public class CommandInject {
             return "Bad boy. I got u.";
         }
         // central SSRF control: scheme/host/internal-address check and rebuilt url
-        String url = SSRFChecker.safeUrlOrNull("http://" + safeHost);
+        String url = SSRFChecker.safeUrlOrNull("https://" + safeHost);
         if (url == null) {
             return "Bad boy. I got u.";
         }

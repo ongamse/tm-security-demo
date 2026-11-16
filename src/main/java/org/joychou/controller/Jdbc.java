@@ -25,6 +25,13 @@ public class Jdbc {
     private static final Pattern DB2_URL =
             Pattern.compile("^jdbc:db2://([A-Za-z0-9.-]{1,253})(?::([0-9]{1,5}))?/([A-Za-z0-9_]{1,63})$");
 
+    private static final int POSTGRESQL_DEFAULT_PORT = 5432;
+    private static final int DB2_DEFAULT_PORT = 50000;
+    // pgjdbc 42.3.1: ssl=true plus sslmode=verify-full (certificate chain and host name verified)
+    private static final String POSTGRESQL_TLS_OPTIONS = "?ssl=true&sslmode=verify-full";
+    // IBM JCC: TLS connection, appended after the database name
+    private static final String DB2_TLS_OPTIONS = ":sslConnection=true;";
+
     /**
      * Allow only the expected url shape and a host that does not resolve to an internal address.
      *
@@ -36,20 +43,22 @@ public class Jdbc {
             throw new IllegalArgumentException("Illegal jdbc url");
         }
         String driver = jdbcUrl.startsWith("jdbc:db2:") ? "db2" : "postgresql";
-        String portPart = "";
+        int port = "db2".equals(driver) ? DB2_DEFAULT_PORT : POSTGRESQL_DEFAULT_PORT;
         if (m.group(2) != null) {
-            int port = Integer.parseInt(m.group(2));
+            port = Integer.parseInt(m.group(2));
             if (port < 1 || port > 65535) {
                 throw new IllegalArgumentException("Illegal jdbc url");
             }
-            portPart = ":" + port;
         }
+        String portPart = ":" + port;
         String db = m.group(3);
         try {
             // host must be an entry (or sub-domain) of the configured safe-domain list and must not
             // resolve to an internal address; the connection url is rebuilt from the validated parts
             String host = SSRFChecker.safeHost(m.group(1));
-            return "jdbc:" + driver + "://" + host + portPart + "/" + db;
+            // TLS is always required; the options are constants, never taken from user input
+            String tlsOptions = "db2".equals(driver) ? DB2_TLS_OPTIONS : POSTGRESQL_TLS_OPTIONS;
+            return "jdbc:" + driver + "://" + host + portPart + "/" + db + tlsOptions;
         } catch (SSRFException e) {
             throw new IllegalArgumentException("Illegal jdbc url");
         }
