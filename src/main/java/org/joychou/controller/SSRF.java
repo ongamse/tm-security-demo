@@ -159,7 +159,7 @@ public class SSRF {
             }
 
         } catch (Exception e) {
-            logger.error(e.toString());
+            logger.error("{}", SecurityUtil.logSafe(e.toString()));
         } finally {
             if (inputStream != null) {
                 inputStream.close();
