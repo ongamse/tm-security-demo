@@ -27,6 +27,9 @@ public class SecurityUtil {
     private static final Set<String> ALLOWED_COMMANDS = new HashSet<String>(
             Arrays.asList("whoami", "id", "date", "hostname", "uname", "pwd", "ls"));
     private static final String LIST_BASE = "/tmp";
+    private static final String REDIRECT_HOST_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789.-";
+    private static final String REDIRECT_PATH_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+            + "-._~!$&'()*+,;=:@/%?#";
     private static final Set<String> ALLOWED_FLAGS = new HashSet<String>(
             Arrays.asList("-a", "-l", "-la", "-al", "-lh", "-lah", "-1", "-h", "-s", "-r", "-m", "-n", "-u", "-g", "-un"));
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
@@ -262,10 +265,77 @@ public class SecurityUtil {
         if (!isSafeRedirectSyntax(url)) {
             return null;
         }
-        if (url.startsWith("/")) {
-            return url;
+        if (!url.startsWith("/") && checkURL(url) == null) {
+            return null;
         }
-        return checkURL(url);
+        return rebuildRedirect(url);
+    }
+
+
+    /**
+     * Rebuild a redirect target that already passed the domain policy. The result is not the request
+     * string: the scheme is a constant, the host and the path/query are copied one character at a time
+     * from fixed allowlists of url characters (anything else rejects the target), and the port is a
+     * parsed integer. A same-site path keeps its fixed leading "/".
+     *
+     * @param url the redirect target taken from the request
+     * @return the rebuilt target, or null if it has an unsafe shape or contains characters outside the allowlist
+     */
+    public static String rebuildRedirect(String url) {
+        if (!isSafeRedirectSyntax(url)) {
+            return null;
+        }
+        if (url.startsWith("/")) {
+            return copyAllowed(url, REDIRECT_PATH_CHARS);
+        }
+        try {
+            URI uri = new URI(url);
+            String host = copyAllowed(gethost(url), REDIRECT_HOST_CHARS);
+            String path = uri.getRawPath() == null ? "" : uri.getRawPath();
+            if (host == null || host.isEmpty() || (!path.isEmpty() && !path.startsWith("/"))) {
+                return null;
+            }
+            StringBuilder rest = new StringBuilder(path);
+            if (uri.getRawQuery() != null) {
+                rest.append('?').append(uri.getRawQuery());
+            }
+            if (uri.getRawFragment() != null) {
+                rest.append('#').append(uri.getRawFragment());
+            }
+            String safeRest = copyAllowed(rest.toString(), REDIRECT_PATH_CHARS);
+            if (safeRest == null) {
+                return null;
+            }
+            StringBuilder target = new StringBuilder("https".equalsIgnoreCase(uri.getScheme()) ? "https" : "http");
+            target.append("://").append(host);
+            if (uri.getPort() != -1) {
+                target.append(':').append(uri.getPort());
+            }
+            return target.append(safeRest).toString();
+        } catch (URISyntaxException e) {
+            return null;
+        }
+    }
+
+
+    /**
+     * Copy a string using only characters taken from the allowlist constant.
+     *
+     * @return the copy, or null if any character is not in the allowlist
+     */
+    private static String copyAllowed(String value, String allowed) {
+        if (value == null) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            int idx = allowed.indexOf(value.charAt(i));
+            if (idx < 0) {
+                return null;
+            }
+            sb.append(allowed.charAt(idx));
+        }
+        return sb.toString();
     }
 
 

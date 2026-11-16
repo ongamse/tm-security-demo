@@ -107,7 +107,9 @@ public class URLRedirect {
             throws IOException {
         String url = request.getParameter("url");
         // syntax check rejects userinfo / backslash / control chars; checkURL enforces the safe-domain list
-        String safeUrl = SecurityUtil.isSafeRedirectSyntax(url) ? SecurityUtil.checkURL(url) : null;
+        // the redirect target is rebuilt from validated components, not the request string
+        String safeUrl = (SecurityUtil.isSafeRedirectSyntax(url) && SecurityUtil.checkURL(url) != null)
+                ? SecurityUtil.rebuildRedirect(url) : null;
         if (safeUrl == null) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             response.getWriter().write("url forbidden");

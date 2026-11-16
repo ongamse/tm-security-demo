@@ -111,7 +111,11 @@ public class URLWhiteList {
         // endsWith .
         for (String domain : domainwhitelist) {
             if (host.endsWith("." + domain)) {
-                res.sendRedirect(url);
+                // redirect to a target rebuilt from validated components, not the request string
+                String target = SecurityUtil.rebuildRedirect(url);
+                if (target != null) {
+                    res.sendRedirect(target);
+                }
                 return;
             }
         }
