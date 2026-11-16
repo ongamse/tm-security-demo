@@ -7,10 +7,14 @@ import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
+import java.nio.file.LinkOption;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
@@ -44,23 +48,37 @@ public class PathTraversal {
         // Confine reads to the working directory: resolve, normalize and check containment
         // (also against symlink escapes) before touching the file.
         Path baseDir = Paths.get(System.getProperty("user.dir")).toRealPath();
-        Path target;
+        Path realPath;
         try {
-            target = baseDir.resolve(imgFile).normalize();
+            Path target = baseDir.resolve(imgFile).normalize();
             if (!target.startsWith(baseDir)) {
                 return "Bad boy. Illegal file path.";
             }
-            if (Files.exists(target) && !target.toRealPath().startsWith(baseDir)) {
+            // Resolve the real path once (no separate exists/isDirectory check), then verify
+            // containment on that resolved path and read through it only.
+            realPath = target.toRealPath();
+            if (!realPath.startsWith(baseDir)) {
                 return "Bad boy. Illegal file path.";
             }
         } catch (InvalidPathException e) {
             return "Bad boy. Illegal file path.";
+        } catch (NoSuchFileException e) {
+            return "File doesn't exist or is not a file.";
+        } catch (IOException e) {
+            return "File doesn't exist or is not a file.";
         }
 
-        if (Files.exists(target) && !Files.isDirectory(target)) {
-            byte[] data = Files.readAllBytes(target);
-            return new String(Base64.encodeBase64(data));
-        } else {
+        // Single open+read on the resolved real path; symlinks are refused and a directory
+        // or other non-readable entry surfaces as an IOException.
+        try (InputStream in = Files.newInputStream(realPath, LinkOption.NOFOLLOW_LINKS)) {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buffer = new byte[8192];
+            int n;
+            while ((n = in.read(buffer)) != -1) {
+                out.write(buffer, 0, n);
+            }
+            return new String(Base64.encodeBase64(out.toByteArray()));
+        } catch (IOException e) {
             return "File doesn't exist or is not a file.";
         }
     }
