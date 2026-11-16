@@ -1,7 +1,6 @@
 package org.joychou.controller;
 
 import org.springframework.web.util.HtmlUtils;
-import com.fasterxml.uuid.Generators;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Controller;
@@ -18,7 +17,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
-import java.util.UUID;
+import java.security.SecureRandom;
 
 import org.joychou.security.SecurityUtil;
 
@@ -34,6 +33,8 @@ public class FileUpload {
 
     // Save the uploaded file to this folder
     private static final String UPLOADED_FOLDER = "/tmp/";
+    private static final SecureRandom RANDOM = new SecureRandom();
+    private static final String HEX_DIGITS = "0123456789abcdef";
     private final Logger logger = LoggerFactory.getLogger(this.getClass());
 
     // uplaod any file
@@ -111,7 +112,7 @@ public class FileUpload {
 
         // Server-side generated names: the client supplied name is never used in a file path.
         String safeSuffix = Suffix.toLowerCase();
-        String filePath = resolveInUploadFolder(Generators.timeBasedGenerator().generate() + safeSuffix).toString();
+        String filePath = resolveInUploadFolder(newFileBaseName() + safeSuffix).toString();
         File excelFile = convert(multifile, safeSuffix);
 
 
@@ -160,6 +161,20 @@ public class FileUpload {
     }
 
     /**
+     * Generate an unpredictable base name (32 lowercase hex chars, 128 bits) for uploaded files.
+     */
+    private static String newFileBaseName() {
+        byte[] bytes = new byte[16];
+        RANDOM.nextBytes(bytes);
+        StringBuilder sb = new StringBuilder(bytes.length * 2);
+        for (byte b : bytes) {
+            sb.append(HEX_DIGITS.charAt((b >> 4) & 0x0f));
+            sb.append(HEX_DIGITS.charAt(b & 0x0f));
+        }
+        return sb.toString();
+    }
+
+    /**
      * Resolve a file name inside UPLOADED_FOLDER. Only the last path segment of the given
      * name is used, and the result must stay inside UPLOADED_FOLDER.
      */
@@ -203,9 +218,8 @@ public class FileUpload {
      * https://stackoverflow.com/questions/24339990/how-to-convert-a-multipart-file-to-file
      */
     private File convert(MultipartFile multiFile, String suffix) throws Exception {
-        UUID uuid = Generators.timeBasedGenerator().generate();
         // 随机生成一个同后缀名的文件 (suffix is already validated against the allowlist)
-        File convFile = resolveInUploadFolder(uuid + suffix).toFile();
+        File convFile = resolveInUploadFolder(newFileBaseName() + suffix).toFile();
         boolean ret = convFile.createNewFile();
         if (!ret) {
             throw new IOException("Temporary file already exists");
