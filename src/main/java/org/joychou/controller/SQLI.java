@@ -6,10 +6,15 @@ import org.joychou.dao.User;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
 import java.sql.*;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
@@ -95,6 +100,7 @@ public class SQLI {
     @RequestMapping("/jdbc/sec")
     public String jdbc_sqli_sec(@RequestParam("username") String username) {
 
+        checkOwnerOrAdmin(username);
         StringBuilder result = new StringBuilder();
         try {
             Class.forName(driver);
@@ -182,6 +188,7 @@ public class SQLI {
      */
     @GetMapping("/mybatis/vuln01")
     public List<User> mybatisVuln01(@RequestParam("username") String username) {
+        checkOwnerOrAdmin(username);
         return userMapper.findByUserNameVuln01(username);
     }
 
@@ -192,7 +199,15 @@ public class SQLI {
      */
     @GetMapping("/mybatis/vuln02")
     public List<User> mybatisVuln02(@RequestParam("username") String username) {
-        return userMapper.findByUserNameVuln02(username);
+        // LIKE search can match other accounts: only return rows the caller is allowed to see.
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        List<User> visible = new ArrayList<>();
+        for (User u : userMapper.findByUserNameVuln02(username)) {
+            if (isOwnerOrAdmin(auth, u.getUsername())) {
+                visible.add(u);
+            }
+        }
+        return visible;
     }
 
     /**
@@ -212,6 +227,7 @@ public class SQLI {
      */
     @GetMapping("/mybatis/sec01")
     public User mybatisSec01(@RequestParam("username") String username) {
+        checkOwnerOrAdmin(username);
         return userMapper.findByUserName(username);
     }
 
@@ -221,7 +237,11 @@ public class SQLI {
      */
     @GetMapping("/mybatis/sec02")
     public User mybatisSec02(@RequestParam("id") Integer id) {
-        return userMapper.findById(id);
+        User found = userMapper.findById(id);
+        if (found != null) {
+            checkOwnerOrAdmin(found.getUsername());
+        }
+        return found;
     }
 
 
@@ -250,6 +270,31 @@ public class SQLI {
      *
      * @return the canonical column name, or null (no ordering) if not allowed
      */
+    /**
+     * Object-level authorization: a caller may only reference their own account,
+     * unless they hold ROLE_ADMIN. Fails closed when nobody is authenticated.
+     *
+     * @throws AccessDeniedException (rendered as 403) when the caller does not own the account
+     */
+    private static void checkOwnerOrAdmin(String targetUsername) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (!isOwnerOrAdmin(auth, targetUsername)) {
+            throw new AccessDeniedException("Access is denied");
+        }
+    }
+
+    private static boolean isOwnerOrAdmin(Authentication auth, String targetUsername) {
+        if (auth == null || !auth.isAuthenticated() || auth.getName() == null) {
+            return false;
+        }
+        for (GrantedAuthority authority : auth.getAuthorities()) {
+            if ("ROLE_ADMIN".equals(authority.getAuthority())) {
+                return true;
+            }
+        }
+        return targetUsername != null && auth.getName().equals(targetUsername);
+    }
+
     private static String orderByColumn(String sort) {
         if (sort == null) {
             return null;
