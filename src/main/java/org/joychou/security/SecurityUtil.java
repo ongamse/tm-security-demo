@@ -6,6 +6,7 @@ import org.joychou.security.ssrf.SocketHook;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.net.MalformedURLException;
@@ -25,6 +26,9 @@ public class SecurityUtil {
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
     private static final Set<String> ALLOWED_COMMANDS = new HashSet<String>(
             Arrays.asList("whoami", "id", "date", "hostname", "uname", "pwd", "ls"));
+    private static final String LIST_BASE = "/tmp";
+    private static final Set<String> ALLOWED_FLAGS = new HashSet<String>(
+            Arrays.asList("-a", "-l", "-la", "-al", "-lh", "-lah", "-1", "-h", "-s", "-r", "-m", "-n", "-u", "-g", "-un"));
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
 
 
@@ -323,6 +327,60 @@ public class SecurityUtil {
 
 
     /**
+     * Resolve an untrusted path to a directory entry below {@link #LIST_BASE}. The returned string is
+     * rebuilt from names enumerated from the file system (never from the caller's text), "." / ".."
+     * segments are rejected and the canonical location must stay inside the base directory.
+     *
+     * @param input untrusted path, e.g. <code>/tmp/foo</code>
+     * @return the existing path below the base directory, or null if it is not allowed
+     */
+    public static String allowedListPath(String input) {
+        if (input == null || cmdFilter(input) == null) {
+            return null;
+        }
+        if (!input.equals(LIST_BASE) && !input.startsWith(LIST_BASE + "/")) {
+            return null;
+        }
+        try {
+            String canonicalBase = new File(LIST_BASE).getCanonicalPath();
+            File current = new File(LIST_BASE);
+            String result = LIST_BASE;
+            for (String segment : input.substring(LIST_BASE.length()).split("/")) {
+                if (segment.isEmpty()) {
+                    continue;
+                }
+                if (".".equals(segment) || "..".equals(segment)) {
+                    return null;
+                }
+                String[] names = current.list();
+                if (names == null) {
+                    return null;
+                }
+                String match = null;
+                for (String name : names) {
+                    if (name.equals(segment)) {
+                        match = name;
+                        break;
+                    }
+                }
+                if (match == null) {
+                    return null;
+                }
+                current = new File(current, match);
+                result = result + "/" + match;
+            }
+            String canonical = current.getCanonicalPath();
+            if (!canonical.equals(canonicalBase) && !canonical.startsWith(canonicalBase + File.separator)) {
+                return null;
+            }
+            return result;
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+
+    /**
      * Turn an untrusted command line into a safe argv array (never run through a shell).
      * The program must be in a fixed allowlist and every argument must pass {@link #cmdFilter}.
      *
@@ -337,14 +395,33 @@ public class SecurityUtil {
         if (trimmed.isEmpty()) {
             return null;
         }
-        String[] argv = trimmed.split("\\s+");
-        if (!ALLOWED_COMMANDS.contains(argv[0])) {
+        String[] tokens = trimmed.split("\\s+");
+        // Every argv entry returned below is a constant taken from a fixed allowlist, never the
+        // caller-supplied text itself: the program from ALLOWED_COMMANDS, options from ALLOWED_FLAGS.
+        String program = null;
+        for (String allowed : ALLOWED_COMMANDS) {
+            if (allowed.equals(tokens[0])) {
+                program = allowed;
+                break;
+            }
+        }
+        if (program == null) {
             return null;
         }
-        for (int i = 1; i < argv.length; i++) {
-            if (cmdFilter(argv[i]) == null) {
+        String[] argv = new String[tokens.length];
+        argv[0] = program;
+        for (int i = 1; i < tokens.length; i++) {
+            String flag = null;
+            for (String allowed : ALLOWED_FLAGS) {
+                if (allowed.equals(tokens[i])) {
+                    flag = allowed;
+                    break;
+                }
+            }
+            if (flag == null) {
                 return null;
             }
+            argv[i] = flag;
         }
         return argv;
     }

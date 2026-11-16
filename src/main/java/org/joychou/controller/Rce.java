@@ -143,7 +143,11 @@ public class Rce {
      */
     @GetMapping("/vuln/yarm")
     public void yarm(String content) {
-        // SafeConstructor only builds standard YAML types (no arbitrary class instantiation).
+        // Reject explicit YAML tags ('!' / '!!') and oversized input outright, and additionally
+        // use SafeConstructor, which only builds standard YAML types.
+        if (content == null || content.length() > MAX_JS_BYTES || content.indexOf('!') >= 0) {
+            return;
+        }
         Yaml y = new Yaml(new SafeConstructor());
         y.load(content);
     }

@@ -1,6 +1,7 @@
 package org.joychou.controller;
 
 import org.springframework.web.util.HtmlUtils;
+import org.joychou.config.WebConfig;
 import org.joychou.security.SecurityUtil;
 import org.joychou.util.WebUtils;
 import org.slf4j.Logger;
@@ -25,7 +26,7 @@ public class CommandInject {
     @GetMapping("/codeinject")
     public String codeInject(String filepath) throws IOException {
 
-        String safePath = SecurityUtil.cmdFilter(filepath);
+        String safePath = SecurityUtil.allowedListPath(filepath);
         if (null == safePath) {
             return "Bad boy. I got u.";
         }
@@ -46,11 +47,21 @@ public class CommandInject {
 
         String host = request.getHeader("host");
         logger.info(host);
-        // Host header is attacker-controlled: require an allowlisted http(s) URL and pass it as a single argv entry.
-        String url = "http://" + host;
-        if (host == null || !SecurityUtil.checkSSRFByWhitehosts(url)) {
+        // Host header is attacker-controlled: it is only used to select an entry of the configured
+        // SSRF safe-domain list; the URL passed to curl is built from the configured entry itself.
+        String safeHost = null;
+        if (host != null) {
+            for (String domain : WebConfig.getSsrfSafeDomains()) {
+                if (domain.equals(host)) {
+                    safeHost = domain;
+                    break;
+                }
+            }
+        }
+        if (safeHost == null) {
             return "Bad boy. I got u.";
         }
+        String url = "http://" + safeHost;
         String[] cmdList = new String[]{"curl", "--", url};
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);
@@ -60,7 +71,7 @@ public class CommandInject {
 
     @GetMapping("/codeinject/sec")
     public String codeInjectSec(String filepath) throws IOException {
-        String filterFilePath = SecurityUtil.cmdFilter(filepath);
+        String filterFilePath = SecurityUtil.allowedListPath(filepath);
         if (null == filterFilePath) {
             return "Bad boy. I got u.";
         }

@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.ArrayList;
+import java.util.regex.Pattern;
 
 
 /**
@@ -26,6 +27,8 @@ import java.util.ArrayList;
 @RestController
 public class SpEL {
 
+    private static final Pattern SAFE_EXPRESSION = Pattern.compile("^[0-9+\\-*/%().<>=!\\s]+$");
+
     /**
      * SpEL to RCE
      * http://localhost:8080/spel/vul/?expression=xxx.
@@ -34,6 +37,11 @@ public class SpEL {
      */
     @GetMapping("/spel/vuln")
     public String rce(String expression) {
+        // Only arithmetic / comparison over numeric literals is accepted: no identifiers, quotes,
+        // '#', '@', '$' or '{', so nothing but numbers and operators ever reaches the parser.
+        if (expression == null || expression.length() > 200 || !SAFE_EXPRESSION.matcher(expression).matches()) {
+            return "Bad boy. I got u.";
+        }
         ExpressionParser parser = new SpelExpressionParser();
         // SimpleEvaluationContext needs Spring 4.3.15+; this project is on 4.3.6, so lock down a
         // StandardEvaluationContext instead: no types (T(..)), no constructors, no method calls,
