@@ -1,7 +1,9 @@
 package org.joychou.controller;
 
 import groovy.lang.GroovyShell;
+import jdk.nashorn.api.scripting.NashornScriptEngineFactory;
 import lombok.extern.slf4j.Slf4j;
+import org.joychou.security.SecurityUtil;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -11,7 +13,6 @@ import org.yaml.snakeyaml.constructor.SafeConstructor;
 import javax.script.Bindings;
 import javax.script.ScriptContext;
 import javax.script.ScriptEngine;
-import javax.script.ScriptEngineManager;
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -34,7 +35,11 @@ public class Rce {
         StringBuilder sb = new StringBuilder();
 
         try {
-            Process p = run.exec(cmd);
+            String[] argv = SecurityUtil.cmdArgv(cmd);
+            if (argv == null) {
+                return "Bad boy. I got u.";
+            }
+            Process p = run.exec(argv);
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
             String tmpStr;
@@ -66,7 +71,10 @@ public class Rce {
         StringBuilder sb = new StringBuilder();
 
         try {
-            String[] arrCmd = {"/bin/sh", "-c", cmd};
+            String[] arrCmd = SecurityUtil.cmdArgv(cmd);
+            if (arrCmd == null) {
+                return "Bad boy. I got u.";
+            }
             ProcessBuilder processBuilder = new ProcessBuilder(arrCmd);
             Process p = processBuilder.start();
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
@@ -95,10 +103,17 @@ public class Rce {
     @GetMapping("/jscmd")
     public void jsEngine(String jsurl) throws Exception{
         // js nashorn javascript ecmascript
-        ScriptEngine engine = new ScriptEngineManager().getEngineByName("js");
+        // Only load scripts from allowlisted http(s) hosts.
+        if (!SecurityUtil.checkSSRFByWhitehosts(jsurl)) {
+            throw new IllegalArgumentException("jsurl is not allowed");
+        }
+        // Nashorn with Java interop disabled and every Java class hidden from scripts.
+        ScriptEngine engine = new NashornScriptEngineFactory().getScriptEngine(
+                new String[]{"--no-java"}, Rce.class.getClassLoader(), className -> false);
         Bindings bindings = engine.getBindings(ScriptContext.ENGINE_SCOPE);
-        String cmd = String.format("load(\"%s\")", jsurl);
-        engine.eval(cmd, bindings);
+        // Pass the URL as a binding instead of concatenating it into script source.
+        bindings.put("jsurl", jsurl);
+        engine.eval("load(jsurl)", bindings);
     }
 
 

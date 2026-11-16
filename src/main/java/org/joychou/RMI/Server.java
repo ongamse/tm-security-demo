@@ -15,6 +15,13 @@ public class Server implements Hello {
     public static void main(String args[]) {
 
         try {
+            // Restrict what the registry may deserialize (allowlist, reject everything else)
+            // so a malicious bind/rebind argument cannot trigger a gadget chain.
+            if (System.getProperty("sun.rmi.registry.registryFilter") == null) {
+                System.setProperty("sun.rmi.registry.registryFilter",
+                        "java.lang.String;java.lang.reflect.Proxy;java.rmi.**;sun.rmi.**;"
+                                + "org.joychou.RMI.Hello;!*");
+            }
             Server obj = new Server();
             Hello stub = (Hello) UnicastRemoteObject.exportObject(obj, 0);
             LocateRegistry.createRegistry(1099);

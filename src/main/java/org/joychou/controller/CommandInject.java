@@ -24,7 +24,11 @@ public class CommandInject {
     @GetMapping("/codeinject")
     public String codeInject(String filepath) throws IOException {
 
-        String[] cmdList = new String[]{"sh", "-c", "ls -la " + filepath};
+        String safePath = SecurityUtil.cmdFilter(filepath);
+        if (null == safePath) {
+            return "Bad boy. I got u.";
+        }
+        String[] cmdList = new String[]{"ls", "-la", "--", safePath};
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);
         Process process = builder.start();
@@ -41,7 +45,12 @@ public class CommandInject {
 
         String host = request.getHeader("host");
         logger.info(host);
-        String[] cmdList = new String[]{"sh", "-c", "curl " + host};
+        // Host header is attacker-controlled: require an allowlisted http(s) URL and pass it as a single argv entry.
+        String url = "http://" + host;
+        if (host == null || !SecurityUtil.checkSSRFByWhitehosts(url)) {
+            return "Bad boy. I got u.";
+        }
+        String[] cmdList = new String[]{"curl", "--", url};
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);
         Process process = builder.start();
@@ -54,7 +63,7 @@ public class CommandInject {
         if (null == filterFilePath) {
             return "Bad boy. I got u.";
         }
-        String[] cmdList = new String[]{"sh", "-c", "ls -la " + filterFilePath};
+        String[] cmdList = new String[]{"ls", "-la", "--", filterFilePath};
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);
         Process process = builder.start();

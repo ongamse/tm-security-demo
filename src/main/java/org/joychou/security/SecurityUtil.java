@@ -12,12 +12,17 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 
 public class SecurityUtil {
 
     private static final Pattern FILTER_PATTERN = Pattern.compile("^[a-zA-Z0-9_/\\.-]+$");
+    private static final Set<String> ALLOWED_COMMANDS = new HashSet<String>(
+            Arrays.asList("whoami", "id", "date", "hostname", "uname", "pwd", "ls"));
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
 
 
@@ -205,6 +210,34 @@ public class SecurityUtil {
         }
 
         return input;
+    }
+
+
+    /**
+     * Turn an untrusted command line into a safe argv array (never run through a shell).
+     * The program must be in a fixed allowlist and every argument must pass {@link #cmdFilter}.
+     *
+     * @param cmd untrusted command line, e.g. <code>ls -la /tmp</code>
+     * @return argv array, or null if the command is not allowed
+     */
+    public static String[] cmdArgv(String cmd) {
+        if (cmd == null) {
+            return null;
+        }
+        String trimmed = cmd.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        String[] argv = trimmed.split("\\s+");
+        if (!ALLOWED_COMMANDS.contains(argv[0])) {
+            return null;
+        }
+        for (int i = 1; i < argv.length; i++) {
+            if (cmdFilter(argv[i]) == null) {
+                return null;
+            }
+        }
+        return argv;
     }
 
 
