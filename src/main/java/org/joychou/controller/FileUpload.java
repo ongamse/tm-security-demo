@@ -16,6 +16,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.UUID;
 
 import org.joychou.security.SecurityUtil;
@@ -33,7 +34,6 @@ public class FileUpload {
     // Save the uploaded file to this folder
     private static final String UPLOADED_FOLDER = "/tmp/";
     private final Logger logger = LoggerFactory.getLogger(this.getClass());
-    private static String randomFilePath = "";
 
     // uplaod any file
     @GetMapping("/any")
@@ -59,13 +59,13 @@ public class FileUpload {
         try {
             // Get the file and save it somewhere
             byte[] bytes = file.getBytes();
-            Path path = Paths.get(UPLOADED_FOLDER + file.getOriginalFilename());
+            Path path = resolveInUploadFolder(file.getOriginalFilename());
             Files.write(path, bytes);
 
             redirectAttributes.addFlashAttribute("message",
-                    "You successfully uploaded '" + UPLOADED_FOLDER + file.getOriginalFilename() + "'");
+                    "You successfully uploaded '" + path + "'");
 
-        } catch (IOException e) {
+        } catch (IOException | IllegalArgumentException e) {
             redirectAttributes.addFlashAttribute("message", "upload failed");
             logger.error(e.toString());
         }
@@ -87,13 +87,14 @@ public class FileUpload {
         }
 
         String fileName = multifile.getOriginalFilename();
+        if (fileName == null || fileName.lastIndexOf('.') < 0) {
+            logger.error("[-] Suffix error: missing file suffix");
+            return "Upload failed. Illeagl picture.";
+        }
         String Suffix = fileName.substring(fileName.lastIndexOf(".")); // 获取文件后缀名
         String mimeType = multifile.getContentType(); // 获取MIME类型
-        String filePath = UPLOADED_FOLDER + fileName;
-        File excelFile = convert(multifile);
 
-
-        // 判断文件后缀名是否在白名单内  校验1
+        // 判断文件后缀名是否在白名单内  校验1 (must run before anything touches the filesystem)
         String[] picSuffixList = {".jpg", ".png", ".jpeg", ".gif", ".bmp", ".ico"};
         boolean suffixFlag = false;
         for (String white_suffix : picSuffixList) {
@@ -104,9 +105,13 @@ public class FileUpload {
         }
         if (!suffixFlag) {
             logger.error("[-] Suffix error: " + Suffix);
-            deleteFile(filePath);
             return "Upload failed. Illeagl picture.";
         }
+
+        // Server-side generated names: the client supplied name is never used in a file path.
+        String safeSuffix = Suffix.toLowerCase();
+        String filePath = resolveInUploadFolder(Generators.timeBasedGenerator().generate() + safeSuffix).toString();
+        File excelFile = convert(multifile, safeSuffix);
 
 
         // 判断MIME类型是否在黑名单内 校验2
@@ -122,18 +127,17 @@ public class FileUpload {
             // 用contains是为了防止text/html;charset=UTF-8绕过
             if (SecurityUtil.replaceSpecialStr(mimeType).toLowerCase().contains(blackMimeType)) {
                 logger.error("[-] Mime type error: " + mimeType);
-                deleteFile(filePath);
+                deleteFile(excelFile.getPath());
                 return "Upload failed. Illeagl picture.";
             }
         }
 
         // 判断文件内容是否是图片 校验3
         boolean isImageFlag = isImage(excelFile);
-        deleteFile(randomFilePath);
+        deleteFile(excelFile.getPath());
 
         if (!isImageFlag) {
             logger.error("[-] File is not Image");
-            deleteFile(filePath);
             return "Upload failed. Illeagl picture.";
         }
 
@@ -141,8 +145,8 @@ public class FileUpload {
         try {
             // Get the file and save it somewhere
             byte[] bytes = multifile.getBytes();
-            Path path = Paths.get(UPLOADED_FOLDER + multifile.getOriginalFilename());
-            Files.write(path, bytes);
+            Path path = resolveInUploadFolder(Paths.get(filePath).getFileName().toString());
+            Files.write(path, bytes, StandardOpenOption.CREATE_NEW);
         } catch (IOException e) {
             logger.error(e.toString());
             deleteFile(filePath);
@@ -154,8 +158,34 @@ public class FileUpload {
         return String.format("You successfully uploaded '%s'", filePath);
     }
 
+    /**
+     * Resolve a file name inside UPLOADED_FOLDER. Only the last path segment of the given
+     * name is used, and the result must stay inside UPLOADED_FOLDER.
+     */
+    private static Path resolveInUploadFolder(String name) {
+        if (name == null) {
+            throw new IllegalArgumentException("Missing file name");
+        }
+        String base = name.substring(Math.max(name.lastIndexOf('/'), name.lastIndexOf('\\')) + 1);
+        if (base.isEmpty() || base.equals(".") || base.equals("..") || base.indexOf('\0') >= 0) {
+            throw new IllegalArgumentException("Illegal file name");
+        }
+        Path root = Paths.get(UPLOADED_FOLDER).toAbsolutePath().normalize();
+        Path resolved = root.resolve(base).normalize();
+        if (!resolved.startsWith(root) || !root.equals(resolved.getParent())) {
+            throw new IllegalArgumentException("Illegal file path");
+        }
+        return resolved;
+    }
+
     private void deleteFile(String filePath) {
-        File delFile = new File(filePath);
+        File delFile;
+        try {
+            delFile = resolveInUploadFolder(Paths.get(filePath).getFileName().toString()).toFile();
+        } catch (IllegalArgumentException e) {
+            logger.info("Illegal file path, delete refused");
+            return;
+        }
         if(delFile.isFile() && delFile.exists()) {
             if (delFile.delete()) {
                 logger.info("[+] " + filePath + " delete successfully!");
@@ -171,20 +201,17 @@ public class FileUpload {
      * 不建议使用transferTo，因为原始的MultipartFile会被覆盖
      * https://stackoverflow.com/questions/24339990/how-to-convert-a-multipart-file-to-file
      */
-    private File convert(MultipartFile multiFile) throws Exception {
-        String fileName = multiFile.getOriginalFilename();
-        String suffix = fileName.substring(fileName.lastIndexOf("."));
+    private File convert(MultipartFile multiFile, String suffix) throws Exception {
         UUID uuid = Generators.timeBasedGenerator().generate();
-        randomFilePath = UPLOADED_FOLDER + uuid + suffix;
-        // 随机生成一个同后缀名的文件
-        File convFile = new File(randomFilePath);
+        // 随机生成一个同后缀名的文件 (suffix is already validated against the allowlist)
+        File convFile = resolveInUploadFolder(uuid + suffix).toFile();
         boolean ret = convFile.createNewFile();
         if (!ret) {
-            return null;
+            throw new IOException("Temporary file already exists");
         }
-        FileOutputStream fos = new FileOutputStream(convFile);
-        fos.write(multiFile.getBytes());
-        fos.close();
+        try (FileOutputStream fos = new FileOutputStream(convFile)) {
+            fos.write(multiFile.getBytes());
+        }
         return convFile;
     }
 
