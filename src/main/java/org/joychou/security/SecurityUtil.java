@@ -28,6 +28,9 @@ public class SecurityUtil {
     private static final String REDIRECT_HOST_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789.-";
     private static final String REDIRECT_PATH_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
             + "-._~!$&'()*+,;=:@/%?#";
+    private static final String FILENAME_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-_";
+    private static final String HEADER_TEXT_CHARS = " !\"#$%&'()*+,-./0123456789:;<=>?@"
+            + "ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
     private static final Set<String> ALLOWED_FLAGS = new HashSet<String>(
             Arrays.asList("-a", "-l", "-la", "-al", "-lh", "-lah", "-1", "-h", "-s", "-r", "-m", "-n", "-u", "-g", "-un"));
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
@@ -388,13 +391,55 @@ public class SecurityUtil {
             boolean bareOrigin = uri.getRawUserInfo() == null && uri.getRawQuery() == null
                     && uri.getRawFragment() == null
                     && (uri.getRawPath() == null || uri.getRawPath().isEmpty());
-            if (!bareOrigin) {
+            if (!bareOrigin || checkURL(origin) == null) {
                 return null;
             }
+            // The returned value is not the request string: the scheme is a constant, the host is
+            // copied one character at a time from a fixed allowlist and the port is a parsed integer.
+            String host = copyAllowed(gethost(origin), REDIRECT_HOST_CHARS);
+            if (host == null || host.isEmpty()) {
+                return null;
+            }
+            StringBuilder rebuilt = new StringBuilder("https".equalsIgnoreCase(uri.getScheme()) ? "https" : "http");
+            rebuilt.append("://").append(host);
+            if (uri.getPort() != -1) {
+                rebuilt.append(':').append(uri.getPort());
+            }
+            return rebuilt.toString();
         } catch (URISyntaxException e) {
             return null;
         }
-        return checkURL(origin);
+    }
+
+
+    /**
+     * Rebuild a free-text header value (not a url) from printable ASCII only. The result is copied one
+     * character at a time from a constant, so it never contains CR, LF or other control characters.
+     *
+     * @param value the request-derived text that should be written to a response header
+     * @return the rebuilt text, or null if the value is null or contains a character outside printable ASCII
+     */
+    public static String safeHeaderText(String value) {
+        return copyAllowed(value, HEADER_TEXT_CHARS);
+    }
+
+
+    /**
+     * Derive a download file name from request-derived text. Only letters, digits, '.', '-' and '_'
+     * are kept (copied from a constant); every other character becomes '_'.
+     *
+     * @param name the request-derived name (may be null)
+     * @return a header-safe file name, never null or empty
+     */
+    public static String safeFileName(String name) {
+        StringBuilder sb = new StringBuilder();
+        if (name != null) {
+            for (int i = 0; i < name.length() && sb.length() < 100; i++) {
+                int idx = FILENAME_CHARS.indexOf(name.charAt(i));
+                sb.append(idx < 0 ? '_' : FILENAME_CHARS.charAt(idx));
+            }
+        }
+        return sb.length() == 0 ? "download" : sb.toString();
     }
 
 

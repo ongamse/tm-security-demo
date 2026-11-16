@@ -23,13 +23,15 @@ public class CRLFInjection {
     public void crlf(HttpServletRequest request, HttpServletResponse response) {
         String test1 = request.getParameter("test1");
         String test2 = request.getParameter("test2");
-        // reject CR/LF and other control chars to prevent header injection
-        if (!SecurityUtil.isSafeHeaderValue(test1) || !SecurityUtil.isSafeHeaderValue(test2)) {
+        // rebuild the header values from printable ASCII only (null/CR/LF/control chars are rejected)
+        String safeTest1 = SecurityUtil.safeHeaderText(test1 == null ? "" : test1);
+        String safeTest2 = SecurityUtil.safeHeaderText(test2 == null ? "" : test2);
+        if (safeTest1 == null || safeTest2 == null) {
             response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
             return;
         }
-        response.addHeader("test1", test1);
-        response.setHeader("test2", test2);
+        response.addHeader("test1", safeTest1);
+        response.setHeader("test2", safeTest2);
         String author = request.getParameter("test3");
         Cookie cookie = new Cookie("test3", author);
         response.addCookie(cookie);

@@ -143,12 +143,9 @@ public class SSRF {
         try {
             // central SSRF control: the rebuilt url is the only value that is ever requested
             String safeUrl = SSRFChecker.safeUrl(url);
-            String downLoadImgFileName = WebUtils.getNameWithoutExtension(safeUrl) + "." + WebUtils.getFileExtension(safeUrl);
-            // reject CR/LF and other control chars to prevent header injection
-            if (!SecurityUtil.isSafeHeaderValue(downLoadImgFileName)) {
-                response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
-                return;
-            }
+            // the file name is rebuilt from letters, digits, '.', '-' and '_' only (copied from a constant)
+            String downLoadImgFileName = SecurityUtil.safeFileName(
+                    WebUtils.getNameWithoutExtension(safeUrl) + "." + WebUtils.getFileExtension(safeUrl));
             // download
             response.setHeader("content-disposition", "attachment;fileName=" + downLoadImgFileName);
 
