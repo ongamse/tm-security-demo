@@ -1,6 +1,7 @@
 package org.joychou.impl;
 
 
+import org.joychou.security.ssrf.SSRFChecker;
 import org.joychou.service.HttpService;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -27,7 +28,9 @@ public class HttpServiceImpl implements HttpService {
      */
     public String RequestHttp(String url, HttpHeaders headers) {
         HttpEntity<String> entity = new HttpEntity<>(headers);
-        ResponseEntity<String> re = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
+        // central SSRF control: request the rebuilt url, never the raw string
+        ResponseEntity<String> re = restTemplate.exchange(
+                SSRFChecker.validateUrl(url).toString(), HttpMethod.GET, entity, String.class);
         return re.getBody();
     }
 
@@ -38,7 +41,8 @@ public class HttpServiceImpl implements HttpService {
      */
     public String RequestHttpBanRedirects(String url, HttpHeaders headers) {
         HttpEntity<String> entity = new HttpEntity<>(headers);
-        ResponseEntity<String> re = restTemplateBanRedirects.exchange(url, HttpMethod.GET, entity, String.class);
+        ResponseEntity<String> re = restTemplateBanRedirects.exchange(
+                SSRFChecker.validateUrl(url).toString(), HttpMethod.GET, entity, String.class);
         return re.getBody();
     }
 }

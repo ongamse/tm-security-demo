@@ -3,6 +3,7 @@ package org.joychou.controller;
 import org.springframework.web.util.HtmlUtils;
 import org.joychou.config.WebConfig;
 import org.joychou.security.SecurityUtil;
+import org.joychou.security.ssrf.SSRFChecker;
 import org.joychou.util.WebUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -61,7 +62,11 @@ public class CommandInject {
         if (safeHost == null) {
             return "Bad boy. I got u.";
         }
-        String url = "http://" + safeHost;
+        // central SSRF control: scheme/host/internal-address check and rebuilt url
+        String url = SSRFChecker.safeUrlOrNull("http://" + safeHost);
+        if (url == null) {
+            return "Bad boy. I got u.";
+        }
         String[] cmdList = new String[]{"curl", "--", url};
         ProcessBuilder builder = new ProcessBuilder(cmdList);
         builder.redirectErrorStream(true);

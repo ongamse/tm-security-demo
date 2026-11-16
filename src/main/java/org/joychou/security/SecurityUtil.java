@@ -9,10 +9,8 @@ import org.slf4j.LoggerFactory;
 import java.io.File;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
-import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.net.URL;
 import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -53,19 +51,32 @@ public class SecurityUtil {
      * @return host
      */
     public static String gethost(String url) {
+        if (url == null || url.indexOf('\\') >= 0) {
+            return "";
+        }
         try {
+            // Pure string / URI parsing: no java.net.URL (and no connection) is ever built from the
+            // request-derived string here.
             URI uri = new URI(url);
             String host = uri.getHost();
             if (host == null || host.isEmpty()) {
                 return "";
             }
-            // Reject URLs that java.net.URI and java.net.URL parse differently, because the
-            // host checked here must be the host the HTTP client will connect to.
-            if (!host.equalsIgnoreCase(new URL(url).getHost())) {
+            // The host reported by java.net.URI must be exactly the host of the raw authority
+            // (after the last '@' and before the port), so that no other parser (e.g. the HTTP
+            // client) can read a different host from the same string.
+            String authority = uri.getRawAuthority();
+            if (authority == null) {
+                return "";
+            }
+            String hostPort = authority.substring(authority.lastIndexOf('@') + 1);
+            int portSep = hostPort.lastIndexOf(':');
+            String rawHost = (portSep >= 0 && hostPort.indexOf(']') < portSep) ? hostPort.substring(0, portSep) : hostPort;
+            if (!host.equalsIgnoreCase(rawHost)) {
                 return "";
             }
             return host.toLowerCase();
-        } catch (URISyntaxException | MalformedURLException e) {
+        } catch (URISyntaxException e) {
             return "";
         }
     }

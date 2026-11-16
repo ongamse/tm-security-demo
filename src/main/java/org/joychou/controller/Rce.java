@@ -3,6 +3,7 @@ package org.joychou.controller;
 import groovy.lang.GroovyShell;
 import lombok.extern.slf4j.Slf4j;
 import org.joychou.security.SecurityUtil;
+import org.joychou.security.ssrf.SSRFChecker;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -14,7 +15,6 @@ import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
-import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.sql.DriverManager;
 
@@ -105,14 +105,16 @@ public class Rce {
     @GetMapping(value = "/jscmd", produces = "text/plain;charset=UTF-8")
     public String jsEngine(String jsurl) {
         // Only fetch from allowlisted http(s) hosts.
-        if (jsurl == null || !SecurityUtil.checkSSRFByWhitehosts(jsurl)) {
+        // The url that is requested is rebuilt by the central SSRF helper, never the raw parameter.
+        String safeUrl = SSRFChecker.safeUrlOrNull(jsurl);
+        if (safeUrl == null) {
             return "jsurl is not allowed";
         }
         // The remote script is never evaluated: the standard javax.script API cannot restrict
         // Java access portably, so the allowlisted content is returned as plain data instead.
         HttpURLConnection conn = null;
         try {
-            conn = (HttpURLConnection) new URL(jsurl).openConnection();
+            conn = (HttpURLConnection) SSRFChecker.openNoRedirect(safeUrl);
             conn.setInstanceFollowRedirects(false);
             conn.setConnectTimeout(5000);
             conn.setReadTimeout(5000);

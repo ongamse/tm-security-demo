@@ -2,6 +2,8 @@ package org.joychou.security.ssrf;
 
 import java.net.HttpURLConnection;
 import java.net.InetAddress;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLConnection;
 import java.util.ArrayList;
@@ -18,6 +20,11 @@ public class SSRFChecker {
 
     private static final Logger logger = LoggerFactory.getLogger(SSRFChecker.class);
     private static String decimalIp;
+
+    private static final String URL_HOST_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789.-";
+    private static final String URL_PATH_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+            + "-._~!$&'()*+,;=:@/%";
+    private static final String URL_QUERY_CHARS = URL_PATH_CHARS + "?";
 
     public static boolean checkURLFckSSRF(String url) {
         if (null == url) {
@@ -176,17 +183,151 @@ public class SSRFChecker {
      * @throws SSRFException if the url is not allowed
      */
     public static URL validateUrl(String url) {
-        if (url == null || !SecurityUtil.isHttp(url)) {
-            throw new SSRFException("[-] SSRF check failed. Only http and https are allowed.");
-        }
-        if (isInternalIpByUrl(url)) {
-            throw new SSRFException("[-] SSRF check failed. Dangerous url.");
-        }
         try {
-            return new URL(url);
+            return new URL(safeUrl(url));
         } catch (java.net.MalformedURLException e) {
             throw new SSRFException("[-] SSRF check failed. Malformed url.");
         }
+    }
+
+
+    /**
+     * Central SSRF control. Validates an untrusted URL and returns a NEW url string that is safe to
+     * hand to an HTTP client; callers must request the returned value, never the raw request string.
+     * <ul>
+     *   <li>only http/https, no userinfo, host parsed identically by java.net.URI and the raw authority</li>
+     *   <li>host must match an entry of the configured SSRF safe-domain list and must not resolve to an
+     *       internal / loopback / link-local address (see {@link #safeHost(String)})</li>
+     *   <li>the result is rebuilt: constant scheme, host copied from the configured allowlist entry, parsed
+     *       integer port, path and query copied one character at a time from fixed allowlists of url
+     *       characters (any other character rejects the url)</li>
+     * </ul>
+     *
+     * @param url untrusted url
+     * @return the rebuilt, validated url
+     * @throws SSRFException if the url is not allowed
+     */
+    public static String safeUrl(String url) {
+        if (url == null || !SecurityUtil.isHttp(url)) {
+            throw new SSRFException("[-] SSRF check failed. Only http and https are allowed.");
+        }
+        String host = SecurityUtil.gethost(url);
+        if (host.isEmpty()) {
+            throw new SSRFException("[-] SSRF check failed. Illegal host.");
+        }
+        URI uri;
+        try {
+            uri = new URI(url);
+        } catch (URISyntaxException e) {
+            throw new SSRFException("[-] SSRF check failed. Malformed url.");
+        }
+        if (uri.getRawUserInfo() != null) {
+            throw new SSRFException("[-] SSRF check failed. Userinfo is not allowed.");
+        }
+        int port = uri.getPort();
+        if (port != -1 && (port < 1 || port > 65535)) {
+            throw new SSRFException("[-] SSRF check failed. Illegal port.");
+        }
+        String path = uri.getRawPath() == null ? "" : uri.getRawPath();
+        String safePath = copyAllowed(path, URL_PATH_CHARS);
+        if (safePath == null || (!safePath.isEmpty() && !safePath.startsWith("/"))) {
+            throw new SSRFException("[-] SSRF check failed. Illegal path.");
+        }
+        String safeQuery = null;
+        if (uri.getRawQuery() != null) {
+            safeQuery = copyAllowed(uri.getRawQuery(), URL_QUERY_CHARS);
+            if (safeQuery == null) {
+                throw new SSRFException("[-] SSRF check failed. Illegal query.");
+            }
+        }
+
+        StringBuilder rebuilt = new StringBuilder("https".equalsIgnoreCase(uri.getScheme()) ? "https" : "http");
+        rebuilt.append("://").append(safeHost(host));
+        if (port != -1) {
+            rebuilt.append(':').append(port);
+        }
+        rebuilt.append(safePath.isEmpty() ? "/" : safePath);
+        if (safeQuery != null) {
+            rebuilt.append('?').append(safeQuery);
+        }
+        return rebuilt.toString();
+    }
+
+
+    /**
+     * Same as {@link #safeUrl(String)} but returns null instead of throwing when the url is not allowed.
+     */
+    public static String safeUrlOrNull(String url) {
+        try {
+            return safeUrl(url);
+        } catch (SSRFException e) {
+            logger.error(e.getMessage());
+            return null;
+        }
+    }
+
+
+    /**
+     * Validate a host name against the configured SSRF safe-domain list and the internal-address block
+     * and return the host rebuilt from the configured allowlist entry (an exact entry, or a sub-domain
+     * label prefix made of host characters followed by the entry).
+     *
+     * @param host untrusted host name
+     * @return the validated host
+     * @throws SSRFException if the host is not allowed
+     */
+    public static String safeHost(String host) {
+        String labels = host == null ? null : copyAllowed(host.toLowerCase(), URL_HOST_CHARS);
+        if (labels == null || labels.isEmpty() || labels.startsWith(".") || labels.contains("..")) {
+            throw new SSRFException("[-] SSRF check failed. Illegal host.");
+        }
+        String safe = null;
+        for (String entry : WebConfig.getSsrfSafeDomains()) {
+            String domain = entry.trim();
+            String lowerDomain = domain.toLowerCase();
+            if (domain.isEmpty()) {
+                continue;
+            }
+            if (labels.equals(lowerDomain)) {
+                safe = domain;
+                break;
+            }
+            if (labels.endsWith("." + lowerDomain)) {
+                String prefix = labels.substring(0, labels.length() - lowerDomain.length() - 1);
+                if (!prefix.isEmpty()) {
+                    safe = prefix + "." + domain;
+                    break;
+                }
+            }
+        }
+        if (safe == null) {
+            throw new SSRFException("[-] SSRF check failed. Host is not in the safe-domain list.");
+        }
+        if (isInternalIpByUrl("http://" + safe + "/")) {
+            throw new SSRFException("[-] SSRF check failed. Dangerous host.");
+        }
+        return safe;
+    }
+
+
+    /**
+     * Copy a string using only characters taken from the allowlist constant.
+     *
+     * @return the copy, or null if any character is not in the allowlist
+     */
+    private static String copyAllowed(String value, String allowed) {
+        if (value == null) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            int idx = allowed.indexOf(value.charAt(i));
+            if (idx < 0) {
+                return null;
+            }
+            sb.append(allowed.charAt(idx));
+        }
+        return sb.toString();
     }
 
 
