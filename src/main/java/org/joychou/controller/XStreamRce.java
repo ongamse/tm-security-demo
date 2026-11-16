@@ -12,6 +12,7 @@ import org.xml.sax.InputSource;
 import javax.xml.parsers.DocumentBuilderFactory;
 import java.io.StringReader;
 import org.joychou.dao.User;
+import org.joychou.util.SecureXml;
 import org.joychou.util.WebUtils;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -34,11 +35,7 @@ public class XStreamRce {
         String xml = WebUtils.getRequestBody(request);
         // Parse with a hardened DOM parser (no DOCTYPE / external entities), then
         // unmarshal from the already-parsed document.
-        DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
-        dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-        dbf.setFeature("http://xml.org/sax/features/external-general-entities", false);
-        dbf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
-        dbf.setXIncludeAware(false);
+        DocumentBuilderFactory dbf = SecureXml.newDocumentBuilderFactory();
         Document document = dbf.newDocumentBuilder().parse(new InputSource(new StringReader(xml)));
 
         // Deny all types by default; allow only the types this endpoint expects.
