@@ -27,7 +27,20 @@ public class WebUtils {
     }
 
 
+    private static final java.util.regex.Pattern JSONP_CALLBACK_PATTERN =
+            java.util.regex.Pattern.compile("^[A-Za-z_$][0-9A-Za-z_$]*(\\.[A-Za-z_$][0-9A-Za-z_$]*)*$");
+
+    /**
+     * A JSONP callback must be a plain (dotted) JavaScript identifier, never an arbitrary expression.
+     */
+    public static boolean isValidJsonpCallback(String callback) {
+        return callback != null && callback.length() <= 128 && JSONP_CALLBACK_PATTERN.matcher(callback).matches();
+    }
+
     public static String json2Jsonp(String callback, String jsonStr) {
+        if (!isValidJsonpCallback(callback)) {
+            return "error";
+        }
         return HtmlUtils.htmlEscape(callback) + "(" + jsonStr + ")";
     }
 
