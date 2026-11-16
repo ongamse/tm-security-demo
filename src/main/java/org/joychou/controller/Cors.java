@@ -24,14 +24,13 @@ public class Cors {
 
     @GetMapping("/vuln/origin")
     public String vuls1(HttpServletRequest request, HttpServletResponse response) {
-        String origin = request.getHeader("origin");
-        // reject CR/LF and other control chars to prevent header injection
-        if (!SecurityUtil.isSafeHeaderValue(origin)) {
+        // only the rebuilt, allowlisted origin is ever used; the raw header is never echoed
+        String allowedOrigin = SecurityUtil.getAllowedOrigin(request);
+        // reject CR/LF in the origin and non-safe methods without an anti-CSRF signal
+        if (!SecurityUtil.isCorsRequestAllowed(request, allowedOrigin, false)) {
             response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
             return "Invalid origin.";
         }
-        // only echo an allowlisted origin; never reflect an arbitrary origin together with credentials
-        String allowedOrigin = SecurityUtil.checkOrigin(origin);
         response.addHeader("Vary", "Origin");
         if (allowedOrigin != null) {
             response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
@@ -43,7 +42,11 @@ public class Cors {
     @GetMapping("/vuln/setHeader")
     public String vuls2(HttpServletRequest request, HttpServletResponse response) {
         // 不再设置通配符*，仅对白名单内的origin返回对应的Access-Control-Allow-Origin（不允许携带cookie）
-        String allowedOrigin = SecurityUtil.checkOrigin(request.getHeader("Origin"));
+        String allowedOrigin = SecurityUtil.getAllowedOrigin(request);
+        if (!SecurityUtil.isCorsRequestAllowed(request, allowedOrigin, false)) {
+            response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+            return "Invalid origin.";
+        }
         response.addHeader("Vary", "Origin");
         if (allowedOrigin != null) {
             response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
@@ -117,12 +120,10 @@ public class Cors {
 
     @GetMapping("/sec/checkOrigin")
     public String seccode(HttpServletRequest request, HttpServletResponse response) {
-        String origin = request.getHeader("Origin");
-
         // 如果origin不为空并且origin不在白名单内，认定为不安全。
         // 如果origin为空，表示是同域过来的请求或者浏览器直接发起的请求。
-        String allowedOrigin = SecurityUtil.checkOrigin(origin);
-        if (!SecurityUtil.isSafeHeaderValue(origin) || (origin != null && allowedOrigin == null)) {
+        String allowedOrigin = SecurityUtil.getAllowedOrigin(request);
+        if (!SecurityUtil.isCorsRequestAllowed(request, allowedOrigin, true)) {
             return "Origin is not safe.";
         }
         response.addHeader("Vary", "Origin");
