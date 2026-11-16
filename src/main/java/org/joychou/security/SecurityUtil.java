@@ -6,6 +6,7 @@ import org.joychou.security.ssrf.SocketHook;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.servlet.http.HttpServletRequest;
 import java.io.File;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
@@ -31,6 +32,9 @@ public class SecurityUtil {
     private static final String FILENAME_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-_";
     private static final String HEADER_TEXT_CHARS = " !\"#$%&'()*+,-./0123456789:;<=>?@"
             + "ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
+    private static final int LOG_MAX_LENGTH = 200;
+    private static final String LOG_SAFE_CHARS = " !#$%&'()*+,-./0123456789:;=?@"
+            + "ABCDEFGHIJKLMNOPQRSTUVWXYZ[]^_abcdefghijklmnopqrstuvwxyz~";
     private static final Set<String> ALLOWED_FLAGS = new HashSet<String>(
             Arrays.asList("-a", "-l", "-la", "-al", "-lh", "-lah", "-1", "-h", "-s", "-r", "-m", "-n", "-u", "-g", "-un"));
     private static Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
@@ -132,7 +136,7 @@ public class SecurityUtil {
             }
             return null;
         } catch (NullPointerException e) {
-            logger.error(e.toString());
+            logger.error("{}", logSafe(e.toString()));
             return null;
         }
     }
@@ -220,10 +224,10 @@ public class SecurityUtil {
             try {
                 temp = URLDecoder.decode(temp, "utf-8");
             } catch (UnsupportedEncodingException e) {
-                logger.info("Unsupported encoding exception: " + filepath);
+                logger.info("Unsupported encoding exception: {}", logSafe(filepath));
                 return null;
             } catch (Exception e) {
-                logger.info(e.toString());
+                logger.info("{}", logSafe(e.toString()));
                 return null;
             }
         }
@@ -413,6 +417,57 @@ public class SecurityUtil {
 
 
     /**
+     * Get the allowlisted, rebuilt origin of a request (see {@link #checkOrigin(String)}).
+     * The raw Origin header never leaves this method; callers only see the rebuilt value.
+     *
+     * @param request the current request
+     * @return the rebuilt allowlisted origin, or null when the request has no (allowed) Origin
+     */
+    public static String getAllowedOrigin(HttpServletRequest request) {
+        return checkOrigin(request.getHeader("Origin"));
+    }
+
+
+    /**
+     * Shared CORS / anti-CSRF gate for the cors handlers.
+     * <ul>
+     * <li>An Origin header containing control characters is always rejected.</li>
+     * <li>A non-safe method (anything but GET/HEAD/OPTIONS) with a cross-site Origin must come from an
+     * allowlisted origin ({@code allowedOrigin != null}).</li>
+     * <li>A non-safe method must carry an anti-CSRF signal that a cross-site browser request cannot
+     * forge without a CORS preflight: a custom X-Requested-With header or an application/json body.</li>
+     * <li>With {@code strictOrigin}, a present but non-allowlisted Origin is rejected for every method.</li>
+     * </ul>
+     * A request without Origin (same-origin / direct) is still accepted for safe methods.
+     *
+     * @param request       the current request
+     * @param allowedOrigin the value returned by {@link #getAllowedOrigin(HttpServletRequest)}
+     * @param strictOrigin  reject any present Origin that is not allowlisted, even for safe methods
+     * @return true if the request may be served
+     */
+    public static boolean isCorsRequestAllowed(HttpServletRequest request, String allowedOrigin,
+                                               boolean strictOrigin) {
+        String rawOrigin = request.getHeader("Origin");
+        if (!isSafeHeaderValue(rawOrigin)) {
+            return false;
+        }
+        String method = request.getMethod();
+        boolean safeMethod = "GET".equalsIgnoreCase(method) || "HEAD".equalsIgnoreCase(method)
+                || "OPTIONS".equalsIgnoreCase(method);
+        if (rawOrigin != null && allowedOrigin == null && (strictOrigin || !safeMethod)) {
+            return false;
+        }
+        if (safeMethod) {
+            return true;
+        }
+        String requestedWith = request.getHeader("X-Requested-With");
+        String contentType = request.getContentType();
+        boolean json = contentType != null && contentType.toLowerCase().startsWith("application/json");
+        return (requestedWith != null && !requestedWith.isEmpty()) || json;
+    }
+
+
+    /**
      * Rebuild a free-text header value (not a url) from printable ASCII only. The result is copied one
      * character at a time from a constant, so it never contains CR, LF or other control characters.
      *
@@ -421,6 +476,31 @@ public class SecurityUtil {
      */
     public static String safeHeaderText(String value) {
         return copyAllowed(value, HEADER_TEXT_CHARS);
+    }
+
+
+    /**
+     * Make request-derived or remote-derived text safe to write to a log (prevents log forging, CWE-117).
+     * The result is a NEW string rebuilt one character at a time from a constant allowlist of letters,
+     * digits and conservative punctuation; every other character (CR, LF, tab, other control and
+     * non-ASCII characters) becomes '_'. The output is truncated to {@link #LOG_MAX_LENGTH} characters.
+     *
+     * @param value the text that will be logged (may be null)
+     * @return the sanitized text, "null" when the value is null
+     */
+    public static String logSafe(String value) {
+        if (value == null) {
+            return "null";
+        }
+        StringBuilder sb = new StringBuilder(Math.min(value.length(), LOG_MAX_LENGTH) + 3);
+        for (int i = 0; i < value.length() && i < LOG_MAX_LENGTH; i++) {
+            int idx = LOG_SAFE_CHARS.indexOf(value.charAt(i));
+            sb.append(idx < 0 ? '_' : LOG_SAFE_CHARS.charAt(idx));
+        }
+        if (value.length() > LOG_MAX_LENGTH) {
+            sb.append("...");
+        }
+        return sb.toString();
     }
 
 
