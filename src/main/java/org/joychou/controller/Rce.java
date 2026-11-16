@@ -6,6 +6,7 @@ import org.joychou.security.SecurityUtil;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.util.HtmlUtils;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
 
@@ -30,7 +31,7 @@ public class Rce {
 
     private static final int MAX_JS_BYTES = 64 * 1024;
 
-    @GetMapping("/runtime/exec")
+    @GetMapping(value = "/runtime/exec", produces = "text/plain;charset=UTF-8")
     public String CommandExec(String cmd) {
         Runtime run = Runtime.getRuntime();
         StringBuilder sb = new StringBuilder();
@@ -57,16 +58,16 @@ public class Rce {
             inBr.close();
             in.close();
         } catch (Exception e) {
-            return e.toString();
+            return HtmlUtils.htmlEscape(e.toString());
         }
-        return sb.toString();
+        return HtmlUtils.htmlEscape(sb.toString());
     }
 
 
     /**
      * <a href="http://localhost:8080/rce/ProcessBuilder?cmd=whoami">POC</a>
      */
-    @GetMapping("/ProcessBuilder")
+    @GetMapping(value = "/ProcessBuilder", produces = "text/plain;charset=UTF-8")
     public String processBuilder(String cmd) {
 
         StringBuilder sb = new StringBuilder();
@@ -86,10 +87,10 @@ public class Rce {
                 sb.append(tmpStr);
             }
         } catch (Exception e) {
-            return e.toString();
+            return HtmlUtils.htmlEscape(e.toString());
         }
 
-        return sb.toString();
+        return HtmlUtils.htmlEscape(sb.toString());
     }
 
 
@@ -101,7 +102,7 @@ public class Rce {
      *
      * @param jsurl js url
      */
-    @GetMapping("/jscmd")
+    @GetMapping(value = "/jscmd", produces = "text/plain;charset=UTF-8")
     public String jsEngine(String jsurl) {
         // Only fetch from allowlisted http(s) hosts.
         if (jsurl == null || !SecurityUtil.checkSSRFByWhitehosts(jsurl)) {
@@ -124,7 +125,7 @@ public class Rce {
                     sb.append(buf, 0, n);
                 }
             }
-            return sb.toString();
+            return HtmlUtils.htmlEscape(sb.toString());
         } catch (Exception e) {
             return "Failed to fetch jsurl";
         } finally {
