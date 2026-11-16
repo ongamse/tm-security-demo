@@ -1,7 +1,6 @@
 package org.joychou.controller;
 
 import groovy.lang.GroovyShell;
-import jdk.nashorn.api.scripting.NashornScriptEngineFactory;
 import lombok.extern.slf4j.Slf4j;
 import org.joychou.security.SecurityUtil;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -10,12 +9,12 @@ import org.springframework.web.bind.annotation.RestController;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
 
-import javax.script.Bindings;
-import javax.script.ScriptContext;
-import javax.script.ScriptEngine;
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.sql.DriverManager;
 
 
@@ -28,6 +27,8 @@ import java.sql.DriverManager;
 @RestController
 @RequestMapping("/rce")
 public class Rce {
+
+    private static final int MAX_JS_BYTES = 64 * 1024;
 
     @GetMapping("/runtime/exec")
     public String CommandExec(String cmd) {
@@ -101,19 +102,36 @@ public class Rce {
      * @param jsurl js url
      */
     @GetMapping("/jscmd")
-    public void jsEngine(String jsurl) throws Exception{
-        // js nashorn javascript ecmascript
-        // Only load scripts from allowlisted http(s) hosts.
-        if (!SecurityUtil.checkSSRFByWhitehosts(jsurl)) {
-            throw new IllegalArgumentException("jsurl is not allowed");
+    public String jsEngine(String jsurl) {
+        // Only fetch from allowlisted http(s) hosts.
+        if (jsurl == null || !SecurityUtil.checkSSRFByWhitehosts(jsurl)) {
+            return "jsurl is not allowed";
         }
-        // Nashorn with Java interop disabled and every Java class hidden from scripts.
-        ScriptEngine engine = new NashornScriptEngineFactory().getScriptEngine(
-                new String[]{"--no-java"}, Rce.class.getClassLoader(), className -> false);
-        Bindings bindings = engine.getBindings(ScriptContext.ENGINE_SCOPE);
-        // Pass the URL as a binding instead of concatenating it into script source.
-        bindings.put("jsurl", jsurl);
-        engine.eval("load(jsurl)", bindings);
+        // The remote script is never evaluated: the standard javax.script API cannot restrict
+        // Java access portably, so the allowlisted content is returned as plain data instead.
+        HttpURLConnection conn = null;
+        try {
+            conn = (HttpURLConnection) new URL(jsurl).openConnection();
+            conn.setInstanceFollowRedirects(false);
+            conn.setConnectTimeout(5000);
+            conn.setReadTimeout(5000);
+            StringBuilder sb = new StringBuilder();
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
+                char[] buf = new char[1024];
+                int n;
+                while ((n = reader.read(buf)) != -1 && sb.length() < MAX_JS_BYTES) {
+                    sb.append(buf, 0, n);
+                }
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            return "Failed to fetch jsurl";
+        } finally {
+            if (conn != null) {
+                conn.disconnect();
+            }
+        }
     }
 
 
