@@ -2,6 +2,15 @@ package org.joychou.controller;
 
 import com.thoughtworks.xstream.XStream;
 import com.thoughtworks.xstream.io.xml.DomDriver;
+import com.thoughtworks.xstream.io.xml.DomReader;
+import com.thoughtworks.xstream.security.NoTypePermission;
+import com.thoughtworks.xstream.security.NullPermission;
+import com.thoughtworks.xstream.security.PrimitiveTypePermission;
+import org.w3c.dom.Document;
+import org.xml.sax.InputSource;
+
+import javax.xml.parsers.DocumentBuilderFactory;
+import java.io.StringReader;
 import org.joychou.dao.User;
 import org.joychou.util.WebUtils;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -23,8 +32,22 @@ public class XStreamRce {
     @PostMapping("/xstream")
     public String parseXml(HttpServletRequest request) throws Exception {
         String xml = WebUtils.getRequestBody(request);
+        // Parse with a hardened DOM parser (no DOCTYPE / external entities), then
+        // unmarshal from the already-parsed document.
+        DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+        dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+        dbf.setFeature("http://xml.org/sax/features/external-general-entities", false);
+        dbf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+        dbf.setXIncludeAware(false);
+        Document document = dbf.newDocumentBuilder().parse(new InputSource(new StringReader(xml)));
+
+        // Deny all types by default; allow only the types this endpoint expects.
         XStream xstream = new XStream(new DomDriver());
-        xstream.fromXML(xml);
+        xstream.addPermission(NoTypePermission.NONE);
+        xstream.addPermission(NullPermission.NULL);
+        xstream.addPermission(PrimitiveTypePermission.PRIMITIVES);
+        xstream.allowTypes(new Class[]{User.class, String.class, Integer.class});
+        xstream.unmarshal(new DomReader(document));
         return "xstream";
     }
 
