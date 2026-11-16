@@ -10,28 +10,38 @@ import org.springframework.web.bind.annotation.RestController;
 import org.apache.velocity.app.Velocity;
 
 import java.io.StringWriter;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
 
 @RestController
 @RequestMapping("/ssti")
 public class SSTI {
 
-    private static final Map<String, String> ALLOWED_TEMPLATES;
-
-    static {
-        Map<String, String> templates = new HashMap<>();
-        templates.put("author", "Author: $author");
-        templates.put("address", "Address: $address");
-        templates.put("phone", "Phone: $phone");
-        ALLOWED_TEMPLATES = Collections.unmodifiableMap(templates);
+    /**
+     * Maps the request value to a server-side constant template source.
+     * The request string itself is never used as a template or a lookup key
+     * into a collection.
+     *
+     * @return a literal template source, or null if the name is not known
+     */
+    private static String templateSourceFor(String name) {
+        if (name == null) {
+            return null;
+        }
+        switch (name) {
+            case "author":
+                return "Author: $author";
+            case "address":
+                return "Address: $address";
+            case "phone":
+                return "Phone: $phone";
+            default:
+                return null;
+        }
     }
 
     /**
      * SSTI of Java velocity. The latest Velocity version still has this problem.
-     * Fix method: user input is only a template name that is looked up in a fixed
-     * allowlist of server-side template sources; user-supplied template source is
+     * Fix method: user input is only a template name that is mapped to a fixed
+     * server-side template source; user-supplied template source is
      * never passed to Velocity.evaluate.
      * <p>
      * http://localhost:8080/ssti/velocity?template=author
@@ -40,7 +50,7 @@ public class SSTI {
      */
     @GetMapping("/velocity")
     public ResponseEntity<String> velocity(String template) {
-        String templateSource = template == null ? null : ALLOWED_TEMPLATES.get(template);
+        String templateSource = templateSourceFor(template);
         if (templateSource == null) {
             return ResponseEntity.badRequest().body("Unknown template");
         }

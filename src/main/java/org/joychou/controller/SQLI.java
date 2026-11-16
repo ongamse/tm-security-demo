@@ -54,8 +54,9 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/jdbc/vuln?username=joychou">http://localhost:8080/sqli/jdbc/vuln?username=joychou</a>
      */
     @RequestMapping("/jdbc/vuln")
-    public String jdbc_sqli_vul(@RequestParam("username") String username) {
+    public String jdbc_sqli_vul(@RequestParam("username") String requestedUsername) {
 
+        final String username = authorizedUsername(requestedUsername);
         StringBuilder result = new StringBuilder();
 
         try {
@@ -143,8 +144,9 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/jdbc/ps/vuln?username=joychou' or 'a'='a">http://localhost:8080/sqli/jdbc/ps/vuln?username=joychou' or 'a'='a</a>
      */
     @RequestMapping("/jdbc/ps/vuln")
-    public String jdbc_ps_vuln(@RequestParam("username") String username) {
+    public String jdbc_ps_vuln(@RequestParam("username") String requestedUsername) {
 
+        final String username = authorizedUsername(requestedUsername);
         StringBuilder result = new StringBuilder();
         try {
             Class.forName(driver);
@@ -198,9 +200,15 @@ public class SQLI {
      * <p>select * from users where username like '%joychou' or '1'='1%' </p>
      */
     @GetMapping("/mybatis/vuln02")
-    public List<User> mybatisVuln02(@RequestParam("username") String username) {
-        // LIKE search can match other accounts: only return rows the caller is allowed to see.
+    public List<User> mybatisVuln02(@RequestParam("username") String requestedUsername) {
+        // Authorize before any query. Only admins may search with a caller-chosen pattern;
+        // everyone else searches with their own authenticated username.
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated() || auth.getName() == null) {
+            throw new AccessDeniedException("Access is denied");
+        }
+        String username = isAdmin(auth) ? requestedUsername : auth.getName();
+        // LIKE search can match other accounts: only return rows the caller is allowed to see.
         List<User> visible = new ArrayList<>();
         for (User u : userMapper.findByUserNameVuln02(username)) {
             if (isOwnerOrAdmin(auth, u.getUsername())) {
@@ -287,12 +295,37 @@ public class SQLI {
         if (auth == null || !auth.isAuthenticated() || auth.getName() == null) {
             return false;
         }
+        if (isAdmin(auth)) {
+            return true;
+        }
+        return targetUsername != null && auth.getName().equals(targetUsername);
+    }
+
+    private static boolean isAdmin(Authentication auth) {
+        if (auth == null) {
+            return false;
+        }
         for (GrantedAuthority authority : auth.getAuthorities()) {
             if ("ROLE_ADMIN".equals(authority.getAuthority())) {
                 return true;
             }
         }
-        return targetUsername != null && auth.getName().equals(targetUsername);
+        return false;
+    }
+
+    /**
+     * Authorizes the request and returns the username that is actually queried.
+     * The value comes from the authenticated principal; only ROLE_ADMIN may
+     * query another account (the requested name is used for admins).
+     *
+     * @throws AccessDeniedException when nobody is authenticated or the caller does not own the account
+     */
+    private static String authorizedUsername(String requestedUsername) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (!isOwnerOrAdmin(auth, requestedUsername)) {
+            throw new AccessDeniedException("Access is denied");
+        }
+        return isAdmin(auth) ? requestedUsername : auth.getName();
     }
 
     private static String orderByColumn(String sort) {
