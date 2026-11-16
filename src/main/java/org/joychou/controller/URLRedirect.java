@@ -29,8 +29,14 @@ public class URLRedirect {
      * http://localhost:8080/urlRedirect/redirect?url=http://www.baidu.com
      */
     @GetMapping("/redirect")
-    public String redirect(@RequestParam("url") String url) {
-        return "redirect:" + url;
+    public String redirect(@RequestParam("url") String url, HttpServletResponse response) throws IOException {
+        // only same-site paths or urls on the safe-domain list may be redirected to
+        String safeUrl = SecurityUtil.checkRedirectURL(url);
+        if (safeUrl == null) {
+            response.sendError(HttpServletResponse.SC_FORBIDDEN, "url forbidden");
+            return null;
+        }
+        return "redirect:" + safeUrl;
     }
 
 
@@ -46,8 +52,14 @@ public class URLRedirect {
             response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
             return;
         }
+        // only same-site paths or urls on the safe-domain list may be redirected to
+        String safeUrl = SecurityUtil.checkRedirectURL(url);
+        if (safeUrl == null) {
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            return;
+        }
         response.setStatus(HttpServletResponse.SC_MOVED_PERMANENTLY); // 301 redirect
-        response.setHeader("Location", url);
+        response.setHeader("Location", safeUrl);
     }
 
 
@@ -58,7 +70,13 @@ public class URLRedirect {
     @ResponseBody
     public static void sendRedirect(HttpServletRequest request, HttpServletResponse response) throws IOException {
         String url = request.getParameter("url");
-        response.sendRedirect(url); // 302 redirect
+        // only same-site paths or urls on the safe-domain list may be redirected to
+        String safeUrl = SecurityUtil.checkRedirectURL(url);
+        if (safeUrl == null) {
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            return;
+        }
+        response.sendRedirect(safeUrl); // 302 redirect
     }
 
 
@@ -88,11 +106,13 @@ public class URLRedirect {
     public void sendRedirect_seccode(HttpServletRequest request, HttpServletResponse response)
             throws IOException {
         String url = request.getParameter("url");
-        if (SecurityUtil.checkURL(url) == null) {
+        // syntax check rejects userinfo / backslash / control chars; checkURL enforces the safe-domain list
+        String safeUrl = SecurityUtil.isSafeRedirectSyntax(url) ? SecurityUtil.checkURL(url) : null;
+        if (safeUrl == null) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             response.getWriter().write("url forbidden");
             return;
         }
-        response.sendRedirect(url);
+        response.sendRedirect(safeUrl);
     }
 }

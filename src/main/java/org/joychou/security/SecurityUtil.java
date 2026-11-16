@@ -216,6 +216,56 @@ public class SecurityUtil {
 
 
     /**
+     * Syntax check for a redirect target. Accepts only a same-site absolute path (<code>/a/b</code>)
+     * or an absolute http(s) url with a host and no userinfo. Rejects control characters, backslashes,
+     * scheme-relative urls (<code>//host</code>) and urls that java.net.URI and java.net.URL parse
+     * to different hosts.
+     *
+     * @param url the redirect target taken from the request
+     * @return true if the target has a safe shape
+     */
+    public static boolean isSafeRedirectSyntax(String url) {
+        if (url == null || url.isEmpty() || !isSafeHeaderValue(url) || url.indexOf('\\') >= 0) {
+            return false;
+        }
+        if (url.startsWith("/")) {
+            // same-site path only; "//host" is a scheme-relative url
+            return !url.startsWith("//");
+        }
+        if (!isHttp(url)) {
+            return false;
+        }
+        try {
+            URI uri = new URI(url);
+            if (uri.getRawUserInfo() != null) {
+                return false;
+            }
+        } catch (URISyntaxException e) {
+            return false;
+        }
+        return !gethost(url).isEmpty();
+    }
+
+
+    /**
+     * Validate a redirect target against the url safe-domain list ({@link #checkURL(String)}) or
+     * restrict it to a same-site path.
+     *
+     * @param url the redirect target taken from the request
+     * @return the original url if it may be redirected to; otherwise null
+     */
+    public static String checkRedirectURL(String url) {
+        if (!isSafeRedirectSyntax(url)) {
+            return null;
+        }
+        if (url.startsWith("/")) {
+            return url;
+        }
+        return checkURL(url);
+    }
+
+
+    /**
      * Check that a value is safe to place into an HTTP response header (prevents CRLF / header
      * injection). Control characters (CR, LF, NUL, ...) and DEL are rejected; horizontal tab is allowed.
      *

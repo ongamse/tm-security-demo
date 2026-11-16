@@ -100,7 +100,7 @@ public class URLWhiteList {
 
         logger.info("url:  " + url);
 
-        if (!SecurityUtil.isHttp(url)) {
+        if (!SecurityUtil.isSafeRedirectSyntax(url) || !SecurityUtil.isHttp(url)) {
             return;
         }
 
@@ -112,6 +112,7 @@ public class URLWhiteList {
         for (String domain : domainwhitelist) {
             if (host.endsWith("." + domain)) {
                 res.sendRedirect(url);
+                return;
             }
         }
 
