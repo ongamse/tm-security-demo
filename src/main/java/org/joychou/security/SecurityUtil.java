@@ -365,6 +365,29 @@ public class SecurityUtil {
         return sb.toString();
     }
 
+    /**
+     * Neutralise a value before it is written into an HTTP response header
+     * (CWE-113). Removes CR, LF and all other ISO control characters except
+     * horizontal tab, so the value can never terminate the header line or
+     * inject extra headers / a response body.
+     *
+     * @param value untrusted header value, may be null
+     * @return sanitized value; null when the input is null
+     */
+    public static String sanitizeHeaderValue(String value) {
+        if (value == null) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            if (ch == '\t' || !Character.isISOControl(ch)) {
+                sb.append(ch);
+            }
+        }
+        return sb.toString();
+    }
+
     public static void main(String[] args) {
     }
 
