@@ -179,6 +179,12 @@ public class HttpUtils {
     public static void imageIO(String url) {
         try {
             URL u = new URL(url);
+            String protocol = u.getProtocol();
+            if (!"http".equalsIgnoreCase(protocol) && !"https".equalsIgnoreCase(protocol)) {
+                // Reject file:, jar:, ftp: etc. so the URL cannot be used to read local files.
+                logger.error("Illegal url protocol: {}", protocol);
+                return;
+            }
             ImageIO.read(u); // send request
         } catch (IOException e) {
             logger.error(e.getMessage());
