@@ -48,9 +48,13 @@ public class Deserialize {
         byte[] decoded = SafeBase64.decode(rememberMe, MAX_COOKIE_B64_LENGTH);
 
         ByteArrayInputStream bytes = new ByteArrayInputStream(decoded);
-        ObjectInputStream in = new ObjectInputStream(bytes);
-        in.readObject();
-        in.close();
+        // Allowlist-based stream: unlisted classes are rejected before instantiation.
+        try (ObjectInputStream in = new AntObjectInputStream(bytes)) {
+            in.readObject();
+        } catch (InvalidClassException e) {
+            logger.info(e.toString());
+            return e.toString();
+        }
 
         return "Are u ok?";
     }
