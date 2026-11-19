@@ -154,6 +154,81 @@ public class SecurityUtil {
     }
 
     /**
+     * Validate an untrusted URL before the server fetches it: scheme must be http/https and
+     * the host must resolve to a non-internal address (loopback, private, link-local, metadata...).
+     * Callers must also disable automatic redirect following (or re-validate every hop).
+     *
+     * @param url untrusted url
+     * @return true if the url may be requested, false otherwise (fails closed)
+     */
+    public static boolean isSafeOutboundUrl(String url) {
+        if (url == null || !isHttp(url)) {
+            return false;
+        }
+        try {
+            return checkSSRFWithoutRedirect(url);
+        } catch (RuntimeException e) {
+            logger.error("SSRF check failed: " + e);
+            return false;
+        }
+    }
+
+
+    private static final Pattern JDBC_AUTHORITY_PATTERN =
+            Pattern.compile("^([A-Za-z0-9.-]+)(:[0-9]{1,5})?(/[A-Za-z0-9_.-]*)?$");
+    private static final Pattern JDBC_PARAM_VALUE_PATTERN = Pattern.compile("^[A-Za-z0-9_.@-]*$");
+
+
+    /**
+     * Validate an untrusted JDBC URL of the form <code>prefix host[:port][/db][?k=v&amp;...]</code>.
+     * Only a single host, an allowlist of simple connection parameters (so driver properties such as
+     * socket factories / logger files cannot be injected) and a non-internal host are accepted.
+     *
+     * @param jdbcUrl       untrusted jdbc url
+     * @param prefix        required prefix, e.g. <code>jdbc:postgresql://</code>
+     * @param allowedParams allowed query parameter names (empty means no query string is accepted)
+     * @return true if safe, false otherwise (fails closed)
+     */
+    public static boolean isSafeJdbcUrl(String jdbcUrl, String prefix, Set<String> allowedParams) {
+        if (jdbcUrl == null || !jdbcUrl.startsWith(prefix)) {
+            return false;
+        }
+        String rest = jdbcUrl.substring(prefix.length());
+        String authorityAndPath = rest;
+        String query = null;
+        int q = rest.indexOf('?');
+        if (q >= 0) {
+            authorityAndPath = rest.substring(0, q);
+            query = rest.substring(q + 1);
+        }
+
+        java.util.regex.Matcher m = JDBC_AUTHORITY_PATTERN.matcher(authorityAndPath);
+        if (!m.matches()) {
+            return false;
+        }
+
+        if (query != null) {
+            if (query.isEmpty()) {
+                return false;
+            }
+            for (String pair : query.split("&", -1)) {
+                int eq = pair.indexOf('=');
+                if (eq <= 0) {
+                    return false;
+                }
+                String key = pair.substring(0, eq);
+                String value = pair.substring(eq + 1);
+                if (!allowedParams.contains(key) || !JDBC_PARAM_VALUE_PATTERN.matcher(value).matches()) {
+                    return false;
+                }
+            }
+        }
+
+        return isSafeOutboundUrl("http://" + m.group(1) + "/");
+    }
+
+
+    /**
      * Check ssrf by hook socket. Start socket hook.
      *
      * @author liergou @ 2020-04-04 02:15

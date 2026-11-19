@@ -125,10 +125,17 @@ public class SSRF {
             // download
             response.setHeader("content-disposition", "attachment;fileName=" + downLoadImgFileName);
 
+            // http/https only, host must not resolve to an internal address; no redirect following.
+            if (!SecurityUtil.isSafeOutboundUrl(url)) {
+                logger.error("SSRF check failed. Illegal outbound url rejected.");
+                return;
+            }
             URL u = new URL(url);
             int length;
             byte[] bytes = new byte[1024];
-            inputStream = u.openStream(); // send request
+            HttpURLConnection conn = (HttpURLConnection) u.openConnection();
+            conn.setInstanceFollowRedirects(false);
+            inputStream = conn.getInputStream(); // send request
             outputStream = response.getOutputStream();
             while ((length = inputStream.read(bytes)) > 0) {
                 outputStream.write(bytes, 0, length);
