@@ -8,6 +8,7 @@ import org.springframework.security.config.annotation.authentication.builders.Au
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configuration.WebSecurityConfigurerAdapter;
+import org.springframework.security.web.authentication.rememberme.RememberMeAuthenticationFilter;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.web.cors.CorsConfiguration;
@@ -71,6 +72,9 @@ public class WebSecurityConfig extends WebSecurityConfigurerAdapter {
         // http.csrf().csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse());
 
         http.cors();
+
+        // bound/validate the remember-me cookie before Spring Security Base64-decodes it
+        http.addFilterBefore(new RememberMeCookieGuardFilter(), RememberMeAuthenticationFilter.class);
 
         // spring security login settings
         http.authorizeRequests()

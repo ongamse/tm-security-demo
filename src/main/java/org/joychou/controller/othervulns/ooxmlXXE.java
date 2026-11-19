@@ -1,5 +1,7 @@
 package org.joychou.controller.othervulns;
 
+import org.springframework.web.util.HtmlUtils;
+import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.xssf.usermodel.XSSFCell;
 import org.apache.poi.xssf.usermodel.XSSFRow;
 import org.apache.poi.xssf.usermodel.XSSFSheet;
@@ -60,9 +62,9 @@ public class ooxmlXXE {
             while (cells.hasNext()) {
                 cell = (XSSFCell) cells.next();
 
-                if (cell.getCellType() == XSSFCell.CELL_TYPE_STRING) {
+                if (cell.getCellType() == CellType.STRING) {
                     sbResult.append(cell.getStringCellValue()).append(" ");
-                } else if (cell.getCellType() == XSSFCell.CELL_TYPE_NUMERIC) {
+                } else if (cell.getCellType() == CellType.NUMERIC) {
                     sbResult.append(cell.getNumericCellValue()).append(" ");
                 } else {
                     logger.info("errors");
@@ -70,6 +72,6 @@ public class ooxmlXXE {
             }
         }
 
-        return sbResult.toString();
+        return HtmlUtils.htmlEscape(sbResult.toString());
     }
 }

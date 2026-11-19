@@ -12,6 +12,10 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 
@@ -150,6 +154,81 @@ public class SecurityUtil {
     }
 
     /**
+     * Validate an untrusted URL before the server fetches it: scheme must be http/https and
+     * the host must resolve to a non-internal address (loopback, private, link-local, metadata...).
+     * Callers must also disable automatic redirect following (or re-validate every hop).
+     *
+     * @param url untrusted url
+     * @return true if the url may be requested, false otherwise (fails closed)
+     */
+    public static boolean isSafeOutboundUrl(String url) {
+        if (url == null || !isHttp(url)) {
+            return false;
+        }
+        try {
+            return checkSSRFWithoutRedirect(url);
+        } catch (RuntimeException e) {
+            logger.error("SSRF check failed: " + e);
+            return false;
+        }
+    }
+
+
+    private static final Pattern JDBC_AUTHORITY_PATTERN =
+            Pattern.compile("^([A-Za-z0-9.-]+)(:[0-9]{1,5})?(/[A-Za-z0-9_.-]*)?$");
+    private static final Pattern JDBC_PARAM_VALUE_PATTERN = Pattern.compile("^[A-Za-z0-9_.@-]*$");
+
+
+    /**
+     * Validate an untrusted JDBC URL of the form <code>prefix host[:port][/db][?k=v&amp;...]</code>.
+     * Only a single host, an allowlist of simple connection parameters (so driver properties such as
+     * socket factories / logger files cannot be injected) and a non-internal host are accepted.
+     *
+     * @param jdbcUrl       untrusted jdbc url
+     * @param prefix        required prefix, e.g. <code>jdbc:postgresql://</code>
+     * @param allowedParams allowed query parameter names (empty means no query string is accepted)
+     * @return true if safe, false otherwise (fails closed)
+     */
+    public static boolean isSafeJdbcUrl(String jdbcUrl, String prefix, Set<String> allowedParams) {
+        if (jdbcUrl == null || !jdbcUrl.startsWith(prefix)) {
+            return false;
+        }
+        String rest = jdbcUrl.substring(prefix.length());
+        String authorityAndPath = rest;
+        String query = null;
+        int q = rest.indexOf('?');
+        if (q >= 0) {
+            authorityAndPath = rest.substring(0, q);
+            query = rest.substring(q + 1);
+        }
+
+        java.util.regex.Matcher m = JDBC_AUTHORITY_PATTERN.matcher(authorityAndPath);
+        if (!m.matches()) {
+            return false;
+        }
+
+        if (query != null) {
+            if (query.isEmpty()) {
+                return false;
+            }
+            for (String pair : query.split("&", -1)) {
+                int eq = pair.indexOf('=');
+                if (eq <= 0) {
+                    return false;
+                }
+                String key = pair.substring(0, eq);
+                String value = pair.substring(eq + 1);
+                if (!allowedParams.contains(key) || !JDBC_PARAM_VALUE_PATTERN.matcher(value).matches()) {
+                    return false;
+                }
+            }
+        }
+
+        return isSafeOutboundUrl("http://" + m.group(1) + "/");
+    }
+
+
+    /**
      * Check ssrf by hook socket. Start socket hook.
      *
      * @author liergou @ 2020-04-04 02:15
@@ -200,11 +279,48 @@ public class SecurityUtil {
 
 
     public static String cmdFilter(String input) {
-        if (!FILTER_PATTERN.matcher(input).matches()) {
+        if (input == null || !FILTER_PATTERN.matcher(input).matches()) {
             return null;
         }
 
         return input;
+    }
+
+
+    /**
+     * Commands that may be run on behalf of a remote caller. No shell is ever involved.
+     */
+    private static final Set<String> ALLOWED_COMMANDS = Collections.unmodifiableSet(
+            new HashSet<String>(Arrays.asList("whoami", "id", "date", "uname", "hostname", "pwd", "ls")));
+
+
+    /**
+     * Turn an untrusted command line into an argv array that can be handed to
+     * ProcessBuilder (no shell). The program must be in the allowlist and every
+     * argument must pass {@link #cmdFilter(String)} and must not look like an option
+     * smuggled in after the program name beyond simple short flags.
+     *
+     * @param cmdline untrusted command line, e.g. "ls -la /tmp"
+     * @return argv array, or null if the command line is not allowed
+     */
+    public static String[] safeCommand(String cmdline) {
+        if (cmdline == null) {
+            return null;
+        }
+        String trimmed = cmdline.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        String[] parts = trimmed.split("\\s+");
+        if (!ALLOWED_COMMANDS.contains(parts[0])) {
+            return null;
+        }
+        for (int i = 1; i < parts.length; i++) {
+            if (cmdFilter(parts[i]) == null) {
+                return null;
+            }
+        }
+        return parts;
     }
 
 
@@ -247,6 +363,68 @@ public class SecurityUtil {
         }
 
         return sb.toString();
+    }
+
+    /**
+     * Neutralise a value before it is written into an HTTP response header
+     * (CWE-113). Removes CR, LF and all other ISO control characters except
+     * horizontal tab, so the value can never terminate the header line or
+     * inject extra headers / a response body.
+     *
+     * @param value untrusted header value, may be null
+     * @return sanitized value; null when the input is null
+     */
+    public static String sanitizeHeaderValue(String value) {
+        if (value == null) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            if (ch == '\t' || !Character.isISOControl(ch)) {
+                sb.append(ch);
+            }
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Validate an untrusted redirect destination (CWE-601).
+     * Accepted: a site-relative path ("/a/b?x=1", but not "//host" or "/\host"), or an
+     * absolute http(s) URL whose host passes {@link #checkURL(String)} (project safe-domain list).
+     * Rejected: null/blank, backslashes, whitespace/control characters (browsers strip tab/CR/LF
+     * which can turn "/&lt;tab&gt;/evil.com" into "//evil.com"), scheme-relative and other schemes.
+     *
+     * @param url untrusted destination
+     * @return the original url when safe; null otherwise
+     */
+    public static String checkRedirectURL(String url) {
+        if (url == null || url.isEmpty()) {
+            return null;
+        }
+        for (int i = 0; i < url.length(); i++) {
+            char ch = url.charAt(i);
+            if (ch == '\\' || Character.isISOControl(ch) || Character.isWhitespace(ch)) {
+                return null;
+            }
+        }
+        try {
+            // Strict RFC 3986 parse; throws on malformed input.
+            URI uri = new URI(url);
+            if (uri.getScheme() == null) {
+                // Relative reference: only a single-slash absolute path, no authority.
+                if (url.startsWith("/") && !url.startsWith("//") && uri.getRawAuthority() == null) {
+                    return url;
+                }
+                return null;
+            }
+            if (uri.getHost() == null) {
+                return null;
+            }
+            return checkURL(url);
+        } catch (URISyntaxException e) {
+            return null;
+        }
     }
 
     public static void main(String[] args) {

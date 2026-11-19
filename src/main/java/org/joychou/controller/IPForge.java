@@ -31,14 +31,13 @@ public class IPForge {
     @RequestMapping("/proxy")
     @ResponseBody
     public static String proxy(HttpServletRequest request) {
-        String ip = request.getHeader("X-Real-IP");
-        if (StringUtils.isNotBlank(ip)) {
-            return ip;
-        } else {
-            String remoteAddr = request.getRemoteAddr();
-            if (StringUtils.isNotBlank(remoteAddr)) {
-                return remoteAddr;
-            }
+        // Do not trust client-supplied X-Real-IP / X-Forwarded-For: they are spoofable.
+        // Use the socket peer address; to honour a trusted reverse proxy, configure
+        // server.forward-headers-strategy / ForwardedHeaderFilter / RemoteIpValve so the
+        // container resolves getRemoteAddr() only for trusted proxies.
+        String remoteAddr = request.getRemoteAddr();
+        if (StringUtils.isNotBlank(remoteAddr)) {
+            return remoteAddr;
         }
         return "";
     }

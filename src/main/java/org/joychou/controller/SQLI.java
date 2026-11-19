@@ -7,10 +7,14 @@ import org.joychou.security.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
 import java.sql.*;
+import java.util.ArrayList;
 import java.util.List;
 
 
@@ -42,6 +46,35 @@ public class SQLI {
     @Resource
     private UserMapper userMapper;
 
+    /**
+     * Object-level authorization: a caller may only reference their own user record,
+     * unless they hold ROLE_ADMIN. Fails closed when unauthenticated.
+     */
+    private static boolean isAdmin(Authentication auth) {
+        if (auth == null) {
+            return false;
+        }
+        for (GrantedAuthority ga : auth.getAuthorities()) {
+            if ("ROLE_ADMIN".equals(ga.getAuthority())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean canAccessUser(Authentication auth, String targetUsername) {
+        if (auth == null || !auth.isAuthenticated() || targetUsername == null) {
+            return false;
+        }
+        return isAdmin(auth) || auth.getName().equals(targetUsername);
+    }
+
+    private static void requireUserAccess(Authentication auth, String targetUsername) {
+        if (!canAccessUser(auth, targetUsername)) {
+            throw new AccessDeniedException("Access denied");
+        }
+    }
+
 
     /**
      * <p>Sql injection jbdc vuln code.</p><br>
@@ -61,10 +94,11 @@ public class SQLI {
                 System.out.println("Connect to database successfully.");
 
             // sqli vuln code
-            Statement statement = con.createStatement();
-            String sql = "select * from users where username = '" + username + "'";
-            logger.info(sql);
-            ResultSet rs = statement.executeQuery(sql);
+            String sql = "select * from users where username = ?";
+            PreparedStatement statement = con.prepareStatement(sql);
+            statement.setString(1, username);
+            logger.info(statement.toString());
+            ResultSet rs = statement.executeQuery();
 
             while (rs.next()) {
                 String res_name = rs.getString("username");
@@ -92,8 +126,9 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/jdbc/sec?username=joychou">http://localhost:8080/sqli/jdbc/sec?username=joychou</a>
      */
     @RequestMapping("/jdbc/sec")
-    public String jdbc_sqli_sec(@RequestParam("username") String username) {
+    public String jdbc_sqli_sec(@RequestParam("username") String username, Authentication authentication) {
 
+        requireUserAccess(authentication, username);
         StringBuilder result = new StringBuilder();
         try {
             Class.forName(driver);
@@ -146,8 +181,9 @@ public class SQLI {
             if (!con.isClosed())
                 System.out.println("Connecting to Database successfully.");
 
-            String sql = "select * from users where username = '" + username + "'";
+            String sql = "select * from users where username = ?";
             PreparedStatement st = con.prepareStatement(sql);
+            st.setString(1, username);
 
             logger.info(st.toString());
             ResultSet rs = st.executeQuery();
@@ -179,7 +215,8 @@ public class SQLI {
      * <p>select * from users where username = 'joychou' or '1'='1' </p>
      */
     @GetMapping("/mybatis/vuln01")
-    public List<User> mybatisVuln01(@RequestParam("username") String username) {
+    public List<User> mybatisVuln01(@RequestParam("username") String username, Authentication authentication) {
+        requireUserAccess(authentication, username);
         return userMapper.findByUserNameVuln01(username);
     }
 
@@ -189,8 +226,16 @@ public class SQLI {
      * <p>select * from users where username like '%joychou' or '1'='1%' </p>
      */
     @GetMapping("/mybatis/vuln02")
-    public List<User> mybatisVuln02(@RequestParam("username") String username) {
-        return userMapper.findByUserNameVuln02(username);
+    public List<User> mybatisVuln02(@RequestParam("username") String username, Authentication authentication) {
+        List<User> found = userMapper.findByUserNameVuln02(username);
+        // substring search: only return records the caller is allowed to access
+        List<User> allowed = new ArrayList<>();
+        for (User u : found) {
+            if (canAccessUser(authentication, u.getUsername())) {
+                allowed.add(u);
+            }
+        }
+        return allowed;
     }
 
     /**
@@ -209,7 +254,8 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/mybatis/sec01?username=joychou">http://localhost:8080/sqli/mybatis/sec01?username=joychou</a>
      */
     @GetMapping("/mybatis/sec01")
-    public User mybatisSec01(@RequestParam("username") String username) {
+    public User mybatisSec01(@RequestParam("username") String username, Authentication authentication) {
+        requireUserAccess(authentication, username);
         return userMapper.findByUserName(username);
     }
 
@@ -218,8 +264,13 @@ public class SQLI {
      * <a href="http://localhost:8080/sqli/mybatis/sec02?id=1">http://localhost:8080/sqli/mybatis/sec02?id=1</a>
      */
     @GetMapping("/mybatis/sec02")
-    public User mybatisSec02(@RequestParam("id") Integer id) {
-        return userMapper.findById(id);
+    public User mybatisSec02(@RequestParam("id") Integer id, Authentication authentication) {
+        User found = userMapper.findById(id);
+        // id is a direct object reference: verify the record belongs to the caller (or caller is admin)
+        if (found != null) {
+            requireUserAccess(authentication, found.getUsername());
+        }
+        return found;
     }
 
 

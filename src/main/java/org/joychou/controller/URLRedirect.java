@@ -1,6 +1,8 @@
 package org.joychou.controller;
 
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -30,7 +32,17 @@ public class URLRedirect {
      */
     @GetMapping("/redirect")
     public String redirect(@RequestParam("url") String url) {
-        return "redirect:" + url;
+        String safeUrl = SecurityUtil.checkRedirectURL(url);
+        if (safeUrl == null) {
+            throw new InvalidRedirectException();
+        }
+        return "redirect:" + safeUrl;
+    }
+
+
+    @ResponseStatus(value = HttpStatus.BAD_REQUEST, reason = "url forbidden")
+    private static class InvalidRedirectException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
     }
 
 
@@ -39,10 +51,14 @@ public class URLRedirect {
      */
     @RequestMapping("/setHeader")
     @ResponseBody
-    public static void setHeader(HttpServletRequest request, HttpServletResponse response) {
-        String url = request.getParameter("url");
+    public static void setHeader(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        String url = SecurityUtil.checkRedirectURL(request.getParameter("url"));
+        if (url == null) {
+            response.sendError(HttpServletResponse.SC_BAD_REQUEST, "url forbidden");
+            return;
+        }
         response.setStatus(HttpServletResponse.SC_MOVED_PERMANENTLY); // 301 redirect
-        response.setHeader("Location", url);
+        response.setHeader("Location", SecurityUtil.sanitizeHeaderValue(url));
     }
 
 
@@ -52,7 +68,11 @@ public class URLRedirect {
     @RequestMapping("/sendRedirect")
     @ResponseBody
     public static void sendRedirect(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        String url = request.getParameter("url");
+        String url = SecurityUtil.checkRedirectURL(request.getParameter("url"));
+        if (url == null) {
+            response.sendError(HttpServletResponse.SC_BAD_REQUEST, "url forbidden");
+            return;
+        }
         response.sendRedirect(url); // 302 redirect
     }
 
@@ -82,8 +102,8 @@ public class URLRedirect {
     @ResponseBody
     public void sendRedirect_seccode(HttpServletRequest request, HttpServletResponse response)
             throws IOException {
-        String url = request.getParameter("url");
-        if (SecurityUtil.checkURL(url) == null) {
+        String url = SecurityUtil.checkRedirectURL(request.getParameter("url"));
+        if (url == null) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             response.getWriter().write("url forbidden");
             return;
