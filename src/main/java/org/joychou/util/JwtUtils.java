@@ -4,6 +4,7 @@ import com.auth0.jwt.JWT;
 import com.auth0.jwt.JWTVerifier;
 import com.auth0.jwt.algorithms.Algorithm;
 import com.auth0.jwt.exceptions.JWTVerificationException;
+import com.auth0.jwt.interfaces.DecodedJWT;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
@@ -71,30 +72,38 @@ public class JwtUtils {
      * @return Valid token returns true. Invalid token returns false.
      */
     public static Boolean verifyTokenByJavaJwt(String token) {
+        return verifyAndDecodeByJavaJwt(token) != null;
+    }
+
+    /**
+     * Verify the token signature (HMAC256 with the app secret) and return the verified
+     * decoded token. Returns null when the token is malformed or fails verification.
+     */
+    private static DecodedJWT verifyAndDecodeByJavaJwt(String token) {
         // Bound size/charset before the library Base64-decodes attacker-controlled segments.
         if (!SafeBase64.isWellFormedJwt(token, MAX_TOKEN_LENGTH)) {
             log.error("token is malformed or too long");
-            return false;
+            return null;
         }
         try {
             Algorithm algorithm = Algorithm.HMAC256(SECRET);
             JWTVerifier verifier = JWT.require(algorithm).build();
-            verifier.verify(token);
-            return true;
+            return verifier.verify(token);
         } catch (JWTVerificationException exception){
             log.error(exception.toString());
-            return false;
+            return null;
         }
     }
 
 
     public static String getNicknameByJavaJwt(String token) {
-        // If the signature is not verified, there will be security issues.
-        if (!verifyTokenByJavaJwt(token)) {
+        // Claims are read only from the signature-verified token.
+        DecodedJWT verified = verifyAndDecodeByJavaJwt(token);
+        if (verified == null) {
             log.error("token is invalid");
             return null;
         }
-        return JWT.decode(token).getClaim("nickname").asString();
+        return verified.getClaim("nickname").asString();
     }
 
 
