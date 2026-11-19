@@ -17,7 +17,7 @@ public interface UserMapper {
     @Select("select * from users where username = #{username}")
     User findByUserName(@Param("username") String username);
 
-    @Select("select * from users where username = '${username}'")
+    @Select("select * from users where username = #{username}")
     List<User> findByUserNameVuln01(@Param("username") String username);
 
     List<User> findByUserNameVuln02(String username);
