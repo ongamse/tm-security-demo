@@ -2,6 +2,7 @@ package org.joychou.controller;
 
 import groovy.lang.GroovyShell;
 import lombok.extern.slf4j.Slf4j;
+import org.joychou.security.SecurityUtil;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -16,6 +17,7 @@ import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.sql.DriverManager;
+import java.util.regex.Pattern;
 
 
 /**
@@ -28,13 +30,20 @@ import java.sql.DriverManager;
 @RequestMapping("/rce")
 public class Rce {
 
+    private static final Pattern ARITHMETIC_PATTERN = Pattern.compile("^[0-9+\\-*/%().\\s]{1,200}$");
+
     @GetMapping("/runtime/exec")
     public String CommandExec(String cmd) {
-        Runtime run = Runtime.getRuntime();
         StringBuilder sb = new StringBuilder();
 
+        String[] argv = SecurityUtil.safeCommand(cmd);
+        if (argv == null) {
+            return "Bad boy. I got u.";
+        }
+
         try {
-            Process p = run.exec(cmd);
+            // allowlisted program + validated args, no shell
+            Process p = new ProcessBuilder(argv).start();
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
             BufferedReader inBr = new BufferedReader(new InputStreamReader(in));
             String tmpStr;
@@ -65,8 +74,13 @@ public class Rce {
 
         StringBuilder sb = new StringBuilder();
 
+        String[] arrCmd = SecurityUtil.safeCommand(cmd);
+        if (arrCmd == null) {
+            return "Bad boy. I got u.";
+        }
+
         try {
-            String[] arrCmd = {"/bin/sh", "-c", cmd};
+            // allowlisted program + validated args, no shell
             ProcessBuilder processBuilder = new ProcessBuilder(arrCmd);
             Process p = processBuilder.start();
             BufferedInputStream in = new BufferedInputStream(p.getInputStream());
@@ -94,11 +108,16 @@ public class Rce {
      */
     @GetMapping("/jscmd")
     public void jsEngine(String jsurl) throws Exception{
+        // Only scripts hosted on allowlisted domains may be loaded.
+        if (SecurityUtil.checkURL(jsurl) == null) {
+            return;
+        }
         // js nashorn javascript ecmascript
         ScriptEngine engine = new ScriptEngineManager().getEngineByName("js");
         Bindings bindings = engine.getBindings(ScriptContext.ENGINE_SCOPE);
-        String cmd = String.format("load(\"%s\")", jsurl);
-        engine.eval(cmd, bindings);
+        // Pass the URL as a binding, never concatenated into script source.
+        bindings.put("jsurl", jsurl);
+        engine.eval("load(jsurl)", bindings);
     }
 
 
@@ -126,6 +145,11 @@ public class Rce {
      */
     @GetMapping("groovy")
     public void groovyshell(String content) {
+        // Only plain arithmetic is accepted: digits, operators, parentheses, dot and spaces.
+        // No identifiers or quotes, so no method calls, strings or class references are possible.
+        if (content == null || !ARITHMETIC_PATTERN.matcher(content).matches()) {
+            return;
+        }
         GroovyShell groovyShell = new GroovyShell();
         groovyShell.evaluate(content);
     }

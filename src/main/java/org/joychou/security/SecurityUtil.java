@@ -12,6 +12,10 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 
@@ -200,11 +204,48 @@ public class SecurityUtil {
 
 
     public static String cmdFilter(String input) {
-        if (!FILTER_PATTERN.matcher(input).matches()) {
+        if (input == null || !FILTER_PATTERN.matcher(input).matches()) {
             return null;
         }
 
         return input;
+    }
+
+
+    /**
+     * Commands that may be run on behalf of a remote caller. No shell is ever involved.
+     */
+    private static final Set<String> ALLOWED_COMMANDS = Collections.unmodifiableSet(
+            new HashSet<String>(Arrays.asList("whoami", "id", "date", "uname", "hostname", "pwd", "ls")));
+
+
+    /**
+     * Turn an untrusted command line into an argv array that can be handed to
+     * ProcessBuilder (no shell). The program must be in the allowlist and every
+     * argument must pass {@link #cmdFilter(String)} and must not look like an option
+     * smuggled in after the program name beyond simple short flags.
+     *
+     * @param cmdline untrusted command line, e.g. "ls -la /tmp"
+     * @return argv array, or null if the command line is not allowed
+     */
+    public static String[] safeCommand(String cmdline) {
+        if (cmdline == null) {
+            return null;
+        }
+        String trimmed = cmdline.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        String[] parts = trimmed.split("\\s+");
+        if (!ALLOWED_COMMANDS.contains(parts[0])) {
+            return null;
+        }
+        for (int i = 1; i < parts.length; i++) {
+            if (cmdFilter(parts[i]) == null) {
+                return null;
+            }
+        }
+        return parts;
     }
 
 
