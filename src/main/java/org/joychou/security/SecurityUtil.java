@@ -388,6 +388,45 @@ public class SecurityUtil {
         return sb.toString();
     }
 
+    /**
+     * Validate an untrusted redirect destination (CWE-601).
+     * Accepted: a site-relative path ("/a/b?x=1", but not "//host" or "/\host"), or an
+     * absolute http(s) URL whose host passes {@link #checkURL(String)} (project safe-domain list).
+     * Rejected: null/blank, backslashes, whitespace/control characters (browsers strip tab/CR/LF
+     * which can turn "/&lt;tab&gt;/evil.com" into "//evil.com"), scheme-relative and other schemes.
+     *
+     * @param url untrusted destination
+     * @return the original url when safe; null otherwise
+     */
+    public static String checkRedirectURL(String url) {
+        if (url == null || url.isEmpty()) {
+            return null;
+        }
+        for (int i = 0; i < url.length(); i++) {
+            char ch = url.charAt(i);
+            if (ch == '\\' || Character.isISOControl(ch) || Character.isWhitespace(ch)) {
+                return null;
+            }
+        }
+        try {
+            // Strict RFC 3986 parse; throws on malformed input.
+            URI uri = new URI(url);
+            if (uri.getScheme() == null) {
+                // Relative reference: only a single-slash absolute path, no authority.
+                if (url.startsWith("/") && !url.startsWith("//") && uri.getRawAuthority() == null) {
+                    return url;
+                }
+                return null;
+            }
+            if (uri.getHost() == null) {
+                return null;
+            }
+            return checkURL(url);
+        } catch (URISyntaxException e) {
+            return null;
+        }
+    }
+
     public static void main(String[] args) {
     }
 

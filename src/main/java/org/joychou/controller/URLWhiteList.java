@@ -120,10 +120,17 @@ public class URLWhiteList {
         host = host.toLowerCase();
         logger.info("host:  " + host);
 
+        // Also require the project-wide redirect validation (safe-domain list, no backslash/control chars).
+        String safeUrl = SecurityUtil.checkRedirectURL(url);
+        if (safeUrl == null) {
+            return;
+        }
+
         // endsWith .
         for (String domain : domainwhitelist) {
             if (host.endsWith("." + domain)) {
-                res.sendRedirect(url);
+                res.sendRedirect(safeUrl);
+                return;
             }
         }
 
