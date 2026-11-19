@@ -2,6 +2,7 @@ package org.joychou.controller;
 
 import org.joychou.config.Constants;
 import org.joychou.security.AntObjectInputStream;
+import org.joychou.util.SafeBase64;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -13,7 +14,6 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InvalidClassException;
 import java.io.ObjectInputStream;
-import java.util.Base64;
 
 import static org.springframework.web.util.WebUtils.getCookie;
 
@@ -25,6 +25,9 @@ import static org.springframework.web.util.WebUtils.getCookie;
 @RestController
 @RequestMapping("/deserialize")
 public class Deserialize {
+
+    /** Upper bound for the Base64 rememberMe cookie (browsers cap cookies at ~4KB). */
+    private static final int MAX_COOKIE_B64_LENGTH = 16 * 1024;
 
     protected final Logger logger = LoggerFactory.getLogger(this.getClass());
 
@@ -42,7 +45,7 @@ public class Deserialize {
         }
 
         String rememberMe = cookie.getValue();
-        byte[] decoded = Base64.getDecoder().decode(rememberMe);
+        byte[] decoded = SafeBase64.decode(rememberMe, MAX_COOKIE_B64_LENGTH);
 
         ByteArrayInputStream bytes = new ByteArrayInputStream(decoded);
         ObjectInputStream in = new ObjectInputStream(bytes);
@@ -67,7 +70,7 @@ public class Deserialize {
             return "No rememberMe cookie. Right?";
         }
         String rememberMe = cookie.getValue();
-        byte[] decoded = Base64.getDecoder().decode(rememberMe);
+        byte[] decoded = SafeBase64.decode(rememberMe, MAX_COOKIE_B64_LENGTH);
 
         ByteArrayInputStream bytes = new ByteArrayInputStream(decoded);
 

@@ -17,6 +17,7 @@ import java.util.Date;
 public class JwtUtils {
 
     private static final long EXPIRE = 1440 * 60 * 1000;  // 1440 Minutes, 1 DAY
+    private static final int MAX_TOKEN_LENGTH = 8192;
     private static final String SECRET = "123456";
     private static final String B64_SECRET = Base64.getEncoder().encodeToString(SECRET.getBytes(StandardCharsets.UTF_8));
 
@@ -70,6 +71,11 @@ public class JwtUtils {
      * @return Valid token returns true. Invalid token returns false.
      */
     public static Boolean verifyTokenByJavaJwt(String token) {
+        // Bound size/charset before the library Base64-decodes attacker-controlled segments.
+        if (!SafeBase64.isWellFormedJwt(token, MAX_TOKEN_LENGTH)) {
+            log.error("token is malformed or too long");
+            return false;
+        }
         try {
             Algorithm algorithm = Algorithm.HMAC256(SECRET);
             JWTVerifier verifier = JWT.require(algorithm).build();
